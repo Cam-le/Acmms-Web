@@ -11,122 +11,28 @@ import {
   Sprout,
   ArrowLeft,
   ChevronDown,
-  ChevronUp,
   CheckCircle,
 } from "lucide-react";
-import * as Dialog from "@radix-ui/react-dialog";
+import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import * as Collapsible from "@radix-ui/react-collapsible";
+import {
+  Season,
+  SeasonStatus,
+  SeasonCropType as CropType,
+  PlotAssignment,
+  mockSeasons,
+} from "../../data/mockData";
 
-// Types
-type SeasonStatus = "Đang hoạt động" | "Đã kết thúc" | "Sắp diễn ra";
-type CropType = "Cà Chua" | "Ngô" | "Bắp Cải";
-
-interface PlotAssignment {
-  plotId: string;
-  plotName: string;
-  area: string;
-  crop: CropType;
-  sowingDate: string;
-  harvestDate: string;
-  quantity: number;
-  status: SeasonStatus;
-}
-
-interface Season {
-  id: string;
-  code: string;
-  name: string;
-  farm: string;
-  startDate: string;
-  endDate: string;
-  status: SeasonStatus;
-  description: string;
-  plots: PlotAssignment[];
-}
-
-// Mock data
-const mockSeasons: Season[] = [
-  {
-    id: "1",
-    code: "MV001",
-    name: "Mùa Hè 2025",
-    farm: "Trang trại thung lũng xanh",
-    startDate: "01-06-2025",
-    endDate: "30-09-2025",
-    status: "Đang hoạt động",
-    description: "Vụ mùa chính trồng cà chua và ngô.",
-    plots: [
-      {
-        plotId: "A-1",
-        plotName: "Luống A-1",
-        area: "Khu A (Phía Bắc)",
-        crop: "Cà Chua",
-        sowingDate: "05/06/2025",
-        harvestDate: "15/08/2025",
-        quantity: 120,
-        status: "Đang hoạt động",
-      },
-      {
-        plotId: "A-2",
-        plotName: "Luống A-2",
-        area: "Khu A (Phía Bắc)",
-        crop: "Cà Chua",
-        sowingDate: "06/06/2025",
-        harvestDate: "15/08/2025",
-        quantity: 120,
-        status: "Đang hoạt động",
-      },
-      {
-        plotId: "B-1",
-        plotName: "Luống B-1",
-        area: "Khu B (Phía Nam)",
-        crop: "Ngô",
-        sowingDate: "10/06/2025",
-        harvestDate: "01/09/2025",
-        quantity: 100,
-        status: "Đang hoạt động",
-      },
-    ],
-  },
-  {
-    id: "2",
-    code: "MV002",
-    name: "Vụ cà chua Q2",
-    farm: "Trang trại Nắng Hạ",
-    startDate: "15-05-2025",
-    endDate: "15-10-2025",
-    status: "Đang hoạt động",
-    description: "",
-    plots: [
-      {
-        plotId: "C-1",
-        plotName: "Luống C-1",
-        area: "Khu C",
-        crop: "Cà Chua",
-        sowingDate: "20/05/2025",
-        harvestDate: "10/10/2025",
-        quantity: 80,
-        status: "Đang hoạt động",
-      },
-    ],
-  },
-  {
-    id: "3",
-    code: "MV003",
-    name: "Mùa Đông 2024",
-    farm: "Trang trại thung lũng xanh",
-    startDate: "01-11-2024",
-    endDate: "28-02-2025",
-    status: "Đã kết thúc",
-    description: "Mùa vụ đông",
-    plots: [],
-  },
-];
-
-const statusConfig = {
+const statusConfig: Record<SeasonStatus, string> = {
   "Đang hoạt động": "bg-[#dcfce7] text-[#008236]",
   "Đã kết thúc": "bg-[#f1f5f9] text-[#475569]",
   "Sắp diễn ra": "bg-[#dbeafe] text-[#1e40af]",
+};
+
+const cropEmoji: Record<string, string> = {
+  "Bắp Cải Trắng": "🥬",
+  "Bắp Cải Tím": "🟣",
+  "Bắp Cải Xoăn": "🌿",
 };
 
 export function SeasonsPage() {
@@ -137,8 +43,9 @@ export function SeasonsPage() {
   const [seasons, setSeasons] = useState<Season[]>(mockSeasons);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState<SeasonStatus | "all">("all");
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [seasonToDelete, setSeasonToDelete] = useState<Season | null>(null);
 
-  // Filter seasons
   const filteredSeasons = seasons.filter((season) => {
     const matchesSearch =
       season.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -151,14 +58,19 @@ export function SeasonsPage() {
 
   const selectedSeason = seasons.find((s) => s.id === seasonId);
 
-  // Handle delete
-  const handleDelete = (id: string) => {
-    if (confirm("Bạn có chắc chắn muốn xóa mùa vụ này?")) {
-      setSeasons(seasons.filter((s) => s.id !== id));
+  const handleDelete = (season: Season) => {
+    setSeasonToDelete(season);
+    setDeleteDialogOpen(true);
+  };
+
+  const confirmDelete = () => {
+    if (seasonToDelete) {
+      setSeasons(seasons.filter((s) => s.id !== seasonToDelete.id));
+      setSeasonToDelete(null);
+      setDeleteDialogOpen(false);
     }
   };
 
-  // Handle create
   const handleCreate = (season: Omit<Season, "id" | "code">) => {
     const newSeason: Season = {
       ...season,
@@ -169,7 +81,6 @@ export function SeasonsPage() {
     setSearchParams({ view: "list" });
   };
 
-  // Handle update
   const handleUpdate = (updatedSeason: Season) => {
     setSeasons(
       seasons.map((s) => (s.id === updatedSeason.id ? updatedSeason : s)),
@@ -189,16 +100,13 @@ export function SeasonsPage() {
     return <EditSeasonView season={selectedSeason} onUpdate={handleUpdate} />;
   }
 
-  // List View
   return (
     <div className="flex flex-col gap-6 p-6">
       {/* Header */}
       <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-[#115e59] text-2xl font-semibold mb-1">
-            Quản Lý Mùa Vụ
-          </h1>
-        </div>
+        <h1 className="text-[#115e59] text-2xl font-semibold">
+          Quản Lý Mùa Vụ
+        </h1>
         <Link
           to="/seasons?view=create"
           className="bg-[#009689] text-white px-4 py-2 rounded-lg hover:bg-[#007f75] transition-colors flex items-center gap-2"
@@ -221,7 +129,6 @@ export function SeasonsPage() {
               className="w-full pl-10 pr-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
             />
           </div>
-
           <div className="flex gap-2">
             <button
               onClick={() => setFilterStatus("Đang hoạt động")}
@@ -260,7 +167,6 @@ export function SeasonsPage() {
         <div className="px-6 py-4 border-b border-[#e2e8f0]">
           <h2 className="text-[#115e59] font-semibold">Danh sách mùa vụ</h2>
         </div>
-
         <table className="w-full">
           <thead className="bg-[#f8fafc] border-b border-[#e2e8f0]">
             <tr>
@@ -322,9 +228,7 @@ export function SeasonsPage() {
                 </td>
                 <td className="px-6 py-4">
                   <span
-                    className={`inline-block px-2.5 py-1 rounded text-xs font-medium ${
-                      statusConfig[season.status]
-                    }`}
+                    className={`inline-block px-2.5 py-1 rounded text-xs font-medium ${statusConfig[season.status]}`}
                   >
                     {season.status}
                   </span>
@@ -346,7 +250,7 @@ export function SeasonsPage() {
                       <Edit className="w-4 h-4" />
                     </Link>
                     <button
-                      onClick={() => handleDelete(season.id)}
+                      onClick={() => handleDelete(season)}
                       className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                       title="Xóa"
                     >
@@ -360,8 +264,13 @@ export function SeasonsPage() {
         </table>
 
         {filteredSeasons.length === 0 && (
-          <div className="text-center py-12 text-[#62748e]">
-            Không tìm thấy mùa vụ nào
+          <div className="flex flex-col items-center py-16 text-[#62748e] gap-3">
+            <Calendar className="w-12 h-12 text-[#cad5e2]" />
+            <p>
+              {searchQuery || filterStatus !== "all"
+                ? "Không tìm thấy mùa vụ phù hợp"
+                : "Chưa có mùa vụ nào"}
+            </p>
           </div>
         )}
 
@@ -377,11 +286,46 @@ export function SeasonsPage() {
           </div>
         </div>
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog.Root
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+      >
+        <AlertDialog.Portal>
+          <AlertDialog.Overlay className="fixed inset-0 bg-black/50 z-50 animate-in fade-in" />
+          <AlertDialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-md bg-white rounded-xl shadow-2xl p-6 animate-in fade-in zoom-in-95">
+            <AlertDialog.Title className="text-lg font-semibold text-slate-900 mb-2">
+              Xác nhận xóa mùa vụ
+            </AlertDialog.Title>
+            <AlertDialog.Description className="text-sm text-slate-600 mb-6">
+              Bạn có chắc chắn muốn xóa mùa vụ{" "}
+              <span className="font-semibold">{seasonToDelete?.name}</span>?
+              Hành động này không thể hoàn tác.
+            </AlertDialog.Description>
+            <div className="flex gap-3 justify-end">
+              <AlertDialog.Cancel asChild>
+                <button className="px-4 py-2 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-100 transition-colors">
+                  Hủy bỏ
+                </button>
+              </AlertDialog.Cancel>
+              <AlertDialog.Action asChild>
+                <button
+                  onClick={confirmDelete}
+                  className="px-4 py-2 rounded-lg text-sm font-medium bg-red-600 text-white hover:bg-red-700 transition-colors"
+                >
+                  Xóa mùa vụ
+                </button>
+              </AlertDialog.Action>
+            </div>
+          </AlertDialog.Content>
+        </AlertDialog.Portal>
+      </AlertDialog.Root>
     </div>
   );
 }
 
-// Create Season View (Multi-step)
+// ==================== CREATE VIEW ====================
 function CreateSeasonView({
   onCreate,
 }: {
@@ -417,20 +361,17 @@ function CreateSeasonView({
     { id: "B-2", name: "Luống B-2", area: "Khu B (Phía Nam)", size: "60 m²" },
   ];
 
-  const handleStep1Submit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setStep(2);
+  const defaultDetail = {
+    crop: "Bắp Cải Trắng" as CropType,
+    sowingDate: "",
+    harvestDate: "",
+    quantity: 0,
   };
 
   const handleStep2Submit = () => {
     const plots: PlotAssignment[] = selectedPlots.map((plotId) => {
       const plot = mockPlots.find((p) => p.id === plotId)!;
-      const details = plotDetails[plotId] || {
-        crop: "Cà Chua",
-        sowingDate: "",
-        harvestDate: "",
-        quantity: 0,
-      };
+      const details = plotDetails[plotId] || defaultDetail;
       return {
         plotId,
         plotName: plot.name,
@@ -442,11 +383,7 @@ function CreateSeasonView({
         status: "Đang hoạt động" as SeasonStatus,
       };
     });
-
-    onCreate({
-      ...formData,
-      plots,
-    });
+    onCreate({ ...formData, plots });
   };
 
   const togglePlot = (plotId: string) => {
@@ -459,51 +396,44 @@ function CreateSeasonView({
 
   const updatePlotDetail = (
     plotId: string,
-    field: keyof (typeof plotDetails)[string],
+    field: keyof typeof defaultDetail,
     value: any,
   ) => {
     setPlotDetails((prev) => ({
       ...prev,
-      [plotId]: {
-        ...(prev[plotId] || {
-          crop: "Cà Chua",
-          sowingDate: "",
-          harvestDate: "",
-          quantity: 0,
-        }),
-        [field]: value,
-      },
+      [plotId]: { ...(prev[plotId] || defaultDetail), [field]: value },
     }));
+  };
+
+  // Copy current plot's config to ALL selected plots
+  const applyToAll = (sourceId: string) => {
+    const source = plotDetails[sourceId] || defaultDetail;
+    const newDetails: typeof plotDetails = {};
+    selectedPlots.forEach((id) => {
+      newDetails[id] = { ...source };
+    });
+    setPlotDetails(newDetails);
   };
 
   return (
     <div className="flex flex-col gap-6 p-6">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-[#115e59] text-2xl font-semibold mb-2">
             Tạo Mùa Vụ Mới
           </h1>
           <div className="flex items-center gap-2">
-            <span
-              className={`px-3 py-1 rounded text-sm font-medium ${
-                step === 1
-                  ? "bg-[#009689] text-white"
-                  : "bg-[#f1f5f9] text-[#62748e]"
-              }`}
-            >
-              Bước 1: Thông tin
-            </span>
-            <span className="text-[#62748e]">›</span>
-            <span
-              className={`px-3 py-1 rounded text-sm font-medium ${
-                step === 2
-                  ? "bg-[#009689] text-white"
-                  : "bg-[#f1f5f9] text-[#62748e]"
-              }`}
-            >
-              Bước 2: Chọn luống
-            </span>
+            {[
+              { n: 1, label: "Bước 1: Thông tin" },
+              { n: 2, label: "Bước 2: Chọn luống" },
+            ].map((s) => (
+              <span
+                key={s.n}
+                className={`px-3 py-1 rounded text-sm font-medium ${step === s.n ? "bg-[#009689] text-white" : "bg-[#f1f5f9] text-[#62748e]"}`}
+              >
+                {s.label}
+              </span>
+            ))}
           </div>
         </div>
         <Link
@@ -516,13 +446,16 @@ function CreateSeasonView({
 
       {step === 1 && (
         <form
-          onSubmit={handleStep1Submit}
+          onSubmit={(e) => {
+            e.preventDefault();
+            setStep(2);
+          }}
           className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-6"
         >
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-[#115e59] mb-2">
-                Tên mùa vụ
+                Tên mùa vụ <span className="text-red-500">*</span>
               </label>
               <input
                 type="text"
@@ -535,10 +468,9 @@ function CreateSeasonView({
                 className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
               />
             </div>
-
             <div>
               <label className="block text-sm font-medium text-[#115e59] mb-2">
-                Nông trại / Khu vực
+                Nông trại / Khu vực <span className="text-red-500">*</span>
               </label>
               <select
                 required
@@ -549,18 +481,15 @@ function CreateSeasonView({
                 className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
               >
                 <option value="">Chọn Nông trại...</option>
-                <option value="Trang trại Thung lũng Xanh">
-                  Trang trại Thung lũng Xanh
-                </option>
-                <option value="Trang trại Nắng Hạ">Trang trại Nắng Hạ</option>
-                <option value="Trang trại Sông Nội">Trang trại Sông Nội</option>
+                <option>Trang trại Thung lũng Xanh</option>
+                <option>Trang trại Nắng Hạ</option>
+                <option>Trang trại Sông Nội</option>
               </select>
             </div>
-
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Ngày bắt đầu
+                  Ngày bắt đầu <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="date"
@@ -574,7 +503,7 @@ function CreateSeasonView({
               </div>
               <div>
                 <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Ngày kết thúc
+                  Ngày kết thúc <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="date"
@@ -587,7 +516,6 @@ function CreateSeasonView({
                 />
               </div>
             </div>
-
             <div>
               <label className="block text-sm font-medium text-[#115e59] mb-2">
                 Mô tả
@@ -602,7 +530,6 @@ function CreateSeasonView({
               />
             </div>
           </div>
-
           <div className="mt-6 flex justify-end">
             <button
               type="submit"
@@ -617,111 +544,48 @@ function CreateSeasonView({
       {step === 2 && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left: Plot Selection */}
-          <div className="lg:col-span-1 bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-[#115e59]">
-                Khu A<br />
-                <span className="text-sm font-normal text-[#62748e]">
-                  (Phía Bắc)
-                </span>
-              </h3>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={
-                    selectedPlots.includes("A-3") &&
-                    selectedPlots.includes("A-4")
-                  }
-                  onChange={(e) => {
-                    if (e.target.checked) {
-                      setSelectedPlots([...selectedPlots, "A-3", "A-4"]);
-                    } else {
-                      setSelectedPlots(
-                        selectedPlots.filter(
-                          (id) => id !== "A-3" && id !== "A-4",
-                        ),
-                      );
-                    }
-                  }}
-                  className="w-4 h-4 text-[#009689] focus:ring-[#009689] rounded"
-                />
-                <span className="text-sm text-[#62748e]">Chọn tất cả</span>
-              </label>
-            </div>
-
-            <div className="space-y-2">
-              {mockPlots
-                .filter((p) => p.area.includes("Khu A"))
-                .map((plot) => (
-                  <div
-                    key={plot.id}
-                    onClick={() => togglePlot(plot.id)}
-                    className={`p-3 rounded-lg border-2 cursor-pointer transition-colors ${
-                      selectedPlots.includes(plot.id)
-                        ? "border-[#009689] bg-[#f0fdfa]"
-                        : "border-[#e2e8f0] hover:border-[#009689]"
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <input
-                        type="checkbox"
-                        checked={selectedPlots.includes(plot.id)}
-                        onChange={() => {}}
-                        className="w-4 h-4 text-[#009689] focus:ring-[#009689] rounded"
-                      />
-                      <div className="flex-1">
-                        <div className="font-medium text-[#115e59]">
-                          {plot.name}
-                        </div>
-                        <div className="text-xs text-[#62748e]">
-                          {plot.size}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-            </div>
-
-            <div className="mt-6">
-              <h3 className="font-semibold text-[#115e59] mb-4">
-                Khu B<br />
-                <span className="text-sm font-normal text-[#62748e]">
-                  (Phía Nam)
-                </span>
-              </h3>
-              <div className="space-y-2">
-                {mockPlots
-                  .filter((p) => p.area.includes("Khu B"))
-                  .map((plot) => (
-                    <div
-                      key={plot.id}
-                      onClick={() => togglePlot(plot.id)}
-                      className={`p-3 rounded-lg border-2 cursor-pointer transition-colors ${
-                        selectedPlots.includes(plot.id)
-                          ? "border-[#009689] bg-[#f0fdfa]"
-                          : "border-[#e2e8f0] hover:border-[#009689]"
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <input
-                          type="checkbox"
-                          checked={selectedPlots.includes(plot.id)}
-                          onChange={() => {}}
-                          className="w-4 h-4 text-[#009689] focus:ring-[#009689] rounded"
-                        />
-                        <div className="flex-1">
-                          <div className="font-medium text-[#115e59]">
-                            {plot.name}
-                          </div>
-                          <div className="text-xs text-[#62748e]">
-                            {plot.size}
+          <div className="lg:col-span-1 bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-6 space-y-4">
+            {["Khu A (Phía Bắc)", "Khu B (Phía Nam)"].map((area) => (
+              <div key={area}>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-semibold text-[#115e59] text-sm">
+                    {area.split(" (")[0]}
+                    <br />
+                    <span className="font-normal text-[#62748e]">
+                      ({area.split("(")[1].replace(")", "")})
+                    </span>
+                  </h3>
+                </div>
+                <div className="space-y-2">
+                  {mockPlots
+                    .filter((p) => p.area === area)
+                    .map((plot) => (
+                      <div
+                        key={plot.id}
+                        onClick={() => togglePlot(plot.id)}
+                        className={`p-3 rounded-lg border-2 cursor-pointer transition-colors ${selectedPlots.includes(plot.id) ? "border-[#009689] bg-[#f0fdfa]" : "border-[#e2e8f0] hover:border-[#009689]"}`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <input
+                            type="checkbox"
+                            readOnly
+                            checked={selectedPlots.includes(plot.id)}
+                            className="w-4 h-4 text-[#009689] focus:ring-[#009689] rounded pointer-events-none"
+                          />
+                          <div className="flex-1">
+                            <div className="font-medium text-[#115e59] text-sm">
+                              {plot.name}
+                            </div>
+                            <div className="text-xs text-[#62748e]">
+                              {plot.size}
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                </div>
               </div>
-            </div>
+            ))}
           </div>
 
           {/* Right: Plot Details */}
@@ -743,13 +607,7 @@ function CreateSeasonView({
               <div className="space-y-6">
                 {selectedPlots.map((plotId) => {
                   const plot = mockPlots.find((p) => p.id === plotId)!;
-                  const details = plotDetails[plotId] || {
-                    crop: "Cà Chua",
-                    sowingDate: "",
-                    harvestDate: "",
-                    quantity: 0,
-                  };
-
+                  const details = plotDetails[plotId] || defaultDetail;
                   return (
                     <div
                       key={plotId}
@@ -763,13 +621,13 @@ function CreateSeasonView({
                           <p className="text-xs text-[#62748e]">{plot.size}</p>
                         </div>
                         <button
-                          onClick={() => togglePlot(plotId)}
-                          className="text-sm text-[#009689] hover:underline"
+                          type="button"
+                          onClick={() => applyToAll(plotId)}
+                          className="text-sm text-[#009689] hover:underline px-3 py-1 rounded-lg hover:bg-[#f0fdfa] transition-colors"
                         >
                           Áp dụng cho tất cả
                         </button>
                       </div>
-
                       <div className="grid grid-cols-4 gap-3">
                         <div>
                           <label className="block text-xs text-[#62748e] mb-1">
@@ -786,14 +644,14 @@ function CreateSeasonView({
                             }
                             className="w-full px-2 py-1.5 text-sm border border-[#cad5e2] rounded focus:outline-none focus:ring-2 focus:ring-[#009689]"
                           >
-                            <option value="Cà Chua">Cà Chua</option>
-                            <option value="Ngô">Ngô</option>
-                            <option value="Bắp Cải">Bắp Cải</option>
+                            <option value="Bắp Cải Trắng">Bắp Cải Trắng</option>
+                            <option value="Bắp Cải Tím">Bắp Cải Tím</option>
+                            <option value="Bắp Cải Xoăn">Bắp Cải Xoăn</option>
                           </select>
                         </div>
                         <div>
                           <label className="block text-xs text-[#62748e] mb-1">
-                            Sản lượng trồng
+                            Sản lượng (kg)
                           </label>
                           <input
                             type="number"
@@ -855,16 +713,14 @@ function CreateSeasonView({
                 onClick={() => setStep(1)}
                 className="px-6 py-2 bg-[#f1f5f9] text-[#314158] rounded-lg hover:bg-[#e2e8f0] transition-colors flex items-center gap-2"
               >
-                <ArrowLeft className="w-4 h-4" />
-                Quay lại
+                <ArrowLeft className="w-4 h-4" /> Quay lại
               </button>
               <button
                 onClick={handleStep2Submit}
                 disabled={selectedPlots.length === 0}
                 className="px-6 py-2 bg-[#009689] text-white rounded-lg hover:bg-[#007f75] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
               >
-                <CheckCircle className="w-4 h-4" />
-                Tạo mùa vụ
+                <CheckCircle className="w-4 h-4" /> Tạo mùa vụ
               </button>
             </div>
           </div>
@@ -874,14 +730,11 @@ function CreateSeasonView({
   );
 }
 
-// Detail Season View
+// ==================== DETAIL VIEW ====================
 function DetailSeasonView({ season }: { season: Season }) {
-  // Group plots by crop
   const plotsByCrop = season.plots.reduce(
     (acc, plot) => {
-      if (!acc[plot.crop]) {
-        acc[plot.crop] = [];
-      }
+      if (!acc[plot.crop]) acc[plot.crop] = [];
       acc[plot.crop].push(plot);
       return acc;
     },
@@ -890,7 +743,6 @@ function DetailSeasonView({ season }: { season: Season }) {
 
   return (
     <div className="flex flex-col gap-6 p-6">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <Link
@@ -907,23 +759,25 @@ function DetailSeasonView({ season }: { season: Season }) {
               <span className="text-sm text-[#62748e]">{season.code}</span>
               <span className="text-[#62748e]">•</span>
               <span
-                className={`px-2 py-0.5 rounded text-xs font-medium ${
-                  statusConfig[season.status]
-                }`}
+                className={`px-2 py-0.5 rounded text-xs font-medium ${statusConfig[season.status]}`}
               >
                 {season.status}
               </span>
             </div>
           </div>
         </div>
+        <Link
+          to={`/seasons?view=edit&id=${season.id}`}
+          className="flex items-center gap-2 px-4 py-2 bg-[#009689] text-white rounded-lg hover:bg-[#007f75] transition-colors"
+        >
+          <Edit className="w-4 h-4" /> Chỉnh sửa
+        </Link>
       </div>
 
-      {/* Info Card */}
       <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-6">
         <h3 className="text-sm font-bold text-[#62748e] uppercase mb-4">
           🌱 Thông tin chung
         </h3>
-
         <div className="grid grid-cols-3 gap-6">
           <div className="flex items-start gap-3">
             <div className="w-10 h-10 bg-[#dbeafe] rounded-lg flex items-center justify-center shrink-0">
@@ -934,7 +788,6 @@ function DetailSeasonView({ season }: { season: Season }) {
               <div className="font-medium text-[#115e59]">{season.farm}</div>
             </div>
           </div>
-
           <div className="flex items-start gap-3">
             <div className="w-10 h-10 bg-[#fef3c7] rounded-lg flex items-center justify-center shrink-0">
               <Calendar className="w-5 h-5 text-[#92400e]" />
@@ -942,11 +795,10 @@ function DetailSeasonView({ season }: { season: Season }) {
             <div>
               <div className="text-xs text-[#62748e] mb-1">THỜI GIAN</div>
               <div className="font-medium text-[#115e59]">
-                {season.startDate} - {season.endDate}
+                {season.startDate} – {season.endDate}
               </div>
             </div>
           </div>
-
           <div className="flex items-start gap-3">
             <div className="w-10 h-10 bg-[#dcfce7] rounded-lg flex items-center justify-center shrink-0">
               <Sprout className="w-5 h-5 text-[#008236]" />
@@ -954,68 +806,55 @@ function DetailSeasonView({ season }: { season: Season }) {
             <div>
               <div className="text-xs text-[#62748e] mb-1">MÔ TẢ</div>
               <div className="font-medium text-[#115e59]">
-                {season.description || "Vụ mùa chính trồng cà chua và ngô."}
+                {season.description || "Vụ mùa chính trồng bắp cải."}
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Plots Detail */}
       <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-6">
         <h3 className="text-sm font-bold text-[#62748e] uppercase mb-4">
           Thông tin chi tiết
         </h3>
-
         {Object.entries(plotsByCrop).map(([crop, plots]) => {
-          const totalArea = plots.reduce(
-            (sum, p) => sum + parseInt(p.area.match(/\d+/)?.[0] || "0"),
-            0,
-          );
           const totalQuantity = plots.reduce((sum, p) => sum + p.quantity, 0);
-
+          const emoji = cropEmoji[crop] ?? "🥬";
           return (
             <Collapsible.Root key={crop} defaultOpen className="mb-4">
               <div className="flex items-center justify-between p-4 bg-[#f8fafc] rounded-lg">
                 <Collapsible.Trigger className="flex-1 flex items-center gap-3 text-left">
                   <ChevronDown className="w-4 h-4 text-[#62748e]" />
-                  <span className="text-lg">
-                    {crop === "Cà Chua" ? "🍅" : "🌽"}
-                  </span>
+                  <span className="text-lg">{emoji}</span>
                   <div className="flex-1">
                     <div className="font-medium text-[#115e59]">
                       {crop} ({plots.length} luống)
                     </div>
                     <div className="text-sm text-[#62748e]">
-                      Tổng diện tích: {totalArea} m² • Sản lượng trồng:{" "}
-                      {totalQuantity} kg
+                      Sản lượng trồng: {totalQuantity} kg
                     </div>
                   </div>
                 </Collapsible.Trigger>
               </div>
-
               <Collapsible.Content className="mt-2">
                 <table className="w-full">
                   <thead className="bg-[#f8fafc]">
                     <tr>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-[#62748e] uppercase">
-                        Luống
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-[#62748e] uppercase">
-                        Khu đất
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-[#62748e] uppercase">
-                        Ngày gieo
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-[#62748e] uppercase">
-                        Ngày thu hoạch (dự kiến)
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-[#62748e] uppercase">
-                        Trạng thái
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-[#62748e] uppercase">
-                        Thực tế
-                      </th>
+                      {[
+                        "Luống",
+                        "Khu đất",
+                        "Ngày gieo",
+                        "Ngày thu hoạch (dự kiến)",
+                        "Trạng thái",
+                        "Sản lượng",
+                      ].map((h) => (
+                        <th
+                          key={h}
+                          className="px-4 py-3 text-left text-xs font-medium text-[#62748e] uppercase"
+                        >
+                          {h}
+                        </th>
+                      ))}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#e2e8f0]">
@@ -1035,14 +874,14 @@ function DetailSeasonView({ season }: { season: Season }) {
                         </td>
                         <td className="px-4 py-3">
                           <span
-                            className={`inline-block px-2 py-1 rounded text-xs font-medium ${
-                              statusConfig[plot.status]
-                            }`}
+                            className={`inline-block px-2 py-1 rounded text-xs font-medium ${statusConfig[plot.status]}`}
                           >
                             {plot.status}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-sm text-[#62748e]">-</td>
+                        <td className="px-4 py-3 text-sm text-[#62748e]">
+                          {plot.quantity} kg
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -1051,7 +890,6 @@ function DetailSeasonView({ season }: { season: Season }) {
             </Collapsible.Root>
           );
         })}
-
         {season.plots.length === 0 && (
           <div className="text-center py-8 text-[#62748e]">
             Chưa có luống nào được gán cho mùa vụ này
@@ -1062,7 +900,7 @@ function DetailSeasonView({ season }: { season: Season }) {
   );
 }
 
-// Edit Season View
+// ==================== EDIT VIEW ====================
 function EditSeasonView({
   season,
   onUpdate,
@@ -1078,16 +916,13 @@ function EditSeasonView({
     status: season.status,
     description: season.description,
   });
-
   const [plots, setPlots] = useState<PlotAssignment[]>(season.plots);
+  const [deletePlotDialogOpen, setDeletePlotDialogOpen] = useState(false);
+  const [plotToDelete, setPlotToDelete] = useState<string | null>(null);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onUpdate({
-      ...season,
-      ...formData,
-      plots,
-    });
+    onUpdate({ ...season, ...formData, plots });
   };
 
   const updatePlot = (
@@ -1103,14 +938,20 @@ function EditSeasonView({
   };
 
   const removePlot = (plotId: string) => {
-    if (confirm("Bạn có chắc chắn muốn xóa luống này?")) {
-      setPlots((prev) => prev.filter((plot) => plot.plotId !== plotId));
+    setPlotToDelete(plotId);
+    setDeletePlotDialogOpen(true);
+  };
+
+  const confirmRemovePlot = () => {
+    if (plotToDelete) {
+      setPlots((prev) => prev.filter((plot) => plot.plotId !== plotToDelete));
+      setPlotToDelete(null);
+      setDeletePlotDialogOpen(false);
     }
   };
 
   return (
     <div className="flex flex-col gap-6 p-6">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <Link
@@ -1143,12 +984,10 @@ function EditSeasonView({
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left: Basic Info */}
         <div className="lg:col-span-1 bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-6">
           <h3 className="text-sm font-bold text-[#62748e] uppercase mb-4">
             📝 Thông tin chung
           </h3>
-
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-[#115e59] mb-2">
@@ -1163,7 +1002,6 @@ function EditSeasonView({
                 className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
               />
             </div>
-
             <div>
               <label className="block text-sm font-medium text-[#115e59] mb-2">
                 Nông trại
@@ -1175,13 +1013,10 @@ function EditSeasonView({
                 }
                 className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
               >
-                <option value="Trang trại Thung lũng Xanh">
-                  Trang trại Thung lũng Xanh
-                </option>
-                <option value="Trang trại Nắng Hạ">Trang trại Nắng Hạ</option>
+                <option>Trang trại Thung lũng Xanh</option>
+                <option>Trang trại Nắng Hạ</option>
               </select>
             </div>
-
             <div>
               <label className="block text-sm font-medium text-[#115e59] mb-2">
                 Ngày bắt đầu
@@ -1195,7 +1030,6 @@ function EditSeasonView({
                 className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
               />
             </div>
-
             <div>
               <label className="block text-sm font-medium text-[#115e59] mb-2">
                 Ngày kết thúc
@@ -1209,7 +1043,6 @@ function EditSeasonView({
                 className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
               />
             </div>
-
             <div>
               <label className="block text-sm font-medium text-[#115e59] mb-2">
                 Trạng thái
@@ -1225,11 +1058,10 @@ function EditSeasonView({
                 className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
               >
                 <option value="Đang hoạt động">Đang hoạt động</option>
-                <option value="Đã kết thúc">Đã kết thúc</option>
                 <option value="Sắp diễn ra">Sắp diễn ra</option>
+                <option value="Đã kết thúc">Đã kết thúc</option>
               </select>
             </div>
-
             <div>
               <label className="block text-sm font-medium text-[#115e59] mb-2">
                 Mô tả
@@ -1246,21 +1078,13 @@ function EditSeasonView({
           </div>
         </div>
 
-        {/* Right: Plots List */}
         <div className="lg:col-span-2 bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-bold text-[#62748e] uppercase">
-              Danh sách luống ({plots.length})
-            </h3>
-            <button className="text-[#009689] text-sm hover:underline font-medium flex items-center gap-1">
-              <Plus className="w-4 h-4" />
-              Thêm luống
-            </button>
-          </div>
-
+          <h3 className="text-sm font-bold text-[#62748e] uppercase mb-4">
+            🌾 Danh sách luống ({plots.length})
+          </h3>
           {plots.length === 0 ? (
             <div className="text-center py-12 text-[#62748e]">
-              Chưa có luống nào
+              Chưa có luống nào được gán
             </div>
           ) : (
             <div className="space-y-4">
@@ -1272,18 +1096,18 @@ function EditSeasonView({
                   <div className="flex items-center justify-between mb-3">
                     <div>
                       <h4 className="font-medium text-[#115e59]">
-                        {plot.plotName} / Khu
+                        {plot.plotName}
                       </h4>
                       <p className="text-xs text-[#62748e]">{plot.area}</p>
                     </div>
                     <button
+                      type="button"
                       onClick={() => removePlot(plot.plotId)}
-                      className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                      className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
-
                   <div className="grid grid-cols-4 gap-3">
                     <div>
                       <label className="block text-xs text-[#62748e] mb-1">
@@ -1292,18 +1116,22 @@ function EditSeasonView({
                       <select
                         value={plot.crop}
                         onChange={(e) =>
-                          updatePlot(plot.plotId, "crop", e.target.value)
+                          updatePlot(
+                            plot.plotId,
+                            "crop",
+                            e.target.value as CropType,
+                          )
                         }
                         className="w-full px-2 py-1.5 text-sm border border-[#cad5e2] rounded focus:outline-none focus:ring-2 focus:ring-[#009689]"
                       >
-                        <option value="Cà Chua">Cà Chua</option>
-                        <option value="Ngô">Ngô</option>
-                        <option value="Bắp Cải">Bắp Cải</option>
+                        <option value="Bắp Cải Trắng">Bắp Cải Trắng</option>
+                        <option value="Bắp Cải Tím">Bắp Cải Tím</option>
+                        <option value="Bắp Cải Xoăn">Bắp Cải Xoăn</option>
                       </select>
                     </div>
                     <div>
                       <label className="block text-xs text-[#62748e] mb-1">
-                        SL Trồng
+                        Sản lượng (kg)
                       </label>
                       <input
                         type="number"
@@ -1312,7 +1140,7 @@ function EditSeasonView({
                           updatePlot(
                             plot.plotId,
                             "quantity",
-                            parseInt(e.target.value),
+                            parseInt(e.target.value) || 0,
                           )
                         }
                         className="w-full px-2 py-1.5 text-sm border border-[#cad5e2] rounded focus:outline-none focus:ring-2 focus:ring-[#009689]"
@@ -1323,7 +1151,7 @@ function EditSeasonView({
                         Ngày gieo
                       </label>
                       <input
-                        type="date"
+                        type="text"
                         value={plot.sowingDate}
                         onChange={(e) =>
                           updatePlot(plot.plotId, "sowingDate", e.target.value)
@@ -1333,10 +1161,10 @@ function EditSeasonView({
                     </div>
                     <div>
                       <label className="block text-xs text-[#62748e] mb-1">
-                        Thu hoạch (Dự kiến)
+                        Thu hoạch
                       </label>
                       <input
-                        type="date"
+                        type="text"
                         value={plot.harvestDate}
                         onChange={(e) =>
                           updatePlot(plot.plotId, "harvestDate", e.target.value)
@@ -1351,6 +1179,39 @@ function EditSeasonView({
           )}
         </div>
       </div>
+
+      <AlertDialog.Root
+        open={deletePlotDialogOpen}
+        onOpenChange={setDeletePlotDialogOpen}
+      >
+        <AlertDialog.Portal>
+          <AlertDialog.Overlay className="fixed inset-0 bg-black/50 z-50 animate-in fade-in" />
+          <AlertDialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-md bg-white rounded-xl shadow-2xl p-6 animate-in fade-in zoom-in-95">
+            <AlertDialog.Title className="text-lg font-semibold text-slate-900 mb-2">
+              Xác nhận xóa luống
+            </AlertDialog.Title>
+            <AlertDialog.Description className="text-sm text-slate-600 mb-6">
+              Bạn có chắc chắn muốn xóa luống này khỏi mùa vụ? Hành động này
+              không thể hoàn tác.
+            </AlertDialog.Description>
+            <div className="flex gap-3 justify-end">
+              <AlertDialog.Cancel asChild>
+                <button className="px-4 py-2 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-100 transition-colors">
+                  Hủy bỏ
+                </button>
+              </AlertDialog.Cancel>
+              <AlertDialog.Action asChild>
+                <button
+                  onClick={confirmRemovePlot}
+                  className="px-4 py-2 rounded-lg text-sm font-medium bg-red-600 text-white hover:bg-red-700 transition-colors"
+                >
+                  Xóa luống
+                </button>
+              </AlertDialog.Action>
+            </div>
+          </AlertDialog.Content>
+        </AlertDialog.Portal>
+      </AlertDialog.Root>
     </div>
   );
 }

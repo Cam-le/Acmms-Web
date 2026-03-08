@@ -1,5 +1,14 @@
 import { useState, useEffect } from "react";
-import { Search, Plus, Eye, Edit, Trash2, X, Loader2 } from "lucide-react";
+import {
+  Search,
+  Plus,
+  Eye,
+  Edit,
+  Trash2,
+  X,
+  Loader2,
+  Users,
+} from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import { Worker } from "../../data/mockData";
@@ -283,61 +292,84 @@ export function WorkersPage() {
               </tr>
             </thead>
             <tbody>
-              {filteredWorkers.map((worker) => (
-                <tr
-                  key={worker.id}
-                  className="border-b border-[#e2e8f0] hover:bg-[#f8fafc] transition-colors"
-                >
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-[#009689] rounded-full flex items-center justify-center text-white font-bold text-sm">
-                        {getInitials(worker.name)}
-                      </div>
-                      <span className="font-bold text-[#0f766e]">
-                        {worker.name}
-                      </span>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 text-[#45556c]">{worker.email}</td>
-                  <td className="px-6 py-4 text-[#45556c]">{worker.phone}</td>
-                  <td className="px-6 py-4 text-[#45556c]">{worker.role}</td>
-                  <td className="px-6 py-4">
-                    <span
-                      className={`inline-block px-3 py-1 rounded text-sm ${
-                        worker.status === "active"
-                          ? "bg-[#dcfce7] text-[#008236]"
-                          : "bg-[#f1f5f9] text-[#64748b]"
-                      }`}
-                    >
-                      {worker.status === "active"
-                        ? "Hoạt động"
-                        : "Không hoạt động"}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex items-center justify-center gap-2">
-                      <button
-                        onClick={() => openViewModal(worker)}
-                        className="p-2 text-[#009689] hover:bg-[#dcfce7] rounded-[10px] transition-colors"
-                      >
-                        <Eye className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => openEditModal(worker)}
-                        className="p-2 text-[#009689] hover:bg-[#dcfce7] rounded-[10px] transition-colors"
-                      >
-                        <Edit className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => openDeleteDialog(worker)}
-                        className="p-2 text-red-600 hover:bg-red-50 rounded-[10px] transition-colors"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+              {filteredWorkers.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-6 py-16 text-center">
+                    <div className="flex flex-col items-center gap-3">
+                      <Users className="w-12 h-12 text-[#cad5e2]" />
+                      <p className="text-[#62748e]">
+                        {searchTerm || filterStatus !== "all"
+                          ? "Không tìm thấy nhân viên phù hợp"
+                          : "Chưa có nhân viên nào"}
+                      </p>
+                      {!searchTerm && filterStatus === "all" && (
+                        <button
+                          onClick={() => setIsAddModalOpen(true)}
+                          className="text-[#009689] hover:underline text-sm font-medium"
+                        >
+                          + Thêm nhân viên đầu tiên
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
-              ))}
+              ) : (
+                filteredWorkers.map((worker) => (
+                  <tr
+                    key={worker.id}
+                    className="border-b border-[#e2e8f0] hover:bg-[#f8fafc] transition-colors"
+                  >
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-[#009689] rounded-full flex items-center justify-center text-white font-bold text-sm">
+                          {getInitials(worker.name)}
+                        </div>
+                        <span className="font-bold text-[#0f766e]">
+                          {worker.name}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-[#45556c]">{worker.email}</td>
+                    <td className="px-6 py-4 text-[#45556c]">{worker.phone}</td>
+                    <td className="px-6 py-4 text-[#45556c]">{worker.role}</td>
+                    <td className="px-6 py-4">
+                      <span
+                        className={`inline-block px-3 py-1 rounded text-sm ${
+                          worker.status === "active"
+                            ? "bg-[#dcfce7] text-[#008236]"
+                            : "bg-[#f1f5f9] text-[#64748b]"
+                        }`}
+                      >
+                        {worker.status === "active"
+                          ? "Hoạt động"
+                          : "Không hoạt động"}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center justify-center gap-2">
+                        <button
+                          onClick={() => openViewModal(worker)}
+                          className="p-2 text-[#009689] hover:bg-[#dcfce7] rounded-[10px] transition-colors"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => openEditModal(worker)}
+                          className="p-2 text-[#009689] hover:bg-[#dcfce7] rounded-[10px] transition-colors"
+                        >
+                          <Edit className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => openDeleteDialog(worker)}
+                          className="p-2 text-red-600 hover:bg-red-50 rounded-[10px] transition-colors"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

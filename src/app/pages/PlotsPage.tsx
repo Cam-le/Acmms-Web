@@ -14,113 +14,15 @@ import {
   MapPin,
 } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
+import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import * as Collapsible from "@radix-ui/react-collapsible";
-
-// Types
-type LandStatus = "Active" | "Đang hoạt động" | "Không hoạt động";
-type PlotStatus = "Đang sử dụng" | "Khả dụng" | "Không khả dụng";
-
-interface Plot {
-  id: string;
-  name: string;
-  area: number;
-  crop?: string;
-  season?: string;
-  status: PlotStatus;
-  plantedDate?: string;
-  actualCrops?: number;
-}
-
-interface LandArea {
-  id: string;
-  name: string;
-  farm: string;
-  totalArea: number;
-  usedArea: number;
-  remainingArea: number;
-  landType: string;
-  status: LandStatus;
-  plots: Plot[];
-  description?: string;
-  createdDate: string;
-}
-
-// Mock data
-const mockLands: LandArea[] = [
-  {
-    id: "1",
-    name: "Khu đất phía Bắc",
-    farm: "Nông trại xanh",
-    totalArea: 5000,
-    usedArea: 3500,
-    remainingArea: 1500,
-    landType: "Đất Thịt",
-    status: "Active",
-    createdDate: "12/01/2023",
-    plots: [
-      {
-        id: "A1",
-        name: "Luống A1",
-        area: 50,
-        crop: "Cà Chua",
-        season: "Mùa Xuân 2026",
-        status: "Đang sử dụng",
-        plantedDate: "15/01/2026",
-        actualCrops: 7,
-      },
-      {
-        id: "A2",
-        name: "Luống A2",
-        area: 50,
-        crop: "Cà Chua",
-        season: "Mùa Xuân 2026",
-        status: "Đang sử dụng",
-        plantedDate: "15/01/2026",
-        actualCrops: 7,
-      },
-      {
-        id: "A3",
-        name: "Luống A3",
-        area: 50,
-        crop: "Cà chua đen",
-        season: "Mùa Xuân 2026",
-        status: "Đang sử dụng",
-        plantedDate: "15/01/2026",
-        actualCrops: 7,
-      },
-    ],
-    description: "Không có mô tả thêm.",
-  },
-  {
-    id: "2",
-    name: "Khu đất phía Nam",
-    farm: "Nông trại xanh",
-    totalArea: 3500,
-    usedArea: 0,
-    remainingArea: 3500,
-    landType: "Đất pha sét",
-    status: "Active",
-    createdDate: "12/01/2023",
-    plots: [
-      {
-        id: "B1",
-        name: "Luống B1",
-        area: 70,
-        crop: "Cà chua bi",
-        season: "Mùa Xuân 2025",
-        status: "Đang sử dụng",
-        plantedDate: "20/01/2025",
-        actualCrops: 7,
-      },
-      {
-        id: "B2",
-        name: "Luống B2",
-        area: 70,
-        status: "Khả dụng",
-      },
-    ],
-  },
-];
+import {
+  LandArea,
+  LandStatus,
+  PlotStatus,
+  LandPlot as Plot,
+  mockLands,
+} from "../../data/mockData";
 
 const plotStatusConfig = {
   "Đang sử dụng": "bg-[#dbeafe] text-[#1e40af]",
@@ -146,6 +48,15 @@ export function PlotsPage() {
 
   const [selectedLand, setSelectedLand] = useState<LandArea | null>(null);
   const [selectedPlot, setSelectedPlot] = useState<Plot | null>(null);
+
+  // Delete dialog states
+  const [deleteLandDialogOpen, setDeleteLandDialogOpen] = useState(false);
+  const [deletePlotDialogOpen, setDeletePlotDialogOpen] = useState(false);
+  const [landToDeleteId, setLandToDeleteId] = useState<string | null>(null);
+  const [plotToDeleteRef, setPlotToDeleteRef] = useState<{
+    landId: string;
+    plotId: string;
+  } | null>(null);
 
   const toggleLand = (landId: string) => {
     setOpenLandIds((prev) =>
@@ -174,8 +85,15 @@ export function PlotsPage() {
   };
 
   const handleDeleteLand = (landId: string) => {
-    if (confirm("Bạn có chắc chắn muốn xóa khu đất này?")) {
-      setLands(lands.filter((l) => l.id !== landId));
+    setLandToDeleteId(landId);
+    setDeleteLandDialogOpen(true);
+  };
+
+  const confirmDeleteLand = () => {
+    if (landToDeleteId) {
+      setLands(lands.filter((l) => l.id !== landToDeleteId));
+      setLandToDeleteId(null);
+      setDeleteLandDialogOpen(false);
     }
   };
 
@@ -255,10 +173,15 @@ export function PlotsPage() {
   };
 
   const handleDeletePlot = (landId: string, plotId: string) => {
-    if (confirm("Bạn có chắc chắn muốn xóa luống này?")) {
+    setPlotToDeleteRef({ landId, plotId });
+    setDeletePlotDialogOpen(true);
+  };
+
+  const confirmDeletePlot = () => {
+    if (plotToDeleteRef) {
+      const { landId, plotId } = plotToDeleteRef;
       const land = lands.find((l) => l.id === landId);
       const plot = land?.plots.find((p) => p.id === plotId);
-
       if (land && plot) {
         setLands(
           lands.map((l) =>
@@ -273,6 +196,8 @@ export function PlotsPage() {
           ),
         );
       }
+      setPlotToDeleteRef(null);
+      setDeletePlotDialogOpen(false);
     }
   };
 
@@ -351,8 +276,14 @@ export function PlotsPage() {
                   </div>
 
                   <div className="flex items-center gap-2">
-                    <span className="px-3 py-1 bg-[#dcfce7] text-[#008236] rounded text-sm font-medium">
-                      Hoạt động
+                    <span
+                      className={`px-3 py-1 rounded text-sm font-medium ${
+                        land.status === "Hoạt động"
+                          ? "bg-[#dcfce7] text-[#008236]"
+                          : "bg-[#fee2e2] text-[#991b1b]"
+                      }`}
+                    >
+                      {land.status}
                     </span>
                     <button
                       onClick={() => {
@@ -589,6 +520,74 @@ export function PlotsPage() {
           />
         </>
       )}
+
+      {/* Delete Land Confirmation Dialog */}
+      <AlertDialog.Root
+        open={deleteLandDialogOpen}
+        onOpenChange={setDeleteLandDialogOpen}
+      >
+        <AlertDialog.Portal>
+          <AlertDialog.Overlay className="fixed inset-0 bg-black/50 z-50 animate-in fade-in" />
+          <AlertDialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-md bg-white rounded-xl shadow-2xl p-6 animate-in fade-in zoom-in-95">
+            <AlertDialog.Title className="text-lg font-semibold text-slate-900 mb-2">
+              Xác nhận xóa khu đất
+            </AlertDialog.Title>
+            <AlertDialog.Description className="text-sm text-slate-600 mb-6">
+              Bạn có chắc chắn muốn xóa khu đất này? Tất cả các luống bên trong
+              cũng sẽ bị xóa và không thể hoàn tác.
+            </AlertDialog.Description>
+            <div className="flex gap-3 justify-end">
+              <AlertDialog.Cancel asChild>
+                <button className="px-4 py-2 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-100 transition-colors">
+                  Hủy bỏ
+                </button>
+              </AlertDialog.Cancel>
+              <AlertDialog.Action asChild>
+                <button
+                  onClick={confirmDeleteLand}
+                  className="px-4 py-2 rounded-lg text-sm font-medium bg-red-600 text-white hover:bg-red-700 transition-colors"
+                >
+                  Xóa khu đất
+                </button>
+              </AlertDialog.Action>
+            </div>
+          </AlertDialog.Content>
+        </AlertDialog.Portal>
+      </AlertDialog.Root>
+
+      {/* Delete Plot Confirmation Dialog */}
+      <AlertDialog.Root
+        open={deletePlotDialogOpen}
+        onOpenChange={setDeletePlotDialogOpen}
+      >
+        <AlertDialog.Portal>
+          <AlertDialog.Overlay className="fixed inset-0 bg-black/50 z-50 animate-in fade-in" />
+          <AlertDialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-md bg-white rounded-xl shadow-2xl p-6 animate-in fade-in zoom-in-95">
+            <AlertDialog.Title className="text-lg font-semibold text-slate-900 mb-2">
+              Xác nhận xóa luống
+            </AlertDialog.Title>
+            <AlertDialog.Description className="text-sm text-slate-600 mb-6">
+              Bạn có chắc chắn muốn xóa luống này? Hành động này không thể hoàn
+              tác.
+            </AlertDialog.Description>
+            <div className="flex gap-3 justify-end">
+              <AlertDialog.Cancel asChild>
+                <button className="px-4 py-2 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-100 transition-colors">
+                  Hủy bỏ
+                </button>
+              </AlertDialog.Cancel>
+              <AlertDialog.Action asChild>
+                <button
+                  onClick={confirmDeletePlot}
+                  className="px-4 py-2 rounded-lg text-sm font-medium bg-red-600 text-white hover:bg-red-700 transition-colors"
+                >
+                  Xóa luống
+                </button>
+              </AlertDialog.Action>
+            </div>
+          </AlertDialog.Content>
+        </AlertDialog.Portal>
+      </AlertDialog.Root>
     </div>
   );
 }
@@ -603,30 +602,33 @@ function CreateLandModal({
   onClose: () => void;
   onCreate: (data: Omit<LandArea, "id" | "createdDate" | "plots">) => void;
 }) {
-  const [formData, setFormData] = useState({
+  const defaultForm = {
     name: "",
-    farm: "Nông trại xanh",
-    totalArea: 10000,
-    usedArea: 8500,
-    remainingArea: 1500,
+    farm: "Trang trại Thung Lũng Xanh",
+    totalArea: 0,
+    usedArea: 0,
+    remainingArea: 0,
     landType: "",
-    status: "Active" as LandStatus,
+    status: "Hoạt động" as LandStatus,
     description: "",
-  });
+  };
+  const [formData, setFormData] = useState(defaultForm);
+
+  const handleTotalAreaChange = (val: number) => {
+    setFormData({
+      ...formData,
+      totalArea: val,
+      remainingArea: val - formData.usedArea,
+    });
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onCreate(formData);
-    setFormData({
-      name: "",
-      farm: "Nông trại xanh",
-      totalArea: 10000,
-      usedArea: 8500,
-      remainingArea: 1500,
-      landType: "",
-      status: "Active",
-      description: "",
+    onCreate({
+      ...formData,
+      remainingArea: formData.totalArea - formData.usedArea,
     });
+    setFormData(defaultForm);
   };
 
   return (
@@ -680,38 +682,19 @@ function CreateLandModal({
               </div>
             </div>
 
-            <div className="bg-[#f8fafc] p-4 rounded-lg">
-              <div className="text-sm text-[#62748e] mb-2">
-                Tổng diện tích:{" "}
-                <span className="font-medium">
-                  {formData.totalArea.toLocaleString()} m²
-                </span>
-              </div>
-              <div className="text-sm text-[#62748e] mb-2">
-                Đã sử dụng:{" "}
-                <span className="font-medium">
-                  {formData.usedArea.toLocaleString()} m²
-                </span>
-              </div>
-              <div className="text-sm text-[#009689] font-medium">
-                Còn lại: {formData.remainingArea.toLocaleString()} m²
-              </div>
-            </div>
-
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Diện Tích (m²)
+                  Tổng Diện Tích (m²) <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="number"
                   required
-                  value={formData.totalArea}
+                  min={1}
+                  placeholder="10000"
+                  value={formData.totalArea || ""}
                   onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      totalArea: parseInt(e.target.value) || 0,
-                    })
+                    handleTotalAreaChange(parseInt(e.target.value) || 0)
                   }
                   className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
                 />
@@ -751,7 +734,7 @@ function CreateLandModal({
                 }
                 className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
               >
-                <option value="Active">Active (Đang hoạt động)</option>
+                <option value="Hoạt động">Hoạt động</option>
                 <option value="Không hoạt động">Không hoạt động</option>
               </select>
             </div>
@@ -824,8 +807,10 @@ function ViewLandModal({
               <h3 className="text-lg font-semibold text-[#115e59]">
                 {land.name}
               </h3>
-              <span className="px-3 py-1 bg-[#dcfce7] text-[#008236] rounded text-sm font-medium">
-                Active
+              <span
+                className={`px-3 py-1 rounded text-sm font-medium ${land.status === "Hoạt động" ? "bg-[#dcfce7] text-[#008236]" : "bg-[#fee2e2] text-[#991b1b]"}`}
+              >
+                {land.status}
               </span>
             </div>
 
@@ -889,7 +874,7 @@ function ViewLandModal({
   );
 }
 
-// Edit Land Modal (similar structure to Create)
+// Edit Land Modal
 function EditLandModal({
   open,
   onClose,
@@ -995,7 +980,7 @@ function EditLandModal({
                 }
                 className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
               >
-                <option value="Đang Hoạt Động">Đang Hoạt Động</option>
+                <option value="Hoạt động">Hoạt động</option>
                 <option value="Không hoạt động">Không hoạt động</option>
               </select>
             </div>
@@ -1133,7 +1118,9 @@ function CreatePlotModal({
                 <option value="">-- Trống --</option>
                 <option value="Cà Chua">Cà Chua</option>
                 <option value="Ngô">Ngô</option>
-                <option value="Bắp Cải">Bắp Cải</option>
+                <option value="Bắp Cải Trắng">Bắp Cải Trắng</option>
+                <option value="Bắp Cải Tím">Bắp Cải Tím</option>
+                <option value="Bắp Cải Xoăn">Bắp Cải Xoăn</option>
               </select>
             </div>
 
@@ -1247,7 +1234,9 @@ function AutoPlotModal({
                 <option value="">-- Trống --</option>
                 <option value="Cà Chua">Cà Chua</option>
                 <option value="Ngô">Ngô</option>
-                <option value="Bắp Cải">Bắp Cải</option>
+                <option value="Bắp Cải Trắng">Bắp Cải Trắng</option>
+                <option value="Bắp Cải Tím">Bắp Cải Tím</option>
+                <option value="Bắp Cải Xoăn">Bắp Cải Xoăn</option>
               </select>
             </div>
 

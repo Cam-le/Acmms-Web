@@ -11,102 +11,18 @@ import {
   Globe,
 } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
+import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import * as Collapsible from "@radix-ui/react-collapsible";
-
-// Types
-type FarmStatus = "Hoạt động" | "Không hoạt động";
-type SoilType = "Đất thịt" | "Đất cát" | "Đất pha cát" | "Đất sét";
-
-interface Plot {
-  id: string;
-  name: string;
-  area: number;
-  soilType: SoilType;
-  plotCount: number;
-  status: FarmStatus;
-}
-
-interface Farm {
-  id: string;
-  name: string;
-  location: string;
-  status: FarmStatus;
-  area: number;
-  description: string;
-  image: string;
-  createdAt: string;
-  plots: Plot[];
-}
+import {
+  Farm,
+  FarmStatus,
+  FarmSoilType as SoilType,
+  FarmPlot as Plot,
+  farmSoilTypes as soilTypes,
+  mockFarms,
+} from "../../data/mockData";
 
 // Mock data
-const mockFarms: Farm[] = [
-  {
-    id: "1",
-    name: "Trang trại Thung lũng Xanh",
-    location: "Quận Sonoma, CA",
-    status: "Hoạt động",
-    area: 8500,
-    description:
-      "Trang trại chuyên canh các loại Lúa theo tiêu chuẩn hữu cơ. Hệ thống tưới tiêu tự động và giảm sát môi trường 24/7.",
-    image:
-      "https://images.unsplash.com/photo-1500382017468-9049fed747ef?w=400&h=300&fit=crop",
-    createdAt: "10/6/2023",
-    plots: [
-      {
-        id: "1",
-        name: "Cánh đồng phía Bắc",
-        area: 5000,
-        soilType: "Đất thịt",
-        plotCount: 12,
-        status: "Hoạt động",
-      },
-      {
-        id: "2",
-        name: "Cánh đồng phía Nam",
-        area: 3500,
-        soilType: "Đất cát",
-        plotCount: 8,
-        status: "Hoạt động",
-      },
-    ],
-  },
-  {
-    id: "2",
-    name: "Trang trại Nắng Hạ",
-    location: "Quận Sonoma, CA",
-    status: "Hoạt động",
-    area: 6000,
-    description: "Trang trại trồng rau hữu cơ với hệ thống nhà kính hiện đại.",
-    image:
-      "https://images.unsplash.com/photo-1625246333195-78d9c38ad449?w=400&h=300&fit=crop",
-    createdAt: "8/15/2023",
-    plots: [
-      {
-        id: "3",
-        name: "Khu đất phía Đông",
-        area: 4000,
-        soilType: "Đất pha cát",
-        plotCount: 10,
-        status: "Hoạt động",
-      },
-    ],
-  },
-  {
-    id: "3",
-    name: "Trang trại Sông Nội",
-    location: "Quận Sonoma, CA",
-    status: "Không hoạt động",
-    area: 5000,
-    description: "Trang trại đang trong giai đoạn tái cấu trúc.",
-    image:
-      "https://images.unsplash.com/photo-1574943320219-553eb213f72d?w=400&h=300&fit=crop",
-    createdAt: "5/20/2023",
-    plots: [],
-  },
-];
-
-const soilTypes: SoilType[] = ["Đất thịt", "Đất cát", "Đất pha cát", "Đất sét"];
-
 const getStatusBadgeColor = (status: FarmStatus) => {
   return status === "Hoạt động"
     ? "bg-[#dcfce7] text-[#008236]"
@@ -119,7 +35,9 @@ export function FarmPage() {
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [addPlotModalOpen, setAddPlotModalOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedFarm, setSelectedFarm] = useState<Farm | null>(null);
+  const [farmToDelete, setFarmToDelete] = useState<Farm | null>(null);
 
   // View farm
   const handleView = (farm: Farm) => {
@@ -134,9 +52,16 @@ export function FarmPage() {
   };
 
   // Delete farm
-  const handleDelete = (id: string) => {
-    if (confirm("Bạn có chắc chắn muốn xóa trang trại này?")) {
-      setFarms(farms.filter((f) => f.id !== id));
+  const handleDelete = (farm: Farm) => {
+    setFarmToDelete(farm);
+    setDeleteDialogOpen(true);
+  };
+
+  const confirmDelete = () => {
+    if (farmToDelete) {
+      setFarms(farms.filter((f) => f.id !== farmToDelete.id));
+      setFarmToDelete(null);
+      setDeleteDialogOpen(false);
     }
   };
 
@@ -198,19 +123,35 @@ export function FarmPage() {
 
       {/* Farm Cards Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {farms.map((farm) => (
-          <FarmCard
-            key={farm.id}
-            farm={farm}
-            onView={handleView}
-            onEdit={handleEdit}
-            onDelete={handleDelete}
-            onAddPlot={(farm) => {
-              setSelectedFarm(farm);
-              setAddPlotModalOpen(true);
-            }}
-          />
-        ))}
+        {farms.length === 0 ? (
+          <div className="col-span-2 flex flex-col items-center py-16 text-[#62748e] gap-3 bg-white rounded-lg border border-[#e2e8f0]">
+            <Home className="w-12 h-12 text-[#cad5e2]" />
+            <p>Chưa có trang trại nào</p>
+            <button
+              onClick={() => setCreateModalOpen(true)}
+              className="text-[#009689] hover:underline text-sm font-medium"
+            >
+              + Thêm trang trại đầu tiên
+            </button>
+          </div>
+        ) : (
+          farms.map((farm) => (
+            <FarmCard
+              key={farm.id}
+              farm={farm}
+              onView={handleView}
+              onEdit={handleEdit}
+              onDelete={(id) => {
+                const farm = farms.find((f) => f.id === id);
+                if (farm) handleDelete(farm);
+              }}
+              onAddPlot={(farm) => {
+                setSelectedFarm(farm);
+                setAddPlotModalOpen(true);
+              }}
+            />
+          ))
+        )}
       </div>
 
       {/* Modals */}
@@ -259,6 +200,41 @@ export function FarmPage() {
           />
         </>
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog.Root
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+      >
+        <AlertDialog.Portal>
+          <AlertDialog.Overlay className="fixed inset-0 bg-black/50 z-50 animate-in fade-in" />
+          <AlertDialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-md bg-white rounded-xl shadow-2xl p-6 animate-in fade-in zoom-in-95">
+            <AlertDialog.Title className="text-lg font-semibold text-slate-900 mb-2">
+              Xác nhận xóa trang trại
+            </AlertDialog.Title>
+            <AlertDialog.Description className="text-sm text-slate-600 mb-6">
+              Bạn có chắc chắn muốn xóa trang trại{" "}
+              <span className="font-semibold">{farmToDelete?.name}</span>? Tất
+              cả dữ liệu khu đất sẽ bị xóa và không thể hoàn tác.
+            </AlertDialog.Description>
+            <div className="flex gap-3 justify-end">
+              <AlertDialog.Cancel asChild>
+                <button className="px-4 py-2 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-100 transition-colors">
+                  Hủy bỏ
+                </button>
+              </AlertDialog.Cancel>
+              <AlertDialog.Action asChild>
+                <button
+                  onClick={confirmDelete}
+                  className="px-4 py-2 rounded-lg text-sm font-medium bg-red-600 text-white hover:bg-red-700 transition-colors"
+                >
+                  Xóa trang trại
+                </button>
+              </AlertDialog.Action>
+            </div>
+          </AlertDialog.Content>
+        </AlertDialog.Portal>
+      </AlertDialog.Root>
     </div>
   );
 }

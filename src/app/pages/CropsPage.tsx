@@ -10,126 +10,20 @@ import {
   ChevronUp,
   ChevronDown,
   ArrowUpDown,
+  X,
 } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
+import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import * as Select from "@radix-ui/react-select";
-
-// Types
-type SoilType = "Đất Pha Cát" | "Đất Thịt" | "Đất Sét" | "Đất Phù Sa";
-type CropStatus = "Đang sử dụng" | "Không sử dụng";
-
-interface Crop {
-  id: string;
-  name: string;
-  scientificName: string;
-  growthPeriod: number;
-  soilType: SoilType;
-  status: CropStatus;
-  image: string;
-  description: string;
-  plantDistance: { row: number; column: number };
-}
+import {
+  Crop,
+  CropSoilType as SoilType,
+  CropStatus,
+  cropSoilTypes as soilTypes,
+  mockCrops,
+} from "../../data/mockData";
 
 // Mock data
-const mockCrops: Crop[] = [
-  {
-    id: "1",
-    name: "Bắp Cải Trắng",
-    scientificName: "Brassica oleracea var. capitata alba",
-    growthPeriod: 70,
-    soilType: "Đất Pha Cát",
-    status: "Đang sử dụng",
-    image:
-      "https://cdn.lottemart.vn/media/description/product/cache/2292090000000-DT-1.jpeg.webp",
-    description:
-      "Bắp cải trắng là loại phổ biến nhất, có lá màu xanh nhạt đến trắng, giòn ngọt, thích hợp cho nhiều món ăn.",
-    plantDistance: { row: 40, column: 40 },
-  },
-  {
-    id: "2",
-    name: "Bắp Cải Tím",
-    scientificName: "Brassica oleracea var. capitata rubra",
-    growthPeriod: 85,
-    soilType: "Đất Thịt",
-    status: "Đang sử dụng",
-    image:
-      "https://cdn.tgdd.vn/Products/Images/8785/234102/bhx/bap-cai-tim-202312281023047777.jpg",
-    description:
-      "Bắp cải tím có màu đỏ tím đặc trưng, giàu chất chống oxy hóa, thích hợp làm salad và muối chua.",
-    plantDistance: { row: 45, column: 45 },
-  },
-  {
-    id: "3",
-    name: "Bắp Cải Xoăn (Kale)",
-    scientificName: "Brassica oleracea var. sabellica",
-    growthPeriod: 55,
-    soilType: "Đất Phù Sa",
-    status: "Đang sử dụng",
-    image:
-      "https://images.unsplash.com/photo-1560493676-04071c5f467b?w=100&h=100&fit=crop",
-    description:
-      "Bắp cải xoăn có lá xoăn đặc trưng, giàu dinh dưỡng, thích hợp cho nước ép và salad.",
-    plantDistance: { row: 35, column: 35 },
-  },
-  {
-    id: "4",
-    name: "Bắp Cải Bruxen",
-    scientificName: "Brassica oleracea var. gemmifera",
-    growthPeriod: 90,
-    soilType: "Đất Sét",
-    status: "Không sử dụng",
-    image: "https://dalatfarm.net/wp-content/uploads/2021/07/bap-cai-baby.jpg",
-    description:
-      "Bắp cải Bruxen (Brussels sprouts) mọc thành từng búp nhỏ trên thân, có vị đắng nhẹ, thích hợp nướng hoặc luộc.",
-    plantDistance: { row: 50, column: 50 },
-  },
-  {
-    id: "5",
-    name: "Bắp Cải Thảo",
-    scientificName: "Brassica rapa subsp. pekinensis",
-    growthPeriod: 60,
-    soilType: "Đất Pha Cát",
-    status: "Đang sử dụng",
-    image: "https://cdn.tgdd.vn/2021/05/CookProduct/thumb1-1200x676.jpg",
-    description:
-      "Bắp cải thảo (Napa cabbage) có hình dạng dài, lá mềm, ngọt, thích hợp làm kim chi và các món xào.",
-    plantDistance: { row: 30, column: 30 },
-  },
-  {
-    id: "6",
-    name: "Bắp Cải Súp Lơ Xanh",
-    scientificName: "Brassica oleracea var. italica",
-    growthPeriod: 65,
-    soilType: "Đất Thịt",
-    status: "Đang sử dụng",
-    image:
-      "https://images.unsplash.com/photo-1459411552884-841db9b3cc2a?w=100&h=100&fit=crop",
-    description:
-      "Súp lơ xanh (Broccoli) có cụm hoa màu xanh đậm, giàu vitamin C và chất xơ, thích hợp hấp hoặc xào.",
-    plantDistance: { row: 45, column: 40 },
-  },
-  {
-    id: "7",
-    name: "Bắp Cải Súp Lơ Trắng",
-    scientificName: "Brassica oleracea var. botrytis",
-    growthPeriod: 75,
-    soilType: "Đất Phù Sa",
-    status: "Không sử dụng",
-    image:
-      "https://images.unsplash.com/photo-1568584711075-3d021a7c3ca3?w=100&h=100&fit=crop",
-    description:
-      "Súp lơ trắng (Cauliflower) có cụm hoa màu trắng ngà, mềm mịn, thích hợp cho nhiều món ăn từ hấp đến chiên.",
-    plantDistance: { row: 50, column: 45 },
-  },
-];
-
-const soilTypes: SoilType[] = [
-  "Đất Pha Cát",
-  "Đất Thịt",
-  "Đất Sét",
-  "Đất Phù Sa",
-];
-
 const getSoilBadgeColor = (soilType: SoilType) => {
   return "bg-[#cbfbf1] text-[#00786f]";
 };
@@ -150,15 +44,15 @@ export function CropsPage() {
   const [viewModalOpen, setViewModalOpen] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedCrop, setSelectedCrop] = useState<Crop | null>(null);
+  const [cropToDelete, setCropToDelete] = useState<Crop | null>(null);
 
   // Handle sorting
   const handleSort = (field: "growthPeriod" | "status") => {
     if (sortField === field) {
-      // Toggle direction if same field
       setSortDirection(sortDirection === "asc" ? "desc" : "asc");
     } else {
-      // Set new field and reset to ascending
       setSortField(field);
       setSortDirection("asc");
     }
@@ -199,9 +93,16 @@ export function CropsPage() {
   };
 
   // Delete crop
-  const handleDelete = (id: string) => {
-    if (confirm("Bạn có chắc chắn muốn xóa cây trồng này?")) {
-      setCrops(crops.filter((c) => c.id !== id));
+  const handleDelete = (crop: Crop) => {
+    setCropToDelete(crop);
+    setDeleteDialogOpen(true);
+  };
+
+  const confirmDelete = () => {
+    if (cropToDelete) {
+      setCrops(crops.filter((c) => c.id !== cropToDelete.id));
+      setCropToDelete(null);
+      setDeleteDialogOpen(false);
     }
   };
 
@@ -359,7 +260,7 @@ export function CropsPage() {
                       <Edit className="w-4 h-4 text-[#00A6F4]" />
                     </button>
                     <button
-                      onClick={() => handleDelete(crop.id)}
+                      onClick={() => handleDelete(crop)}
                       className="p-2 hover:bg-[#fee2e2] rounded-lg transition-colors"
                       title="Xóa"
                     >
@@ -373,8 +274,13 @@ export function CropsPage() {
         </table>
 
         {filteredCrops.length === 0 && (
-          <div className="text-center py-12 text-[#62748e]">
-            Không tìm thấy cây trồng nào
+          <div className="flex flex-col items-center py-16 text-[#62748e] gap-3">
+            <Sprout className="w-12 h-12 text-[#cad5e2]" />
+            <p>
+              {searchQuery
+                ? "Không tìm thấy cây trồng phù hợp"
+                : "Chưa có cây trồng nào"}
+            </p>
           </div>
         )}
       </div>
@@ -410,6 +316,41 @@ export function CropsPage() {
           onUpdate={handleUpdate}
         />
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog.Root
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+      >
+        <AlertDialog.Portal>
+          <AlertDialog.Overlay className="fixed inset-0 bg-black/50 z-50 animate-in fade-in" />
+          <AlertDialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-md bg-white rounded-xl shadow-2xl p-6 animate-in fade-in zoom-in-95">
+            <AlertDialog.Title className="text-lg font-semibold text-slate-900 mb-2">
+              Xác nhận xóa cây trồng
+            </AlertDialog.Title>
+            <AlertDialog.Description className="text-sm text-slate-600 mb-6">
+              Bạn có chắc chắn muốn xóa{" "}
+              <span className="font-semibold">{cropToDelete?.name}</span>? Hành
+              động này không thể hoàn tác.
+            </AlertDialog.Description>
+            <div className="flex gap-3 justify-end">
+              <AlertDialog.Cancel asChild>
+                <button className="px-4 py-2 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-100 transition-colors">
+                  Hủy bỏ
+                </button>
+              </AlertDialog.Cancel>
+              <AlertDialog.Action asChild>
+                <button
+                  onClick={confirmDelete}
+                  className="px-4 py-2 rounded-lg text-sm font-medium bg-red-600 text-white hover:bg-red-700 transition-colors"
+                >
+                  Xóa cây trồng
+                </button>
+              </AlertDialog.Action>
+            </div>
+          </AlertDialog.Content>
+        </AlertDialog.Portal>
+      </AlertDialog.Root>
     </div>
   );
 }

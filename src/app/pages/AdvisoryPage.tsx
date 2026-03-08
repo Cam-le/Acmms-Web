@@ -18,123 +18,15 @@ import {
 } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as Select from "@radix-ui/react-select";
-
-// Types
-type RequestStatus = "Chờ phản hồi" | "Đang xử lý" | "Đã phản hồi" | "Đóng";
-type Priority = "CAO" | "TRUNG BÌNH" | "THẤP";
-type CropType = "Bắp Cải Trắng" | "Bắp Cải Tím" | "Bắp Cải Xoăn";
-
-interface AdvisoryRequest {
-  id: string;
-  title: string;
-  crop: CropType;
-  field: string;
-  status: RequestStatus;
-  priority: Priority;
-  issue: string;
-  description: string;
-  images: string[];
-  createdBy: string;
-  createdAt: string;
-  assignedTo?: string;
-  responseTime?: string;
-  response?: {
-    diagnosis: string;
-    observation: string;
-    recommendation: string;
-    treatmentPlan?: string;
-  };
-}
+import {
+  AdvisoryRequest,
+  RequestStatus,
+  Priority,
+  AdvisoryCropType as CropType,
+  mockRequests,
+} from "../../data/mockData";
 
 // Mock data with cabbage-related issues
-const mockRequests: AdvisoryRequest[] = [
-  {
-    id: "1",
-    title: "Cà chua Beef",
-    crop: "Bắp Cải Trắng",
-    field: "Khu C",
-    status: "Chờ phản hồi",
-    priority: "CAO",
-    issue: "Đốm lá nâm (Septoria)",
-    description:
-      "Phát hiện đốm trắng nghệ nấm bệnh. Độ tin cậy: 92%. Lá bắp cải xuất hiện các đốm tròn màu nâu với viền vàng, có thể là triệu chứng của bệnh đốm lá do nấm.",
-    images: [
-      "https://images.unsplash.com/photo-1590682680443-1b0c4b8c3a29?w=400&h=300&fit=crop",
-      "https://images.unsplash.com/photo-1556801712-76c8d2b88b5b?w=400&h=300&fit=crop",
-    ],
-    createdBy: "Mai Thị Hoa",
-    createdAt: "14:20 - 15/05/2024",
-  },
-  {
-    id: "2",
-    title: "Dưa lưới ruột cam",
-    crop: "Bắp Cải Tím",
-    field: "Khu B (Nhà kính 1)",
-    status: "Đang xử lý",
-    priority: "TRUNG BÌNH",
-    issue: "Phấn trắng (Powdery Mildew)",
-    description:
-      "Phát hiện lớp bột trắng trên lá bắp cải tím. Có thể là dấu hiệu của bệnh phấn trắng, cần xử lý ngay để tránh lây lan.",
-    images: [
-      "https://images.unsplash.com/photo-1594282442066-d3e5ea0e6b0b?w=400&h=300&fit=crop",
-    ],
-    createdBy: "Hoàng Lan",
-    createdAt: "10:30 - 14/05/2024",
-    assignedTo: "ThS. Hoàng Lan",
-    response: {
-      diagnosis: "Bệnh phấn trắng do nấm",
-      observation:
-        "Do độ ẩm không khí cao trong những ngày qua tại Khu C kết hợp với nhiệt độ thấp vào ban đêm, tạo điều kiện cho nấm phát triển.",
-      recommendation:
-        "Cần cách ly ngay các luống bị bệnh. Sử dụng thuốc bảo vệ thực vật có hoạt chất Metalaxyl hoặc Mancozeb để phun phòng trị. Lưu ý phun vét đều hai mặt lá.",
-    },
-  },
-  {
-    id: "3",
-    title: "Ớt Chuông",
-    crop: "Bắp Cải Xoăn",
-    field: "Khu C (Ngoài trời)",
-    status: "Đã phản hồi",
-    priority: "CAO",
-    issue: "Than thư (Anthracnose)",
-    description:
-      "Lá bắp cải xoăn có các vết đen, khô và cuộn lại. Nghi ngờ bệnh than thư hoặc thiếu dinh dưỡng.",
-    images: [
-      "https://images.unsplash.com/photo-1628773822503-930a7eaecf80?w=400&h=300&fit=crop",
-    ],
-    createdBy: "Trần Hùng",
-    createdAt: "08:15 - 13/05/2024",
-    assignedTo: "PGS.TS Trần Hùng",
-    responseTime: "2 giờ trước",
-    response: {
-      diagnosis: "Thiếu Nitơ và bệnh nấm than thư nhẹ",
-      observation:
-        "Dựa trên hình ảnh là có các đốm trắng lan rộng và viền lá bị cháy, đây là biểu hiện điển hình của Bệnh Sương Mai (Late Blight) giai đoạn đầu.",
-      recommendation:
-        "Cần cách ly ngay các luống bị bệnh. Sử dụng thuốc bảo vệ thực vật có hoạt chất Metalaxyl hoặc Mancozeb để phun phòng trị. Lưu ý phun vét đều hai mặt lá. Bổ sung phân đạm để cải thiện sức đề kháng.",
-      treatmentPlan: "Xử lý trong vòng 3-5 ngày, theo dõi hàng ngày",
-    },
-  },
-  {
-    id: "4",
-    title: "Dâu tây Hana",
-    crop: "Bắp Cải Trắng",
-    field: "Khu D (Nhà kính 3)",
-    status: "Đóng",
-    priority: "THẤP",
-    issue: "Rệp trắng",
-    description:
-      "Xuất hiện rệp trắng trên mặt dưới lá bắp cải. Số lượng chưa nhiều nhưng cần kiểm soát sớm.",
-    images: [
-      "https://images.unsplash.com/photo-1590682680443-1b0c4b8c3a29?w=400&h=300&fit=crop",
-    ],
-    createdBy: "Văn Minh",
-    createdAt: "16:45 - 10/05/2024",
-    assignedTo: "TS. Nguyễn Văn Minh",
-    responseTime: "5 ngày trước",
-  },
-];
-
 const statusConfig = {
   "Chờ phản hồi": {
     color: "bg-[#fef3c7] text-[#92400e]",
