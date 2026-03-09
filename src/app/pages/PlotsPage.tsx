@@ -223,7 +223,7 @@ export function PlotsPage() {
       {/* Farm Selector */}
       <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-4">
         <label className="block text-sm text-[#62748e] mb-2">
-          Chọn Nông Trại:
+          Chọn Trang Trại:
         </label>
         <select
           value={selectedFarm}
@@ -346,7 +346,7 @@ export function PlotsPage() {
                         setSelectedLand(land);
                         setCreatePlotOpen(true);
                       }}
-                      className="px-4 py-2 bg-[#0ea5e9] text-white rounded-lg hover:bg-[#0284c7] transition-colors text-sm flex items-center gap-2"
+                      className="px-4 py-2 bg-white text-[#009689] border border-[#009689] rounded-lg hover:bg-[#f0fdfa] transition-colors text-sm flex items-center gap-2"
                     >
                       <Plus className="w-4 h-4" />
                       Thêm 1 Luống

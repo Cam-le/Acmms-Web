@@ -9,6 +9,9 @@ import {
   Loader2,
   Users,
   WifiOff,
+  ChevronUp,
+  ChevronDown,
+  ArrowUpDown,
 } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
@@ -43,9 +46,11 @@ export function WorkersPage() {
   const [loading, setLoading] = useState(true);
   const [usingMock, setUsingMock] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
-  const [filterStatus, setFilterStatus] = useState<
-    "all" | "active" | "inactive"
-  >("all");
+  const [filterRole, setFilterRole] = useState<string>("all");
+  const [sortField, setSortField] = useState<"dateJoined" | "status" | null>(
+    null,
+  );
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -58,8 +63,8 @@ export function WorkersPage() {
     email: "",
     phone: "",
     role: "Công Nhân",
-    password: "",
-    confirmPassword: "",
+    password: "123456",
+    confirmPassword: "123456",
   });
 
   useEffect(() => {
@@ -80,15 +85,42 @@ export function WorkersPage() {
     }
   };
 
-  const filteredWorkers = workers.filter((w) => {
-    const matchSearch =
-      w.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      w.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      w.phone.includes(searchTerm) ||
-      w.role.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchStatus = filterStatus === "all" || w.status === filterStatus;
-    return matchSearch && matchStatus;
-  });
+  const handleSort = (field: "dateJoined" | "status") => {
+    if (sortField === field)
+      setSortDirection((d) => (d === "asc" ? "desc" : "asc"));
+    else {
+      setSortField(field);
+      setSortDirection("asc");
+    }
+  };
+
+  const filteredWorkers = workers
+    .filter((w) => {
+      const matchSearch =
+        w.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        w.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        w.phone.includes(searchTerm) ||
+        w.role.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchRole = filterRole === "all" || w.role === filterRole;
+      return matchSearch && matchRole;
+    })
+    .sort((a, b) => {
+      if (!sortField) return 0;
+      if (sortField === "dateJoined") {
+        const da = a.dateJoined
+          ? new Date(a.dateJoined.split("/").reverse().join("-")).getTime()
+          : 0;
+        const db = b.dateJoined
+          ? new Date(b.dateJoined.split("/").reverse().join("-")).getTime()
+          : 0;
+        return sortDirection === "asc" ? da - db : db - da;
+      }
+      // status: active before inactive
+      const order = { active: 1, inactive: 2 };
+      return sortDirection === "asc"
+        ? order[a.status] - order[b.status]
+        : order[b.status] - order[a.status];
+    });
 
   const resetForm = () =>
     setFormData({
@@ -96,8 +128,8 @@ export function WorkersPage() {
       email: "",
       phone: "",
       role: "Công Nhân",
-      password: "",
-      confirmPassword: "",
+      password: "123456",
+      confirmPassword: "123456",
     });
 
   // --- ADD ---
@@ -249,125 +281,154 @@ export function WorkersPage() {
         </button>
       </div>
 
-      {/* Filters */}
-      <div className="flex gap-3">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#94a3b8]" />
-          <input
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Tìm kiếm nhân viên..."
-            className="w-full pl-9 pr-4 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689]"
-          />
+      {/* Table + Filters — wrapped so the role select can clip to the table's right edge */}
+      <div className="flex flex-col gap-0">
+        <div className="flex items-center gap-3 mb-3">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#94a3b8]" />
+            <input
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Tìm kiếm nhân viên..."
+              className="w-full pl-9 pr-4 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689]"
+            />
+          </div>
+          <select
+            value={filterRole}
+            onChange={(e) => setFilterRole(e.target.value)}
+            className="px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] bg-white text-[#334155] shrink-0"
+          >
+            <option value="all">Tất cả vai trò</option>
+            {roles.map((r) => (
+              <option key={r} value={r}>
+                {r}
+              </option>
+            ))}
+          </select>
         </div>
-        <select
-          value={filterStatus}
-          onChange={(e) =>
-            setFilterStatus(e.target.value as "all" | "active" | "inactive")
-          }
-          className="px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] bg-white text-[#334155]"
-        >
-          <option value="all">Tất cả trạng thái</option>
-          <option value="active">Đang làm việc</option>
-          <option value="inactive">Ngừng làm việc</option>
-        </select>
-      </div>
 
-      {/* Table */}
-      <div className="bg-white rounded-xl border border-[#e2e8f0] shadow-sm overflow-hidden">
-        {loading ? (
-          <div className="flex items-center justify-center py-16">
-            <Loader2 className="w-6 h-6 animate-spin text-[#009689]" />
-          </div>
-        ) : filteredWorkers.length === 0 ? (
-          <div className="text-center py-16 text-[#62748e]">
-            Không tìm thấy nhân viên nào
-          </div>
-        ) : (
-          <table className="w-full">
-            <thead className="bg-[#f8fafc] border-b border-[#e2e8f0]">
-              <tr>
-                {[
-                  "Nhân viên",
-                  "Email",
-                  "SĐT",
-                  "Vai trò",
-                  "Trạng thái",
-                  "Ngày tham gia",
-                  "Thao tác",
-                ].map((h) => (
-                  <th
-                    key={h}
-                    className="px-6 py-4 text-left text-xs font-bold text-[#62748e] uppercase tracking-wider"
-                  >
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#e2e8f0]">
-              {filteredWorkers.map((worker) => (
-                <tr
-                  key={worker.id}
-                  className="hover:bg-[#f8fafc] transition-colors"
-                >
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 bg-[#009689] rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0">
-                        {worker.name.charAt(0).toUpperCase()}
-                      </div>
-                      <span className="font-medium text-[#115e59] text-sm">
-                        {worker.name}
-                      </span>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 text-sm text-[#62748e]">
-                    {worker.email}
-                  </td>
-                  <td className="px-6 py-4 text-sm text-[#62748e]">
-                    {worker.phone}
-                  </td>
-                  <td className="px-6 py-4 text-sm text-[#62748e]">
-                    {worker.role}
-                  </td>
-                  <td className="px-6 py-4">
-                    <span
-                      className={`px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap ${getStatusBadgeColor(worker.status)}`}
+        {/* Table */}
+        <div className="bg-white rounded-xl border border-[#e2e8f0] shadow-sm overflow-hidden">
+          {loading ? (
+            <div className="flex items-center justify-center py-16">
+              <Loader2 className="w-6 h-6 animate-spin text-[#009689]" />
+            </div>
+          ) : filteredWorkers.length === 0 ? (
+            <div className="text-center py-16 text-[#62748e]">
+              Không tìm thấy nhân viên nào
+            </div>
+          ) : (
+            <table className="w-full">
+              <thead className="bg-[#f8fafc] border-b border-[#e2e8f0]">
+                <tr>
+                  {["Nhân viên", "Email", "SĐT", "Vai trò"].map((h) => (
+                    <th
+                      key={h}
+                      className="px-6 py-4 text-left text-xs font-bold text-[#62748e] uppercase tracking-wider"
                     >
-                      {getStatusLabel(worker.status)}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-sm text-[#62748e]">
-                    {worker.dateJoined}
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => openViewModal(worker)}
-                        className="p-1.5 text-[#62748e] hover:text-[#009689] hover:bg-[#f0fdf9] rounded transition-colors"
-                      >
-                        <Eye className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => openEditModal(worker)}
-                        className="p-1.5 text-[#62748e] hover:text-[#009689] hover:bg-[#f0fdf9] rounded transition-colors"
-                      >
-                        <Edit className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => openDeleteDialog(worker)}
-                        className="p-1.5 text-[#62748e] hover:text-red-500 hover:bg-red-50 rounded transition-colors"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </td>
+                      {h}
+                    </th>
+                  ))}
+                  <th className="px-6 py-4 text-left text-xs font-bold text-[#62748e] uppercase tracking-wider">
+                    <button
+                      onClick={() => handleSort("dateJoined")}
+                      className="flex items-center gap-1 hover:text-[#009689]"
+                    >
+                      Ngày tham gia{" "}
+                      {sortField !== "dateJoined" ? (
+                        <ArrowUpDown className="w-3.5 h-3.5 text-[#94a3b8]" />
+                      ) : sortDirection === "asc" ? (
+                        <ChevronUp className="w-3.5 h-3.5 text-[#009689]" />
+                      ) : (
+                        <ChevronDown className="w-3.5 h-3.5 text-[#009689]" />
+                      )}
+                    </button>
+                  </th>
+                  <th className="px-6 py-4 text-left text-xs font-bold text-[#62748e] uppercase tracking-wider">
+                    <button
+                      onClick={() => handleSort("status")}
+                      className="flex items-center gap-1 hover:text-[#009689]"
+                    >
+                      Trạng thái{" "}
+                      {sortField !== "status" ? (
+                        <ArrowUpDown className="w-3.5 h-3.5 text-[#94a3b8]" />
+                      ) : sortDirection === "asc" ? (
+                        <ChevronUp className="w-3.5 h-3.5 text-[#009689]" />
+                      ) : (
+                        <ChevronDown className="w-3.5 h-3.5 text-[#009689]" />
+                      )}
+                    </button>
+                  </th>
+                  <th className="px-6 py-4 text-left text-xs font-bold text-[#62748e] uppercase tracking-wider">
+                    Thao tác
+                  </th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+              </thead>
+              <tbody className="divide-y divide-[#e2e8f0]">
+                {filteredWorkers.map((worker) => (
+                  <tr
+                    key={worker.id}
+                    className="hover:bg-[#f8fafc] transition-colors"
+                  >
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 bg-[#009689] rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0">
+                          {worker.name.charAt(0).toUpperCase()}
+                        </div>
+                        <span className="font-medium text-[#115e59] text-sm">
+                          {worker.name}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-sm text-[#62748e]">
+                      {worker.email}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-[#62748e]">
+                      {worker.phone}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-[#62748e]">
+                      {worker.role}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-[#62748e]">
+                      {worker.dateJoined}
+                    </td>
+                    <td className="px-6 py-4">
+                      <span
+                        className={`px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap ${getStatusBadgeColor(worker.status)}`}
+                      >
+                        {getStatusLabel(worker.status)}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => openViewModal(worker)}
+                          className="p-1.5 text-[#62748e] hover:text-[#009689] hover:bg-[#f0fdf9] rounded transition-colors"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => openEditModal(worker)}
+                          className="p-1.5 text-[#62748e] hover:text-[#009689] hover:bg-[#f0fdf9] rounded transition-colors"
+                        >
+                          <Edit className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => openDeleteDialog(worker)}
+                          className="p-1.5 text-[#62748e] hover:text-red-500 hover:bg-red-50 rounded transition-colors"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
       </div>
+      {/* end filters+table wrapper */}
 
       {/* ===== VIEW MODAL ===== */}
       <Dialog.Root open={isViewModalOpen} onOpenChange={setIsViewModalOpen}>
