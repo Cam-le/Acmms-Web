@@ -41,7 +41,7 @@ export const mockWorkers: Worker[] = [
     name: "Maria Garcia",
     email: "maria.garcia@farm.com",
     phone: "0909993399",
-    role: "Người làm nông",
+    role: "Công Nhân",
     status: "active",
     dateJoined: "15/03/2024",
   },
@@ -50,7 +50,7 @@ export const mockWorkers: Worker[] = [
     name: "James Wilson",
     email: "james.wilson@farm.com",
     phone: "0909883399",
-    role: "Chuyên gia",
+    role: "Chuyên Gia",
     status: "active",
     dateJoined: "22/07/2024",
   },
@@ -59,7 +59,7 @@ export const mockWorkers: Worker[] = [
     name: "David Brown",
     email: "david.brown@farm.com",
     phone: "0909773399",
-    role: "Người làm nông",
+    role: "Công Nhân",
     status: "inactive",
     dateJoined: "10/01/2024",
   },
@@ -207,7 +207,7 @@ export const mockStaff: Staff[] = [
 ];
 
 // Roles
-export const roles = ["Người Làm Nông", "Chuyên Gia"];
+export const roles = ["Công Nhân", "Chuyên Gia"];
 
 // =================== CROPS PAGE ===================
 export type CropSoilType =
@@ -244,8 +244,9 @@ export const mockCrops: Crop[] = [
     growthPeriod: 70,
     soilType: "Đất Pha Cát",
     status: "Đang sử dụng",
+    // White/green cabbage
     image:
-      "https://images.unsplash.com/photo-1594282442066-d3e5ea0e6b0b?w=100&h=100&fit=crop",
+      "https://product.hstatic.net/1000354044/product/20230708_164750_b39eed30bb6448f3974767426d74ec7d_large.jpg",
     description:
       "Bắp cải trắng là loại phổ biến nhất, có lá màu xanh nhạt đến trắng, giòn ngọt, thích hợp cho nhiều món ăn.",
     plantDistance: { row: 40, column: 40 },
@@ -257,8 +258,9 @@ export const mockCrops: Crop[] = [
     growthPeriod: 85,
     soilType: "Đất Thịt",
     status: "Đang sử dụng",
+    // Red/purple cabbage
     image:
-      "https://images.unsplash.com/photo-1556801712-76c8d2b88b5b?w=100&h=100&fit=crop",
+      "https://images.unsplash.com/photo-1518977956812-cd3dbadaaf31?w=100&h=100&fit=crop",
     description:
       "Bắp cải tím có màu đỏ tím đặc trưng, giàu chất chống oxy hóa, thích hợp làm salad và muối chua.",
     plantDistance: { row: 45, column: 45 },
@@ -270,8 +272,9 @@ export const mockCrops: Crop[] = [
     growthPeriod: 55,
     soilType: "Đất Phù Sa",
     status: "Đang sử dụng",
+    // Kale
     image:
-      "https://images.unsplash.com/photo-1560493676-04071c5f467b?w=100&h=100&fit=crop",
+      "https://images.unsplash.com/photo-1524179091875-bf99a9a6af57?w=100&h=100&fit=crop",
     description:
       "Bắp cải xoăn có lá xoăn đặc trưng, giàu dinh dưỡng, thích hợp cho nước ép và salad.",
     plantDistance: { row: 35, column: 35 },
@@ -283,8 +286,9 @@ export const mockCrops: Crop[] = [
     growthPeriod: 90,
     soilType: "Đất Sét",
     status: "Không sử dụng",
+    // Brussels sprouts
     image:
-      "https://images.unsplash.com/photo-1615485500685-37937a640f4d?w=100&h=100&fit=crop",
+      "https://images.unsplash.com/photo-1438118907704-7718ee9a191a?w=100&h=100&fit=crop",
     description:
       "Bắp cải Bruxen (Brussels sprouts) mọc thành từng búp nhỏ trên thân, có vị đắng nhẹ, thích hợp nướng hoặc luộc.",
     plantDistance: { row: 50, column: 50 },
@@ -296,8 +300,9 @@ export const mockCrops: Crop[] = [
     growthPeriod: 60,
     soilType: "Đất Pha Cát",
     status: "Đang sử dụng",
+    // Napa cabbage
     image:
-      "https://images.unsplash.com/photo-1584868388793-4d2c7e5cdeb0?w=100&h=100&fit=crop",
+      "https://upload.wikimedia.org/wikipedia/commons/a/ab/ChineseCabbage.jpg",
     description:
       "Bắp cải thảo (Napa cabbage) có hình dạng dài, lá mềm, ngọt, thích hợp làm kim chi và các món xào.",
     plantDistance: { row: 30, column: 30 },
@@ -309,6 +314,7 @@ export const mockCrops: Crop[] = [
     growthPeriod: 65,
     soilType: "Đất Thịt",
     status: "Đang sử dụng",
+    // Broccoli
     image:
       "https://images.unsplash.com/photo-1459411552884-841db9b3cc2a?w=100&h=100&fit=crop",
     description:
@@ -322,6 +328,7 @@ export const mockCrops: Crop[] = [
     growthPeriod: 75,
     soilType: "Đất Phù Sa",
     status: "Không sử dụng",
+    // Cauliflower
     image:
       "https://images.unsplash.com/photo-1568584711075-3d021a7c3ca3?w=100&h=100&fit=crop",
     description:
@@ -635,8 +642,8 @@ export const mockRequests: AdvisoryRequest[] = [
     description:
       "Phát hiện đốm trắng nghi ngờ nấm bệnh. Độ tin cậy: 92%. Lá bắp cải xuất hiện các đốm tròn màu nâu với viền vàng, có thể là triệu chứng của bệnh đốm lá do nấm.",
     images: [
-      "https://images.unsplash.com/photo-1590682680443-1b0c4b8c3a29?w=400&h=300&fit=crop",
-      "https://images.unsplash.com/photo-1556801712-76c8d2b88b5b?w=400&h=300&fit=crop",
+      "https://kingbio.vn/wp-content/uploads/2026/02/Benh-Dom-Den-Nam-Septoria-Tren-Hoa-Giay.jpg",
+      "https://kingbio.vn/wp-content/uploads/2026/02/Benh-Dom-Den-Nam-Septoria-Tren-Hoa-Giay.jpg",
     ],
     createdBy: "Mai Thị Hoa",
     createdAt: "14:20 - 15/05/2024",
@@ -652,7 +659,7 @@ export const mockRequests: AdvisoryRequest[] = [
     description:
       "Phát hiện lớp bột trắng trên lá bắp cải tím. Có thể là dấu hiệu của bệnh phấn trắng, cần xử lý ngay để tránh lây lan.",
     images: [
-      "https://images.unsplash.com/photo-1594282442066-d3e5ea0e6b0b?w=400&h=300&fit=crop",
+      "https://images.unsplash.com/photo-1518977956812-cd3dbadaaf31?w=400&h=300&fit=crop",
     ],
     createdBy: "Hoàng Lan",
     createdAt: "10:30 - 14/05/2024",
@@ -676,7 +683,7 @@ export const mockRequests: AdvisoryRequest[] = [
     description:
       "Lá bắp cải xoăn có các vết đen, khô và cuộn lại. Nghi ngờ bệnh than thư hoặc thiếu dinh dưỡng.",
     images: [
-      "https://images.unsplash.com/photo-1628773822503-930a7eaecf80?w=400&h=300&fit=crop",
+      "https://images.unsplash.com/photo-1524179091875-bf99a9a6af57?w=400&h=300&fit=crop",
     ],
     createdBy: "Trần Hùng",
     createdAt: "08:15 - 13/05/2024",
@@ -702,7 +709,7 @@ export const mockRequests: AdvisoryRequest[] = [
     description:
       "Xuất hiện rệp trắng trên mặt dưới lá bắp cải. Số lượng chưa nhiều nhưng cần kiểm soát sớm.",
     images: [
-      "https://images.unsplash.com/photo-1590682680443-1b0c4b8c3a29?w=400&h=300&fit=crop",
+      "https://cdn.eva.vn/upload/1-2023/images/2023-01-08/cay-bi-rep-trang-tan-cong-hay-tuoi-thu-nuoc-than-nay-sau-1-dem-se-het-sach-3-1673132796-984-width780height488.jpg",
     ],
     createdBy: "Văn Minh",
     createdAt: "16:45 - 10/05/2024",

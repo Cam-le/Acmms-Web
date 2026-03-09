@@ -246,11 +246,15 @@ export function CropsPage() {
           <table className="w-full">
             <thead className="bg-[#f8fafc] border-b border-[#e2e8f0]">
               <tr>
+                {/* Column order: Cây trồng → Tên khoa học → Loại đất → Chu kỳ → Trạng thái → Thao tác */}
                 <th className="px-6 py-4 text-left text-xs font-bold text-[#62748e] uppercase tracking-wider">
                   Cây trồng
                 </th>
                 <th className="px-6 py-4 text-left text-xs font-bold text-[#62748e] uppercase tracking-wider">
                   Tên khoa học
+                </th>
+                <th className="px-6 py-4 text-left text-xs font-bold text-[#62748e] uppercase tracking-wider">
+                  Loại đất
                 </th>
                 <th className="px-6 py-4 text-left text-xs font-bold text-[#62748e] uppercase tracking-wider">
                   <button
@@ -259,9 +263,6 @@ export function CropsPage() {
                   >
                     Chu kỳ <SortIcon field="growthPeriod" />
                   </button>
-                </th>
-                <th className="px-6 py-4 text-left text-xs font-bold text-[#62748e] uppercase tracking-wider">
-                  Loại đất
                 </th>
                 <th className="px-6 py-4 text-left text-xs font-bold text-[#62748e] uppercase tracking-wider">
                   <button
@@ -282,16 +283,17 @@ export function CropsPage() {
                   key={crop.id}
                   className="hover:bg-[#f8fafc] transition-colors"
                 >
+                  {/* Cây trồng */}
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
                       {crop.image ? (
                         <img
                           src={crop.image}
                           alt={crop.name}
-                          className="w-10 h-10 rounded-lg object-cover"
+                          className="w-10 h-10 rounded-lg object-cover shrink-0"
                         />
                       ) : (
-                        <div className="w-10 h-10 bg-[#f0fdf9] rounded-lg flex items-center justify-center">
+                        <div className="w-10 h-10 bg-[#f0fdf9] rounded-lg flex items-center justify-center shrink-0">
                           <ImageIcon className="w-5 h-5 text-[#009689]" />
                         </div>
                       )}
@@ -300,16 +302,15 @@ export function CropsPage() {
                       </span>
                     </div>
                   </td>
+                  {/* Tên khoa học */}
                   <td className="px-6 py-4 text-sm text-[#62748e] italic">
                     {crop.scientificName || "—"}
                   </td>
-                  <td className="px-6 py-4 text-sm text-[#62748e]">
-                    {crop.growthPeriod > 0 ? `${crop.growthPeriod} ngày` : "—"}
-                  </td>
+                  {/* Loại đất — whitespace-nowrap prevents wrapping */}
                   <td className="px-6 py-4">
                     {crop.soilType ? (
                       <span
-                        className={`px-2.5 py-1 rounded-full text-xs font-medium ${getSoilBadgeColor(crop.soilType)}`}
+                        className={`px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap ${getSoilBadgeColor(crop.soilType)}`}
                       >
                         {crop.soilType}
                       </span>
@@ -317,13 +318,19 @@ export function CropsPage() {
                       "—"
                     )}
                   </td>
+                  {/* Chu kỳ */}
+                  <td className="px-6 py-4 text-sm text-[#62748e] whitespace-nowrap">
+                    {crop.growthPeriod > 0 ? `${crop.growthPeriod} ngày` : "—"}
+                  </td>
+                  {/* Trạng thái — whitespace-nowrap prevents wrapping */}
                   <td className="px-6 py-4">
                     <span
-                      className={`px-2.5 py-1 rounded-full text-xs font-medium ${getStatusBadgeColor(crop.status)}`}
+                      className={`px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap ${getStatusBadgeColor(crop.status)}`}
                     >
                       {crop.status}
                     </span>
                   </td>
+                  {/* Thao tác */}
                   <td className="px-6 py-4">
                     <div className="flex items-center justify-center gap-2">
                       <button
@@ -402,7 +409,7 @@ export function CropsPage() {
                     {selectedCrop.scientificName || "—"}
                   </div>
                   <span
-                    className={`mt-1 inline-block px-2 py-0.5 rounded-full text-xs font-medium ${getStatusBadgeColor(selectedCrop.status)}`}
+                    className={`mt-1 inline-block px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${getStatusBadgeColor(selectedCrop.status)}`}
                   >
                     {selectedCrop.status}
                   </span>
@@ -569,20 +576,6 @@ function CropFormFields({
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium text-[#45556c] mb-1">
-            Chu kỳ sinh trưởng (ngày)
-          </label>
-          <input
-            type="number"
-            value={formData.growthPeriod}
-            onChange={(e) =>
-              setFormData((p) => ({ ...p, growthPeriod: e.target.value }))
-            }
-            className="w-full px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155]"
-            placeholder="90"
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-[#45556c] mb-1">
             Loại đất
           </label>
           <select
@@ -602,6 +595,20 @@ function CropFormFields({
               </option>
             ))}
           </select>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-[#45556c] mb-1">
+            Chu kỳ sinh trưởng (ngày)
+          </label>
+          <input
+            type="number"
+            value={formData.growthPeriod}
+            onChange={(e) =>
+              setFormData((p) => ({ ...p, growthPeriod: e.target.value }))
+            }
+            className="w-full px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155]"
+            placeholder="90"
+          />
         </div>
       </div>
       <div className="grid grid-cols-2 gap-4">

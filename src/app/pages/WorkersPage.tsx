@@ -22,7 +22,7 @@ function mapUser(u: UserResponse): Worker {
     name: u.fullname ?? u.email,
     email: u.email,
     phone: u.phoneNumber ?? "",
-    role: u.roleName ?? "Worker",
+    role: u.roleName ?? "Công Nhân",
     status: u.status?.toLowerCase() === "active" ? "active" : "inactive",
     dateJoined: u.createdAt
       ? new Date(u.createdAt).toLocaleDateString("vi-VN")
@@ -57,7 +57,7 @@ export function WorkersPage() {
     name: "",
     email: "",
     phone: "",
-    role: "Người Làm Nông",
+    role: "Công Nhân",
     password: "",
     confirmPassword: "",
   });
@@ -95,7 +95,7 @@ export function WorkersPage() {
       name: "",
       email: "",
       phone: "",
-      role: "Người Làm Nông",
+      role: "Công Nhân",
       password: "",
       confirmPassword: "",
     });
@@ -334,7 +334,7 @@ export function WorkersPage() {
                   </td>
                   <td className="px-6 py-4">
                     <span
-                      className={`px-2.5 py-1 rounded-full text-xs font-medium ${getStatusBadgeColor(worker.status)}`}
+                      className={`px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap ${getStatusBadgeColor(worker.status)}`}
                     >
                       {getStatusLabel(worker.status)}
                     </span>
@@ -398,7 +398,7 @@ export function WorkersPage() {
                       {selectedWorker.name}
                     </div>
                     <span
-                      className={`px-2 py-0.5 rounded-full text-xs font-medium ${getStatusBadgeColor(selectedWorker.status)}`}
+                      className={`px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${getStatusBadgeColor(selectedWorker.status)}`}
                     >
                       {getStatusLabel(selectedWorker.status)}
                     </span>
