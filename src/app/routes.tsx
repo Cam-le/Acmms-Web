@@ -1,5 +1,6 @@
 import { createBrowserRouter, Navigate, redirect } from "react-router";
 import { LoginPage } from "./pages/LoginPage";
+import { RegisterPage } from "./pages/RegisterPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { WorkersPage } from "./pages/WorkersPage";
 import { TasksPage } from "./pages/TasksPage";
@@ -10,7 +11,6 @@ import { SeasonsPage } from "./pages/SeasonsPage";
 import { PlotsPage } from "./pages/PlotsPage";
 import { AppLayout } from "./components/Layout";
 
-// Loader to check authentication
 function protectedLoader() {
   const isAuthenticated = localStorage.getItem("isAuthenticated");
   if (!isAuthenticated) {
@@ -23,6 +23,10 @@ export const router = createBrowserRouter([
   {
     path: "/login",
     Component: LoginPage,
+  },
+  {
+    path: "/register",
+    Component: RegisterPage,
   },
   {
     path: "/",
