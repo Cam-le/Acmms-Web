@@ -100,6 +100,7 @@ export function SeasonsPage() {
     return <EditSeasonView season={selectedSeason} onUpdate={handleUpdate} />;
   }
 
+  // ==================== LIST VIEW ====================
   return (
     <div className="flex flex-col gap-6 p-6">
       {/* Header */}
@@ -111,8 +112,7 @@ export function SeasonsPage() {
           to="/seasons?view=create"
           className="bg-[#009689] text-white px-4 py-2 rounded-lg hover:bg-[#007f75] transition-colors flex items-center gap-2"
         >
-          <Plus className="w-4 h-4" />
-          Mùa vụ mới
+          <Plus className="w-4 h-4" /> Mùa vụ mới
         </Link>
       </div>
 
@@ -130,67 +130,46 @@ export function SeasonsPage() {
             />
           </div>
           <div className="flex gap-2">
-            <button
-              onClick={() => setFilterStatus("Đang hoạt động")}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                filterStatus === "Đang hoạt động"
-                  ? "bg-[#009689] text-white"
-                  : "bg-white border border-[#cad5e2] text-[#62748e] hover:bg-[#f8fafc]"
-              }`}
-            >
-              Hiện tại
-            </button>
-            <button
-              onClick={() => setFilterStatus("Đã kết thúc")}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                filterStatus === "Đã kết thúc"
-                  ? "bg-[#009689] text-white"
-                  : "bg-white border border-[#cad5e2] text-[#62748e] hover:bg-[#f8fafc]"
-              }`}
-            >
-              Đã kết thúc
-            </button>
-            {filterStatus !== "all" && (
+            {(
+              ["all", "Đang hoạt động", "Đã kết thúc", "Sắp diễn ra"] as const
+            ).map((s) => (
               <button
-                onClick={() => setFilterStatus("all")}
-                className="px-4 py-2 rounded-lg text-sm font-medium bg-white border border-[#cad5e2] text-[#62748e] hover:bg-[#f8fafc]"
+                key={s}
+                onClick={() => setFilterStatus(s)}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  filterStatus === s
+                    ? "bg-[#009689] text-white"
+                    : "bg-white border border-[#cad5e2] text-[#62748e] hover:bg-[#f8fafc]"
+                }`}
               >
-                Xóa bỏ lọc
+                {s === "all" ? "Tất cả" : s}
               </button>
-            )}
+            ))}
           </div>
         </div>
       </div>
 
       {/* Table */}
       <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm overflow-hidden">
-        <div className="px-6 py-4 border-b border-[#e2e8f0]">
-          <h2 className="text-[#115e59] font-semibold">Danh sách mùa vụ</h2>
-        </div>
         <table className="w-full">
           <thead className="bg-[#f8fafc] border-b border-[#e2e8f0]">
             <tr>
-              <th className="px-6 py-4 text-left text-xs font-bold text-[#62748e] uppercase tracking-wider">
-                ID
-              </th>
-              <th className="px-6 py-4 text-left text-xs font-bold text-[#62748e] uppercase tracking-wider">
-                Tên mùa vụ
-              </th>
-              <th className="px-6 py-4 text-left text-xs font-bold text-[#62748e] uppercase tracking-wider">
-                Nông trại
-              </th>
-              <th className="px-6 py-4 text-left text-xs font-bold text-[#62748e] uppercase tracking-wider">
-                Thời gian
-              </th>
-              <th className="px-6 py-4 text-left text-xs font-bold text-[#62748e] uppercase tracking-wider">
-                Luống
-              </th>
-              <th className="px-6 py-4 text-left text-xs font-bold text-[#62748e] uppercase tracking-wider">
-                Trạng thái
-              </th>
-              <th className="px-6 py-4 text-center text-xs font-bold text-[#62748e] uppercase tracking-wider">
-                Thao tác
-              </th>
+              {[
+                "Mã",
+                "Tên mùa vụ",
+                "Nông trại",
+                "Thời gian",
+                "Số luống",
+                "Trạng thái",
+                "Thao tác",
+              ].map((h) => (
+                <th
+                  key={h}
+                  className="px-6 py-4 text-left text-xs font-bold text-[#62748e] uppercase tracking-wider"
+                >
+                  {h}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-[#e2e8f0]">
@@ -273,33 +252,21 @@ export function SeasonsPage() {
             </p>
           </div>
         )}
-
-        <div className="px-6 py-4 border-t border-[#e2e8f0] flex items-center justify-between text-sm text-[#62748e]">
-          <span>Hiển thị {filteredSeasons.length} mùa vụ</span>
-          <div className="flex gap-2">
-            <button className="px-3 py-1 border border-[#cad5e2] rounded hover:bg-[#f8fafc]">
-              Trước
-            </button>
-            <button className="px-3 py-1 border border-[#cad5e2] rounded hover:bg-[#f8fafc]">
-              Sau
-            </button>
-          </div>
-        </div>
       </div>
 
-      {/* Delete Confirmation Dialog */}
+      {/* Delete Dialog */}
       <AlertDialog.Root
         open={deleteDialogOpen}
         onOpenChange={setDeleteDialogOpen}
       >
         <AlertDialog.Portal>
-          <AlertDialog.Overlay className="fixed inset-0 bg-black/50 z-50 animate-in fade-in" />
-          <AlertDialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-md bg-white rounded-xl shadow-2xl p-6 animate-in fade-in zoom-in-95">
+          <AlertDialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
+          <AlertDialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-md bg-white rounded-xl shadow-2xl p-6">
             <AlertDialog.Title className="text-lg font-semibold text-slate-900 mb-2">
               Xác nhận xóa mùa vụ
             </AlertDialog.Title>
             <AlertDialog.Description className="text-sm text-slate-600 mb-6">
-              Bạn có chắc chắn muốn xóa mùa vụ{" "}
+              Bạn có chắc chắn muốn xóa{" "}
               <span className="font-semibold">{seasonToDelete?.name}</span>?
               Hành động này không thể hoàn tác.
             </AlertDialog.Description>
@@ -341,7 +308,6 @@ function CreateSeasonView({
     status: "Sắp diễn ra" as SeasonStatus,
     plots: [] as PlotAssignment[],
   });
-
   const [selectedPlots, setSelectedPlots] = useState<string[]>([]);
   const [plotDetails, setPlotDetails] = useState<
     Record<
@@ -360,13 +326,17 @@ function CreateSeasonView({
     { id: "A-4", name: "Luống A-4", area: "Khu A (Phía Bắc)", size: "45 m²" },
     { id: "B-2", name: "Luống B-2", area: "Khu B (Phía Nam)", size: "60 m²" },
   ];
-
   const defaultDetail = {
     crop: "Bắp Cải Trắng" as CropType,
     sowingDate: "",
     harvestDate: "",
     quantity: 0,
   };
+  const cropOptions: CropType[] = [
+    "Bắp Cải Trắng",
+    "Bắp Cải Tím",
+    "Bắp Cải Xoăn",
+  ];
 
   const handleStep2Submit = () => {
     const plots: PlotAssignment[] = selectedPlots.map((plotId) => {
@@ -386,26 +356,23 @@ function CreateSeasonView({
     onCreate({ ...formData, plots });
   };
 
-  const togglePlot = (plotId: string) => {
+  const togglePlot = (plotId: string) =>
     setSelectedPlots((prev) =>
       prev.includes(plotId)
         ? prev.filter((id) => id !== plotId)
         : [...prev, plotId],
     );
-  };
 
   const updatePlotDetail = (
     plotId: string,
     field: keyof typeof defaultDetail,
     value: any,
-  ) => {
+  ) =>
     setPlotDetails((prev) => ({
       ...prev,
       [plotId]: { ...(prev[plotId] || defaultDetail), [field]: value },
     }));
-  };
 
-  // Copy current plot's config to ALL selected plots
   const applyToAll = (sourceId: string) => {
     const source = plotDetails[sourceId] || defaultDetail;
     const newDetails: typeof plotDetails = {};
@@ -438,291 +405,257 @@ function CreateSeasonView({
         </div>
         <Link
           to="/seasons"
-          className="px-4 py-2 bg-[#f1f5f9] text-[#314158] rounded-lg hover:bg-[#e2e8f0] transition-colors"
+          className="px-4 py-2 bg-[#f1f5f9] text-[#314158] rounded-lg hover:bg-[#e2e8f0] transition-colors flex items-center gap-2"
         >
-          Hủy bỏ
+          <ArrowLeft className="w-4 h-4" /> Quay lại
         </Link>
       </div>
 
+      {/* Step 1 */}
       {step === 1 && (
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            setStep(2);
-          }}
-          className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-6"
-        >
+        <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-6 max-w-2xl">
+          <h3 className="text-sm font-bold text-[#62748e] uppercase mb-4">
+            📝 Thông tin mùa vụ
+          </h3>
           <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-[#115e59] mb-2">
-                Tên mùa vụ <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                required
-                placeholder="Ví dụ: Mùa Hè 2026"
-                value={formData.name}
-                onChange={(e) =>
-                  setFormData({ ...formData, name: e.target.value })
-                }
-                className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-[#115e59] mb-2">
-                Nông trại / Khu vực <span className="text-red-500">*</span>
-              </label>
-              <select
-                required
-                value={formData.farm}
-                onChange={(e) =>
-                  setFormData({ ...formData, farm: e.target.value })
-                }
-                className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-              >
-                <option value="">Chọn Nông trại...</option>
-                <option>Trang trại Thung lũng Xanh</option>
-                <option>Trang trại Nắng Hạ</option>
-                <option>Trang trại Sông Nội</option>
-              </select>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-[#115e59] mb-2">
+                  Tên mùa vụ *
+                </label>
+                <input
+                  value={formData.name}
+                  onChange={(e) =>
+                    setFormData((p) => ({ ...p, name: e.target.value }))
+                  }
+                  className="w-full px-3 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                  placeholder="Mùa Hè 2025"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-[#115e59] mb-2">
+                  Nông trại
+                </label>
+                <input
+                  value={formData.farm}
+                  onChange={(e) =>
+                    setFormData((p) => ({ ...p, farm: e.target.value }))
+                  }
+                  className="w-full px-3 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                  placeholder="Trang trại Thung lũng Xanh"
+                />
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Ngày bắt đầu <span className="text-red-500">*</span>
+                  Ngày bắt đầu
                 </label>
                 <input
                   type="date"
-                  required
                   value={formData.startDate}
                   onChange={(e) =>
-                    setFormData({ ...formData, startDate: e.target.value })
+                    setFormData((p) => ({ ...p, startDate: e.target.value }))
                   }
-                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                  className="w-full px-3 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Ngày kết thúc <span className="text-red-500">*</span>
+                  Ngày kết thúc
                 </label>
                 <input
                   type="date"
-                  required
                   value={formData.endDate}
                   onChange={(e) =>
-                    setFormData({ ...formData, endDate: e.target.value })
+                    setFormData((p) => ({ ...p, endDate: e.target.value }))
                   }
-                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                  className="w-full px-3 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
                 />
               </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-[#115e59] mb-2">
+                Trạng thái
+              </label>
+              <select
+                value={formData.status}
+                onChange={(e) =>
+                  setFormData((p) => ({
+                    ...p,
+                    status: e.target.value as SeasonStatus,
+                  }))
+                }
+                className="w-full px-3 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] bg-white"
+              >
+                <option value="Sắp diễn ra">Sắp diễn ra</option>
+                <option value="Đang hoạt động">Đang hoạt động</option>
+                <option value="Đã kết thúc">Đã kết thúc</option>
+              </select>
             </div>
             <div>
               <label className="block text-sm font-medium text-[#115e59] mb-2">
                 Mô tả
               </label>
               <textarea
-                rows={4}
                 value={formData.description}
                 onChange={(e) =>
-                  setFormData({ ...formData, description: e.target.value })
+                  setFormData((p) => ({ ...p, description: e.target.value }))
                 }
-                className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] resize-none"
+                rows={3}
+                className="w-full px-3 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] resize-none"
+                placeholder="Mô tả mùa vụ..."
               />
             </div>
           </div>
           <div className="mt-6 flex justify-end">
             <button
-              type="submit"
-              className="px-6 py-2 bg-[#009689] text-white rounded-lg hover:bg-[#007f75] transition-colors"
+              onClick={() => setStep(2)}
+              disabled={!formData.name}
+              className="px-6 py-2 bg-[#009689] text-white rounded-lg hover:bg-[#007f75] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Tiếp tục →
+              Tiếp theo
             </button>
           </div>
-        </form>
+        </div>
       )}
 
+      {/* Step 2 */}
       {step === 2 && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left: Plot Selection */}
-          <div className="lg:col-span-1 bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-6 space-y-4">
-            {["Khu A (Phía Bắc)", "Khu B (Phía Nam)"].map((area) => (
-              <div key={area}>
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-semibold text-[#115e59] text-sm">
-                    {area.split(" (")[0]}
-                    <br />
-                    <span className="font-normal text-[#62748e]">
-                      ({area.split("(")[1].replace(")", "")})
-                    </span>
-                  </h3>
-                </div>
-                <div className="space-y-2">
-                  {mockPlots
-                    .filter((p) => p.area === area)
-                    .map((plot) => (
-                      <div
-                        key={plot.id}
-                        onClick={() => togglePlot(plot.id)}
-                        className={`p-3 rounded-lg border-2 cursor-pointer transition-colors ${selectedPlots.includes(plot.id) ? "border-[#009689] bg-[#f0fdfa]" : "border-[#e2e8f0] hover:border-[#009689]"}`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <input
-                            type="checkbox"
-                            readOnly
-                            checked={selectedPlots.includes(plot.id)}
-                            className="w-4 h-4 text-[#009689] focus:ring-[#009689] rounded pointer-events-none"
-                          />
-                          <div className="flex-1">
-                            <div className="font-medium text-[#115e59] text-sm">
-                              {plot.name}
-                            </div>
-                            <div className="text-xs text-[#62748e]">
-                              {plot.size}
-                            </div>
-                          </div>
-                        </div>
+        <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-6">
+          <h3 className="text-sm font-bold text-[#62748e] uppercase mb-4">
+            🌱 Chọn luống
+          </h3>
+          <div className="space-y-3">
+            {mockPlots.map((plot) => {
+              const isSelected = selectedPlots.includes(plot.id);
+              const details = plotDetails[plot.id] || defaultDetail;
+              return (
+                <div
+                  key={plot.id}
+                  className={`border rounded-lg p-4 ${isSelected ? "border-[#009689] bg-[#f0fdfa]" : "border-[#e2e8f0]"}`}
+                >
+                  <div className="flex items-center gap-3 mb-3">
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => togglePlot(plot.id)}
+                      className="w-4 h-4 accent-[#009689]"
+                    />
+                    <div>
+                      <div className="font-medium text-[#115e59]">
+                        {plot.name}
                       </div>
-                    ))}
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Right: Plot Details */}
-          <div className="lg:col-span-2 bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-6">
-            <div className="mb-4">
-              <h3 className="font-semibold text-[#115e59] mb-1">
-                Cấu hình luống đã chọn ({selectedPlots.length})
-              </h3>
-              <p className="text-sm text-[#62748e]">
-                Mẹo: Sử dụng "Áp dụng cho tất cả" để thiết lập nhanh
-              </p>
-            </div>
-
-            {selectedPlots.length === 0 ? (
-              <div className="text-center py-12 text-[#62748e]">
-                Chọn luống từ danh sách bên trái để bắt đầu
-              </div>
-            ) : (
-              <div className="space-y-6">
-                {selectedPlots.map((plotId) => {
-                  const plot = mockPlots.find((p) => p.id === plotId)!;
-                  const details = plotDetails[plotId] || defaultDetail;
-                  return (
-                    <div
-                      key={plotId}
-                      className="p-4 border border-[#e2e8f0] rounded-lg"
-                    >
-                      <div className="flex items-center justify-between mb-4">
-                        <div>
-                          <h4 className="font-medium text-[#115e59]">
-                            {plot.name}
-                          </h4>
-                          <p className="text-xs text-[#62748e]">{plot.size}</p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => applyToAll(plotId)}
-                          className="text-sm text-[#009689] hover:underline px-3 py-1 rounded-lg hover:bg-[#f0fdfa] transition-colors"
-                        >
-                          Áp dụng cho tất cả
-                        </button>
-                      </div>
-                      <div className="grid grid-cols-4 gap-3">
-                        <div>
-                          <label className="block text-xs text-[#62748e] mb-1">
-                            Cây trồng
-                          </label>
-                          <select
-                            value={details.crop}
-                            onChange={(e) =>
-                              updatePlotDetail(
-                                plotId,
-                                "crop",
-                                e.target.value as CropType,
-                              )
-                            }
-                            className="w-full px-2 py-1.5 text-sm border border-[#cad5e2] rounded focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                          >
-                            <option value="Bắp Cải Trắng">Bắp Cải Trắng</option>
-                            <option value="Bắp Cải Tím">Bắp Cải Tím</option>
-                            <option value="Bắp Cải Xoăn">Bắp Cải Xoăn</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-xs text-[#62748e] mb-1">
-                            Sản lượng (kg)
-                          </label>
-                          <input
-                            type="number"
-                            placeholder="0"
-                            value={details.quantity || ""}
-                            onChange={(e) =>
-                              updatePlotDetail(
-                                plotId,
-                                "quantity",
-                                parseInt(e.target.value) || 0,
-                              )
-                            }
-                            className="w-full px-2 py-1.5 text-sm border border-[#cad5e2] rounded focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs text-[#62748e] mb-1">
-                            Ngày gieo giống
-                          </label>
-                          <input
-                            type="date"
-                            value={details.sowingDate}
-                            onChange={(e) =>
-                              updatePlotDetail(
-                                plotId,
-                                "sowingDate",
-                                e.target.value,
-                              )
-                            }
-                            className="w-full px-2 py-1.5 text-sm border border-[#cad5e2] rounded focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs text-[#62748e] mb-1">
-                            Dự kiến thu hoạch
-                          </label>
-                          <input
-                            type="date"
-                            value={details.harvestDate}
-                            onChange={(e) =>
-                              updatePlotDetail(
-                                plotId,
-                                "harvestDate",
-                                e.target.value,
-                              )
-                            }
-                            className="w-full px-2 py-1.5 text-sm border border-[#cad5e2] rounded focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                          />
-                        </div>
+                      <div className="text-xs text-[#62748e]">
+                        {plot.area} • {plot.size}
                       </div>
                     </div>
-                  );
-                })}
-              </div>
-            )}
-
-            <div className="mt-6 flex justify-between">
-              <button
-                onClick={() => setStep(1)}
-                className="px-6 py-2 bg-[#f1f5f9] text-[#314158] rounded-lg hover:bg-[#e2e8f0] transition-colors flex items-center gap-2"
-              >
-                <ArrowLeft className="w-4 h-4" /> Quay lại
-              </button>
-              <button
-                onClick={handleStep2Submit}
-                disabled={selectedPlots.length === 0}
-                className="px-6 py-2 bg-[#009689] text-white rounded-lg hover:bg-[#007f75] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-              >
-                <CheckCircle className="w-4 h-4" /> Tạo mùa vụ
-              </button>
-            </div>
+                  </div>
+                  {isSelected && (
+                    <div className="grid grid-cols-2 gap-3 pl-7">
+                      <div>
+                        <label className="block text-xs text-[#62748e] mb-1">
+                          Cây trồng
+                        </label>
+                        <select
+                          value={details.crop}
+                          onChange={(e) =>
+                            updatePlotDetail(
+                              plot.id,
+                              "crop",
+                              e.target.value as CropType,
+                            )
+                          }
+                          className="w-full px-2 py-1.5 text-sm border border-[#cad5e2] rounded focus:outline-none focus:ring-2 focus:ring-[#009689] bg-white"
+                        >
+                          {cropOptions.map((c) => (
+                            <option key={c} value={c}>
+                              {c}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-[#62748e] mb-1">
+                          Sản lượng dự kiến (kg)
+                        </label>
+                        <input
+                          type="number"
+                          value={details.quantity || ""}
+                          onChange={(e) =>
+                            updatePlotDetail(
+                              plot.id,
+                              "quantity",
+                              parseInt(e.target.value) || 0,
+                            )
+                          }
+                          className="w-full px-2 py-1.5 text-sm border border-[#cad5e2] rounded focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-[#62748e] mb-1">
+                          Ngày gieo
+                        </label>
+                        <input
+                          type="date"
+                          value={details.sowingDate}
+                          onChange={(e) =>
+                            updatePlotDetail(
+                              plot.id,
+                              "sowingDate",
+                              e.target.value,
+                            )
+                          }
+                          className="w-full px-2 py-1.5 text-sm border border-[#cad5e2] rounded focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-[#62748e] mb-1">
+                          Ngày thu hoạch
+                        </label>
+                        <input
+                          type="date"
+                          value={details.harvestDate}
+                          onChange={(e) =>
+                            updatePlotDetail(
+                              plot.id,
+                              "harvestDate",
+                              e.target.value,
+                            )
+                          }
+                          className="w-full px-2 py-1.5 text-sm border border-[#cad5e2] rounded focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                        />
+                      </div>
+                      {selectedPlots.length > 1 && (
+                        <div className="col-span-2">
+                          <button
+                            onClick={() => applyToAll(plot.id)}
+                            className="text-xs text-[#009689] hover:underline"
+                          >
+                            Áp dụng cho tất cả luống
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <div className="mt-6 flex justify-between">
+            <button
+              onClick={() => setStep(1)}
+              className="px-6 py-2 bg-[#f1f5f9] text-[#314158] rounded-lg hover:bg-[#e2e8f0] transition-colors flex items-center gap-2"
+            >
+              <ArrowLeft className="w-4 h-4" /> Quay lại
+            </button>
+            <button
+              onClick={handleStep2Submit}
+              disabled={selectedPlots.length === 0}
+              className="px-6 py-2 bg-[#009689] text-white rounded-lg hover:bg-[#007f75] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              <CheckCircle className="w-4 h-4" /> Tạo mùa vụ
+            </button>
           </div>
         </div>
       )}
@@ -819,32 +752,28 @@ function DetailSeasonView({ season }: { season: Season }) {
         </h3>
         {Object.entries(plotsByCrop).map(([crop, plots]) => {
           const totalQuantity = plots.reduce((sum, p) => sum + p.quantity, 0);
-          const emoji = cropEmoji[crop] ?? "🥬";
+          const emoji = cropEmoji[crop] ?? "🌱";
           return (
-            <Collapsible.Root key={crop} defaultOpen className="mb-4">
-              <div className="flex items-center justify-between p-4 bg-[#f8fafc] rounded-lg">
-                <Collapsible.Trigger className="flex-1 flex items-center gap-3 text-left">
-                  <ChevronDown className="w-4 h-4 text-[#62748e]" />
-                  <span className="text-lg">{emoji}</span>
-                  <div className="flex-1">
-                    <div className="font-medium text-[#115e59]">
-                      {crop} ({plots.length} luống)
-                    </div>
-                    <div className="text-sm text-[#62748e]">
-                      Sản lượng trồng: {totalQuantity} kg
-                    </div>
-                  </div>
-                </Collapsible.Trigger>
-              </div>
-              <Collapsible.Content className="mt-2">
-                <table className="w-full">
-                  <thead className="bg-[#f8fafc]">
+            <Collapsible.Root key={crop} defaultOpen>
+              <Collapsible.Trigger className="flex items-center justify-between w-full py-3 border-b border-[#e2e8f0]">
+                <div className="flex items-center gap-2">
+                  <span>{emoji}</span>
+                  <span className="font-medium text-[#115e59]">{crop}</span>
+                  <span className="text-xs text-[#62748e]">
+                    ({plots.length} luống • {totalQuantity} kg)
+                  </span>
+                </div>
+                <ChevronDown className="w-4 h-4 text-[#62748e]" />
+              </Collapsible.Trigger>
+              <Collapsible.Content>
+                <table className="w-full mt-3">
+                  <thead>
                     <tr>
                       {[
                         "Luống",
-                        "Khu đất",
+                        "Khu vực",
                         "Ngày gieo",
-                        "Ngày thu hoạch (dự kiến)",
+                        "Thu hoạch",
                         "Trạng thái",
                         "Sản lượng",
                       ].map((h) => (
@@ -929,19 +858,17 @@ function EditSeasonView({
     plotId: string,
     field: keyof PlotAssignment,
     value: any,
-  ) => {
+  ) =>
     setPlots((prev) =>
       prev.map((plot) =>
         plot.plotId === plotId ? { ...plot, [field]: value } : plot,
       ),
     );
-  };
 
   const removePlot = (plotId: string) => {
     setPlotToDelete(plotId);
     setDeletePlotDialogOpen(true);
   };
-
   const confirmRemovePlot = () => {
     if (plotToDelete) {
       setPlots((prev) => prev.filter((plot) => plot.plotId !== plotToDelete));
@@ -949,6 +876,12 @@ function EditSeasonView({
       setDeletePlotDialogOpen(false);
     }
   };
+
+  const cropOptions: CropType[] = [
+    "Bắp Cải Trắng",
+    "Bắp Cải Tím",
+    "Bắp Cải Xoăn",
+  ];
 
   return (
     <div className="flex flex-col gap-6 p-6">
@@ -984,39 +917,38 @@ function EditSeasonView({
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Info form */}
         <div className="lg:col-span-1 bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-6">
           <h3 className="text-sm font-bold text-[#62748e] uppercase mb-4">
             📝 Thông tin chung
           </h3>
           <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-[#115e59] mb-2">
-                Tên mùa vụ
-              </label>
-              <input
-                type="text"
-                value={formData.name}
-                onChange={(e) =>
-                  setFormData({ ...formData, name: e.target.value })
-                }
-                className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-[#115e59] mb-2">
-                Nông trại
-              </label>
-              <select
-                value={formData.farm}
-                onChange={(e) =>
-                  setFormData({ ...formData, farm: e.target.value })
-                }
-                className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-              >
-                <option>Trang trại Thung lũng Xanh</option>
-                <option>Trang trại Nắng Hạ</option>
-              </select>
-            </div>
+            {[
+              {
+                label: "Tên mùa vụ",
+                key: "name" as const,
+                placeholder: "Mùa Hè 2025",
+              },
+              {
+                label: "Nông trại",
+                key: "farm" as const,
+                placeholder: "Tên nông trại",
+              },
+            ].map(({ label, key, placeholder }) => (
+              <div key={key}>
+                <label className="block text-sm font-medium text-[#115e59] mb-2">
+                  {label}
+                </label>
+                <input
+                  value={formData[key]}
+                  onChange={(e) =>
+                    setFormData((p) => ({ ...p, [key]: e.target.value }))
+                  }
+                  placeholder={placeholder}
+                  className="w-full px-3 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                />
+              </div>
+            ))}
             <div>
               <label className="block text-sm font-medium text-[#115e59] mb-2">
                 Ngày bắt đầu
@@ -1025,9 +957,9 @@ function EditSeasonView({
                 type="date"
                 value={formData.startDate}
                 onChange={(e) =>
-                  setFormData({ ...formData, startDate: e.target.value })
+                  setFormData((p) => ({ ...p, startDate: e.target.value }))
                 }
-                className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                className="w-full px-3 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
               />
             </div>
             <div>
@@ -1038,9 +970,9 @@ function EditSeasonView({
                 type="date"
                 value={formData.endDate}
                 onChange={(e) =>
-                  setFormData({ ...formData, endDate: e.target.value })
+                  setFormData((p) => ({ ...p, endDate: e.target.value }))
                 }
-                className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                className="w-full px-3 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
               />
             </div>
             <div>
@@ -1050,15 +982,15 @@ function EditSeasonView({
               <select
                 value={formData.status}
                 onChange={(e) =>
-                  setFormData({
-                    ...formData,
+                  setFormData((p) => ({
+                    ...p,
                     status: e.target.value as SeasonStatus,
-                  })
+                  }))
                 }
-                className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                className="w-full px-3 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] bg-white"
               >
-                <option value="Đang hoạt động">Đang hoạt động</option>
                 <option value="Sắp diễn ra">Sắp diễn ra</option>
+                <option value="Đang hoạt động">Đang hoạt động</option>
                 <option value="Đã kết thúc">Đã kết thúc</option>
               </select>
             </div>
@@ -1067,137 +999,150 @@ function EditSeasonView({
                 Mô tả
               </label>
               <textarea
-                rows={4}
                 value={formData.description}
                 onChange={(e) =>
-                  setFormData({ ...formData, description: e.target.value })
+                  setFormData((p) => ({ ...p, description: e.target.value }))
                 }
-                className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] resize-none"
+                rows={3}
+                className="w-full px-3 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] resize-none"
               />
             </div>
           </div>
         </div>
 
+        {/* Plots table */}
         <div className="lg:col-span-2 bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-6">
           <h3 className="text-sm font-bold text-[#62748e] uppercase mb-4">
-            🌾 Danh sách luống ({plots.length})
+            🌱 Luống trong mùa vụ
           </h3>
           {plots.length === 0 ? (
-            <div className="text-center py-12 text-[#62748e]">
-              Chưa có luống nào được gán
+            <div className="text-center py-8 text-[#62748e]">
+              Chưa có luống nào
             </div>
           ) : (
-            <div className="space-y-4">
-              {plots.map((plot) => (
-                <div
-                  key={plot.plotId}
-                  className="p-4 border border-[#e2e8f0] rounded-lg"
-                >
-                  <div className="flex items-center justify-between mb-3">
-                    <div>
-                      <h4 className="font-medium text-[#115e59]">
-                        {plot.plotName}
-                      </h4>
-                      <p className="text-xs text-[#62748e]">{plot.area}</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => removePlot(plot.plotId)}
-                      className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                  <div className="grid grid-cols-4 gap-3">
-                    <div>
-                      <label className="block text-xs text-[#62748e] mb-1">
-                        Cây trồng
-                      </label>
-                      <select
-                        value={plot.crop}
-                        onChange={(e) =>
-                          updatePlot(
-                            plot.plotId,
-                            "crop",
-                            e.target.value as CropType,
-                          )
-                        }
-                        className="w-full px-2 py-1.5 text-sm border border-[#cad5e2] rounded focus:outline-none focus:ring-2 focus:ring-[#009689]"
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr>
+                    {[
+                      "Luống",
+                      "Cây trồng",
+                      "Ngày gieo",
+                      "Thu hoạch",
+                      "Sản lượng (kg)",
+                      "",
+                    ].map((h) => (
+                      <th
+                        key={h}
+                        className="px-3 py-2 text-left text-xs font-medium text-[#62748e] uppercase"
                       >
-                        <option value="Bắp Cải Trắng">Bắp Cải Trắng</option>
-                        <option value="Bắp Cải Tím">Bắp Cải Tím</option>
-                        <option value="Bắp Cải Xoăn">Bắp Cải Xoăn</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-xs text-[#62748e] mb-1">
-                        Sản lượng (kg)
-                      </label>
-                      <input
-                        type="number"
-                        value={plot.quantity}
-                        onChange={(e) =>
-                          updatePlot(
-                            plot.plotId,
-                            "quantity",
-                            parseInt(e.target.value) || 0,
-                          )
-                        }
-                        className="w-full px-2 py-1.5 text-sm border border-[#cad5e2] rounded focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-[#62748e] mb-1">
-                        Ngày gieo
-                      </label>
-                      <input
-                        type="text"
-                        value={plot.sowingDate}
-                        onChange={(e) =>
-                          updatePlot(plot.plotId, "sowingDate", e.target.value)
-                        }
-                        className="w-full px-2 py-1.5 text-sm border border-[#cad5e2] rounded focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-[#62748e] mb-1">
-                        Thu hoạch
-                      </label>
-                      <input
-                        type="text"
-                        value={plot.harvestDate}
-                        onChange={(e) =>
-                          updatePlot(plot.plotId, "harvestDate", e.target.value)
-                        }
-                        className="w-full px-2 py-1.5 text-sm border border-[#cad5e2] rounded focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                      />
-                    </div>
-                  </div>
-                </div>
-              ))}
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#e2e8f0]">
+                  {plots.map((plot) => (
+                    <tr key={plot.plotId}>
+                      <td className="px-3 py-3 text-sm text-[#115e59] font-medium">
+                        {plot.plotName}
+                      </td>
+                      <td className="px-3 py-3">
+                        <select
+                          value={plot.crop}
+                          onChange={(e) =>
+                            updatePlot(
+                              plot.plotId,
+                              "crop",
+                              e.target.value as CropType,
+                            )
+                          }
+                          className="w-full px-2 py-1.5 text-sm border border-[#cad5e2] rounded focus:outline-none focus:ring-2 focus:ring-[#009689] bg-white"
+                        >
+                          {cropOptions.map((c) => (
+                            <option key={c} value={c}>
+                              {c}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="px-3 py-3">
+                        <input
+                          type="date"
+                          value={plot.sowingDate}
+                          onChange={(e) =>
+                            updatePlot(
+                              plot.plotId,
+                              "sowingDate",
+                              e.target.value,
+                            )
+                          }
+                          className="w-full px-2 py-1.5 text-sm border border-[#cad5e2] rounded focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                        />
+                      </td>
+                      <td className="px-3 py-3">
+                        <input
+                          type="date"
+                          value={plot.harvestDate}
+                          onChange={(e) =>
+                            updatePlot(
+                              plot.plotId,
+                              "harvestDate",
+                              e.target.value,
+                            )
+                          }
+                          className="w-full px-2 py-1.5 text-sm border border-[#cad5e2] rounded focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                        />
+                      </td>
+                      <td className="px-3 py-3">
+                        <input
+                          type="number"
+                          value={plot.quantity}
+                          onChange={(e) =>
+                            updatePlot(
+                              plot.plotId,
+                              "quantity",
+                              parseInt(e.target.value) || 0,
+                            )
+                          }
+                          className="w-full px-2 py-1.5 text-sm border border-[#cad5e2] rounded focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                        />
+                      </td>
+                      <td className="px-3 py-3">
+                        <button
+                          onClick={() => removePlot(plot.plotId)}
+                          className="p-1 text-red-500 hover:bg-red-50 rounded"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </div>
       </div>
 
+      {/* Remove plot dialog */}
       <AlertDialog.Root
         open={deletePlotDialogOpen}
         onOpenChange={setDeletePlotDialogOpen}
       >
         <AlertDialog.Portal>
-          <AlertDialog.Overlay className="fixed inset-0 bg-black/50 z-50 animate-in fade-in" />
-          <AlertDialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-md bg-white rounded-xl shadow-2xl p-6 animate-in fade-in zoom-in-95">
+          <AlertDialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
+          <AlertDialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-sm bg-white rounded-xl shadow-2xl p-6">
             <AlertDialog.Title className="text-lg font-semibold text-slate-900 mb-2">
-              Xác nhận xóa luống
+              Xóa luống?
             </AlertDialog.Title>
             <AlertDialog.Description className="text-sm text-slate-600 mb-6">
-              Bạn có chắc chắn muốn xóa luống này khỏi mùa vụ? Hành động này
-              không thể hoàn tác.
+              Luống sẽ bị xóa khỏi mùa vụ này.
             </AlertDialog.Description>
             <div className="flex gap-3 justify-end">
               <AlertDialog.Cancel asChild>
                 <button className="px-4 py-2 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-100 transition-colors">
-                  Hủy bỏ
+                  Hủy
                 </button>
               </AlertDialog.Cancel>
               <AlertDialog.Action asChild>
@@ -1205,7 +1150,7 @@ function EditSeasonView({
                   onClick={confirmRemovePlot}
                   className="px-4 py-2 rounded-lg text-sm font-medium bg-red-600 text-white hover:bg-red-700 transition-colors"
                 >
-                  Xóa luống
+                  Xóa
                 </button>
               </AlertDialog.Action>
             </div>

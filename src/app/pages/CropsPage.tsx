@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Search,
   Plus,
@@ -11,6 +11,8 @@ import {
   ChevronDown,
   ArrowUpDown,
   X,
+  Loader2,
+  WifiOff,
 } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
@@ -22,20 +24,33 @@ import {
   cropSoilTypes as soilTypes,
   mockCrops,
 } from "../../data/mockData";
+import { api, CropResponse } from "../../api/client";
 
-// Mock data
-const getSoilBadgeColor = (soilType: SoilType) => {
-  return "bg-[#cbfbf1] text-[#00786f]";
-};
+// Map API response → local Crop shape
+function mapCrop(c: CropResponse): Crop {
+  return {
+    id: c.cropId,
+    name: c.cropName,
+    scientificName: c.cropScientificName ?? "",
+    growthPeriod: c.cropDefaultGrowthDays ?? 0,
+    soilType: (c.soilName as SoilType) ?? "Đất Thịt",
+    status: c.cropStatus === "Active" ? "Đang sử dụng" : "Không sử dụng",
+    image: "",
+    description: "",
+    plantDistance: { row: 0, column: 0 },
+  };
+}
 
-const getStatusBadgeColor = (status: CropStatus) => {
-  return status === "Đang sử dụng"
+const getSoilBadgeColor = (_: SoilType) => "bg-[#cbfbf1] text-[#00786f]";
+const getStatusBadgeColor = (status: CropStatus) =>
+  status === "Đang sử dụng"
     ? "bg-[#dcfce7] text-[#008236]"
     : "bg-[#fee2e2] text-[#991b1b]";
-};
 
 export function CropsPage() {
-  const [crops, setCrops] = useState<Crop[]>(mockCrops);
+  const [crops, setCrops] = useState<Crop[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [usingMock, setUsingMock] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [sortField, setSortField] = useState<"growthPeriod" | "status" | null>(
     null,
@@ -47,254 +62,404 @@ export function CropsPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedCrop, setSelectedCrop] = useState<Crop | null>(null);
   const [cropToDelete, setCropToDelete] = useState<Crop | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  // Handle sorting
+  useEffect(() => {
+    loadCrops();
+  }, []);
+
+  const loadCrops = async () => {
+    setLoading(true);
+    try {
+      const data = await api.getCrops();
+      setCrops(data.map(mapCrop));
+      setUsingMock(false);
+    } catch {
+      setCrops([...mockCrops]);
+      setUsingMock(true);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSort = (field: "growthPeriod" | "status") => {
-    if (sortField === field) {
-      setSortDirection(sortDirection === "asc" ? "desc" : "asc");
-    } else {
+    if (sortField === field)
+      setSortDirection((d) => (d === "asc" ? "desc" : "asc"));
+    else {
       setSortField(field);
       setSortDirection("asc");
     }
   };
 
-  // Filtered and sorted crops
   const filteredCrops = crops
-    .filter((crop) => {
-      const matchesSearch =
-        crop.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        crop.scientificName.toLowerCase().includes(searchQuery.toLowerCase());
-      return matchesSearch;
-    })
+    .filter(
+      (c) =>
+        c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        c.scientificName.toLowerCase().includes(searchQuery.toLowerCase()),
+    )
     .sort((a, b) => {
       if (!sortField) return 0;
-
       if (sortField === "growthPeriod") {
-        const comparison = a.growthPeriod - b.growthPeriod;
-        return sortDirection === "asc" ? comparison : -comparison;
-      } else if (sortField === "status") {
-        const statusOrder = { "Đang sử dụng": 1, "Không sử dụng": 2 };
-        const comparison = statusOrder[a.status] - statusOrder[b.status];
-        return sortDirection === "asc" ? comparison : -comparison;
+        return sortDirection === "asc"
+          ? a.growthPeriod - b.growthPeriod
+          : b.growthPeriod - a.growthPeriod;
       }
-      return 0;
+      const order = { "Đang sử dụng": 1, "Không sử dụng": 2 };
+      return sortDirection === "asc"
+        ? order[a.status] - order[b.status]
+        : order[b.status] - order[a.status];
     });
 
-  // View crop
-  const handleView = (crop: Crop) => {
-    setSelectedCrop(crop);
-    setViewModalOpen(true);
-  };
-
-  // Edit crop
-  const handleEdit = (crop: Crop) => {
-    setSelectedCrop(crop);
-    setEditModalOpen(true);
-  };
-
-  // Delete crop
-  const handleDelete = (crop: Crop) => {
-    setCropToDelete(crop);
-    setDeleteDialogOpen(true);
-  };
-
-  const confirmDelete = () => {
-    if (cropToDelete) {
-      setCrops(crops.filter((c) => c.id !== cropToDelete.id));
-      setCropToDelete(null);
-      setDeleteDialogOpen(false);
+  const handleCreate = async (cropData: Omit<Crop, "id">) => {
+    setSubmitting(true);
+    try {
+      if (usingMock) {
+        setCrops((prev) => [
+          ...prev,
+          { ...cropData, id: Date.now().toString() },
+        ]);
+      } else {
+        const created = await api.createCrop({
+          cropName: cropData.name,
+          cropScientificName: cropData.scientificName,
+          cropDefaultGrowthDays: cropData.growthPeriod,
+          cropStatus:
+            cropData.status === "Đang sử dụng" ? "Active" : "Inactive",
+        });
+        setCrops((prev) => [...prev, mapCrop(created)]);
+      }
+      setCreateModalOpen(false);
+    } catch (err) {
+      alert(
+        "Không thể tạo cây trồng: " +
+          (err instanceof Error ? err.message : "Lỗi"),
+      );
+    } finally {
+      setSubmitting(false);
     }
   };
 
-  // Create crop
-  const handleCreate = (crop: Omit<Crop, "id">) => {
-    const newCrop = { ...crop, id: Date.now().toString() };
-    setCrops([...crops, newCrop]);
-    setCreateModalOpen(false);
+  const handleUpdate = async (updatedCrop: Crop) => {
+    setSubmitting(true);
+    try {
+      if (usingMock) {
+        setCrops((prev) =>
+          prev.map((c) => (c.id === updatedCrop.id ? updatedCrop : c)),
+        );
+      } else {
+        const updated = await api.updateCrop(updatedCrop.id, {
+          cropName: updatedCrop.name,
+          cropScientificName: updatedCrop.scientificName,
+          cropDefaultGrowthDays: updatedCrop.growthPeriod,
+          cropStatus:
+            updatedCrop.status === "Đang sử dụng" ? "Active" : "Inactive",
+        });
+        setCrops((prev) =>
+          prev.map((c) => (c.id === updatedCrop.id ? mapCrop(updated) : c)),
+        );
+      }
+      setEditModalOpen(false);
+      setSelectedCrop(null);
+    } catch (err) {
+      alert(
+        "Không thể cập nhật: " + (err instanceof Error ? err.message : "Lỗi"),
+      );
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  // Update crop
-  const handleUpdate = (updatedCrop: Crop) => {
-    setCrops(crops.map((c) => (c.id === updatedCrop.id ? updatedCrop : c)));
-    setEditModalOpen(false);
-    setSelectedCrop(null);
+  const handleDelete = async () => {
+    if (!cropToDelete) return;
+    setSubmitting(true);
+    try {
+      if (!usingMock) await api.deleteCrop(cropToDelete.id);
+      setCrops((prev) => prev.filter((c) => c.id !== cropToDelete.id));
+      setDeleteDialogOpen(false);
+      setCropToDelete(null);
+    } catch (err) {
+      alert("Không thể xóa: " + (err instanceof Error ? err.message : "Lỗi"));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const SortIcon = ({ field }: { field: "growthPeriod" | "status" }) => {
+    if (sortField !== field)
+      return <ArrowUpDown className="w-3.5 h-3.5 text-[#94a3b8]" />;
+    return sortDirection === "asc" ? (
+      <ChevronUp className="w-3.5 h-3.5 text-[#009689]" />
+    ) : (
+      <ChevronDown className="w-3.5 h-3.5 text-[#009689]" />
+    );
   };
 
   return (
-    <div className="flex flex-col gap-6 p-6">
+    <div className="p-6 flex flex-col gap-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-[#115e59] text-2xl">Quản Lý cây trồng</h1>
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-[#009689] rounded-[10px] flex items-center justify-center">
+            <Sprout className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <h1 className="text-xl font-bold text-[#115e59]">Cây Trồng</h1>
+            <p className="text-sm text-[#62748e]">Quản lý giống cây trồng</p>
+          </div>
+          {usingMock && (
+            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-50 border border-amber-200 rounded-full">
+              <WifiOff className="w-3 h-3 text-amber-500" />
+              <span className="text-xs text-amber-600">Dữ liệu mẫu</span>
+            </div>
+          )}
+        </div>
         <button
           onClick={() => setCreateModalOpen(true)}
-          className="bg-[#009689] text-white px-4 py-2 rounded-lg hover:bg-[#007f75] transition-colors flex items-center gap-2"
+          className="flex items-center gap-2 px-4 py-2 bg-[#009689] text-white rounded-lg hover:bg-[#007f75] transition-colors text-sm font-medium"
         >
-          <Plus className="w-4 h-4" />
-          Thêm Cây
+          <Plus className="w-4 h-4" /> Thêm cây trồng
         </button>
       </div>
 
-      {/* Search Bar */}
-      <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-4">
-        <div className="relative w-full">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[#90A1B9]" />
-          <input
-            type="text"
-            placeholder="Tìm kiếm..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-          />
-        </div>
+      {/* Search */}
+      <div className="relative max-w-sm">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#94a3b8]" />
+        <input
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Tìm kiếm cây trồng..."
+          className="w-full pl-9 pr-4 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689]"
+        />
       </div>
 
       {/* Table */}
-      <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm overflow-hidden">
-        <table className="w-full">
-          <thead className="bg-[#f8fafc] border-b border-[#e2e8f0]">
-            <tr>
-              <th className="px-6 py-4 text-left text-xs font-bold text-[#62748e] uppercase tracking-wider">
-                Tên cây
-              </th>
-              <th
-                onClick={() => handleSort("growthPeriod")}
-                className="px-6 py-4 text-left text-xs font-bold text-[#62748e] uppercase tracking-wider cursor-pointer hover:bg-[#f1f5f9] transition-colors select-none"
-              >
-                <div className="flex items-center gap-2">
-                  <span>Thời kỳ sinh trưởng</span>
-                  {sortField === "growthPeriod" ? (
-                    sortDirection === "asc" ? (
-                      <ChevronUp className="w-4 h-4" />
-                    ) : (
-                      <ChevronDown className="w-4 h-4" />
-                    )
-                  ) : (
-                    <ArrowUpDown className="w-3.5 h-3.5 text-[#90A1B9]" />
-                  )}
-                </div>
-              </th>
-              <th className="px-6 py-4 text-left text-xs font-bold text-[#62748e] uppercase tracking-wider">
-                Đất tương thích
-              </th>
-              <th
-                onClick={() => handleSort("status")}
-                className="px-6 py-4 text-left text-xs font-bold text-[#62748e] uppercase tracking-wider cursor-pointer hover:bg-[#f1f5f9] transition-colors select-none"
-              >
-                <div className="flex items-center gap-2">
-                  <span>Trạng thái</span>
-                  {sortField === "status" ? (
-                    sortDirection === "asc" ? (
-                      <ChevronUp className="w-4 h-4" />
-                    ) : (
-                      <ChevronDown className="w-4 h-4" />
-                    )
-                  ) : (
-                    <ArrowUpDown className="w-3.5 h-3.5 text-[#90A1B9]" />
-                  )}
-                </div>
-              </th>
-              <th className="px-6 py-4 text-center text-xs font-bold text-[#62748e] uppercase tracking-wider">
-                Thao tác
-              </th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-[#e2e8f0]">
-            {filteredCrops.map((crop) => (
-              <tr
-                key={crop.id}
-                className="hover:bg-[#f8fafc] transition-colors"
-              >
-                <td className="px-6 py-4">
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 rounded-full bg-[#e0f2f1] flex items-center justify-center overflow-hidden">
+      <div className="bg-white rounded-xl border border-[#e2e8f0] shadow-sm overflow-hidden">
+        {loading ? (
+          <div className="flex items-center justify-center py-16">
+            <Loader2 className="w-6 h-6 animate-spin text-[#009689]" />
+          </div>
+        ) : filteredCrops.length === 0 ? (
+          <div className="text-center py-16 text-[#62748e]">
+            Không tìm thấy cây trồng nào
+          </div>
+        ) : (
+          <table className="w-full">
+            <thead className="bg-[#f8fafc] border-b border-[#e2e8f0]">
+              <tr>
+                <th className="px-6 py-4 text-left text-xs font-bold text-[#62748e] uppercase tracking-wider">
+                  Cây trồng
+                </th>
+                <th className="px-6 py-4 text-left text-xs font-bold text-[#62748e] uppercase tracking-wider">
+                  Tên khoa học
+                </th>
+                <th className="px-6 py-4 text-left text-xs font-bold text-[#62748e] uppercase tracking-wider">
+                  <button
+                    onClick={() => handleSort("growthPeriod")}
+                    className="flex items-center gap-1 hover:text-[#009689]"
+                  >
+                    Chu kỳ <SortIcon field="growthPeriod" />
+                  </button>
+                </th>
+                <th className="px-6 py-4 text-left text-xs font-bold text-[#62748e] uppercase tracking-wider">
+                  Loại đất
+                </th>
+                <th className="px-6 py-4 text-left text-xs font-bold text-[#62748e] uppercase tracking-wider">
+                  <button
+                    onClick={() => handleSort("status")}
+                    className="flex items-center gap-1 hover:text-[#009689]"
+                  >
+                    Trạng thái <SortIcon field="status" />
+                  </button>
+                </th>
+                <th className="px-6 py-4 text-center text-xs font-bold text-[#62748e] uppercase tracking-wider">
+                  Thao tác
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#e2e8f0]">
+              {filteredCrops.map((crop) => (
+                <tr
+                  key={crop.id}
+                  className="hover:bg-[#f8fafc] transition-colors"
+                >
+                  <td className="px-6 py-4">
+                    <div className="flex items-center gap-3">
                       {crop.image ? (
                         <img
                           src={crop.image}
                           alt={crop.name}
-                          className="w-full h-full object-cover"
+                          className="w-10 h-10 rounded-lg object-cover"
                         />
                       ) : (
-                        <Sprout className="w-5 h-5 text-[#009689]" />
+                        <div className="w-10 h-10 bg-[#f0fdf9] rounded-lg flex items-center justify-center">
+                          <ImageIcon className="w-5 h-5 text-[#009689]" />
+                        </div>
                       )}
+                      <span className="font-medium text-[#115e59] text-sm">
+                        {crop.name}
+                      </span>
                     </div>
-                    <span className="text-[#0f766e] text-sm">{crop.name}</span>
-                  </div>
-                </td>
-                <td className="px-6 py-4">
-                  <span className="text-[#009689] text-sm">
-                    {crop.growthPeriod} Ngày
-                  </span>
-                </td>
-                <td className="px-6 py-4">
-                  <span
-                    className={`inline-block px-2 py-1 rounded text-xs ${getSoilBadgeColor(
-                      crop.soilType,
-                    )}`}
-                  >
-                    {crop.soilType}
-                  </span>
-                </td>
-                <td className="px-6 py-4">
-                  <span
-                    className={`inline-block px-2 py-1 rounded text-xs ${getStatusBadgeColor(
-                      crop.status,
-                    )}`}
-                  >
-                    {crop.status}
-                  </span>
-                </td>
-                <td className="px-6 py-4">
-                  <div className="flex items-center justify-center gap-2">
-                    <button
-                      onClick={() => handleView(crop)}
-                      className="p-2 hover:bg-[#e0f2f1] rounded-lg transition-colors"
-                      title="Xem"
+                  </td>
+                  <td className="px-6 py-4 text-sm text-[#62748e] italic">
+                    {crop.scientificName || "—"}
+                  </td>
+                  <td className="px-6 py-4 text-sm text-[#62748e]">
+                    {crop.growthPeriod > 0 ? `${crop.growthPeriod} ngày` : "—"}
+                  </td>
+                  <td className="px-6 py-4">
+                    {crop.soilType ? (
+                      <span
+                        className={`px-2.5 py-1 rounded-full text-xs font-medium ${getSoilBadgeColor(crop.soilType)}`}
+                      >
+                        {crop.soilType}
+                      </span>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                  <td className="px-6 py-4">
+                    <span
+                      className={`px-2.5 py-1 rounded-full text-xs font-medium ${getStatusBadgeColor(crop.status)}`}
                     >
-                      <Eye className="w-4 h-4 text-[#009689]" />
-                    </button>
-                    <button
-                      onClick={() => handleEdit(crop)}
-                      className="p-2 hover:bg-[#dbeafe] rounded-lg transition-colors"
-                      title="Chỉnh sửa"
-                    >
-                      <Edit className="w-4 h-4 text-[#00A6F4]" />
-                    </button>
-                    <button
-                      onClick={() => handleDelete(crop)}
-                      className="p-2 hover:bg-[#fee2e2] rounded-lg transition-colors"
-                      title="Xóa"
-                    >
-                      <Trash2 className="w-4 h-4 text-[#FB2C36]" />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-
-        {filteredCrops.length === 0 && (
-          <div className="flex flex-col items-center py-16 text-[#62748e] gap-3">
-            <Sprout className="w-12 h-12 text-[#cad5e2]" />
-            <p>
-              {searchQuery
-                ? "Không tìm thấy cây trồng phù hợp"
-                : "Chưa có cây trồng nào"}
-            </p>
-          </div>
+                      {crop.status}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="flex items-center justify-center gap-2">
+                      <button
+                        onClick={() => {
+                          setSelectedCrop(crop);
+                          setViewModalOpen(true);
+                        }}
+                        className="p-1.5 text-[#62748e] hover:text-[#009689] hover:bg-[#f0fdf9] rounded transition-colors"
+                      >
+                        <Eye className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => {
+                          setSelectedCrop(crop);
+                          setEditModalOpen(true);
+                        }}
+                        className="p-1.5 text-[#62748e] hover:text-[#009689] hover:bg-[#f0fdf9] rounded transition-colors"
+                      >
+                        <Edit className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => {
+                          setCropToDelete(crop);
+                          setDeleteDialogOpen(true);
+                        }}
+                        className="p-1.5 text-[#62748e] hover:text-red-500 hover:bg-red-50 rounded transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
       </div>
 
       {/* View Modal */}
       {selectedCrop && (
-        <ViewCropModal
-          crop={selectedCrop}
+        <Dialog.Root
           open={viewModalOpen}
-          onClose={() => {
-            setViewModalOpen(false);
-            setSelectedCrop(null);
+          onOpenChange={(o) => {
+            setViewModalOpen(o);
+            if (!o) setSelectedCrop(null);
           }}
-        />
+        >
+          <Dialog.Portal>
+            <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
+            <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-xl shadow-xl w-full max-w-lg z-50 p-6">
+              <div className="flex items-center justify-between mb-4">
+                <Dialog.Title className="text-lg font-bold text-[#115e59]">
+                  {selectedCrop.name}
+                </Dialog.Title>
+                <Dialog.Close className="text-[#94a3b8] hover:text-[#62748e]">
+                  <X className="w-5 h-5" />
+                </Dialog.Close>
+              </div>
+              <Dialog.Description className="sr-only">
+                Chi tiết cây trồng
+              </Dialog.Description>
+              <div className="flex items-center gap-4 mb-4">
+                {selectedCrop.image ? (
+                  <img
+                    src={selectedCrop.image}
+                    alt={selectedCrop.name}
+                    className="w-16 h-16 rounded-xl object-cover"
+                  />
+                ) : (
+                  <div className="w-16 h-16 bg-[#f0fdf9] rounded-xl flex items-center justify-center">
+                    <Sprout className="w-8 h-8 text-[#009689]" />
+                  </div>
+                )}
+                <div>
+                  <div className="italic text-sm text-[#62748e]">
+                    {selectedCrop.scientificName || "—"}
+                  </div>
+                  <span
+                    className={`mt-1 inline-block px-2 py-0.5 rounded-full text-xs font-medium ${getStatusBadgeColor(selectedCrop.status)}`}
+                  >
+                    {selectedCrop.status}
+                  </span>
+                </div>
+              </div>
+              <div className="space-y-2">
+                {[
+                  {
+                    label: "Chu kỳ sinh trưởng",
+                    value:
+                      selectedCrop.growthPeriod > 0
+                        ? `${selectedCrop.growthPeriod} ngày`
+                        : "—",
+                  },
+                  { label: "Loại đất", value: selectedCrop.soilType || "—" },
+                  {
+                    label: "Khoảng cách hàng",
+                    value:
+                      selectedCrop.plantDistance.row > 0
+                        ? `${selectedCrop.plantDistance.row} cm`
+                        : "—",
+                  },
+                  {
+                    label: "Khoảng cách cột",
+                    value:
+                      selectedCrop.plantDistance.column > 0
+                        ? `${selectedCrop.plantDistance.column} cm`
+                        : "—",
+                  },
+                ].map(({ label, value }) => (
+                  <div
+                    key={label}
+                    className="flex justify-between py-2 border-b border-[#f1f5f9]"
+                  >
+                    <span className="text-sm text-[#62748e]">{label}</span>
+                    <span className="text-sm font-medium text-[#115e59]">
+                      {value}
+                    </span>
+                  </div>
+                ))}
+                {selectedCrop.description && (
+                  <div className="pt-2">
+                    <div className="text-xs text-[#62748e] mb-1">Mô tả</div>
+                    <p className="text-sm text-[#334155]">
+                      {selectedCrop.description}
+                    </p>
+                  </div>
+                )}
+              </div>
+              <div className="mt-6 flex justify-end">
+                <Dialog.Close className="px-4 py-2 bg-[#f1f5f9] text-[#314158] rounded-lg text-sm hover:bg-[#e2e8f0]">
+                  Đóng
+                </Dialog.Close>
+              </div>
+            </Dialog.Content>
+          </Dialog.Portal>
+        </Dialog.Root>
       )}
 
       {/* Create Modal */}
@@ -302,6 +467,7 @@ export function CropsPage() {
         open={createModalOpen}
         onClose={() => setCreateModalOpen(false)}
         onCreate={handleCreate}
+        submitting={submitting}
       />
 
       {/* Edit Modal */}
@@ -314,38 +480,34 @@ export function CropsPage() {
             setSelectedCrop(null);
           }}
           onUpdate={handleUpdate}
+          submitting={submitting}
         />
       )}
 
-      {/* Delete Confirmation Dialog */}
+      {/* Delete Dialog */}
       <AlertDialog.Root
         open={deleteDialogOpen}
         onOpenChange={setDeleteDialogOpen}
       >
         <AlertDialog.Portal>
-          <AlertDialog.Overlay className="fixed inset-0 bg-black/50 z-50 animate-in fade-in" />
-          <AlertDialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-md bg-white rounded-xl shadow-2xl p-6 animate-in fade-in zoom-in-95">
-            <AlertDialog.Title className="text-lg font-semibold text-slate-900 mb-2">
-              Xác nhận xóa cây trồng
+          <AlertDialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
+          <AlertDialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-xl shadow-xl w-full max-w-sm z-50 p-6">
+            <AlertDialog.Title className="text-lg font-bold text-[#115e59] mb-2">
+              Xóa cây trồng
             </AlertDialog.Title>
-            <AlertDialog.Description className="text-sm text-slate-600 mb-6">
-              Bạn có chắc chắn muốn xóa{" "}
-              <span className="font-semibold">{cropToDelete?.name}</span>? Hành
+            <AlertDialog.Description className="text-sm text-[#62748e] mb-6">
+              Bạn có chắc muốn xóa <strong>{cropToDelete?.name}</strong>? Hành
               động này không thể hoàn tác.
             </AlertDialog.Description>
-            <div className="flex gap-3 justify-end">
-              <AlertDialog.Cancel asChild>
-                <button className="px-4 py-2 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-100 transition-colors">
-                  Hủy bỏ
-                </button>
+            <div className="flex justify-end gap-3">
+              <AlertDialog.Cancel className="px-4 py-2 text-sm text-[#62748e] hover:text-[#334155]">
+                Hủy
               </AlertDialog.Cancel>
-              <AlertDialog.Action asChild>
-                <button
-                  onClick={confirmDelete}
-                  className="px-4 py-2 rounded-lg text-sm font-medium bg-red-600 text-white hover:bg-red-700 transition-colors"
-                >
-                  Xóa cây trồng
-                </button>
+              <AlertDialog.Action
+                onClick={handleDelete}
+                className="px-4 py-2 bg-red-500 text-white text-sm rounded-lg hover:bg-red-600 flex items-center gap-2"
+              >
+                {submitting && <Loader2 className="w-4 h-4 animate-spin" />} Xóa
               </AlertDialog.Action>
             </div>
           </AlertDialog.Content>
@@ -355,406 +517,232 @@ export function CropsPage() {
   );
 }
 
-// View Modal Component
-function ViewCropModal({
-  crop,
-  open,
-  onClose,
+// ===================== CROP FORM =====================
+function CropFormFields({
+  formData,
+  setFormData,
 }: {
-  crop: Crop;
-  open: boolean;
-  onClose: () => void;
+  formData: {
+    name: string;
+    scientificName: string;
+    growthPeriod: string;
+    soilType: SoilType | "";
+    status: CropStatus;
+    image: string;
+    description: string;
+    plantDistanceRow: string;
+    plantDistanceColumn: string;
+  };
+  setFormData: React.Dispatch<React.SetStateAction<typeof formData>>;
 }) {
   return (
-    <Dialog.Root open={open} onOpenChange={onClose}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
-        <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto z-50">
-          <div className="p-6">
-            {/* Header */}
-            <div className="flex items-start justify-between mb-6">
-              <div className="flex items-center gap-3">
-                <Sprout className="w-6 h-6 text-[#009689]" />
-                <Dialog.Title className="text-xl font-bold text-[#115e59]">
-                  {crop.name}
-                </Dialog.Title>
-              </div>
-              <Dialog.Close className="text-[#62748e] hover:text-[#115e59] transition-colors">
-                <span className="text-2xl">&times;</span>
-              </Dialog.Close>
-            </div>
-
-            <Dialog.Description className="sr-only">
-              Xem chi tiết thông tin cây trồng {crop.name}
-            </Dialog.Description>
-
-            {/* Content */}
-            <div className="space-y-6">
-              {/* Details Section */}
-              <div>
-                <h3 className="text-sm font-bold text-[#62748e] uppercase mb-4">
-                  📋 Thông tin chi tiết
-                </h3>
-                <div className="space-y-3 text-sm">
-                  <div className="flex">
-                    <span className="text-[#62748e] w-48">• Tên cây:</span>
-                    <span className="text-[#115e59] font-medium">
-                      {crop.name}
-                    </span>
-                  </div>
-                  <div className="flex">
-                    <span className="text-[#62748e] w-48">• Tên khoa học:</span>
-                    <span className="text-[#115e59] italic">
-                      {crop.scientificName}
-                    </span>
-                  </div>
-                  <div className="flex">
-                    <span className="text-[#62748e] w-48">
-                      • Loại đất tương thích:
-                    </span>
-                    <span className="text-[#115e59]">{crop.soilType}</span>
-                  </div>
-                  <div className="flex">
-                    <span className="text-[#62748e] w-48">
-                      • Thời kỳ sinh trưởng:
-                    </span>
-                    <span className="text-[#115e59]">
-                      {crop.growthPeriod} ngày
-                    </span>
-                  </div>
-                  <div className="flex">
-                    <span className="text-[#62748e] w-48">
-                      • Khoảng cách giữa các cây:
-                    </span>
-                    <span className="text-[#115e59]">
-                      {crop.plantDistance.row}x{crop.plantDistance.column} cm
-                    </span>
-                  </div>
-                  <div className="flex items-center">
-                    <span className="text-[#62748e] w-48">• Trạng thái:</span>
-                    <span
-                      className={`inline-block px-2 py-1 rounded text-xs ${getStatusBadgeColor(
-                        crop.status,
-                      )}`}
-                    >
-                      {crop.status}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Image Section */}
-              {crop.image && (
-                <div>
-                  <h3 className="text-sm font-bold text-[#62748e] uppercase mb-4">
-                    🖼️ Hình ảnh
-                  </h3>
-                  <div className="rounded-lg overflow-hidden">
-                    <img
-                      src={crop.image}
-                      alt={crop.name}
-                      className="w-full h-64 object-cover"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* Description Section */}
-              {crop.description && (
-                <div>
-                  <h3 className="text-sm font-bold text-[#62748e] uppercase mb-4">
-                    📝 Mô tả / Ghi chú
-                  </h3>
-                  <p className="text-sm text-[#115e59] leading-relaxed">
-                    {crop.description}
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {/* Footer */}
-            <div className="mt-6 flex justify-end">
-              <button
-                onClick={onClose}
-                className="px-6 py-2 bg-[#f1f5f9] text-[#314158] rounded-lg hover:bg-[#e2e8f0] transition-colors"
-              >
-                Đóng
-              </button>
-            </div>
-          </div>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-[#45556c] mb-1">
+            Tên cây trồng <span className="text-red-500">*</span>
+          </label>
+          <input
+            required
+            value={formData.name}
+            onChange={(e) =>
+              setFormData((p) => ({ ...p, name: e.target.value }))
+            }
+            className="w-full px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155]"
+            placeholder="Bắp Cải Trắng"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-[#45556c] mb-1">
+            Tên khoa học
+          </label>
+          <input
+            value={formData.scientificName}
+            onChange={(e) =>
+              setFormData((p) => ({ ...p, scientificName: e.target.value }))
+            }
+            className="w-full px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155] italic"
+            placeholder="Brassica oleracea"
+          />
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-[#45556c] mb-1">
+            Chu kỳ sinh trưởng (ngày)
+          </label>
+          <input
+            type="number"
+            value={formData.growthPeriod}
+            onChange={(e) =>
+              setFormData((p) => ({ ...p, growthPeriod: e.target.value }))
+            }
+            className="w-full px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155]"
+            placeholder="90"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-[#45556c] mb-1">
+            Loại đất
+          </label>
+          <select
+            value={formData.soilType}
+            onChange={(e) =>
+              setFormData((p) => ({
+                ...p,
+                soilType: e.target.value as SoilType,
+              }))
+            }
+            className="w-full px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] bg-white text-[#334155]"
+          >
+            <option value="">Chọn loại đất</option>
+            {soilTypes.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-[#45556c] mb-1">
+            Khoảng cách hàng (cm)
+          </label>
+          <input
+            type="number"
+            value={formData.plantDistanceRow}
+            onChange={(e) =>
+              setFormData((p) => ({ ...p, plantDistanceRow: e.target.value }))
+            }
+            className="w-full px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155]"
+            placeholder="40"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-[#45556c] mb-1">
+            Khoảng cách cột (cm)
+          </label>
+          <input
+            type="number"
+            value={formData.plantDistanceColumn}
+            onChange={(e) =>
+              setFormData((p) => ({
+                ...p,
+                plantDistanceColumn: e.target.value,
+              }))
+            }
+            className="w-full px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155]"
+            placeholder="35"
+          />
+        </div>
+      </div>
+      <div>
+        <label className="block text-sm font-medium text-[#45556c] mb-1">
+          Trạng thái
+        </label>
+        <select
+          value={formData.status}
+          onChange={(e) =>
+            setFormData((p) => ({ ...p, status: e.target.value as CropStatus }))
+          }
+          className="w-full px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] bg-white text-[#334155]"
+        >
+          <option value="Đang sử dụng">Đang sử dụng</option>
+          <option value="Không sử dụng">Không sử dụng</option>
+        </select>
+      </div>
+      <div>
+        <label className="block text-sm font-medium text-[#45556c] mb-1">
+          Mô tả
+        </label>
+        <textarea
+          value={formData.description}
+          onChange={(e) =>
+            setFormData((p) => ({ ...p, description: e.target.value }))
+          }
+          rows={2}
+          className="w-full px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155] resize-none"
+          placeholder="Mô tả cây trồng..."
+        />
+      </div>
+    </div>
   );
 }
 
-// Create Modal Component
+const defaultFormData = {
+  name: "",
+  scientificName: "",
+  growthPeriod: "",
+  soilType: "" as SoilType | "",
+  status: "Đang sử dụng" as CropStatus,
+  image: "",
+  description: "",
+  plantDistanceRow: "",
+  plantDistanceColumn: "",
+};
+
 function CreateCropModal({
   open,
   onClose,
   onCreate,
+  submitting,
 }: {
   open: boolean;
   onClose: () => void;
-  onCreate: (crop: Omit<Crop, "id">) => void;
+  onCreate: (c: Omit<Crop, "id">) => void;
+  submitting: boolean;
 }) {
-  const [formData, setFormData] = useState({
-    name: "",
-    scientificName: "",
-    growthPeriod: "",
-    soilType: "" as SoilType,
-    status: "Đang sử dụng" as CropStatus,
-    image: "",
-    description: "",
-    plantDistanceRow: "",
-    plantDistanceColumn: "",
-  });
-
+  const [formData, setFormData] = useState(defaultFormData);
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onCreate({
       name: formData.name,
       scientificName: formData.scientificName,
-      growthPeriod: parseInt(formData.growthPeriod),
-      soilType: formData.soilType,
+      growthPeriod: parseInt(formData.growthPeriod) || 0,
+      soilType: (formData.soilType as SoilType) || "Đất Thịt",
       status: formData.status,
       image: formData.image,
       description: formData.description,
       plantDistance: {
-        row: parseInt(formData.plantDistanceRow),
-        column: parseInt(formData.plantDistanceColumn),
+        row: parseInt(formData.plantDistanceRow) || 0,
+        column: parseInt(formData.plantDistanceColumn) || 0,
       },
     });
-    // Reset form
-    setFormData({
-      name: "",
-      scientificName: "",
-      growthPeriod: "",
-      soilType: "" as SoilType,
-      status: "Đang sử dụng",
-      image: "",
-      description: "",
-      plantDistanceRow: "",
-      plantDistanceColumn: "",
-    });
+    setFormData(defaultFormData);
   };
-
   return (
     <Dialog.Root open={open} onOpenChange={onClose}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
-        <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto z-50">
+        <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto z-50">
           <form onSubmit={handleSubmit} className="p-6">
-            {/* Header */}
-            <div className="flex items-start justify-between mb-6">
-              <div className="flex items-center gap-3">
-                <Sprout className="w-6 h-6 text-[#009689]" />
-                <Dialog.Title className="text-xl font-bold text-[#115e59]">
-                  Thêm Giống Cây Mới
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-2">
+                <Sprout className="w-5 h-5 text-[#009689]" />
+                <Dialog.Title className="text-lg font-bold text-[#115e59]">
+                  Thêm giống cây mới
                 </Dialog.Title>
               </div>
-              <Dialog.Close className="text-[#62748e] hover:text-[#115e59] transition-colors">
-                <span className="text-2xl">&times;</span>
+              <Dialog.Close className="text-[#94a3b8] hover:text-[#62748e] text-2xl">
+                &times;
               </Dialog.Close>
             </div>
-
             <Dialog.Description className="sr-only">
-              Form thêm giống cây trồng mới vào hệ thống
+              Form thêm giống cây mới
             </Dialog.Description>
-
-            {/* Form */}
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                {/* Crop Name */}
-                <div>
-                  <label className="block text-sm font-medium text-[#115e59] mb-2">
-                    Tên cây <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Ví dụ: Lúa 0838"
-                    value={formData.name}
-                    onChange={(e) =>
-                      setFormData({ ...formData, name: e.target.value })
-                    }
-                    className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                  />
-                </div>
-
-                {/* Growth Period */}
-                <div>
-                  <label className="block text-sm font-medium text-[#115e59] mb-2">
-                    Thời gian sinh trưởng (ngày){" "}
-                    <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="number"
-                    required
-                    placeholder="60"
-                    value={formData.growthPeriod}
-                    onChange={(e) =>
-                      setFormData({ ...formData, growthPeriod: e.target.value })
-                    }
-                    className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                  />
-                </div>
-              </div>
-
-              {/* Scientific Name */}
-              <div>
-                <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Tên khoa học <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Ví dụ: Solanum lycopersicum"
-                  value={formData.scientificName}
-                  onChange={(e) =>
-                    setFormData({ ...formData, scientificName: e.target.value })
-                  }
-                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                />
-              </div>
-
-              {/* Soil Type */}
-              <div>
-                <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Loại đất tương thích <span className="text-red-500">*</span>
-                </label>
-                <select
-                  required
-                  value={formData.soilType}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      soilType: e.target.value as SoilType,
-                    })
-                  }
-                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                >
-                  <option value="">Chọn loại đất</option>
-                  {soilTypes.map((type) => (
-                    <option key={type} value={type}>
-                      {type}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Status */}
-              <div>
-                <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Trạng thái
-                </label>
-                <select
-                  value={formData.status}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      status: e.target.value as CropStatus,
-                    })
-                  }
-                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                >
-                  <option value="Đang sử dụng">Đang sử dụng</option>
-                  <option value="Không sử dụng">Không sử dụng</option>
-                </select>
-              </div>
-
-              {/* Plant Distance */}
-              <div>
-                <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Khoảng cách giữa các cây{" "}
-                  <span className="text-red-500">*</span>
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    required
-                    placeholder="10"
-                    value={formData.plantDistanceRow}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        plantDistanceRow: e.target.value,
-                      })
-                    }
-                    className="w-24 px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                  />
-                  <span className="text-[#62748e]">x</span>
-                  <input
-                    type="number"
-                    required
-                    placeholder="15"
-                    value={formData.plantDistanceColumn}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        plantDistanceColumn: e.target.value,
-                      })
-                    }
-                    className="w-24 px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                  />
-                  <span className="text-[#62748e]">cm</span>
-                </div>
-              </div>
-
-              {/* Image Upload */}
-              <div>
-                <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Hình ảnh
-                </label>
-                <div className="border-2 border-dashed border-[#cad5e2] rounded-lg p-6 text-center">
-                  <ImageIcon className="w-8 h-8 text-[#90A1B9] mx-auto mb-2" />
-                  <p className="text-sm text-[#62748e] mb-2">
-                    Nhấn để tải ảnh lên
-                  </p>
-                  <p className="text-xs text-[#90A1B9]">PNG, JPG tối đa 5MB</p>
-                  <input
-                    type="text"
-                    placeholder="URL hình ảnh (tạm thời)"
-                    value={formData.image}
-                    onChange={(e) =>
-                      setFormData({ ...formData, image: e.target.value })
-                    }
-                    className="w-full mt-4 px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] text-sm"
-                  />
-                </div>
-              </div>
-
-              {/* Description */}
-              <div>
-                <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Mô tả / Ghi chú
-                </label>
-                <textarea
-                  rows={4}
-                  placeholder="Nhập thêm thông tin chi tiết về giống cây..."
-                  value={formData.description}
-                  onChange={(e) =>
-                    setFormData({ ...formData, description: e.target.value })
-                  }
-                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] resize-none"
-                />
-              </div>
-            </div>
-
-            {/* Footer */}
-            <div className="mt-6 flex justify-end gap-3">
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-6 py-2 bg-[#f1f5f9] text-[#314158] rounded-lg hover:bg-[#e2e8f0] transition-colors"
-              >
-                Hủy bỏ
-              </button>
+            <CropFormFields formData={formData} setFormData={setFormData} />
+            <div className="flex justify-end gap-3 mt-6">
+              <Dialog.Close className="px-4 py-2 text-sm text-[#62748e] hover:text-[#334155]">
+                Hủy
+              </Dialog.Close>
               <button
                 type="submit"
-                className="px-6 py-2 bg-[#009689] text-white rounded-lg hover:bg-[#007f75] transition-colors"
+                disabled={submitting}
+                className="px-4 py-2 bg-[#009689] text-white text-sm rounded-lg hover:bg-[#007f75] flex items-center gap-2 disabled:opacity-50"
               >
-                Tạo Cây Trồng
+                {submitting && <Loader2 className="w-4 h-4 animate-spin" />} Tạo
+                cây trồng
               </button>
             </div>
           </form>
@@ -764,19 +752,30 @@ function CreateCropModal({
   );
 }
 
-// Edit Modal Component
 function EditCropModal({
   crop,
   open,
   onClose,
   onUpdate,
+  submitting,
 }: {
   crop: Crop;
   open: boolean;
   onClose: () => void;
-  onUpdate: (crop: Crop) => void;
+  onUpdate: (c: Crop) => void;
+  submitting: boolean;
 }) {
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<{
+    name: string;
+    scientificName: string;
+    growthPeriod: string;
+    soilType: SoilType | "";
+    status: CropStatus;
+    image: string;
+    description: string;
+    plantDistanceRow: string;
+    plantDistanceColumn: string;
+  }>({
     name: crop.name,
     scientificName: crop.scientificName,
     growthPeriod: crop.growthPeriod.toString(),
@@ -787,243 +786,55 @@ function EditCropModal({
     plantDistanceRow: crop.plantDistance.row.toString(),
     plantDistanceColumn: crop.plantDistance.column.toString(),
   });
-
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onUpdate({
       ...crop,
       name: formData.name,
       scientificName: formData.scientificName,
-      growthPeriod: parseInt(formData.growthPeriod),
-      soilType: formData.soilType,
+      growthPeriod: parseInt(formData.growthPeriod) || 0,
+      soilType: formData.soilType as SoilType,
       status: formData.status,
       image: formData.image,
       description: formData.description,
       plantDistance: {
-        row: parseInt(formData.plantDistanceRow),
-        column: parseInt(formData.plantDistanceColumn),
+        row: parseInt(formData.plantDistanceRow) || 0,
+        column: parseInt(formData.plantDistanceColumn) || 0,
       },
     });
   };
-
   return (
     <Dialog.Root open={open} onOpenChange={onClose}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
-        <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto z-50">
+        <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto z-50">
           <form onSubmit={handleSubmit} className="p-6">
-            {/* Header */}
-            <div className="flex items-start justify-between mb-6">
-              <div className="flex items-center gap-3">
-                <Sprout className="w-6 h-6 text-[#009689]" />
-                <Dialog.Title className="text-xl font-bold text-[#115e59]">
-                  Chỉnh Sửa Cây Trồng
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-2">
+                <Sprout className="w-5 h-5 text-[#009689]" />
+                <Dialog.Title className="text-lg font-bold text-[#115e59]">
+                  Chỉnh sửa cây trồng
                 </Dialog.Title>
               </div>
-              <Dialog.Close className="text-[#62748e] hover:text-[#115e59] transition-colors">
-                <span className="text-2xl">&times;</span>
+              <Dialog.Close className="text-[#94a3b8] hover:text-[#62748e] text-2xl">
+                &times;
               </Dialog.Close>
             </div>
-
             <Dialog.Description className="sr-only">
-              Form chỉnh sửa thông tin cây trồng {crop.name}
+              Form chỉnh sửa cây trồng {crop.name}
             </Dialog.Description>
-
-            {/* Form */}
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                {/* Crop Name */}
-                <div>
-                  <label className="block text-sm font-medium text-[#115e59] mb-2">
-                    Tên cây <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.name}
-                    onChange={(e) =>
-                      setFormData({ ...formData, name: e.target.value })
-                    }
-                    className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                  />
-                </div>
-
-                {/* Growth Period */}
-                <div>
-                  <label className="block text-sm font-medium text-[#115e59] mb-2">
-                    Thời gian sinh trưởng (ngày){" "}
-                    <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="number"
-                    required
-                    value={formData.growthPeriod}
-                    onChange={(e) =>
-                      setFormData({ ...formData, growthPeriod: e.target.value })
-                    }
-                    className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                  />
-                </div>
-              </div>
-
-              {/* Scientific Name */}
-              <div>
-                <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Tên khoa học <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={formData.scientificName}
-                  onChange={(e) =>
-                    setFormData({ ...formData, scientificName: e.target.value })
-                  }
-                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                />
-              </div>
-
-              {/* Soil Type */}
-              <div>
-                <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Loại đất tương thích <span className="text-red-500">*</span>
-                </label>
-                <select
-                  required
-                  value={formData.soilType}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      soilType: e.target.value as SoilType,
-                    })
-                  }
-                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                >
-                  {soilTypes.map((type) => (
-                    <option key={type} value={type}>
-                      {type}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Status */}
-              <div>
-                <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Trạng thái
-                </label>
-                <select
-                  value={formData.status}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      status: e.target.value as CropStatus,
-                    })
-                  }
-                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                >
-                  <option value="Đang sử dụng">Đang sử dụng</option>
-                  <option value="Không sử dụng">Không sử dụng</option>
-                </select>
-              </div>
-
-              {/* Plant Distance */}
-              <div>
-                <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Khoảng cách giữa các cây{" "}
-                  <span className="text-red-500">*</span>
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    required
-                    value={formData.plantDistanceRow}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        plantDistanceRow: e.target.value,
-                      })
-                    }
-                    className="w-24 px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                  />
-                  <span className="text-[#62748e]">x</span>
-                  <input
-                    type="number"
-                    required
-                    value={formData.plantDistanceColumn}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        plantDistanceColumn: e.target.value,
-                      })
-                    }
-                    className="w-24 px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                  />
-                  <span className="text-[#62748e]">cm</span>
-                </div>
-              </div>
-
-              {/* Image Preview and Update */}
-              <div>
-                <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Hình ảnh
-                </label>
-                {formData.image && (
-                  <div className="mb-4 rounded-lg overflow-hidden">
-                    <img
-                      src={formData.image}
-                      alt="Preview"
-                      className="w-full h-48 object-cover"
-                    />
-                  </div>
-                )}
-                <div className="border-2 border-dashed border-[#cad5e2] rounded-lg p-6 text-center">
-                  <ImageIcon className="w-8 h-8 text-[#90A1B9] mx-auto mb-2" />
-                  <p className="text-sm text-[#62748e] mb-2">
-                    Nhấn để tải ảnh lên
-                  </p>
-                  <p className="text-xs text-[#90A1B9]">PNG, JPG tối đa 5MB</p>
-                  <input
-                    type="text"
-                    placeholder="URL hình ảnh (tạm thời)"
-                    value={formData.image}
-                    onChange={(e) =>
-                      setFormData({ ...formData, image: e.target.value })
-                    }
-                    className="w-full mt-4 px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] text-sm"
-                  />
-                </div>
-              </div>
-
-              {/* Description */}
-              <div>
-                <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Mô tả / Ghi chú
-                </label>
-                <textarea
-                  rows={4}
-                  value={formData.description}
-                  onChange={(e) =>
-                    setFormData({ ...formData, description: e.target.value })
-                  }
-                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] resize-none"
-                />
-              </div>
-            </div>
-
-            {/* Footer */}
-            <div className="mt-6 flex justify-end gap-3">
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-6 py-2 bg-[#f1f5f9] text-[#314158] rounded-lg hover:bg-[#e2e8f0] transition-colors"
-              >
-                Hủy bỏ
-              </button>
+            <CropFormFields formData={formData} setFormData={setFormData} />
+            <div className="flex justify-end gap-3 mt-6">
+              <Dialog.Close className="px-4 py-2 text-sm text-[#62748e] hover:text-[#334155]">
+                Hủy
+              </Dialog.Close>
               <button
                 type="submit"
-                className="px-6 py-2 bg-[#009689] text-white rounded-lg hover:bg-[#007f75] transition-colors"
+                disabled={submitting}
+                className="px-4 py-2 bg-[#009689] text-white text-sm rounded-lg hover:bg-[#007f75] flex items-center gap-2 disabled:opacity-50"
               >
-                Cập nhật
+                {submitting && <Loader2 className="w-4 h-4 animate-spin" />} Lưu
+                thay đổi
               </button>
             </div>
           </form>
