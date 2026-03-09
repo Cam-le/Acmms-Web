@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Plus,
   Eye,
@@ -11,6 +11,11 @@ import {
   Tractor,
   Loader2,
   WifiOff,
+  Globe,
+  Upload,
+  X,
+  Image as ImageIcon,
+  Clock,
 } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
@@ -24,6 +29,55 @@ import {
   mockFarms,
 } from "../../data/mockData";
 import { api, FarmResponse } from "../../api/client";
+
+// ===================== MAP PICKER MODAL (Google Maps – coming soon) =====================
+function MapPickerModal({
+  open,
+  onClose,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onSelect: (location: string) => void;
+  initialLocation?: string;
+}) {
+  return (
+    <Dialog.Root open={open} onOpenChange={onClose}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 bg-black/50 z-[60]" />
+        <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-xl shadow-xl w-full max-w-sm z-[60] p-6 text-center">
+          <Dialog.Title className="sr-only">Bản đồ</Dialog.Title>
+          <Dialog.Description className="sr-only">
+            Tính năng bản đồ sắp ra mắt
+          </Dialog.Description>
+
+          <div className="mx-auto mb-4 w-16 h-16 rounded-full bg-[#f0fdf9] flex items-center justify-center">
+            <Globe className="w-8 h-8 text-[#009689]" />
+          </div>
+
+          <h3 className="text-base font-bold text-[#115e59] mb-1">
+            Tính năng sắp ra mắt
+          </h3>
+          <p className="text-sm text-[#62748e] mb-1">
+            Chọn vị trí bằng <span className="font-medium">Google Maps</span>{" "}
+            đang được phát triển.
+          </p>
+          <p className="text-xs text-[#94a3b8] mb-5">
+            Vui lòng nhập địa chỉ thủ công vào ô vị trí trong thời gian này.
+          </p>
+
+          <div className="flex items-center justify-center gap-1.5 text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-5">
+            <Clock className="w-3.5 h-3.5 shrink-0" />
+            <span>Google Maps API integration — coming soon</span>
+          </div>
+
+          <Dialog.Close className="w-full px-4 py-2 bg-[#009689] text-white text-sm rounded-lg hover:bg-[#007f75] transition-colors">
+            Đã hiểu
+          </Dialog.Close>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}
 
 // Map API response → local Farm shape
 function mapFarm(f: FarmResponse): Farm {
@@ -46,6 +100,94 @@ const getStatusBadgeColor = (status: FarmStatus) =>
   status === "Hoạt động"
     ? "bg-[#dcfce7] text-[#008236]"
     : "bg-[#fee2e2] text-[#991b1b]";
+
+const plotStatusColor = (status: FarmStatus) =>
+  status === "Hoạt động"
+    ? "bg-[#dcfce7] text-[#008236]"
+    : "bg-[#fee2e2] text-[#991b1b]";
+
+// ===================== IMAGE UPLOADER =====================
+function ImageUploader({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (base64: string) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const handleFile = (file: File) => {
+    if (!file.type.startsWith("image/")) return;
+    const reader = new FileReader();
+    reader.onload = (e) => onChange((e.target?.result as string) ?? "");
+    reader.readAsDataURL(file);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    const file = e.dataTransfer.files[0];
+    if (file) handleFile(file);
+  };
+
+  return (
+    <div className="space-y-2">
+      <label className="block text-sm font-medium text-[#45556c]">
+        Hình ảnh trang trại
+      </label>
+      {value ? (
+        <div className="relative rounded-lg overflow-hidden border border-[#e2e8f0] group">
+          <img
+            src={value}
+            alt="Ảnh trang trại"
+            className="w-full h-40 object-cover"
+          />
+          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+            <button
+              type="button"
+              onClick={() => onChange("")}
+              className="p-1.5 bg-white rounded-full text-red-500 hover:bg-red-50 mr-2"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => inputRef.current?.click()}
+              className="p-1.5 bg-white rounded-full text-[#009689] hover:bg-[#f0fdf9]"
+            >
+              <Upload className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div
+          onDrop={handleDrop}
+          onDragOver={(e) => e.preventDefault()}
+          onClick={() => inputRef.current?.click()}
+          className="w-full h-36 border-2 border-dashed border-[#cad5e2] rounded-lg flex flex-col items-center justify-center gap-2 cursor-pointer hover:border-[#009689] hover:bg-[#f0fdf9] transition-colors"
+        >
+          <ImageIcon className="w-8 h-8 text-[#94a3b8]" />
+          <span className="text-sm text-[#62748e]">
+            Nhấp hoặc kéo thả ảnh vào đây
+          </span>
+          <span className="text-xs text-[#94a3b8]">
+            PNG, JPG, WEBP (tối đa 5MB)
+          </span>
+        </div>
+      )}
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) handleFile(file);
+          e.target.value = "";
+        }}
+      />
+    </div>
+  );
+}
 
 export function FarmPage() {
   const [farms, setFarms] = useState<Farm[]>([]);
@@ -130,7 +272,10 @@ export function FarmPage() {
           farmArea: farm.area,
           farmStatus: farm.status === "Hoạt động" ? "Active" : "Inactive",
         });
-        setFarms((prev) => [...prev, mapFarm(created)]);
+        setFarms((prev) => [
+          ...prev,
+          { ...mapFarm(created), image: farm.image },
+        ]);
       }
       setCreateModalOpen(false);
     } catch (err) {
@@ -159,7 +304,11 @@ export function FarmPage() {
             updatedFarm.status === "Hoạt động" ? "Active" : "Inactive",
         });
         setFarms((prev) =>
-          prev.map((f) => (f.id === updatedFarm.id ? mapFarm(updated) : f)),
+          prev.map((f) =>
+            f.id === updatedFarm.id
+              ? { ...mapFarm(updated), image: updatedFarm.image }
+              : f,
+          ),
         );
       }
       setEditModalOpen(false);
@@ -174,7 +323,6 @@ export function FarmPage() {
     }
   };
 
-  // Add plot stays local-only (no API for plots in guide)
   const handleAddPlot = (farmId: string, plot: Omit<Plot, "id">) => {
     setFarms((prev) =>
       prev.map((f) =>
@@ -327,14 +475,22 @@ function FarmCard({
       <div className="bg-white rounded-xl border border-[#e2e8f0] shadow-sm overflow-hidden">
         <div className="p-5 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 bg-[#f0fdf9] rounded-xl flex items-center justify-center shrink-0">
-              <Home className="w-6 h-6 text-[#009689]" />
-            </div>
+            {farm.image ? (
+              <img
+                src={farm.image}
+                alt={farm.name}
+                className="w-12 h-12 rounded-xl object-cover shrink-0"
+              />
+            ) : (
+              <div className="w-12 h-12 bg-[#f0fdf9] rounded-xl flex items-center justify-center shrink-0">
+                <Home className="w-6 h-6 text-[#009689]" />
+              </div>
+            )}
             <div>
               <h3 className="font-semibold text-[#115e59]">{farm.name}</h3>
               <div className="flex items-center gap-1 text-sm text-[#62748e] mt-0.5">
                 <MapPin className="w-3.5 h-3.5" />
-                <span>{farm.location}</span>
+                <span className="max-w-xs truncate">{farm.location}</span>
               </div>
             </div>
           </div>
@@ -415,7 +571,7 @@ function FarmCard({
   );
 }
 
-// ===================== FARM FORM =====================
+// ===================== FARM FORM FIELDS =====================
 function FarmFormFields({
   formData,
   setFormData,
@@ -430,8 +586,16 @@ function FarmFormFields({
   };
   setFormData: React.Dispatch<React.SetStateAction<typeof formData>>;
 }) {
+  const [mapOpen, setMapOpen] = useState(false);
+
   return (
     <div className="space-y-4">
+      {/* Image uploader */}
+      <ImageUploader
+        value={formData.image}
+        onChange={(img) => setFormData((p) => ({ ...p, image: img }))}
+      />
+
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium text-[#45556c] mb-1">
@@ -450,16 +614,27 @@ function FarmFormFields({
           <label className="block text-sm font-medium text-[#45556c] mb-1">
             Vị trí
           </label>
-          <input
-            value={formData.location}
-            onChange={(e) =>
-              setFormData((p) => ({ ...p, location: e.target.value }))
-            }
-            className="w-full px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155]"
-            placeholder="Hà Nội, Việt Nam"
-          />
+          <div className="flex gap-2">
+            <input
+              value={formData.location}
+              onChange={(e) =>
+                setFormData((p) => ({ ...p, location: e.target.value }))
+              }
+              className="flex-1 min-w-0 px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155]"
+              placeholder="Hà Nội, Việt Nam"
+            />
+            <button
+              type="button"
+              onClick={() => setMapOpen(true)}
+              title="Chọn vị trí trên bản đồ"
+              className="px-2.5 py-2 border border-[#e2e8f0] rounded-lg text-[#009689] hover:bg-[#f0fdf9] hover:border-[#009689] transition-colors shrink-0"
+            >
+              <Globe className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       </div>
+
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium text-[#45556c] mb-1">
@@ -494,6 +669,7 @@ function FarmFormFields({
           </select>
         </div>
       </div>
+
       <div>
         <label className="block text-sm font-medium text-[#45556c] mb-1">
           Mô tả
@@ -508,6 +684,17 @@ function FarmFormFields({
           placeholder="Mô tả trang trại..."
         />
       </div>
+
+      {/* Map Picker Modal — rendered outside the form z-stack */}
+      <MapPickerModal
+        open={mapOpen}
+        onClose={() => setMapOpen(false)}
+        onSelect={(address) => {
+          setFormData((p) => ({ ...p, location: address }));
+          setMapOpen(false);
+        }}
+        initialLocation={formData.location}
+      />
     </div>
   );
 }
@@ -526,25 +713,36 @@ function ViewFarmModal({
     <Dialog.Root open={open} onOpenChange={onClose}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
-        <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-xl shadow-xl w-full max-w-lg z-50 p-6">
-          <div className="flex items-center justify-between mb-6">
+        <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-xl shadow-xl w-full max-w-lg z-50 p-6 max-h-[90vh] overflow-y-auto">
+          <div className="flex items-center justify-between mb-4">
             <Dialog.Title className="text-lg font-bold text-[#115e59]">
               {farm.name}
             </Dialog.Title>
-            <Dialog.Close className="text-[#94a3b8] hover:text-[#62748e] text-2xl">
+            <Dialog.Close className="text-[#94a3b8] hover:text-[#62748e] text-2xl leading-none">
               &times;
             </Dialog.Close>
           </div>
           <Dialog.Description className="sr-only">
             Chi tiết trang trại
           </Dialog.Description>
-          <div className="space-y-3">
+
+          {/* Farm image */}
+          {farm.image && (
+            <div className="mb-4 rounded-lg overflow-hidden">
+              <img
+                src={farm.image}
+                alt={farm.name}
+                className="w-full h-44 object-cover"
+              />
+            </div>
+          )}
+
+          <div className="space-y-2">
             {[
               { label: "Vị trí", value: farm.location },
               { label: "Diện tích", value: `${farm.area.toLocaleString()} m²` },
               { label: "Trạng thái", value: farm.status },
               { label: "Ngày tạo", value: farm.createdAt },
-              { label: "Số khu đất", value: `${farm.plots.length} khu` },
             ].map(({ label, value }) => (
               <div
                 key={label}
@@ -556,6 +754,48 @@ function ViewFarmModal({
                 </span>
               </div>
             ))}
+
+            {/* Plots summary */}
+            <div className="py-2 border-b border-[#f1f5f9]">
+              <div className="flex justify-between mb-2">
+                <span className="text-sm text-[#62748e]">Số khu đất</span>
+                <span className="text-sm font-medium text-[#115e59]">
+                  {farm.plots.length} khu
+                </span>
+              </div>
+
+              {farm.plots.length > 0 && (
+                <div className="mt-2 space-y-2">
+                  {farm.plots.map((plot) => (
+                    <div
+                      key={plot.id}
+                      className="flex items-center justify-between bg-[#f8fafc] rounded-lg px-3 py-2.5 border border-[#e2e8f0]"
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-7 h-7 bg-[#e0f2fe] rounded-md flex items-center justify-center shrink-0">
+                          <Home className="w-3.5 h-3.5 text-[#0369a1]" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-[#115e59] leading-tight">
+                            {plot.name}
+                          </p>
+                          <p className="text-xs text-[#94a3b8] mt-0.5">
+                            {plot.soilType} • {plot.area.toLocaleString()} m² •{" "}
+                            {plot.plotCount} luống
+                          </p>
+                        </div>
+                      </div>
+                      <span
+                        className={`text-xs px-2 py-0.5 rounded-full font-medium ${plotStatusColor(plot.status)}`}
+                      >
+                        {plot.status}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             {farm.description && (
               <div className="pt-2">
                 <div className="text-xs text-[#62748e] mb-1">Mô tả</div>
@@ -563,7 +803,8 @@ function ViewFarmModal({
               </div>
             )}
           </div>
-          <div className="mt-6 flex justify-end">
+
+          <div className="mt-5 flex justify-end">
             <Dialog.Close className="px-4 py-2 bg-[#f1f5f9] text-[#314158] rounded-lg hover:bg-[#e2e8f0] text-sm">
               Đóng
             </Dialog.Close>
@@ -595,6 +836,20 @@ function CreateFarmModal({
     image: "",
   });
 
+  // Reset form when modal closes
+  useEffect(() => {
+    if (!open) {
+      setFormData({
+        name: "",
+        location: "",
+        status: "Hoạt động",
+        area: "",
+        description: "",
+        image: "",
+      });
+    }
+  }, [open]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onCreate({ ...formData, area: parseInt(formData.area) || 0 });
@@ -604,13 +859,13 @@ function CreateFarmModal({
     <Dialog.Root open={open} onOpenChange={onClose}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
-        <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-xl shadow-xl w-full max-w-lg z-50">
+        <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-xl shadow-xl w-full max-w-lg z-50 max-h-[92vh] overflow-y-auto">
           <form onSubmit={handleSubmit} className="p-6">
-            <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center justify-between mb-5">
               <Dialog.Title className="text-lg font-bold text-[#115e59]">
                 Thêm trang trại mới
               </Dialog.Title>
-              <Dialog.Close className="text-[#94a3b8] hover:text-[#62748e] text-2xl">
+              <Dialog.Close className="text-[#94a3b8] hover:text-[#62748e] text-2xl leading-none">
                 &times;
               </Dialog.Close>
             </div>
@@ -661,6 +916,18 @@ function EditFarmModal({
     image: farm.image,
   });
 
+  // Sync when farm changes (e.g. different farm opened)
+  useEffect(() => {
+    setFormData({
+      name: farm.name,
+      location: farm.location,
+      status: farm.status,
+      area: farm.area.toString(),
+      description: farm.description,
+      image: farm.image,
+    });
+  }, [farm]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onUpdate({ ...farm, ...formData, area: parseInt(formData.area) || 0 });
@@ -670,13 +937,13 @@ function EditFarmModal({
     <Dialog.Root open={open} onOpenChange={onClose}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
-        <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-xl shadow-xl w-full max-w-lg z-50">
+        <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-xl shadow-xl w-full max-w-lg z-50 max-h-[92vh] overflow-y-auto">
           <form onSubmit={handleSubmit} className="p-6">
-            <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center justify-between mb-5">
               <Dialog.Title className="text-lg font-bold text-[#115e59]">
                 Chỉnh sửa trang trại
               </Dialog.Title>
-              <Dialog.Close className="text-[#94a3b8] hover:text-[#62748e] text-2xl">
+              <Dialog.Close className="text-[#94a3b8] hover:text-[#62748e] text-2xl leading-none">
                 &times;
               </Dialog.Close>
             </div>

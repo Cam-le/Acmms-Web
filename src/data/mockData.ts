@@ -244,7 +244,6 @@ export const mockCrops: Crop[] = [
     growthPeriod: 70,
     soilType: "Đất Pha Cát",
     status: "Đang sử dụng",
-    // White/green cabbage
     image:
       "https://product.hstatic.net/1000354044/product/20230708_164750_b39eed30bb6448f3974767426d74ec7d_large.jpg",
     description:
@@ -258,7 +257,6 @@ export const mockCrops: Crop[] = [
     growthPeriod: 85,
     soilType: "Đất Thịt",
     status: "Đang sử dụng",
-    // Red/purple cabbage
     image:
       "https://images.unsplash.com/photo-1518977956812-cd3dbadaaf31?w=100&h=100&fit=crop",
     description:
@@ -272,7 +270,6 @@ export const mockCrops: Crop[] = [
     growthPeriod: 55,
     soilType: "Đất Phù Sa",
     status: "Đang sử dụng",
-    // Kale
     image:
       "https://images.unsplash.com/photo-1524179091875-bf99a9a6af57?w=100&h=100&fit=crop",
     description:
@@ -286,7 +283,6 @@ export const mockCrops: Crop[] = [
     growthPeriod: 90,
     soilType: "Đất Sét",
     status: "Không sử dụng",
-    // Brussels sprouts
     image:
       "https://images.unsplash.com/photo-1438118907704-7718ee9a191a?w=100&h=100&fit=crop",
     description:
@@ -300,7 +296,6 @@ export const mockCrops: Crop[] = [
     growthPeriod: 60,
     soilType: "Đất Pha Cát",
     status: "Đang sử dụng",
-    // Napa cabbage
     image:
       "https://upload.wikimedia.org/wikipedia/commons/a/ab/ChineseCabbage.jpg",
     description:
@@ -314,7 +309,6 @@ export const mockCrops: Crop[] = [
     growthPeriod: 65,
     soilType: "Đất Thịt",
     status: "Đang sử dụng",
-    // Broccoli
     image:
       "https://images.unsplash.com/photo-1459411552884-841db9b3cc2a?w=100&h=100&fit=crop",
     description:
@@ -328,7 +322,6 @@ export const mockCrops: Crop[] = [
     growthPeriod: 75,
     soilType: "Đất Phù Sa",
     status: "Không sử dụng",
-    // Cauliflower
     image:
       "https://images.unsplash.com/photo-1568584711075-3d021a7c3ca3?w=100&h=100&fit=crop",
     description:
@@ -369,7 +362,7 @@ export const mockSeasons: Season[] = [
     id: "1",
     code: "MV001",
     name: "Mùa Hè 2025",
-    farm: "Trang trại thung lũng xanh",
+    farm: "Trang trại Thung lũng Xanh",
     startDate: "01-06-2025",
     endDate: "30-09-2025",
     status: "Đang hoạt động",
@@ -433,7 +426,7 @@ export const mockSeasons: Season[] = [
     id: "3",
     code: "MV003",
     name: "Mùa Đông 2024",
-    farm: "Trang trại thung lũng xanh",
+    farm: "Trang trại Thung lũng Xanh",
     startDate: "01-11-2024",
     endDate: "28-02-2025",
     status: "Đã kết thúc",
@@ -540,9 +533,10 @@ export const mockFarms: Farm[] = [
     status: "Hoạt động",
     area: 8500,
     description:
-      "Trang trại chuyên canh các loại Bắp Cải theo tiêu chuẩn hữu cơ. Hệ thống tưới tiêu tự động và giảm sát môi trường 24/7.",
+      "Trang trại chuyên canh các loại Bắp Cải theo tiêu chuẩn hữu cơ. Hệ thống tưới tiêu tự động và giám sát môi trường 24/7.",
+    // Lush green farm field
     image:
-      "https://images.unsplash.com/photo-1500382017468-9049fed747ef?w=400&h=300&fit=crop",
+      "https://images.unsplash.com/photo-1500382017468-9049fed747ef?w=800&h=400&fit=crop&auto=format",
     createdAt: "10/6/2023",
     plots: [
       {
@@ -571,8 +565,9 @@ export const mockFarms: Farm[] = [
     area: 6000,
     description:
       "Trang trại trồng bắp cải hữu cơ với hệ thống nhà kính hiện đại.",
+    // Greenhouse / modern farm
     image:
-      "https://images.unsplash.com/photo-1625246333195-78d9c38ad449?w=400&h=300&fit=crop",
+      "https://images.unsplash.com/photo-1625246333195-78d9c38ad449?w=800&h=400&fit=crop&auto=format",
     createdAt: "8/15/2023",
     plots: [
       {
@@ -592,8 +587,9 @@ export const mockFarms: Farm[] = [
     status: "Không hoạt động",
     area: 5000,
     description: "Trang trại đang trong giai đoạn tái cấu trúc.",
+    // Dry/inactive field
     image:
-      "https://images.unsplash.com/photo-1574943320219-553eb213f72d?w=400&h=300&fit=crop",
+      "https://images.unsplash.com/photo-1574943320219-553eb213f72d?w=800&h=400&fit=crop&auto=format",
     createdAt: "5/20/2023",
     plots: [],
   },

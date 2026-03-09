@@ -21,8 +21,10 @@ import {
   SeasonCropType as CropType,
   PlotAssignment,
   mockSeasons,
+  mockFarms,
 } from "../../data/mockData";
 
+// ===================== HELPERS =====================
 const statusConfig: Record<SeasonStatus, string> = {
   "Đang hoạt động": "bg-[#dcfce7] text-[#008236]",
   "Đã kết thúc": "bg-[#f1f5f9] text-[#475569]",
@@ -35,6 +37,35 @@ const cropEmoji: Record<string, string> = {
   "Bắp Cải Xoăn": "🌿",
 };
 
+// ===================== FARM SELECT =====================
+function FarmSelect({
+  value,
+  onChange,
+  placeholder,
+  className,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  className?: string;
+}) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className={`w-full px-3 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] bg-white text-[#334155] ${className ?? ""}`}
+    >
+      <option value="">{placeholder ?? "Chọn trang trại"}</option>
+      {mockFarms.map((f) => (
+        <option key={f.id} value={f.name}>
+          {f.name}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+// ===================== SEASONS PAGE =====================
 export function SeasonsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const view = searchParams.get("view") || "list";
@@ -157,7 +188,7 @@ export function SeasonsPage() {
               {[
                 "Mã",
                 "Tên mùa vụ",
-                "Nông trại",
+                "Trang trại",
                 "Thời gian",
                 "Số luống",
                 "Trạng thái",
@@ -434,15 +465,12 @@ function CreateSeasonView({
               </div>
               <div>
                 <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Nông trại
+                  Trang trại
                 </label>
-                <input
+                <FarmSelect
                   value={formData.farm}
-                  onChange={(e) =>
-                    setFormData((p) => ({ ...p, farm: e.target.value }))
-                  }
-                  className="w-full px-3 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                  placeholder="Trang trại Thung lũng Xanh"
+                  onChange={(v) => setFormData((p) => ({ ...p, farm: v }))}
+                  placeholder="Chọn trang trại"
                 />
               </div>
             </div>
@@ -717,7 +745,7 @@ function DetailSeasonView({ season }: { season: Season }) {
               <MapPin className="w-5 h-5 text-[#1e40af]" />
             </div>
             <div>
-              <div className="text-xs text-[#62748e] mb-1">NÔNG TRẠI</div>
+              <div className="text-xs text-[#62748e] mb-1">TRANG TRẠI</div>
               <div className="font-medium text-[#115e59]">{season.farm}</div>
             </div>
           </div>
@@ -923,32 +951,29 @@ function EditSeasonView({
             📝 Thông tin chung
           </h3>
           <div className="space-y-4">
-            {[
-              {
-                label: "Tên mùa vụ",
-                key: "name" as const,
-                placeholder: "Mùa Hè 2025",
-              },
-              {
-                label: "Nông trại",
-                key: "farm" as const,
-                placeholder: "Tên nông trại",
-              },
-            ].map(({ label, key, placeholder }) => (
-              <div key={key}>
-                <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  {label}
-                </label>
-                <input
-                  value={formData[key]}
-                  onChange={(e) =>
-                    setFormData((p) => ({ ...p, [key]: e.target.value }))
-                  }
-                  placeholder={placeholder}
-                  className="w-full px-3 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                />
-              </div>
-            ))}
+            <div>
+              <label className="block text-sm font-medium text-[#115e59] mb-2">
+                Tên mùa vụ
+              </label>
+              <input
+                value={formData.name}
+                onChange={(e) =>
+                  setFormData((p) => ({ ...p, name: e.target.value }))
+                }
+                placeholder="Mùa Hè 2025"
+                className="w-full px-3 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-[#115e59] mb-2">
+                Trang trại
+              </label>
+              <FarmSelect
+                value={formData.farm}
+                onChange={(v) => setFormData((p) => ({ ...p, farm: v }))}
+                placeholder="Chọn trang trại"
+              />
+            </div>
             <div>
               <label className="block text-sm font-medium text-[#115e59] mb-2">
                 Ngày bắt đầu
@@ -1010,7 +1035,7 @@ function EditSeasonView({
           </div>
         </div>
 
-        {/* Plots table */}
+        {/* Plots table — wider crop column, narrower quantity/date columns */}
         <div className="lg:col-span-2 bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-6">
           <h3 className="text-sm font-bold text-[#62748e] uppercase mb-4">
             🌱 Luống trong mùa vụ
@@ -1021,7 +1046,21 @@ function EditSeasonView({
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full">
+              <table className="w-full table-fixed">
+                <colgroup>
+                  {/* Luống */}
+                  <col style={{ width: "14%" }} />
+                  {/* Cây trồng — wider */}
+                  <col style={{ width: "28%" }} />
+                  {/* Ngày gieo */}
+                  <col style={{ width: "18%" }} />
+                  {/* Thu hoạch */}
+                  <col style={{ width: "18%" }} />
+                  {/* Sản lượng */}
+                  <col style={{ width: "16%" }} />
+                  {/* Action */}
+                  <col style={{ width: "6%" }} />
+                </colgroup>
                 <thead>
                   <tr>
                     {[
@@ -1029,12 +1068,12 @@ function EditSeasonView({
                       "Cây trồng",
                       "Ngày gieo",
                       "Thu hoạch",
-                      "Sản lượng (kg)",
+                      "SL (kg)",
                       "",
                     ].map((h) => (
                       <th
                         key={h}
-                        className="px-3 py-2 text-left text-xs font-medium text-[#62748e] uppercase"
+                        className="px-2 py-2 text-left text-xs font-medium text-[#62748e] uppercase"
                       >
                         {h}
                       </th>
@@ -1044,10 +1083,10 @@ function EditSeasonView({
                 <tbody className="divide-y divide-[#e2e8f0]">
                   {plots.map((plot) => (
                     <tr key={plot.plotId}>
-                      <td className="px-3 py-3 text-sm text-[#115e59] font-medium">
+                      <td className="px-2 py-3 text-sm text-[#115e59] font-medium truncate">
                         {plot.plotName}
                       </td>
-                      <td className="px-3 py-3">
+                      <td className="px-2 py-3">
                         <select
                           value={plot.crop}
                           onChange={(e) =>
@@ -1066,7 +1105,7 @@ function EditSeasonView({
                           ))}
                         </select>
                       </td>
-                      <td className="px-3 py-3">
+                      <td className="px-2 py-3">
                         <input
                           type="date"
                           value={plot.sowingDate}
@@ -1077,10 +1116,10 @@ function EditSeasonView({
                               e.target.value,
                             )
                           }
-                          className="w-full px-2 py-1.5 text-sm border border-[#cad5e2] rounded focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                          className="w-full px-1.5 py-1.5 text-xs border border-[#cad5e2] rounded focus:outline-none focus:ring-2 focus:ring-[#009689]"
                         />
                       </td>
-                      <td className="px-3 py-3">
+                      <td className="px-2 py-3">
                         <input
                           type="date"
                           value={plot.harvestDate}
@@ -1091,10 +1130,10 @@ function EditSeasonView({
                               e.target.value,
                             )
                           }
-                          className="w-full px-2 py-1.5 text-sm border border-[#cad5e2] rounded focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                          className="w-full px-1.5 py-1.5 text-xs border border-[#cad5e2] rounded focus:outline-none focus:ring-2 focus:ring-[#009689]"
                         />
                       </td>
-                      <td className="px-3 py-3">
+                      <td className="px-2 py-3">
                         <input
                           type="number"
                           value={plot.quantity}
@@ -1105,10 +1144,10 @@ function EditSeasonView({
                               parseInt(e.target.value) || 0,
                             )
                           }
-                          className="w-full px-2 py-1.5 text-sm border border-[#cad5e2] rounded focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                          className="w-full px-1.5 py-1.5 text-sm border border-[#cad5e2] rounded focus:outline-none focus:ring-2 focus:ring-[#009689]"
                         />
                       </td>
-                      <td className="px-3 py-3">
+                      <td className="px-2 py-3 text-center">
                         <button
                           onClick={() => removePlot(plot.plotId)}
                           className="p-1 text-red-500 hover:bg-red-50 rounded"
