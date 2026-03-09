@@ -120,14 +120,14 @@ export function WorkersPage() {
         };
         setWorkers((prev) => [...prev, newWorker]);
       } else {
-        const created = await api.createWorker({
+        await api.createWorker({
           email: formData.email,
           password: formData.password,
           fullname: formData.name,
           phoneNumber: formData.phone,
           status: "Active",
         });
-        setWorkers((prev) => [...prev, mapUser(created)]);
+        await loadWorkers();
       }
       setIsAddModalOpen(false);
       resetForm();
@@ -161,14 +161,12 @@ export function WorkersPage() {
           ),
         );
       } else {
-        const updated = await api.updateWorker(selectedWorker.id, {
+        await api.updateWorker(selectedWorker.id, {
           email: formData.email,
           fullname: formData.name,
           phoneNumber: formData.phone,
         });
-        setWorkers((prev) =>
-          prev.map((w) => (w.id === selectedWorker.id ? mapUser(updated) : w)),
-        );
+        await loadWorkers();
       }
       setIsEditModalOpen(false);
       resetForm();

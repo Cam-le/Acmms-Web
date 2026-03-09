@@ -266,16 +266,13 @@ export function FarmPage() {
           },
         ]);
       } else {
-        const created = await api.createFarm({
+        await api.createFarm({
           farmName: farm.name,
           farmLocation: farm.location,
           farmArea: farm.area,
           farmStatus: farm.status === "Hoạt động" ? "Active" : "Inactive",
         });
-        setFarms((prev) => [
-          ...prev,
-          { ...mapFarm(created), image: farm.image },
-        ]);
+        await loadFarms();
       }
       setCreateModalOpen(false);
     } catch (err) {
@@ -296,20 +293,14 @@ export function FarmPage() {
           prev.map((f) => (f.id === updatedFarm.id ? updatedFarm : f)),
         );
       } else {
-        const updated = await api.updateFarm(updatedFarm.id, {
+        await api.updateFarm(updatedFarm.id, {
           farmName: updatedFarm.name,
           farmLocation: updatedFarm.location,
           farmArea: updatedFarm.area,
           farmStatus:
             updatedFarm.status === "Hoạt động" ? "Active" : "Inactive",
         });
-        setFarms((prev) =>
-          prev.map((f) =>
-            f.id === updatedFarm.id
-              ? { ...mapFarm(updated), image: updatedFarm.image }
-              : f,
-          ),
-        );
+        await loadFarms();
       }
       setEditModalOpen(false);
       setSelectedFarm(null);

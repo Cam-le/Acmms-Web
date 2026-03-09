@@ -119,14 +119,14 @@ export function CropsPage() {
           { ...cropData, id: Date.now().toString() },
         ]);
       } else {
-        const created = await api.createCrop({
+        await api.createCrop({
           cropName: cropData.name,
           cropScientificName: cropData.scientificName,
           cropDefaultGrowthDays: cropData.growthPeriod,
           cropStatus:
             cropData.status === "Đang sử dụng" ? "Active" : "Inactive",
         });
-        setCrops((prev) => [...prev, mapCrop(created)]);
+        await loadCrops();
       }
       setCreateModalOpen(false);
     } catch (err) {
@@ -147,16 +147,14 @@ export function CropsPage() {
           prev.map((c) => (c.id === updatedCrop.id ? updatedCrop : c)),
         );
       } else {
-        const updated = await api.updateCrop(updatedCrop.id, {
+        await api.updateCrop(updatedCrop.id, {
           cropName: updatedCrop.name,
           cropScientificName: updatedCrop.scientificName,
           cropDefaultGrowthDays: updatedCrop.growthPeriod,
           cropStatus:
             updatedCrop.status === "Đang sử dụng" ? "Active" : "Inactive",
         });
-        setCrops((prev) =>
-          prev.map((c) => (c.id === updatedCrop.id ? mapCrop(updated) : c)),
-        );
+        await loadCrops();
       }
       setEditModalOpen(false);
       setSelectedCrop(null);

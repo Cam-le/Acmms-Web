@@ -7,6 +7,7 @@ import {
   AlertTriangle,
   Clock,
   Calendar,
+  Eye,
 } from "lucide-react";
 import {
   BarChart,
@@ -251,29 +252,6 @@ export function DashboardPage() {
           </button>
         </div>
 
-        {/* Alert Tabs */}
-        <div className="flex gap-2 mb-6 border-b border-[#e2e8f0] overflow-x-auto">
-          {[
-            "THỜI GIAN",
-            "BIẾN THỂ",
-            "BỆNH NGHỆ NGÕ",
-            "MỨC ĐỘ",
-            "TRẠNG THÁI",
-            "HÀNH ĐỘNG",
-          ].map((tab) => (
-            <button
-              key={tab}
-              className={`px-4 py-2 text-xs font-medium whitespace-nowrap ${
-                tab === "THỜI GIAN"
-                  ? "text-[#009689] border-b-2 border-[#009689]"
-                  : "text-[#62748e] hover:text-[#115e59]"
-              }`}
-            >
-              {tab}
-            </button>
-          ))}
-        </div>
-
         {/* Alert List */}
         <div className="space-y-4">
           {recentAlerts.map((alert) => {
@@ -326,8 +304,8 @@ export function DashboardPage() {
                 </div>
 
                 {/* Action */}
-                <button className="px-4 py-2 bg-[#009689] text-white text-sm rounded-lg hover:bg-[#007f75] transition-colors whitespace-nowrap">
-                  Xử lý
+                <button className="p-2 text-[#009689] hover:bg-[#f0fdf9] rounded-lg transition-colors">
+                  <Eye className="w-5 h-5" />
                 </button>
               </div>
             );
