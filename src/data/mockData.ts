@@ -341,7 +341,10 @@ export interface PlotAssignment {
   crop: SeasonCropType;
   sowingDate: string;
   harvestDate: string;
-  quantity: number;
+  // --- Quantity fields ---
+  plannedQuantity: number; // Số lượng trồng dự kiến (cây) — nhập lúc tạo, khóa vĩnh viễn
+  actualPlanted: number; // Số lượng trồng thực tế (cây) — khóa khi mùa vụ "Đã kết thúc"
+  harvestQuantity: number; // Sản lượng thu hoạch (kg) — mở khóa khi qua harvestDate của luống
   status: SeasonStatus;
 }
 
@@ -361,10 +364,10 @@ export const mockSeasons: Season[] = [
   {
     id: "1",
     code: "MV001",
-    name: "Mùa Hè 2025",
+    name: "Vụ Xuân 2026",
     farm: "Trang trại Thung lũng Xanh",
-    startDate: "01-06-2025",
-    endDate: "30-09-2025",
+    startDate: "2026-02-01",
+    endDate: "2026-05-30",
     status: "Đang hoạt động",
     description: "Vụ mùa chính trồng bắp cải trắng và bắp cải tím.",
     plots: [
@@ -373,9 +376,11 @@ export const mockSeasons: Season[] = [
         plotName: "Luống A-1",
         area: "Khu A (Phía Bắc)",
         crop: "Bắp Cải Trắng",
-        sowingDate: "05/06/2025",
-        harvestDate: "15/08/2025",
-        quantity: 120,
+        sowingDate: "2026-02-05",
+        harvestDate: "2026-04-20", // chưa đến → harvestQuantity khóa
+        plannedQuantity: 150,
+        actualPlanted: 145,
+        harvestQuantity: 0,
         status: "Đang hoạt động",
       },
       {
@@ -383,9 +388,11 @@ export const mockSeasons: Season[] = [
         plotName: "Luống A-2",
         area: "Khu A (Phía Bắc)",
         crop: "Bắp Cải Trắng",
-        sowingDate: "06/06/2025",
-        harvestDate: "15/08/2025",
-        quantity: 120,
+        sowingDate: "2026-02-08",
+        harvestDate: "2026-04-25", // chưa đến → khóa
+        plannedQuantity: 150,
+        actualPlanted: 148,
+        harvestQuantity: 0,
         status: "Đang hoạt động",
       },
       {
@@ -393,9 +400,11 @@ export const mockSeasons: Season[] = [
         plotName: "Luống B-1",
         area: "Khu B (Phía Nam)",
         crop: "Bắp Cải Tím",
-        sowingDate: "10/06/2025",
-        harvestDate: "01/09/2025",
-        quantity: 100,
+        sowingDate: "2026-02-10",
+        harvestDate: "2026-05-15", // chưa đến → khóa
+        plannedQuantity: 120,
+        actualPlanted: 118,
+        harvestQuantity: 0,
         status: "Đang hoạt động",
       },
     ],
@@ -403,10 +412,10 @@ export const mockSeasons: Season[] = [
   {
     id: "2",
     code: "MV002",
-    name: "Vụ bắp cải xoăn Q2",
+    name: "Vụ bắp cải xoăn Q1/2026",
     farm: "Trang trại Nắng Hạ",
-    startDate: "15-05-2025",
-    endDate: "15-10-2025",
+    startDate: "2026-01-10",
+    endDate: "2026-04-20",
     status: "Đang hoạt động",
     description: "",
     plots: [
@@ -415,9 +424,23 @@ export const mockSeasons: Season[] = [
         plotName: "Luống C-1",
         area: "Khu C",
         crop: "Bắp Cải Xoăn",
-        sowingDate: "20/05/2025",
-        harvestDate: "10/10/2025",
-        quantity: 80,
+        sowingDate: "2026-01-15",
+        harvestDate: "2026-03-10", // đã qua → harvestQuantity mở khóa, nhưng chưa nhập
+        plannedQuantity: 100,
+        actualPlanted: 97,
+        harvestQuantity: 0,
+        status: "Đang hoạt động",
+      },
+      {
+        plotId: "C-2",
+        plotName: "Luống C-2",
+        area: "Khu C",
+        crop: "Bắp Cải Xoăn",
+        sowingDate: "2026-01-18",
+        harvestDate: "2026-03-05", // đã qua → mở khóa, đã nhập sản lượng
+        plannedQuantity: 80,
+        actualPlanted: 78,
+        harvestQuantity: 312,
         status: "Đang hoạt động",
       },
     ],
@@ -425,12 +448,12 @@ export const mockSeasons: Season[] = [
   {
     id: "3",
     code: "MV003",
-    name: "Mùa Đông 2024",
+    name: "Vụ Đông 2025",
     farm: "Trang trại Thung lũng Xanh",
-    startDate: "01-11-2024",
-    endDate: "28-02-2025",
+    startDate: "2025-10-01",
+    endDate: "2026-01-31",
     status: "Đã kết thúc",
-    description: "Mùa vụ đông",
+    description: "Mùa vụ đông đã hoàn thành.",
     plots: [],
   },
 ];
@@ -601,19 +624,43 @@ export type RequestStatus =
 export type Priority = "CAO" | "TRUNG BÌNH" | "THẤP";
 export type AdvisoryCropType = "Bắp Cải Trắng" | "Bắp Cải Tím" | "Bắp Cải Xoăn";
 
-export interface AdvisoryRequest {
+/** Báo cáo gốc do Worker tạo từ mobile (FE-14), Owner chọn để gửi tư vấn */
+export interface WorkerReport {
   id: string;
   title: string;
   crop: AdvisoryCropType;
-  field: string;
-  status: RequestStatus;
-  priority: Priority;
-  issue: string;
-  description: string;
+  field: string; // Khu vực / luống
+  season: string; // Mùa vụ
+  growthStage: string; // Giai đoạn sinh trưởng
+  issue: string; // Vấn đề AI phát hiện
+  aiConfidence: number; // Độ tin cậy AI (0–100)
+  description: string; // Mô tả thêm từ Worker
   images: string[];
   createdBy: string;
   createdAt: string;
+}
+
+export interface AdvisoryRequest {
+  id: string;
+  // Dữ liệu lấy từ WorkerReport (không tự điền)
+  workerReportId: string;
+  title: string;
+  crop: AdvisoryCropType;
+  field: string;
+  season: string;
+  growthStage: string;
+  issue: string;
+  aiConfidence: number;
+  description: string;
+  images: string[];
+  reportCreatedBy: string; // Worker gốc
+  reportCreatedAt: string; // Thời gian Worker báo cáo
+  // Dữ liệu Owner điền khi tạo yêu cầu
+  ownerMessage: string;
+  status: RequestStatus;
+  priority: Priority;
   assignedTo?: string;
+  createdAt: string; // Thời gian Owner gửi yêu cầu
   responseTime?: string;
   response?: {
     diagnosis: string;
@@ -623,17 +670,30 @@ export interface AdvisoryRequest {
   };
 }
 
-export const mockRequests: AdvisoryRequest[] = [
+/** Lịch sử tư vấn đã hoàn thành (FE-9) */
+export interface ConsultationHistory {
+  responseId: string;
+  requestId: string;
+  crop: AdvisoryCropType;
+  disease: string;
+  priority: Priority;
+  specialist: string;
+  respondedAt: string;
+}
+
+// Mock Worker Reports (nguồn để Owner chọn khi tạo yêu cầu)
+export const mockWorkerReports: WorkerReport[] = [
   {
-    id: "1",
-    title: "Bắp Cải Trắng",
+    id: "RPT-001",
+    title: "Phát hiện đốm lá trên bắp cải trắng",
     crop: "Bắp Cải Trắng",
-    field: "Khu C",
-    status: "Chờ phản hồi",
-    priority: "CAO",
+    field: "Khu C - Luống C-3",
+    season: "Mùa Hè 2025",
+    growthStage: "Tuần 4 – Giai đoạn cuộn đầu",
     issue: "Đốm lá nấm (Septoria)",
+    aiConfidence: 92,
     description:
-      "Phát hiện đốm trắng nghi ngờ nấm bệnh. Độ tin cậy: 92%. Lá bắp cải xuất hiện các đốm tròn màu nâu với viền vàng, có thể là triệu chứng của bệnh đốm lá do nấm.",
+      "Lá bắp cải xuất hiện các đốm tròn màu nâu với viền vàng, tập trung ở lá già phía dưới.",
     images: [
       "https://kingbio.vn/wp-content/uploads/2026/02/Benh-Dom-Den-Nam-Septoria-Tren-Hoa-Giay.jpg",
       "https://kingbio.vn/wp-content/uploads/2026/02/Benh-Dom-Den-Nam-Septoria-Tren-Hoa-Giay.jpg",
@@ -642,21 +702,104 @@ export const mockRequests: AdvisoryRequest[] = [
     createdAt: "14:20 - 15/05/2024",
   },
   {
-    id: "2",
-    title: "Bắp Cải Tím",
+    id: "RPT-002",
+    title: "Lớp bột trắng xuất hiện trên bắp cải tím",
     crop: "Bắp Cải Tím",
-    field: "Khu B (Nhà kính 1)",
-    status: "Đang xử lý",
-    priority: "TRUNG BÌNH",
+    field: "Khu B - Nhà kính 1",
+    season: "Mùa Hè 2025",
+    growthStage: "Tuần 6 – Giai đoạn phát triển lá",
     issue: "Phấn trắng (Powdery Mildew)",
+    aiConfidence: 87,
     description:
       "Phát hiện lớp bột trắng trên lá bắp cải tím. Có thể là dấu hiệu của bệnh phấn trắng, cần xử lý ngay để tránh lây lan.",
     images: [
       "https://images.unsplash.com/photo-1518977956812-cd3dbadaaf31?w=400&h=300&fit=crop",
     ],
-    createdBy: "Hoàng Lan",
+    createdBy: "Nguyễn Văn B",
     createdAt: "10:30 - 14/05/2024",
+  },
+  {
+    id: "RPT-003",
+    title: "Vết đen trên lá bắp cải xoăn",
+    crop: "Bắp Cải Xoăn",
+    field: "Khu C - Ngoài trời",
+    season: "Vụ bắp cải xoăn Q2",
+    growthStage: "Tuần 3 – Giai đoạn ra lá mới",
+    issue: "Than thư (Anthracnose)",
+    aiConfidence: 78,
+    description:
+      "Lá bắp cải xoăn có các vết đen, khô và cuộn lại. Nghi ngờ bệnh than thư hoặc thiếu dinh dưỡng.",
+    images: [
+      "https://images.unsplash.com/photo-1524179091875-bf99a9a6af57?w=400&h=300&fit=crop",
+    ],
+    createdBy: "Trần Văn E",
+    createdAt: "08:15 - 13/05/2024",
+  },
+  {
+    id: "RPT-004",
+    title: "Rệp trắng mặt dưới lá bắp cải trắng",
+    crop: "Bắp Cải Trắng",
+    field: "Khu D - Nhà kính 3",
+    season: "Mùa Hè 2025",
+    growthStage: "Tuần 2 – Giai đoạn cây con",
+    issue: "Rệp trắng",
+    aiConfidence: 95,
+    description:
+      "Xuất hiện rệp trắng trên mặt dưới lá bắp cải. Số lượng chưa nhiều nhưng cần kiểm soát sớm.",
+    images: [
+      "https://cdn.eva.vn/upload/1-2023/images/2023-01-08/cay-bi-rep-trang-tan-cong-hay-tuoi-thu-nuoc-than-nay-sau-1-dem-se-het-sach-3-1673132796-984-width780height488.jpg",
+    ],
+    createdBy: "Lê Thị F",
+    createdAt: "16:45 - 10/05/2024",
+  },
+];
+
+export const mockRequests: AdvisoryRequest[] = [
+  {
+    id: "TV-001",
+    workerReportId: "RPT-001",
+    title: "Phát hiện đốm lá trên bắp cải trắng",
+    crop: "Bắp Cải Trắng",
+    field: "Khu C - Luống C-3",
+    season: "Mùa Hè 2025",
+    growthStage: "Tuần 4 – Giai đoạn cuộn đầu",
+    issue: "Đốm lá nấm (Septoria)",
+    aiConfidence: 92,
+    description:
+      "Lá bắp cải xuất hiện các đốm tròn màu nâu với viền vàng, tập trung ở lá già phía dưới.",
+    images: [
+      "https://kingbio.vn/wp-content/uploads/2026/02/Benh-Dom-Den-Nam-Septoria-Tren-Hoa-Giay.jpg",
+      "https://kingbio.vn/wp-content/uploads/2026/02/Benh-Dom-Den-Nam-Septoria-Tren-Hoa-Giay.jpg",
+    ],
+    reportCreatedBy: "Mai Thị Hoa",
+    reportCreatedAt: "14:20 - 15/05/2024",
+    ownerMessage: "Nhờ chuyên gia xác nhận loại nấm và hướng xử lý phù hợp.",
+    status: "Chờ phản hồi",
+    priority: "CAO",
+    createdAt: "15:00 - 15/05/2024",
+  },
+  {
+    id: "TV-002",
+    workerReportId: "RPT-002",
+    title: "Lớp bột trắng xuất hiện trên bắp cải tím",
+    crop: "Bắp Cải Tím",
+    field: "Khu B - Nhà kính 1",
+    season: "Mùa Hè 2025",
+    growthStage: "Tuần 6 – Giai đoạn phát triển lá",
+    issue: "Phấn trắng (Powdery Mildew)",
+    aiConfidence: 87,
+    description:
+      "Phát hiện lớp bột trắng trên lá bắp cải tím. Có thể là dấu hiệu của bệnh phấn trắng, cần xử lý ngay để tránh lây lan.",
+    images: [
+      "https://images.unsplash.com/photo-1518977956812-cd3dbadaaf31?w=400&h=300&fit=crop",
+    ],
+    reportCreatedBy: "Nguyễn Văn B",
+    reportCreatedAt: "10:30 - 14/05/2024",
+    ownerMessage: "Khu nhà kính 1 có nguy cơ lây lan cao, cần xử lý gấp.",
+    status: "Đang xử lý",
+    priority: "TRUNG BÌNH",
     assignedTo: "ThS. Hoàng Lan",
+    createdAt: "11:00 - 14/05/2024",
     response: {
       diagnosis: "Bệnh phấn trắng do nấm",
       observation:
@@ -666,21 +809,28 @@ export const mockRequests: AdvisoryRequest[] = [
     },
   },
   {
-    id: "3",
-    title: "Bắp Cải Xoăn",
+    id: "TV-003",
+    workerReportId: "RPT-003",
+    title: "Vết đen trên lá bắp cải xoăn",
     crop: "Bắp Cải Xoăn",
-    field: "Khu C (Ngoài trời)",
-    status: "Đã phản hồi",
-    priority: "CAO",
+    field: "Khu C - Ngoài trời",
+    season: "Vụ bắp cải xoăn Q2",
+    growthStage: "Tuần 3 – Giai đoạn ra lá mới",
     issue: "Than thư (Anthracnose)",
+    aiConfidence: 78,
     description:
       "Lá bắp cải xoăn có các vết đen, khô và cuộn lại. Nghi ngờ bệnh than thư hoặc thiếu dinh dưỡng.",
     images: [
       "https://images.unsplash.com/photo-1524179091875-bf99a9a6af57?w=400&h=300&fit=crop",
     ],
-    createdBy: "Trần Hùng",
-    createdAt: "08:15 - 13/05/2024",
+    reportCreatedBy: "Trần Văn E",
+    reportCreatedAt: "08:15 - 13/05/2024",
+    ownerMessage:
+      "Vui lòng xem xét có phải thiếu dinh dưỡng không để điều chỉnh lịch bón phân.",
+    status: "Đã phản hồi",
+    priority: "CAO",
     assignedTo: "PGS.TS Trần Hùng",
+    createdAt: "09:00 - 13/05/2024",
     responseTime: "2 giờ trước",
     response: {
       diagnosis: "Thiếu Nitơ và bệnh nấm than thư nhẹ",
@@ -692,22 +842,50 @@ export const mockRequests: AdvisoryRequest[] = [
     },
   },
   {
-    id: "4",
-    title: "Bắp Cải Trắng",
+    id: "TV-004",
+    workerReportId: "RPT-004",
+    title: "Rệp trắng mặt dưới lá bắp cải trắng",
     crop: "Bắp Cải Trắng",
-    field: "Khu D (Nhà kính 3)",
-    status: "Đóng",
-    priority: "THẤP",
+    field: "Khu D - Nhà kính 3",
+    season: "Mùa Hè 2025",
+    growthStage: "Tuần 2 – Giai đoạn cây con",
     issue: "Rệp trắng",
+    aiConfidence: 95,
     description:
       "Xuất hiện rệp trắng trên mặt dưới lá bắp cải. Số lượng chưa nhiều nhưng cần kiểm soát sớm.",
     images: [
       "https://cdn.eva.vn/upload/1-2023/images/2023-01-08/cay-bi-rep-trang-tan-cong-hay-tuoi-thu-nuoc-than-nay-sau-1-dem-se-het-sach-3-1673132796-984-width780height488.jpg",
     ],
-    createdBy: "Văn Minh",
-    createdAt: "16:45 - 10/05/2024",
+    reportCreatedBy: "Lê Thị F",
+    reportCreatedAt: "16:45 - 10/05/2024",
+    ownerMessage:
+      "Khu cây con dễ bị tổn thương, cần hướng dẫn phòng trừ an toàn.",
+    status: "Đóng",
+    priority: "THẤP",
     assignedTo: "TS. Nguyễn Văn Minh",
+    createdAt: "17:00 - 10/05/2024",
     responseTime: "5 ngày trước",
+  },
+];
+
+export const mockConsultationHistory: ConsultationHistory[] = [
+  {
+    responseId: "PH-001",
+    requestId: "TV-003",
+    crop: "Bắp Cải Xoăn",
+    disease: "Than thư (Anthracnose)",
+    priority: "CAO",
+    specialist: "PGS.TS Trần Hùng",
+    respondedAt: "11:00 - 13/05/2024",
+  },
+  {
+    responseId: "PH-002",
+    requestId: "TV-004",
+    crop: "Bắp Cải Trắng",
+    disease: "Rệp trắng",
+    priority: "THẤP",
+    specialist: "TS. Nguyễn Văn Minh",
+    respondedAt: "09:30 - 15/05/2024",
   },
 ];
 
@@ -818,7 +996,7 @@ export interface TaskTemplate {
   name: string;
   type: string;
   description: string;
-  crop: string; // empty string = applies to all crops
+  crop: string;
   icon: string;
   iconBg: string;
 }
@@ -826,13 +1004,13 @@ export interface TaskTemplate {
 export interface TaskAssignment {
   id: string;
   templateId: string;
-  taskName: string; // denormalized from template for display
+  taskName: string;
   taskIcon: string;
   taskIconBg: string;
   area: string;
   plot: string;
-  date: string; // ISO YYYY-MM-DD
-  displayDate: string; // DD/MM/YYYY
+  date: string;
+  displayDate: string;
   time: string;
   workerIds: string[];
   workerNames: string[];
