@@ -320,7 +320,7 @@ export function PlotsPage() {
                       className="ml-2 px-4 py-2 bg-[#009689] text-white rounded-lg hover:bg-[#007f75] transition-colors text-sm flex items-center gap-2"
                     >
                       <Layers className="w-4 h-4" />
-                      Phân Luống Tự Động
+                      Thêm Luống Tự Động
                     </button>
                   </div>
                 </div>
@@ -349,7 +349,7 @@ export function PlotsPage() {
                       className="px-4 py-2 bg-white text-[#009689] border border-[#009689] rounded-lg hover:bg-[#f0fdfa] transition-colors text-sm flex items-center gap-2"
                     >
                       <Plus className="w-4 h-4" />
-                      Thêm 1 Luống
+                      Thêm Luống
                     </button>
                   </div>
 
@@ -651,7 +651,7 @@ function CreateLandModal({
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Nông Trại
+                  Trang Trại
                 </label>
                 <select
                   value={formData.farm}
@@ -660,8 +660,8 @@ function CreateLandModal({
                   }
                   className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
                 >
-                  <option value="Nông trại xanh">Nông trại xanh</option>
-                  <option value="Nông trại Nắng Hạ">Nông trại Nắng Hạ</option>
+                  <option value="Trang trại xanh">Trang trại xanh</option>
+                  <option value="Trang trại Nắng Hạ">Trang trại Nắng Hạ</option>
                 </select>
               </div>
 

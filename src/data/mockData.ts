@@ -534,7 +534,6 @@ export const mockFarms: Farm[] = [
     area: 8500,
     description:
       "Trang trại chuyên canh các loại Bắp Cải theo tiêu chuẩn hữu cơ. Hệ thống tưới tiêu tự động và giám sát môi trường 24/7.",
-    // Lush green farm field
     image:
       "https://images.unsplash.com/photo-1500382017468-9049fed747ef?w=800&h=400&fit=crop&auto=format",
     createdAt: "10/6/2023",
@@ -565,7 +564,6 @@ export const mockFarms: Farm[] = [
     area: 6000,
     description:
       "Trang trại trồng bắp cải hữu cơ với hệ thống nhà kính hiện đại.",
-    // Greenhouse / modern farm
     image:
       "https://images.unsplash.com/photo-1625246333195-78d9c38ad449?w=800&h=400&fit=crop&auto=format",
     createdAt: "8/15/2023",
@@ -587,7 +585,6 @@ export const mockFarms: Farm[] = [
     status: "Không hoạt động",
     area: 5000,
     description: "Trang trại đang trong giai đoạn tái cấu trúc.",
-    // Dry/inactive field
     image:
       "https://images.unsplash.com/photo-1574943320219-553eb213f72d?w=800&h=400&fit=crop&auto=format",
     createdAt: "5/20/2023",
@@ -754,6 +751,7 @@ export const mockLands: LandArea[] = [
     landType: "Đất Thịt",
     status: "Hoạt động",
     createdDate: "12/01/2023",
+    description: "Không có mô tả thêm.",
     plots: [
       {
         id: "A1",
@@ -786,7 +784,6 @@ export const mockLands: LandArea[] = [
         actualCrops: 7,
       },
     ],
-    description: "Không có mô tả thêm.",
   },
   {
     id: "2",
@@ -809,12 +806,135 @@ export const mockLands: LandArea[] = [
         plantedDate: "20/01/2025",
         actualCrops: 7,
       },
-      {
-        id: "B2",
-        name: "Luống B2",
-        area: 70,
-        status: "Khả dụng",
-      },
+      { id: "B2", name: "Luống B2", area: 70, status: "Khả dụng" },
     ],
+  },
+];
+
+// =================== TASKS PAGE ===================
+
+export interface TaskTemplate {
+  id: string;
+  name: string;
+  type: string;
+  description: string;
+  crop: string; // empty string = applies to all crops
+  icon: string;
+  iconBg: string;
+}
+
+export interface TaskAssignment {
+  id: string;
+  templateId: string;
+  taskName: string; // denormalized from template for display
+  taskIcon: string;
+  taskIconBg: string;
+  area: string;
+  plot: string;
+  date: string; // ISO YYYY-MM-DD
+  displayDate: string; // DD/MM/YYYY
+  time: string;
+  workerIds: string[];
+  workerNames: string[];
+  status: "pending" | "in-progress" | "completed";
+  notes: string;
+}
+
+export const mockTaskTemplates: TaskTemplate[] = [
+  {
+    id: "tpl-1",
+    name: "Tưới nước",
+    type: "Tưới nước",
+    description: "Tưới nước định kỳ theo lịch",
+    crop: "",
+    icon: "💧",
+    iconBg: "#dbeafe",
+  },
+  {
+    id: "tpl-2",
+    name: "Bón phân NPK",
+    type: "Bón phân",
+    description: "Bón phân NPK giai đoạn phát triển",
+    crop: "Bắp Cải Trắng",
+    icon: "🌱",
+    iconBg: "#dcfce7",
+  },
+  {
+    id: "tpl-3",
+    name: "Phun thuốc trừ sâu",
+    type: "Bảo vệ thực vật",
+    description: "Phun thuốc phòng ngừa sâu hại",
+    crop: "",
+    icon: "🛡️",
+    iconBg: "#fef9c3",
+  },
+  {
+    id: "tpl-4",
+    name: "Kiểm tra sức khoẻ cây",
+    type: "Kiểm tra",
+    description: "Quan sát và ghi nhận tình trạng cây trồng",
+    crop: "",
+    icon: "🔍",
+    iconBg: "#f3e8ff",
+  },
+  {
+    id: "tpl-5",
+    name: "Thu hoạch",
+    type: "Thu hoạch",
+    description: "Thu hoạch bắp cải đạt tiêu chuẩn",
+    crop: "",
+    icon: "🌾",
+    iconBg: "#f0fdf4",
+  },
+];
+
+export const mockTaskAssignments: TaskAssignment[] = [
+  {
+    id: "asgn-1",
+    templateId: "tpl-1",
+    taskName: "Tưới nước",
+    taskIcon: "💧",
+    taskIconBg: "#dbeafe",
+    area: "Khu A",
+    plot: "Luống 01",
+    date: "2023-12-20",
+    displayDate: "20/12/2023",
+    time: "07:00 - 09:00",
+    workerIds: ["1", "2"],
+    workerNames: ["Trần Văn E", "Lê Thị F"],
+    status: "in-progress",
+    notes: "",
+  },
+  {
+    id: "asgn-2",
+    templateId: "tpl-2",
+    taskName: "Bón phân NPK",
+    taskIcon: "🌱",
+    taskIconBg: "#dcfce7",
+    area: "Khu B",
+    plot: "Luống 03",
+    date: "2023-12-20",
+    displayDate: "20/12/2023",
+    time: "08:00 - 10:00",
+    workerIds: ["3"],
+    workerNames: ["Nguyễn Văn G"],
+    status: "completed",
+    notes: "Đã hoàn thành. Cây hấp thu tốt.",
+  },
+  {
+    id: "asgn-3",
+    templateId: "tpl-3",
+    taskName: "Phun thuốc trừ sâu",
+    taskIcon: "🛡️",
+    taskIconBg: "#fef9c3",
+    area: "Khu C",
+    plot: "Luống 05",
+    date: "2023-12-22",
+    displayDate: "22/12/2023",
+    time: "14:00 - 16:00",
+    workerIds: ["1"],
+    workerNames: ["Trần Văn E"],
+    status: "pending",
+    notes: "",
   },
 ];
