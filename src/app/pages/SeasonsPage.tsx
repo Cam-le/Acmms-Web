@@ -64,6 +64,14 @@ function isHarvestUnlocked(harvestDate: string): boolean {
   return new Date() >= d;
 }
 
+/** Format YYYY-MM-DD → DD/MM/YYYY for display. Passes through if already DD/MM/YYYY. */
+function formatDate(dateStr: string): string {
+  if (!dateStr) return "";
+  const ymd = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (ymd) return `${ymd[3]}/${ymd[2]}/${ymd[1]}`;
+  return dateStr; // already DD/MM/YYYY or unknown format
+}
+
 // ===================== FARM SELECT =====================
 function FarmSelect({
   value,
@@ -249,21 +257,16 @@ export function SeasonsPage() {
                   <div className="text-sm font-medium text-[#115e59]">
                     {season.name}
                   </div>
-                  {season.description && (
-                    <div className="text-xs text-[#62748e] mt-1">
-                      {season.description}
-                    </div>
-                  )}
                 </td>
                 <td className="px-6 py-4 text-sm text-[#62748e]">
                   {season.farm}
                 </td>
                 <td className="px-6 py-4">
                   <div className="text-xs text-[#62748e]">
-                    Bắt đầu: {season.startDate}
+                    Bắt đầu: {formatDate(season.startDate)}
                   </div>
                   <div className="text-xs text-[#62748e]">
-                    Kết thúc: {season.endDate}
+                    Kết thúc: {formatDate(season.endDate)}
                   </div>
                 </td>
                 <td className="px-6 py-4 text-sm text-[#115e59] font-medium">
@@ -772,7 +775,7 @@ function DetailSeasonView({ season }: { season: Season }) {
             <div>
               <div className="text-xs text-[#62748e] mb-1">THỜI GIAN</div>
               <div className="font-medium text-[#115e59]">
-                {season.startDate} – {season.endDate}
+                {formatDate(season.startDate)} – {formatDate(season.endDate)}
               </div>
             </div>
           </div>
@@ -858,10 +861,10 @@ function DetailSeasonView({ season }: { season: Season }) {
                             {plot.area}
                           </td>
                           <td className="px-4 py-3 text-sm text-[#62748e]">
-                            {plot.sowingDate}
+                            {formatDate(plot.sowingDate)}
                           </td>
                           <td className="px-4 py-3 text-sm text-[#62748e]">
-                            {plot.harvestDate}
+                            {formatDate(plot.harvestDate)}
                           </td>
                           <td className="px-4 py-3 text-sm text-[#62748e]">
                             {plot.plannedQuantity ?? 0}
@@ -881,7 +884,7 @@ function DetailSeasonView({ season }: { season: Season }) {
                             ) : (
                               <span className="flex items-center gap-1 text-[#90a1b9]">
                                 <Lock className="w-3 h-3" />
-                                Chưa đến ngày
+                                Chưa thu hoạch
                               </span>
                             )}
                           </td>
@@ -1033,7 +1036,7 @@ function EditSeasonView({
         if (hd && hd > end) {
           errors.endDate =
             errors.endDate ||
-            `Ngày kết thúc phải ≥ ngày thu hoạch của ${plot.plotName} (${plot.harvestDate})`;
+            `Ngày kết thúc phải ≥ ngày thu hoạch của ${plot.plotName} (${formatDate(plot.harvestDate)})`;
         }
       });
     }
@@ -1398,9 +1401,6 @@ function EditSeasonView({
                         <span className="ml-2 text-xs text-[#62748e]">
                           {plot.area}
                         </span>
-                        {hasPlotData && (
-                          <span className="ml-2 text-xs text-amber-600">•</span>
-                        )}
                       </div>
                       <button
                         onClick={() => removePlot(plot.plotId)}
@@ -1552,10 +1552,10 @@ function EditSeasonView({
                         <div className="flex items-center gap-1.5 text-sm text-[#90a1b9]">
                           <Lock className="w-3.5 h-3.5 shrink-0" />
                           <span>
-                            Chưa đến ngày thu hoạch
+                            Chưa thu hoạch
                             {plot.harvestDate && (
                               <span className="ml-1 text-xs">
-                                (mở khóa từ {plot.harvestDate})
+                                (mở khóa từ {formatDate(plot.harvestDate)})
                               </span>
                             )}
                           </span>

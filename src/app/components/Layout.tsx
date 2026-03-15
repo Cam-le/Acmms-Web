@@ -37,8 +37,8 @@ export function AppLayout() {
     { icon: MapPin, label: "Khu đất", to: "/lands" },
     { icon: CalendarDays, label: "Mùa vụ", to: "/seasons" },
     { icon: Sprout, label: "Cây trồng", to: "/crops" },
-    { icon: Briefcase, label: "Công việc", to: "/tasks" },
     { icon: Users, label: "Nhân viên", to: "/workers" },
+    { icon: Briefcase, label: "Công việc", to: "/tasks" },
     { icon: MessagesSquare, label: "Tư vấn", to: "/advisory" },
   ];
 

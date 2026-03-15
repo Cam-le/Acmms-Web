@@ -271,14 +271,14 @@ export function TasksPage() {
         <div>
           <h1 className="text-2xl font-bold text-[#115e59]">Công việc</h1>
           <p className="text-sm text-[#64748b] mt-1">
-            Quản lý và theo dõi tiến độ hoạt động tại trang trại
+            Quản lý và phân công công việc tại trang trại
           </p>
         </div>
         <button
           onClick={() => setIsAssignOpen(true)}
           className="bg-[#009689] text-white px-4 py-2 rounded-[10px] flex items-center gap-2 hover:bg-[#007f73] transition-colors"
         >
-          <Plus className="w-4 h-4" /> Giao công việc
+          <Plus className="w-4 h-4" /> Giao việc
         </button>
       </div>
 
@@ -790,7 +790,7 @@ export function TasksPage() {
           <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-xl bg-white rounded-xl shadow-2xl p-6 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-5">
               <Dialog.Title className="text-lg font-bold text-[#1e293b]">
-                Giao công việc
+                Giao việc
               </Dialog.Title>
               <Dialog.Close asChild>
                 <button className="p-1 text-slate-400 hover:text-slate-600 rounded">
@@ -955,7 +955,7 @@ export function TasksPage() {
                 }
                 className="flex-1 px-4 py-2 rounded-lg text-sm font-medium bg-[#009689] text-white hover:bg-[#007f73] disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
               >
-                <CheckCircle2 className="w-4 h-4" /> Giao công việc
+                <CheckCircle2 className="w-4 h-4" /> Giao việc
               </button>
             </div>
           </Dialog.Content>
