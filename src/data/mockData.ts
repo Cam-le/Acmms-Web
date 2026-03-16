@@ -639,7 +639,7 @@ export type RequestStatus =
   | "Chờ phản hồi" // Pest_Detection created, no specialist assigned yet
   | "Đang xử lý" // specialist_id assigned, detection_status = TODO: confirm enum
   | "Đã phản hồi" // Recommendation row exists for this pest_detection_id
-  | "Đóng"; // detection_status = TODO: confirm enum
+  | "Đóng"; // detection_status = TODO: confirm enum — displays as "Đã giải quyết"
 
 export type Priority = "CAO" | "TRUNG BÌNH" | "THẤP";
 export type AdvisoryCropType = "Bắp Cải Trắng" | "Bắp Cải Tím" | "Bắp Cải Xoăn";
@@ -776,6 +776,11 @@ export interface AdvisoryRequest {
     createdAt?: string;
     /** Recommendation.updated_at */
     updatedAt?: string;
+    /**
+     * Display name of the specialist's organisation.
+     * TODO: derive from specialist profile lookup once Users table is integrated.
+     */
+    specialistOrg?: string;
   };
 }
 
@@ -978,6 +983,7 @@ export const mockRequests: AdvisoryRequest[] = [
         "Do độ ẩm không khí cao trong những ngày qua tại Khu C kết hợp với nhiệt độ thấp vào ban đêm, tạo điều kiện cho nấm phát triển.",
       recommendation:
         "Cần cách ly ngay các luống bị bệnh. Sử dụng thuốc bảo vệ thực vật có hoạt chất Metalaxyl hoặc Mancozeb để phun phòng trị. Lưu ý phun vét đều hai mặt lá.",
+      specialistOrg: "Viện Khoa học Tự nhiên (Viện KHTN)",
       createdAt: "13:00 - 14/05/2024",
       updatedAt: "13:00 - 14/05/2024",
     },
@@ -1022,6 +1028,7 @@ export const mockRequests: AdvisoryRequest[] = [
       recommendation:
         "Cần cách ly ngay các luống bị bệnh. Sử dụng thuốc bảo vệ thực vật có hoạt chất Metalaxyl hoặc Mancozeb để phun phòng trị. Lưu ý phun vét đều hai mặt lá. Bổ sung phân đạm để cải thiện sức đề kháng.",
       treatmentPlan: "Xử lý trong vòng 3-5 ngày, theo dõi hàng ngày",
+      specialistOrg: "Viện Khoa học Tự nhiên (Viện KHTN)",
       createdAt: "11:00 - 13/05/2024",
       updatedAt: "11:00 - 13/05/2024",
     },
@@ -1084,6 +1091,37 @@ export const mockConsultationHistory: ConsultationHistory[] = [
     specialist: "ThS. Hoàng Lan",
     respondedAt: "13:00 - 14/05/2024",
     paymentStatus: "UNPAID",
+  },
+];
+
+/**
+ * Specialist — mirrors the specialist subset of the Users table.
+ * TODO: replace with real API response from GET /api/specialists
+ */
+export interface Specialist {
+  /** Maps to Users.user_id */
+  id: string;
+  /** Full display name including academic title */
+  name: string;
+  /** Organisation / institution name */
+  org: string;
+}
+
+export const mockSpecialists: Specialist[] = [
+  {
+    id: "SP-001",
+    name: "TS. Nguyễn Văn Minh",
+    org: "Viện Khoa học Tự nhiên (Viện KHTN)",
+  },
+  {
+    id: "SP-002",
+    name: "ThS. Hoàng Lan",
+    org: "Viện Khoa học Tự nhiên (Viện KHTN)",
+  },
+  {
+    id: "SP-003",
+    name: "PGS.TS Trần Hùng",
+    org: "Viện Khoa học Tự nhiên (Viện KHTN)",
   },
 ];
 

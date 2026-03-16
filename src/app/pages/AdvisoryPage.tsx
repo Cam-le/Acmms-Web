@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Link, useSearchParams } from "react-router";
 import {
   Plus,
@@ -22,6 +22,18 @@ import {
   Unlock,
   Receipt,
   BadgeCheck,
+  Camera,
+  Sprout,
+  FileText,
+  Briefcase,
+  ClipboardList,
+  Settings2,
+  Info,
+  ListChecks,
+  User,
+  Leaf,
+  MapPin,
+  CalendarDays,
 } from "lucide-react";
 import {
   AdvisoryRequest,
@@ -30,17 +42,20 @@ import {
   AdvisoryCropType as CropType,
   WorkerReport,
   ConsultationHistory,
+  Specialist,
   mockRequests,
   mockWorkerReports,
   mockConsultationHistory,
+  mockSpecialists,
 } from "../../data/mockData";
 
 // ===================== PAYMENT CONFIG =====================
-// Placeholder — replace with real pricing from backend
-const PLACEHOLDER_PRICE = "XXX.XXXđ";
+// TODO: replace with real pricing fetched from backend (GET /api/pricing/consultation)
+const PLACEHOLDER_PRICE = "Đang cập nhật";
 
 // Session-level paid set (in real app: from backend/localStorage)
-const paidRequests = new Set<string>();
+// TV-005 pre-seeded as paid to demonstrate the post-payment state
+const paidRequests = new Set<string>(["TV-005"]);
 
 // ===================== PAYMENT STATUS =====================
 type PaymentStatus = "idle" | "waiting" | "success" | "failed";
@@ -58,10 +73,25 @@ const statusConfig: Record<
   Đóng: { color: "bg-[#f1f5f9] text-[#475569]", icon: XCircle },
 };
 
+// Display-only labels — keeps data values unchanged, improves UI copy
+const statusLabel: Record<RequestStatus, string> = {
+  "Chờ phản hồi": "Chờ phản hồi",
+  "Đang xử lý": "Đang xử lý",
+  "Đã phản hồi": "Đã phản hồi",
+  Đóng: "Đã giải quyết",
+};
+
 const priorityConfig: Record<Priority, string> = {
   CAO: "bg-[#fee2e2] text-[#991b1b]",
   "TRUNG BÌNH": "bg-[#fef3c7] text-[#92400e]",
   THẤP: "bg-[#f1f5f9] text-[#475569]",
+};
+
+// Sentence-case display labels for priority badges
+const priorityLabel: Record<Priority, string> = {
+  CAO: "Cao",
+  "TRUNG BÌNH": "Trung bình",
+  THẤP: "Thấp",
 };
 
 // ===================== PAYMENT MODAL =====================
@@ -99,7 +129,7 @@ function PaymentModal({
     setStatus("waiting");
     // TODO: replace with real webhook / GET /api/payments/status?requestId=...
     timerRef.current = setTimeout(() => {
-      const ok = Math.random() > 0.35; // 65% success for demo
+      const ok = Math.random() > 0.35; // DEMO ONLY: 65% success rate — remove in production
       if (ok) {
         setStatus("success");
         setTimeout(onSuccess, 1400);
@@ -367,6 +397,23 @@ function PaymentModal({
   );
 }
 
+// Shared pagination helper — used by both list view and HistoryView
+function getPageNumbers(current: number, total: number): (number | "...")[] {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  const pages: (number | "...")[] = [1];
+  if (current > 3) pages.push("...");
+  for (
+    let i = Math.max(2, current - 1);
+    i <= Math.min(total - 1, current + 1);
+    i++
+  ) {
+    pages.push(i);
+  }
+  if (current < total - 2) pages.push("...");
+  pages.push(total);
+  return pages;
+}
+
 // ===================== MAIN PAGE =====================
 export function AdvisoryPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -377,10 +424,15 @@ export function AdvisoryPage() {
   const [history] = useState<ConsultationHistory[]>(mockConsultationHistory);
 
   const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<RequestStatus | "all">(
-    "all",
-  );
   const [priorityFilter, setPriorityFilter] = useState<Priority | "all">("all");
+  const [showAll, setShowAll] = useState(false);
+
+  // Unresolved = statuses that still need owner attention
+  const UNRESOLVED: RequestStatus[] = [
+    "Chờ phản hồi",
+    "Đang xử lý",
+    "Đã phản hồi",
+  ];
 
   const filteredRequests = requests.filter((req) => {
     const q = searchQuery.toLowerCase();
@@ -390,11 +442,27 @@ export function AdvisoryPage() {
       req.issue.toLowerCase().includes(q) ||
       req.field.toLowerCase().includes(q) ||
       req.id.toLowerCase().includes(q);
-    const matchesStatus = statusFilter === "all" || req.status === statusFilter;
     const matchesPriority =
       priorityFilter === "all" || req.priority === priorityFilter;
-    return matchesSearch && matchesStatus && matchesPriority;
+    const matchesResolved = showAll || UNRESOLVED.includes(req.status);
+    return matchesSearch && matchesPriority && matchesResolved;
   });
+
+  const LIST_PAGE_SIZE = 8;
+  const [listPage, setListPage] = useState(1);
+  const totalListPages = Math.max(
+    1,
+    Math.ceil(filteredRequests.length / LIST_PAGE_SIZE),
+  );
+  const paginatedRequests = filteredRequests.slice(
+    (listPage - 1) * LIST_PAGE_SIZE,
+    listPage * LIST_PAGE_SIZE,
+  );
+
+  // Reset to page 1 when filters or search change
+  useEffect(() => {
+    setListPage(1);
+  }, [searchQuery, priorityFilter, showAll]);
 
   const selectedRequest = requests.find((r) => r.id === requestId);
 
@@ -420,83 +488,171 @@ export function AdvisoryPage() {
 
   // ==================== LIST VIEW ====================
   return (
-    <div className="flex flex-col gap-6 p-6">
+    <div className="flex flex-col gap-4 p-6">
+      {/* Header */}
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-[#115e59] text-2xl font-semibold mb-1">
-            Danh sách yêu cầu tư vấn
+            Yêu cầu tư vấn
           </h1>
           <p className="text-[#45556c] text-sm">
-            Quản lý và theo dõi các vấn đề cần chuyên gia hỗ trợ.
+            {showAll
+              ? "Hiển thị tất cả yêu cầu."
+              : "Chỉ hiển thị các yêu cầu chưa giải quyết."}
           </p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex gap-2">
           <button
             onClick={() => setSearchParams({ view: "history" })}
-            className="flex items-center gap-2 px-4 py-2 border border-[#cad5e2] text-[#62748e] rounded-lg hover:bg-[#f8fafc] transition-colors"
+            className="flex items-center gap-2 px-3 py-2 border border-[#cad5e2] text-[#62748e] rounded-lg hover:bg-[#f8fafc] transition-colors text-sm"
           >
             <History className="w-4 h-4" />
-            Lịch sử tư vấn
+            Lịch sử
           </button>
           <Link
             to="/advisory?view=create"
-            className="bg-[#009689] text-white px-4 py-2 rounded-lg hover:bg-[#007f75] transition-colors flex items-center gap-2"
+            className="bg-[#009689] text-white px-3 py-2 rounded-lg hover:bg-[#007f75] transition-colors flex items-center gap-2 text-sm"
           >
             <Plus className="w-4 h-4" />
-            Tạo yêu cầu mới
+            Tạo yêu cầu
           </Link>
         </div>
       </div>
 
-      <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-4">
-        <div className="flex flex-wrap gap-3">
-          <div className="relative flex-1 min-w-[220px]">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[#90A1B9]" />
-            <input
-              type="text"
-              placeholder="Tìm theo mã, cây trồng, bệnh, khu vực..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-            />
-          </div>
-          <select
-            value={statusFilter}
-            onChange={(e) =>
-              setStatusFilter(e.target.value as RequestStatus | "all")
-            }
-            className="px-3 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] bg-white text-sm text-[#334155]"
-          >
-            <option value="all">Tất cả trạng thái</option>
-            <option value="Chờ phản hồi">Chờ phản hồi</option>
-            <option value="Đang xử lý">Đang xử lý</option>
-            <option value="Đã phản hồi">Đã phản hồi</option>
-            <option value="Đóng">Đóng</option>
-          </select>
-          <select
-            value={priorityFilter}
-            onChange={(e) =>
-              setPriorityFilter(e.target.value as Priority | "all")
-            }
-            className="px-3 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] bg-white text-sm text-[#334155]"
-          >
-            <option value="all">Tất cả mức độ</option>
-            <option value="CAO">Cao</option>
-            <option value="TRUNG BÌNH">Trung bình</option>
-            <option value="THẤP">Thấp</option>
-          </select>
+      {/* Filter bar */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative flex-1 min-w-[200px]">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#90A1B9]" />
+          <input
+            type="text"
+            placeholder="Tìm theo mã, cây trồng, bệnh, khu vực..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-9 pr-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] text-sm bg-white"
+          />
         </div>
+        <select
+          value={priorityFilter}
+          onChange={(e) =>
+            setPriorityFilter(e.target.value as Priority | "all")
+          }
+          className="px-3 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] bg-white text-sm text-[#334155]"
+        >
+          <option value="all">Tất cả mức độ</option>
+          <option value="CAO">Cao</option>
+          <option value="TRUNG BÌNH">Trung bình</option>
+          <option value="THẤP">Thấp</option>
+        </select>
+        <button
+          onClick={() => setShowAll((v) => !v)}
+          className={`flex items-center gap-1.5 px-3 py-2 rounded-lg border text-sm transition-colors ${
+            showAll
+              ? "bg-[#f1f5f9] border-[#cad5e2] text-[#475569]"
+              : "border-[#cad5e2] text-[#62748e] hover:bg-[#f8fafc]"
+          }`}
+        >
+          <History className="w-4 h-4" />
+          {showAll ? "Ẩn đã giải quyết" : "Xem tất cả"}
+        </button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-        {filteredRequests.map((request) => (
+      {/* Request list */}
+      <div className="flex flex-col gap-1.5">
+        {paginatedRequests.map((request) => (
           <RequestCard key={request.id} request={request} />
         ))}
       </div>
 
-      {filteredRequests.length === 0 && (
+      {/* Empty state — filter returns nothing */}
+      {requests.length > 0 && filteredRequests.length === 0 && (
         <div className="text-center py-12 text-[#62748e]">
-          Không tìm thấy yêu cầu nào phù hợp
+          <CheckCircle className="w-10 h-10 text-[#cad5e2] mx-auto mb-3" />
+          <p className="font-medium text-[#334155] mb-1">
+            {showAll
+              ? "Không tìm thấy yêu cầu phù hợp"
+              : "Không còn yêu cầu nào đang chờ xử lý"}
+          </p>
+          <p className="text-sm">
+            {showAll
+              ? "Thử thay đổi từ khóa hoặc bộ lọc."
+              : "Tất cả yêu cầu đã được giải quyết."}
+          </p>
+        </div>
+      )}
+
+      {/* Zero state — no requests at all */}
+      {requests.length === 0 && (
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <div className="w-16 h-16 bg-[#f0fdfa] rounded-full flex items-center justify-center mb-4">
+            <ClipboardList className="w-8 h-8 text-[#009689]" />
+          </div>
+          <h3 className="text-lg font-semibold text-[#115e59] mb-2">
+            Chưa có yêu cầu tư vấn nào
+          </h3>
+          <p className="text-sm text-[#62748e] mb-6 max-w-xs">
+            Tạo yêu cầu đầu tiên để gửi báo cáo từ nhân viên cho chuyên gia phân
+            tích.
+          </p>
+          <Link
+            to="/advisory?view=create"
+            className="bg-[#009689] text-white px-6 py-2.5 rounded-lg hover:bg-[#007f75] transition-colors flex items-center gap-2 text-sm font-medium"
+          >
+            <Plus className="w-4 h-4" />
+            Tạo yêu cầu đầu tiên
+          </Link>
+        </div>
+      )}
+
+      {/* Pagination — always visible when there's data */}
+      {filteredRequests.length > 0 && (
+        <div className="flex items-center justify-between border-t border-[#e2e8f0] pt-3">
+          <p className="text-xs text-[#62748e]">
+            {filteredRequests.length <= LIST_PAGE_SIZE
+              ? `${filteredRequests.length} yêu cầu`
+              : `${(listPage - 1) * LIST_PAGE_SIZE + 1}–${Math.min(listPage * LIST_PAGE_SIZE, filteredRequests.length)} / ${filteredRequests.length} yêu cầu`}
+          </p>
+          {totalListPages > 1 && (
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setListPage((p) => Math.max(1, p - 1))}
+                disabled={listPage === 1}
+                className="w-7 h-7 flex items-center justify-center rounded border border-[#e2e8f0] text-[#62748e] hover:border-[#009689] hover:text-[#009689] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+              </button>
+              {getPageNumbers(listPage, totalListPages).map((p, i) =>
+                p === "..." ? (
+                  <span
+                    key={`e-${i}`}
+                    className="w-7 h-7 flex items-center justify-center text-xs text-[#90a1b9]"
+                  >
+                    …
+                  </span>
+                ) : (
+                  <button
+                    key={p}
+                    onClick={() => setListPage(p as number)}
+                    className={`w-7 h-7 flex items-center justify-center rounded text-xs font-medium border transition-colors ${
+                      listPage === p
+                        ? "bg-[#009689] text-white border-[#009689]"
+                        : "border-[#e2e8f0] text-[#62748e] hover:border-[#009689] hover:text-[#009689]"
+                    }`}
+                  >
+                    {p}
+                  </button>
+                ),
+              )}
+              <button
+                onClick={() =>
+                  setListPage((p) => Math.min(totalListPages, p + 1))
+                }
+                disabled={listPage === totalListPages}
+                className="w-7 h-7 flex items-center justify-center rounded border border-[#e2e8f0] text-[#62748e] hover:border-[#009689] hover:text-[#009689] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -505,79 +661,74 @@ export function AdvisoryPage() {
 
 // ===================== REQUEST CARD =====================
 function RequestCard({ request }: { request: AdvisoryRequest }) {
+  const StatusIcon = statusConfig[request.status].icon;
   return (
-    <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm overflow-hidden hover:shadow-md transition-shadow">
-      <div className="relative h-44 bg-gray-100">
-        <img
-          src={request.images[0]}
-          alt={request.title}
-          className="w-full h-full object-cover"
-        />
-        <div className="absolute top-3 left-3 flex gap-2">
-          <span
-            className={`px-2.5 py-1 rounded text-xs font-medium ${statusConfig[request.status].color}`}
-          >
-            {request.status}
-          </span>
-          {request.images.length > 1 && (
-            <span className="px-2.5 py-1 rounded text-xs font-medium bg-black/50 text-white">
-              +{request.images.length - 1}
+    <div className="bg-white border border-[#e2e8f0] rounded-lg px-4 py-3 hover:border-[#009689]/50 hover:bg-[#fafffe] transition-all">
+      <div className="flex items-start justify-between gap-4">
+        {/* Left: all text content */}
+        <div className="flex-1 min-w-0 flex flex-col gap-1.5">
+          {/* Row 1: ID + status + priority */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs font-mono text-[#90a1b9]">
+              {request.id}
             </span>
-          )}
-        </div>
-        <span
-          className={`absolute top-3 right-3 px-2.5 py-1 rounded text-xs font-medium ${priorityConfig[request.priority]}`}
-        >
-          {request.priority}
-        </span>
-      </div>
+            <span
+              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${statusConfig[request.status].color}`}
+            >
+              <StatusIcon className="w-3 h-3" />
+              {statusLabel[request.status]}
+            </span>
+            <span
+              className={`px-2 py-0.5 rounded text-xs font-medium ${priorityConfig[request.priority]}`}
+            >
+              {priorityLabel[request.priority]}
+            </span>
+          </div>
 
-      <div className="p-4">
-        <div className="mb-3">
-          <div className="text-xs text-[#90a1b9] mb-0.5">{request.id}</div>
-          <h3 className="font-semibold text-[#115e59] leading-tight">
-            {request.title}
-          </h3>
-          <p className="text-xs text-[#62748e] mt-0.5">{request.field}</p>
-        </div>
+          {/* Row 2: Title + field */}
+          <div>
+            <h3 className="text-sm font-semibold text-[#115e59] leading-snug line-clamp-1">
+              {request.title}
+            </h3>
+            <p className="text-xs text-[#90a1b9] truncate mt-0.5">
+              {request.field}
+            </p>
+          </div>
 
-        <div className="mb-3 p-3 bg-[#fff7ed] border-l-4 border-[#f59e0b] rounded">
-          <div className="flex items-start gap-2">
-            <AlertTriangle className="w-4 h-4 text-[#f59e0b] mt-0.5 shrink-0" />
-            <div className="flex-1 min-w-0">
-              <div className="font-medium text-sm text-[#92400e]">
-                {request.issue}
-              </div>
-              <div className="flex items-center gap-1 mt-1">
-                <Cpu className="w-3 h-3 text-[#92400e]" />
-                <span className="text-xs text-[#92400e]">
-                  AI: {request.aiConfidence}% tin cậy
-                </span>
-              </div>
-            </div>
+          {/* Row 3: AI issue pill */}
+          <div className="flex items-center gap-1.5 bg-[#fff7ed] rounded px-2.5 py-1.5 border-l-2 border-[#f59e0b] w-fit max-w-full">
+            <AlertTriangle className="w-3.5 h-3.5 text-[#f59e0b] shrink-0" />
+            <span className="text-xs text-[#92400e] font-medium truncate">
+              {request.issue}
+            </span>
+            <span className="text-xs text-[#92400e] shrink-0 flex items-center gap-0.5 ml-1 pl-1 border-l border-[#f59e0b]/40">
+              <Cpu className="w-3 h-3" />
+              {request.aiConfidence}%
+            </span>
+          </div>
+
+          {/* Row 4: Reporter + specialist */}
+          <div className="flex items-center gap-3 text-xs text-[#90a1b9]">
+            <span className="flex items-center gap-1">
+              <User className="w-3 h-3" /> {request.reportCreatedBy}
+            </span>
+            <span className="flex items-center gap-1">
+              <Clock className="w-3 h-3" /> {request.reportCreatedAt}
+            </span>
+            {request.assignedTo && (
+              <span className="text-[#009689] font-medium truncate">
+                · {request.assignedTo}
+              </span>
+            )}
           </div>
         </div>
 
-        <div className="flex items-center justify-between text-xs text-[#62748e] mb-3">
-          <span>👤 {request.reportCreatedBy}</span>
-          <span>🕐 {request.reportCreatedAt}</span>
-        </div>
-
-        {request.assignedTo && (
-          <div className="mb-3 p-2 bg-[#f0fdfa] rounded text-xs">
-            <span className="text-[#62748e]">Chuyên gia: </span>
-            <span className="text-[#009689] font-medium">
-              {request.assignedTo}
-            </span>
-          </div>
-        )}
-
+        {/* Right: action button */}
         <Link
           to={`/advisory?view=detail&id=${request.id}`}
-          className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-[#009689] text-[#009689] rounded-lg hover:bg-[#f0fdfa] transition-colors text-sm"
+          className="shrink-0 self-center flex items-center gap-1 px-3 py-1.5 rounded-lg border border-[#009689] text-[#009689] hover:bg-[#f0fdfa] transition-colors text-xs font-medium whitespace-nowrap"
         >
-          <span>Xem chi tiết</span>
-          <ChevronRight className="w-4 h-4" />
+          Xem chi tiết <ChevronRight className="w-3.5 h-3.5" />
         </Link>
       </div>
     </div>
@@ -604,10 +755,7 @@ function DetailView({ request }: { request: AdvisoryRequest }) {
         <PaymentModal
           requestId={request.id}
           onSuccess={handlePaymentSuccess}
-          onClose={() => {
-            setShowPaymentModal(false);
-            window.history.back();
-          }}
+          onClose={() => setShowPaymentModal(false)}
         />
       )}
 
@@ -635,12 +783,12 @@ function DetailView({ request }: { request: AdvisoryRequest }) {
             <span
               className={`px-2 py-0.5 rounded text-xs font-medium ${statusConfig[request.status].color}`}
             >
-              {request.status}
+              {statusLabel[request.status]}
             </span>
             <span
               className={`px-2 py-0.5 rounded text-xs font-medium ${priorityConfig[request.priority]}`}
             >
-              {request.priority}
+              {priorityLabel[request.priority]}
             </span>
             {hasResponse && (
               <span
@@ -673,8 +821,8 @@ function DetailView({ request }: { request: AdvisoryRequest }) {
         {/* Left col */}
         <div className="lg:col-span-2 space-y-6">
           <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-4">
-            <h3 className="text-sm font-bold text-[#62748e] uppercase mb-3">
-              📷 Hình ảnh thực tế
+            <h3 className="text-sm font-semibold text-[#62748e] flex items-center gap-2 mb-3">
+              <Camera className="w-4 h-4" /> Hình ảnh thực tế
             </h3>
             <div className="grid grid-cols-2 gap-2">
               {request.images.slice(0, 2).map((img, idx) => (
@@ -703,15 +851,19 @@ function DetailView({ request }: { request: AdvisoryRequest }) {
           </div>
 
           <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-4">
-            <h3 className="text-sm font-bold text-[#62748e] uppercase mb-3">
-              🌱 Thông tin canh tác
+            <h3 className="text-sm font-semibold text-[#62748e] flex items-center gap-2 mb-3">
+              <Sprout className="w-4 h-4" /> Thông tin canh tác
             </h3>
             <div className="space-y-3 text-sm">
-              <InfoRow icon="🥬" label="Cây trồng" value={request.crop} />
-              <InfoRow icon="📍" label="Khu vực" value={request.field} />
-              <InfoRow icon="🗓️" label="Mùa vụ" value={request.season} />
+              <InfoRow icon={Leaf} label="Cây trồng" value={request.crop} />
+              <InfoRow icon={MapPin} label="Khu vực" value={request.field} />
               <InfoRow
-                icon="🌿"
+                icon={CalendarDays}
+                label="Mùa vụ"
+                value={request.season}
+              />
+              <InfoRow
+                icon={Sprout}
                 label="Giai đoạn sinh trưởng"
                 value={request.growthStage}
               />
@@ -750,13 +902,13 @@ function DetailView({ request }: { request: AdvisoryRequest }) {
           </div>
 
           <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-4">
-            <h3 className="text-sm font-bold text-[#62748e] uppercase mb-3">
-              Thông tin báo cáo gốc
+            <h3 className="text-sm font-semibold text-[#62748e] flex items-center gap-2 mb-3">
+              <FileText className="w-4 h-4" /> Thông tin báo cáo gốc
             </h3>
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
                 <div className="text-xs text-[#62748e] mb-1">
-                  Worker báo cáo
+                  Nhân viên báo cáo
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="w-7 h-7 bg-[#009689] rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0">
@@ -876,8 +1028,8 @@ function DetailView({ request }: { request: AdvisoryRequest }) {
               </div>
 
               <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-4">
-                <h3 className="text-sm font-bold text-[#62748e] uppercase mb-3">
-                  💼 Phản hồi từ chuyên gia
+                <h3 className="text-sm font-semibold text-[#62748e] flex items-center gap-2 mb-3">
+                  <Briefcase className="w-4 h-4" /> Phản hồi từ chuyên gia
                 </h3>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
@@ -893,7 +1045,8 @@ function DetailView({ request }: { request: AdvisoryRequest }) {
                         {request.assignedTo}
                       </div>
                       <div className="text-xs text-[#62748e]">
-                        Viện Khoa học Tự nhiên (Viện KHTN)
+                        {request.response?.specialistOrg ??
+                          "Chuyên gia nông nghiệp"}
                       </div>
                     </div>
                   </div>
@@ -907,8 +1060,8 @@ function DetailView({ request }: { request: AdvisoryRequest }) {
               </div>
 
               <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-6">
-                <h3 className="font-bold text-[#115e59] mb-4">
-                  📋 Nội dung tư vấn
+                <h3 className="font-semibold text-[#115e59] flex items-center gap-2 mb-4">
+                  <ClipboardList className="w-4 h-4" /> Nội dung tư vấn
                 </h3>
                 <div className="space-y-4">
                   <ConsultSection
@@ -937,19 +1090,19 @@ function DetailView({ request }: { request: AdvisoryRequest }) {
               </div>
 
               <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-4">
-                <h3 className="text-sm font-medium text-[#62748e] mb-3">
-                  Phương án đề xuất
+                <h3 className="text-sm font-semibold text-[#62748e] flex items-center gap-2 mb-3">
+                  <ListChecks className="w-4 h-4" /> Phương án xử lý
                 </h3>
                 <div className="flex gap-3 mb-4">
                   <button className="flex-1 px-4 py-2 bg-white border border-[#cad5e2] text-[#314158] rounded-lg hover:bg-[#f8fafc] transition-colors text-sm">
-                    Theo dõi thêm
+                    Tạo nhiệm vụ theo dõi
                   </button>
                   <button className="flex-1 px-4 py-2 bg-[#009689] text-white rounded-lg hover:bg-[#007f75] transition-colors flex items-center justify-center gap-2 text-sm">
                     <CheckCircle className="w-4 h-4" />
-                    Xử lý kỹ thuật
+                    Tạo nhiệm vụ xử lý
                   </button>
                   <button className="flex-1 px-4 py-2 bg-white border border-[#cad5e2] text-[#314158] rounded-lg hover:bg-[#f8fafc] transition-colors text-sm">
-                    Không cần xử lý
+                    Đánh dấu đã xử lý
                   </button>
                 </div>
                 <button className="w-full bg-[#009689] text-white px-6 py-3 rounded-lg hover:bg-[#007f75] transition-colors flex items-center justify-center gap-2">
@@ -1038,7 +1191,7 @@ function CreateView({
           Gửi yêu cầu tư vấn chuyên gia
         </h1>
         <p className="text-[#45556c] text-sm">
-          Chọn báo cáo từ Worker và gửi cho chuyên gia phù hợp.
+          Chọn báo cáo từ nhân viên và gửi cho chuyên gia phù hợp.
         </p>
       </div>
 
@@ -1046,8 +1199,8 @@ function CreateView({
         {/* Left: Chọn báo cáo */}
         <div className="lg:col-span-2 space-y-4">
           <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-4">
-            <h3 className="text-sm font-bold text-[#62748e] uppercase mb-3">
-              📄 Chọn báo cáo từ Worker
+            <h3 className="text-sm font-semibold text-[#62748e] flex items-center gap-2 mb-3">
+              <FileText className="w-4 h-4" /> Chọn báo cáo từ nhân viên
             </h3>
             <div className="space-y-2">
               {mockWorkerReports.map((report) => (
@@ -1093,27 +1246,27 @@ function CreateView({
 
           {selectedReport && (
             <div className="bg-white rounded-lg border border-[#009689] shadow-sm p-4">
-              <h3 className="text-sm font-bold text-[#009689] uppercase mb-3">
-                ✅ Báo cáo đã chọn
+              <h3 className="text-sm font-semibold text-[#009689] flex items-center gap-2 mb-3">
+                <CheckCircle className="w-4 h-4" /> Báo cáo đã chọn
               </h3>
               <div className="space-y-2 text-sm">
                 <InfoRow
-                  icon="🥬"
+                  icon={Leaf}
                   label="Cây trồng"
                   value={selectedReport.crop}
                 />
                 <InfoRow
-                  icon="📍"
+                  icon={MapPin}
                   label="Khu vực"
                   value={selectedReport.field}
                 />
                 <InfoRow
-                  icon="🗓️"
+                  icon={CalendarDays}
                   label="Mùa vụ"
                   value={selectedReport.season}
                 />
                 <InfoRow
-                  icon="🌿"
+                  icon={Sprout}
                   label="Giai đoạn"
                   value={selectedReport.growthStage}
                 />
@@ -1149,8 +1302,8 @@ function CreateView({
             onSubmit={handleSubmit}
             className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-6"
           >
-            <h3 className="text-sm font-bold text-[#62748e] uppercase mb-4">
-              🚀 Thiết lập yêu cầu tư vấn
+            <h3 className="text-sm font-semibold text-[#62748e] flex items-center gap-2 mb-4">
+              <Settings2 className="w-4 h-4" /> Thiết lập yêu cầu tư vấn
             </h3>
 
             <div className="space-y-4">
@@ -1165,15 +1318,11 @@ function CreateView({
                   className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] bg-white"
                 >
                   <option value="">Chọn chuyên gia</option>
-                  <option value="TS. Nguyễn Văn Minh">
-                    TS. Nguyễn Văn Minh – Viện KHTN
-                  </option>
-                  <option value="ThS. Hoàng Lan">
-                    ThS. Hoàng Lan – Viện KHTN
-                  </option>
-                  <option value="PGS.TS Trần Hùng">
-                    PGS.TS Trần Hùng – Viện KHTN
-                  </option>
+                  {mockSpecialists.map((s) => (
+                    <option key={s.id} value={s.name}>
+                      {s.name} – {s.org}
+                    </option>
+                  ))}
                 </select>
               </div>
 
@@ -1193,7 +1342,7 @@ function CreateView({
                           : "border-[#cad5e2] text-[#62748e] hover:bg-[#f8fafc]"
                       }`}
                     >
-                      {p}
+                      {priorityLabel[p]}
                     </button>
                   ))}
                 </div>
@@ -1212,8 +1361,9 @@ function CreateView({
                   onChange={(e) => setOwnerMessage(e.target.value)}
                   className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] resize-none"
                 />
-                <p className="text-xs text-[#62748e] mt-1">
-                  ℹ️ Báo cáo gốc và hình ảnh sẽ được đính kèm tự động.
+                <p className="text-xs text-[#62748e] mt-1 flex items-center gap-1">
+                  <Info className="w-3 h-3 shrink-0" />
+                  Báo cáo gốc và hình ảnh sẽ được đính kèm tự động.
                 </p>
               </div>
 
@@ -1234,8 +1384,9 @@ function CreateView({
               </div>
 
               {!selectedReport && (
-                <div className="p-3 bg-[#fef3c7] border border-[#f59e0b] rounded-lg text-sm text-[#92400e]">
-                  ⚠️ Vui lòng chọn một báo cáo từ danh sách bên trái.
+                <div className="p-3 bg-[#fef3c7] border border-[#f59e0b] rounded-lg text-sm text-[#92400e] flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  Vui lòng chọn một báo cáo từ danh sách bên trái.
                 </div>
               )}
 
@@ -1274,27 +1425,42 @@ function HistoryView({
 
   const [search, setSearch] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
+
+  // Paid state: keyed by request id
   const [paidMap, setPaidMap] = useState<Record<string, PaymentState>>(() => {
     const map: Record<string, PaymentState> = {};
-    history.forEach((h) => {
-      map[h.requestId] = paidRequests.has(h.requestId) ? "paid" : "unpaid";
+    requests.forEach((r) => {
+      map[r.id] = paidRequests.has(r.id) ? "paid" : "unpaid";
     });
     return map;
   });
   const [payingRequestId, setPayingRequestId] = useState<string | null>(null);
 
-  const filtered = history.filter((h) => {
+  // Derive history rows from ALL requests — not just responded ones
+  const allRows = requests.map((r) => ({
+    id: r.id,
+    title: r.title,
+    crop: r.crop,
+    issue: r.issue,
+    priority: r.priority,
+    status: r.status,
+    assignedTo: r.assignedTo,
+    createdAt: r.createdAt,
+    responseTime: r.responseTime,
+    hasResponse: r.status === "Đã phản hồi" && !!r.response,
+  }));
+
+  const filtered = allRows.filter((row) => {
     const q = search.toLowerCase();
     return (
-      h.requestId.toLowerCase().includes(q) ||
-      h.responseId.toLowerCase().includes(q) ||
-      h.crop.toLowerCase().includes(q) ||
-      h.disease.toLowerCase().includes(q) ||
-      h.specialist.toLowerCase().includes(q)
+      row.id.toLowerCase().includes(q) ||
+      row.title.toLowerCase().includes(q) ||
+      row.crop.toLowerCase().includes(q) ||
+      row.issue.toLowerCase().includes(q) ||
+      (row.assignedTo ?? "").toLowerCase().includes(q)
     );
   });
 
-  // Reset to page 1 whenever search changes
   useEffect(() => {
     setCurrentPage(1);
   }, [search]);
@@ -1311,25 +1477,68 @@ function HistoryView({
     setPayingRequestId(null);
   };
 
-  // Build page number array with ellipsis: [1, …, 4, 5, 6, …, 12]
-  function getPageNumbers(current: number, total: number): (number | "...")[] {
-    if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
-    const pages: (number | "...")[] = [1];
-    if (current > 3) pages.push("...");
-    for (
-      let i = Math.max(2, current - 1);
-      i <= Math.min(total - 1, current + 1);
-      i++
-    ) {
-      pages.push(i);
+  // Payment column: what to show for each row
+  function PaymentCell({ row }: { row: (typeof allRows)[number] }) {
+    const payState = paidMap[row.id] ?? "unpaid";
+
+    // Only show a payment action when a formal response (Recommendation) exists
+    if (row.hasResponse) {
+      if (payState === "paid") {
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-[#dcfce7] text-[#166534] text-xs font-medium whitespace-nowrap">
+            <BadgeCheck className="w-3 h-3" /> Đã thanh toán
+          </span>
+        );
+      }
+      return (
+        <button
+          onClick={() => setPayingRequestId(row.id)}
+          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#009689] text-white text-xs font-semibold hover:bg-[#007f75] transition-colors whitespace-nowrap"
+        >
+          <CreditCard className="w-3 h-3" /> Thanh toán
+        </button>
+      );
     }
-    if (current < total - 2) pages.push("...");
-    pages.push(total);
-    return pages;
+
+    // No formal response exists yet — covers Chờ phản hồi, Đang xử lý,
+    // and Đóng cases where the specialist closed without writing a Recommendation
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-[#f1f5f9] text-[#90a1b9] text-xs font-medium whitespace-nowrap">
+        <Clock className="w-3 h-3" /> Chưa phản hồi
+      </span>
+    );
+  }
+
+  // Action column — always show Xem; only unpaid responded entries get the locked variant
+  function ActionCell({ row }: { row: (typeof allRows)[number] }) {
+    const payState = paidMap[row.id] ?? "unpaid";
+
+    // Responded but not yet paid — prompt payment before revealing content
+    if (row.hasResponse && payState !== "paid") {
+      return (
+        <button
+          onClick={() => setPayingRequestId(row.id)}
+          title="Cần thanh toán để xem nội dung tư vấn"
+          className="flex items-center gap-1 text-[#90a1b9] hover:text-[#62748e] transition-colors text-xs whitespace-nowrap"
+        >
+          <Lock className="w-3.5 h-3.5" /> Xem
+        </button>
+      );
+    }
+
+    // All other cases: freely viewable
+    return (
+      <Link
+        to={`/advisory?view=detail&id=${row.id}`}
+        className="flex items-center gap-1 text-[#009689] hover:underline text-xs whitespace-nowrap"
+      >
+        <Eye className="w-3.5 h-3.5" /> Xem
+      </Link>
+    );
   }
 
   return (
-    <div className="flex flex-col gap-6 p-6">
+    <div className="flex flex-col gap-4 p-6">
       {payingRequestId && (
         <PaymentModal
           requestId={payingRequestId}
@@ -1353,212 +1562,178 @@ function HistoryView({
             Lịch sử tư vấn
           </h1>
           <p className="text-[#45556c] text-sm">
-            Toàn bộ các yêu cầu đã được chuyên gia phản hồi.
+            Toàn bộ yêu cầu tư vấn từ trước đến nay.
           </p>
         </div>
         <Link
           to="/advisory"
           className="flex items-center gap-2 text-[#62748e] hover:text-[#115e59] text-sm"
         >
-          <ArrowLeft className="w-4 h-4" />
-          Quay lại danh sách
+          <ArrowLeft className="w-4 h-4" /> Quay lại
         </Link>
       </div>
 
-      {/* Search */}
-      <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-4">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[#90A1B9]" />
-          <input
-            type="text"
-            placeholder="Tìm theo mã, cây trồng, bệnh, chuyên gia..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-          />
-        </div>
+      {/* Search — full width to match table */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#90A1B9]" />
+        <input
+          type="text"
+          placeholder="Tìm theo mã, tên, cây trồng, bệnh..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="w-full pl-9 pr-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] text-sm bg-white"
+        />
       </div>
 
-      {/* Table */}
-      <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm overflow-hidden">
-        <table className="w-full">
+      {/* Table — min-w-max + overflow-x-auto: columns size to content, never clip */}
+      <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm overflow-x-auto">
+        <table className="w-full min-w-[780px] text-xs">
           <thead className="bg-[#f8fafc] border-b border-[#e2e8f0]">
             <tr>
-              {[
-                "Mã phản hồi",
-                "Mã yêu cầu",
-                "Cây trồng",
-                "Bệnh / Vấn đề",
-                "Mức độ",
-                "Chuyên gia",
-                "Thời gian",
-                "Thanh toán",
-                "Thao tác",
-              ].map((h) => (
-                <th
-                  key={h}
-                  className="px-4 py-3 text-left text-xs font-bold text-[#62748e] uppercase tracking-wider"
-                >
-                  {h}
-                </th>
-              ))}
+              <th className="px-3 py-3 text-left font-semibold text-[#62748e] uppercase tracking-wide w-[80px]">
+                Mã YC
+              </th>
+              <th className="px-3 py-3 text-left font-semibold text-[#62748e] uppercase tracking-wide w-[120px]">
+                Cây trồng
+              </th>
+              <th className="px-3 py-3 text-left font-semibold text-[#62748e] uppercase tracking-wide">
+                Bệnh / Vấn đề
+              </th>
+              <th className="px-3 py-3 text-left font-semibold text-[#62748e] uppercase tracking-wide w-[80px]">
+                Mức độ
+              </th>
+              <th className="px-3 py-3 text-left font-semibold text-[#62748e] uppercase tracking-wide w-[120px]">
+                Chuyên gia
+              </th>
+              <th className="px-3 py-3 text-left font-semibold text-[#62748e] uppercase tracking-wide w-[120px]">
+                Thời gian
+              </th>
+              <th className="px-3 py-3 text-left font-semibold text-[#62748e] uppercase tracking-wide w-[130px]">
+                Trạng thái
+              </th>
+              <th className="px-3 py-3 text-left font-semibold text-[#62748e] uppercase tracking-wide w-[130px]">
+                Thanh toán
+              </th>
+              <th className="px-3 py-3 text-left font-semibold text-[#62748e] uppercase tracking-wide w-[60px]">
+                Xem
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[#e2e8f0]">
-            {paginated.map((item) => {
-              const payState = paidMap[item.requestId] ?? "unpaid";
-              return (
-                <tr
-                  key={item.responseId}
-                  className="hover:bg-[#f8fafc] transition-colors"
-                >
-                  <td className="px-4 py-3 text-sm font-medium text-[#115e59]">
-                    {item.responseId}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-[#62748e]">
-                    {item.requestId}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-[#62748e]">
-                    {item.crop}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-[#334155]">
-                    {item.disease}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${priorityConfig[item.priority]}`}
-                    >
-                      {item.priority}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-sm text-[#62748e]">
-                    {item.specialist}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-[#62748e]">
-                    {item.respondedAt}
-                  </td>
-
-                  {/* Payment column */}
-                  <td className="px-4 py-3">
-                    {payState === "paid" ? (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#dcfce7] text-[#166534] text-xs font-medium whitespace-nowrap">
-                        <BadgeCheck className="w-3.5 h-3.5" />
-                        Đã thanh toán
-                      </span>
-                    ) : (
-                      <button
-                        onClick={() => setPayingRequestId(item.requestId)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#009689] text-white text-xs font-semibold hover:bg-[#007f75] transition-colors shadow-sm whitespace-nowrap"
-                      >
-                        <CreditCard className="w-3.5 h-3.5" />
-                        Thanh toán
-                      </button>
-                    )}
-                  </td>
-
-                  {/* View action */}
-                  <td className="px-4 py-3">
-                    {payState === "paid" ? (
-                      <Link
-                        to={`/advisory?view=detail&id=${item.requestId}`}
-                        className="flex items-center gap-1 text-[#009689] hover:underline text-sm whitespace-nowrap"
-                      >
-                        <Eye className="w-4 h-4" />
-                        Xem
-                      </Link>
-                    ) : (
-                      <button
-                        onClick={() => setPayingRequestId(item.requestId)}
-                        title="Cần thanh toán để xem"
-                        className="flex items-center gap-1 text-[#90a1b9] hover:text-[#62748e] transition-colors text-sm whitespace-nowrap"
-                      >
-                        <Lock className="w-4 h-4" />
-                        Xem
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
+            {paginated.map((row) => (
+              <tr
+                key={row.id}
+                className="hover:bg-[#f8fafc] transition-colors align-middle"
+              >
+                <td className="px-3 py-3 font-semibold text-[#115e59] whitespace-nowrap">
+                  {row.id}
+                </td>
+                <td className="px-3 py-3 text-[#62748e]">{row.crop}</td>
+                <td className="px-3 py-3 text-[#334155]">{row.issue}</td>
+                <td className="px-3 py-3">
+                  <span
+                    className={`inline-block px-1.5 py-0.5 rounded font-medium ${priorityConfig[row.priority]}`}
+                  >
+                    {priorityLabel[row.priority]}
+                  </span>
+                </td>
+                <td className="px-3 py-3 text-[#62748e]">
+                  {row.assignedTo ?? <span className="text-[#cad5e2]">—</span>}
+                </td>
+                <td className="px-3 py-3 text-[#62748e] whitespace-nowrap">
+                  {row.createdAt}
+                </td>
+                <td className="px-3 py-3">
+                  <span
+                    className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium ${statusConfig[row.status].color}`}
+                  >
+                    {statusLabel[row.status]}
+                  </span>
+                </td>
+                <td className="px-3 py-3">
+                  <PaymentCell row={row} />
+                </td>
+                <td className="px-3 py-3">
+                  <ActionCell row={row} />
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
 
         {filtered.length === 0 && (
           <div className="text-center py-12 text-[#62748e]">
             <History className="w-10 h-10 text-[#cad5e2] mx-auto mb-3" />
-            <p>Chưa có lịch sử tư vấn nào</p>
+            <p className="text-sm">Chưa có yêu cầu tư vấn nào.</p>
           </div>
         )}
 
-        {/* Pagination footer — only show when there's data */}
+        {/* Pagination footer */}
         {filtered.length > 0 && (
           <div className="flex items-center justify-between px-4 py-3 border-t border-[#e2e8f0] bg-[#f8fafc]">
-            {/* Result count */}
             <p className="text-xs text-[#62748e]">
-              {filtered.length === 0
-                ? "Không có kết quả"
-                : `${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, filtered.length)} / ${filtered.length} kết quả`}
+              {filtered.length <= PAGE_SIZE
+                ? `${filtered.length} yêu cầu`
+                : `${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, filtered.length)} / ${filtered.length} yêu cầu`}
             </p>
-
-            {/* Page controls */}
-            <div className="flex items-center gap-1">
-              {/* Prev */}
-              <button
-                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-                className="w-8 h-8 flex items-center justify-center rounded-lg border border-[#e2e8f0] text-[#62748e] hover:bg-white hover:border-[#009689] hover:text-[#009689] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-
-              {/* Page numbers */}
-              {getPageNumbers(currentPage, totalPages).map((p, i) =>
-                p === "..." ? (
-                  <span
-                    key={`ellipsis-${i}`}
-                    className="w-8 h-8 flex items-center justify-center text-xs text-[#90a1b9]"
-                  >
-                    …
-                  </span>
-                ) : (
-                  <button
-                    key={p}
-                    onClick={() => setCurrentPage(p)}
-                    className={`w-8 h-8 flex items-center justify-center rounded-lg text-xs font-medium transition-colors border ${
-                      currentPage === p
-                        ? "bg-[#009689] text-white border-[#009689]"
-                        : "border-[#e2e8f0] text-[#62748e] hover:bg-white hover:border-[#009689] hover:text-[#009689]"
-                    }`}
-                  >
-                    {p}
-                  </button>
-                ),
-              )}
-
-              {/* Next */}
-              <button
-                onClick={() =>
-                  setCurrentPage((p) => Math.min(totalPages, p + 1))
-                }
-                disabled={currentPage === totalPages}
-                className="w-8 h-8 flex items-center justify-center rounded-lg border border-[#e2e8f0] text-[#62748e] hover:bg-white hover:border-[#009689] hover:text-[#009689] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
+            {totalPages > 1 && (
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="w-7 h-7 flex items-center justify-center rounded border border-[#e2e8f0] text-[#62748e] hover:border-[#009689] hover:text-[#009689] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                </button>
+                {getPageNumbers(currentPage, totalPages).map((p, i) =>
+                  p === "..." ? (
+                    <span
+                      key={`e-${i}`}
+                      className="w-7 h-7 flex items-center justify-center text-xs text-[#90a1b9]"
+                    >
+                      …
+                    </span>
+                  ) : (
+                    <button
+                      key={p}
+                      onClick={() => setCurrentPage(p as number)}
+                      className={`w-7 h-7 flex items-center justify-center rounded text-xs font-medium border transition-colors ${
+                        currentPage === p
+                          ? "bg-[#009689] text-white border-[#009689]"
+                          : "border-[#e2e8f0] text-[#62748e] hover:border-[#009689] hover:text-[#009689]"
+                      }`}
+                    >
+                      {p}
+                    </button>
+                  ),
+                )}
+                <button
+                  onClick={() =>
+                    setCurrentPage((p) => Math.min(totalPages, p + 1))
+                  }
+                  disabled={currentPage === totalPages}
+                  className="w-7 h-7 flex items-center justify-center rounded border border-[#e2e8f0] text-[#62748e] hover:border-[#009689] hover:text-[#009689] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                >
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
 
       {/* Legend */}
-      <div className="flex items-center gap-6 text-xs text-[#90a1b9]">
+      <div className="flex flex-wrap items-center gap-4 text-xs text-[#90a1b9]">
         <span className="flex items-center gap-1.5">
-          <Lock className="w-3.5 h-3.5" />
-          Cần thanh toán để xem nội dung tư vấn
+          <Clock className="w-3.5 h-3.5" /> Chưa phản hồi — đang chờ chuyên gia
+          xem xét
         </span>
         <span className="flex items-center gap-1.5">
-          <BadgeCheck className="w-3.5 h-3.5 text-[#16a34a]" />
-          Đã thanh toán · Xem không giới hạn
+          <Lock className="w-3.5 h-3.5" /> Cần thanh toán để xem nội dung tư vấn
+        </span>
+        <span className="flex items-center gap-1.5">
+          <BadgeCheck className="w-3.5 h-3.5 text-[#16a34a]" /> Đã thanh toán ·
+          Xem không giới hạn
         </span>
       </div>
     </div>
@@ -1567,18 +1742,18 @@ function HistoryView({
 
 // ===================== HELPERS =====================
 function InfoRow({
-  icon,
+  icon: Icon,
   label,
   value,
 }: {
-  icon: string;
+  icon: React.ElementType;
   label: string;
   value: string;
 }) {
   return (
     <div className="flex items-start gap-3">
-      <div className="w-7 h-7 bg-[#f1f5f9] rounded-lg flex items-center justify-center shrink-0 text-base">
-        {icon}
+      <div className="w-7 h-7 bg-[#f1f5f9] rounded-lg flex items-center justify-center shrink-0">
+        <Icon className="w-3.5 h-3.5 text-[#62748e]" />
       </div>
       <div>
         <div className="text-xs text-[#62748e]">{label}</div>
