@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link, useSearchParams } from "react-router";
 import {
   Plus,
@@ -10,9 +10,18 @@ import {
   Eye,
   ArrowLeft,
   ChevronRight,
+  ChevronLeft,
   History,
-  FileText,
   Cpu,
+  CreditCard,
+  QrCode,
+  X,
+  Loader2,
+  Ban,
+  Lock,
+  Unlock,
+  Receipt,
+  BadgeCheck,
 } from "lucide-react";
 import {
   AdvisoryRequest,
@@ -25,6 +34,18 @@ import {
   mockWorkerReports,
   mockConsultationHistory,
 } from "../../data/mockData";
+
+// ===================== PAYMENT CONFIG =====================
+// Placeholder — replace with real pricing from backend
+const PLACEHOLDER_PRICE = "XXX.XXXđ";
+
+// Session-level paid set (in real app: from backend/localStorage)
+const paidRequests = new Set<string>();
+
+// ===================== PAYMENT STATUS =====================
+type PaymentStatus = "idle" | "waiting" | "success" | "failed";
+type ModalStep = "confirm" | "qr"; // declared here, used inside PaymentModal
+type PaymentState = "unpaid" | "paid";
 
 // ===================== CONFIG =====================
 const statusConfig: Record<
@@ -43,6 +64,309 @@ const priorityConfig: Record<Priority, string> = {
   THẤP: "bg-[#f1f5f9] text-[#475569]",
 };
 
+// ===================== PAYMENT MODAL =====================
+// Flow: confirm (step 1) → QR shown (step 2) → waiting → success | failed
+// QR is only shown AFTER user clicks confirm — mirrors real VNPay/banking flow
+// where QR is generated on-demand from backend (amount + order_id + checksum).
+// The QR below is a placeholder; replace src with API-generated URL in production.
+
+function PaymentModal({
+  requestId,
+  onSuccess,
+  onClose,
+}: {
+  requestId: string;
+  onSuccess: () => void;
+  onClose: () => void;
+}) {
+  const [step, setStep] = useState<ModalStep>("confirm");
+  const [status, setStatus] = useState<PaymentStatus>("idle");
+  const [countdown, setCountdown] = useState(10);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const countRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // TODO: replace with API call → GET /api/payments/qr?requestId=...
+  // Real VNPay QR requires backend to sign: amount + orderId + returnUrl + checksum
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(
+    `CMMS|${requestId}|CONSULTING_FEE`,
+  )}&color=009689&bgcolor=ffffff`;
+
+  function handleConfirm() {
+    setStep("qr");
+  }
+
+  function startPolling() {
+    setStatus("waiting");
+    // TODO: replace with real webhook / GET /api/payments/status?requestId=...
+    timerRef.current = setTimeout(() => {
+      const ok = Math.random() > 0.35; // 65% success for demo
+      if (ok) {
+        setStatus("success");
+        setTimeout(onSuccess, 1400);
+      } else {
+        setStatus("failed");
+        let c = 10;
+        setCountdown(10);
+        countRef.current = setInterval(() => {
+          c -= 1;
+          setCountdown(c);
+          if (c <= 0) {
+            clearInterval(countRef.current!);
+            onClose();
+          }
+        }, 1000);
+      }
+    }, 4000);
+  }
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      if (countRef.current) clearInterval(countRef.current);
+    };
+  }, []);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4">
+      {/* Bottom-sheet on mobile, centered dialog on sm+ */}
+      <div className="bg-white w-full sm:max-w-sm rounded-t-2xl sm:rounded-2xl shadow-2xl overflow-hidden">
+        {/* Header — compact */}
+        <div className="bg-gradient-to-r from-[#009689] to-[#115e59] px-4 py-3 text-white flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <CreditCard className="w-4 h-4 opacity-80" />
+            <span className="font-semibold text-sm">Thanh toán phí tư vấn</span>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-white/60 hover:text-white transition-colors p-0.5"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Step indicator (only show during idle flow) */}
+        {status === "idle" && (
+          <div className="flex border-b border-[#e2e8f0]">
+            {(["confirm", "qr"] as ModalStep[]).map((s, i) => (
+              <div
+                key={s}
+                className={`flex-1 py-2 text-center text-xs font-medium border-b-2 transition-colors ${
+                  step === s
+                    ? "border-[#009689] text-[#009689]"
+                    : step === "qr" && s === "confirm"
+                      ? "border-transparent text-[#009689]/50"
+                      : "border-transparent text-[#90a1b9]"
+                }`}
+              >
+                {i + 1}. {s === "confirm" ? "Xác nhận" : "Quét QR"}
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="p-4">
+          {/* ── STEP 1: Confirm order info ── */}
+          {status === "idle" && step === "confirm" && (
+            <>
+              {/* Order summary */}
+              <div className="bg-[#f0fdfa] border border-[#009689]/20 rounded-xl p-3 mb-3">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs text-[#62748e]">
+                    Mã yêu cầu tư vấn
+                  </span>
+                  <span className="font-mono text-xs font-bold text-[#115e59]">
+                    {requestId}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-[#62748e]">Phí tư vấn</span>
+                  <span className="font-bold text-[#009689]">
+                    {PLACEHOLDER_PRICE}
+                  </span>
+                </div>
+              </div>
+
+              {/* Bank info — compact */}
+              <div className="bg-[#f8fafc] rounded-xl p-3 text-xs mb-3 space-y-1.5">
+                <p className="font-bold text-[#90a1b9] uppercase tracking-wide text-[10px] mb-2">
+                  Thông tin chuyển khoản
+                </p>
+                {[
+                  { label: "Ngân hàng", value: "Vietcombank (VCB)" },
+                  { label: "Số TK", value: "1234 5678 9012", mono: true },
+                  { label: "Chủ TK", value: "CMMS FARM SYSTEM" },
+                  {
+                    label: "Nội dung CK",
+                    value: requestId,
+                    mono: true,
+                    highlight: true,
+                  },
+                ].map(({ label, value, mono, highlight }) => (
+                  <div
+                    key={label}
+                    className="flex items-center justify-between gap-2"
+                  >
+                    <span className="text-[#62748e] shrink-0">{label}</span>
+                    <span
+                      className={`font-semibold text-right truncate max-w-[180px] ${mono ? "font-mono" : ""} ${highlight ? "text-[#009689]" : "text-[#115e59]"}`}
+                    >
+                      {value}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  onClick={onClose}
+                  className="flex-1 py-2.5 border border-[#cad5e2] text-[#62748e] rounded-xl text-sm hover:bg-[#f8fafc] transition-colors"
+                >
+                  Huỷ
+                </button>
+                <button
+                  onClick={handleConfirm}
+                  className="flex-1 py-2.5 bg-[#009689] text-white rounded-xl text-sm font-semibold hover:bg-[#007f75] transition-colors flex items-center justify-center gap-1.5"
+                >
+                  <QrCode className="w-4 h-4" />
+                  Hiển thị mã QR
+                </button>
+              </div>
+            </>
+          )}
+
+          {/* ── STEP 2: QR shown ── */}
+          {status === "idle" && step === "qr" && (
+            <>
+              <p className="text-xs text-[#62748e] text-center mb-3">
+                Mở app ngân hàng → Quét QR hoặc chuyển khoản theo thông tin trên
+              </p>
+
+              {/* QR — compact */}
+              <div className="flex justify-center mb-3">
+                <div className="p-2.5 border-2 border-dashed border-[#009689] rounded-xl bg-white shadow-sm inline-block">
+                  <img
+                    src={qrUrl}
+                    alt="VNPay QR"
+                    className="w-36 h-36 object-contain rounded"
+                  />
+                  <p className="text-center text-[10px] font-bold text-[#009689] tracking-widest mt-1.5">
+                    VNPAY
+                  </p>
+                </div>
+              </div>
+
+              {/* Amount reminder pill */}
+              <div className="flex items-center justify-center gap-2 mb-4">
+                <span className="text-xs text-[#62748e]">Số tiền:</span>
+                <span className="font-bold text-[#009689]">
+                  {PLACEHOLDER_PRICE}
+                </span>
+                <span className="text-[#cad5e2]">·</span>
+                <span className="font-mono text-xs text-[#115e59] font-semibold">
+                  {requestId}
+                </span>
+              </div>
+
+              <button
+                onClick={startPolling}
+                className="w-full bg-[#009689] text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-[#007f75] transition-colors flex items-center justify-center gap-2"
+              >
+                <CheckCircle className="w-4 h-4" />
+                Tôi đã chuyển khoản xong
+              </button>
+              <p className="text-[10px] text-center text-[#90a1b9] mt-1.5">
+                Hệ thống sẽ xác nhận tự động
+              </p>
+            </>
+          )}
+
+          {/* ── WAITING ── */}
+          {status === "waiting" && (
+            <div className="py-8 flex flex-col items-center gap-3">
+              <div className="w-12 h-12 rounded-full bg-[#f0fdfa] border-2 border-[#009689]/30 flex items-center justify-center">
+                <Loader2 className="w-6 h-6 text-[#009689] animate-spin" />
+              </div>
+              <div className="text-center">
+                <p className="font-semibold text-[#115e59] text-sm mb-0.5">
+                  Đang xác nhận thanh toán...
+                </p>
+                <p className="text-xs text-[#62748e]">
+                  Vui lòng không đóng cửa sổ này
+                </p>
+              </div>
+              <div className="flex gap-1">
+                {[0, 1, 2].map((i) => (
+                  <div
+                    key={i}
+                    className="w-1.5 h-1.5 rounded-full bg-[#009689] animate-bounce"
+                    style={{ animationDelay: `${i * 0.2}s` }}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── SUCCESS ── */}
+          {status === "success" && (
+            <div className="py-8 flex flex-col items-center gap-3">
+              <div className="w-12 h-12 rounded-full bg-[#dcfce7] flex items-center justify-center">
+                <BadgeCheck className="w-7 h-7 text-[#16a34a]" />
+              </div>
+              <div className="text-center">
+                <p className="font-bold text-[#115e59] text-sm mb-0.5">
+                  Thanh toán thành công!
+                </p>
+                <p className="text-xs text-[#62748e]">
+                  Đang mở nội dung tư vấn...
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* ── FAILED ── */}
+          {status === "failed" && (
+            <div className="py-6 flex flex-col items-center gap-3">
+              <div className="w-12 h-12 rounded-full bg-[#fee2e2] flex items-center justify-center">
+                <Ban className="w-6 h-6 text-[#dc2626]" />
+              </div>
+              <div className="text-center">
+                <p className="font-bold text-[#991b1b] text-sm mb-1">
+                  Không xác nhận được thanh toán
+                </p>
+                <p className="text-xs text-[#62748e] mb-2">
+                  Kiểm tra lại nội dung chuyển khoản và thử lại.
+                </p>
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-[#fee2e2] rounded-full text-xs text-[#dc2626] font-medium">
+                  <Clock className="w-3 h-3" />
+                  Tự quay lại sau {countdown}s
+                </div>
+              </div>
+              <div className="flex gap-2 w-full mt-1">
+                <button
+                  onClick={onClose}
+                  className="flex-1 py-2 border border-[#cad5e2] text-[#62748e] rounded-xl text-sm hover:bg-[#f8fafc] transition-colors"
+                >
+                  Quay lại
+                </button>
+                <button
+                  onClick={() => {
+                    if (countRef.current) clearInterval(countRef.current);
+                    setStep("qr");
+                    setStatus("idle");
+                  }}
+                  className="flex-1 py-2 bg-[#009689] text-white rounded-xl text-sm font-medium hover:bg-[#007f75] transition-colors"
+                >
+                  Thử lại
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ===================== MAIN PAGE =====================
 export function AdvisoryPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -52,7 +376,6 @@ export function AdvisoryPage() {
   const [requests, setRequests] = useState<AdvisoryRequest[]>(mockRequests);
   const [history] = useState<ConsultationHistory[]>(mockConsultationHistory);
 
-  // List filters
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<RequestStatus | "all">(
     "all",
@@ -92,13 +415,12 @@ export function AdvisoryPage() {
     return <CreateView onCreate={handleCreate} />;
   }
   if (view === "history") {
-    return <HistoryView history={history} />;
+    return <HistoryView history={history} requests={requests} />;
   }
 
   // ==================== LIST VIEW ====================
   return (
     <div className="flex flex-col gap-6 p-6">
-      {/* Header */}
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-[#115e59] text-2xl font-semibold mb-1">
@@ -126,10 +448,8 @@ export function AdvisoryPage() {
         </div>
       </div>
 
-      {/* Filters */}
       <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-4">
         <div className="flex flex-wrap gap-3">
-          {/* Search */}
           <div className="relative flex-1 min-w-[220px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[#90A1B9]" />
             <input
@@ -140,7 +460,6 @@ export function AdvisoryPage() {
               className="w-full pl-10 pr-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
             />
           </div>
-          {/* Status filter */}
           <select
             value={statusFilter}
             onChange={(e) =>
@@ -154,7 +473,6 @@ export function AdvisoryPage() {
             <option value="Đã phản hồi">Đã phản hồi</option>
             <option value="Đóng">Đóng</option>
           </select>
-          {/* Priority filter */}
           <select
             value={priorityFilter}
             onChange={(e) =>
@@ -170,7 +488,6 @@ export function AdvisoryPage() {
         </div>
       </div>
 
-      {/* Cards */}
       <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
         {filteredRequests.map((request) => (
           <RequestCard key={request.id} request={request} />
@@ -190,7 +507,6 @@ export function AdvisoryPage() {
 function RequestCard({ request }: { request: AdvisoryRequest }) {
   return (
     <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm overflow-hidden hover:shadow-md transition-shadow">
-      {/* Image */}
       <div className="relative h-44 bg-gray-100">
         <img
           src={request.images[0]}
@@ -216,9 +532,7 @@ function RequestCard({ request }: { request: AdvisoryRequest }) {
         </span>
       </div>
 
-      {/* Content */}
       <div className="p-4">
-        {/* ID + title */}
         <div className="mb-3">
           <div className="text-xs text-[#90a1b9] mb-0.5">{request.id}</div>
           <h3 className="font-semibold text-[#115e59] leading-tight">
@@ -227,7 +541,6 @@ function RequestCard({ request }: { request: AdvisoryRequest }) {
           <p className="text-xs text-[#62748e] mt-0.5">{request.field}</p>
         </div>
 
-        {/* Issue + AI confidence */}
         <div className="mb-3 p-3 bg-[#fff7ed] border-l-4 border-[#f59e0b] rounded">
           <div className="flex items-start gap-2">
             <AlertTriangle className="w-4 h-4 text-[#f59e0b] mt-0.5 shrink-0" />
@@ -245,7 +558,6 @@ function RequestCard({ request }: { request: AdvisoryRequest }) {
           </div>
         </div>
 
-        {/* Meta */}
         <div className="flex items-center justify-between text-xs text-[#62748e] mb-3">
           <span>👤 {request.reportCreatedBy}</span>
           <span>🕐 {request.reportCreatedAt}</span>
@@ -274,8 +586,31 @@ function RequestCard({ request }: { request: AdvisoryRequest }) {
 
 // ===================== DETAIL VIEW =====================
 function DetailView({ request }: { request: AdvisoryRequest }) {
+  const hasResponse = request.status === "Đã phản hồi" && !!request.response;
+  const [isPaid, setIsPaid] = useState(() => paidRequests.has(request.id));
+  const [showPaymentModal, setShowPaymentModal] = useState(
+    hasResponse && !isPaid,
+  );
+
+  const handlePaymentSuccess = () => {
+    paidRequests.add(request.id);
+    setIsPaid(true);
+    setShowPaymentModal(false);
+  };
+
   return (
     <div className="flex flex-col gap-6 p-6">
+      {showPaymentModal && (
+        <PaymentModal
+          requestId={request.id}
+          onSuccess={handlePaymentSuccess}
+          onClose={() => {
+            setShowPaymentModal(false);
+            window.history.back();
+          }}
+        />
+      )}
+
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-[#62748e]">
         <Link to="/advisory" className="hover:text-[#009689]">
@@ -307,6 +642,22 @@ function DetailView({ request }: { request: AdvisoryRequest }) {
             >
               {request.priority}
             </span>
+            {hasResponse && (
+              <span
+                className={`px-2 py-0.5 rounded text-xs font-medium flex items-center gap-1 ${
+                  isPaid
+                    ? "bg-[#dcfce7] text-[#166534]"
+                    : "bg-[#fff7ed] text-[#92400e]"
+                }`}
+              >
+                {isPaid ? (
+                  <Unlock className="w-3 h-3" />
+                ) : (
+                  <Lock className="w-3 h-3" />
+                )}
+                {isPaid ? "Đã thanh toán" : "Chờ thanh toán"}
+              </span>
+            )}
           </div>
         </div>
         <Link
@@ -321,7 +672,6 @@ function DetailView({ request }: { request: AdvisoryRequest }) {
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
         {/* Left col */}
         <div className="lg:col-span-2 space-y-6">
-          {/* Images */}
           <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-4">
             <h3 className="text-sm font-bold text-[#62748e] uppercase mb-3">
               📷 Hình ảnh thực tế
@@ -352,7 +702,6 @@ function DetailView({ request }: { request: AdvisoryRequest }) {
             </div>
           </div>
 
-          {/* Farming info */}
           <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-4">
             <h3 className="text-sm font-bold text-[#62748e] uppercase mb-3">
               🌱 Thông tin canh tác
@@ -369,7 +718,6 @@ function DetailView({ request }: { request: AdvisoryRequest }) {
             </div>
           </div>
 
-          {/* AI Detection */}
           <div className="bg-[#fff7ed] border-l-4 border-[#f59e0b] rounded-lg p-4">
             <div className="flex items-start gap-3">
               <AlertTriangle className="w-5 h-5 text-[#f59e0b] mt-0.5 shrink-0" />
@@ -380,7 +728,6 @@ function DetailView({ request }: { request: AdvisoryRequest }) {
                 <div className="font-medium text-[#92400e] mb-2">
                   {request.issue}
                 </div>
-                {/* AI confidence bar */}
                 <div className="mb-2">
                   <div className="flex items-center justify-between text-xs text-[#92400e] mb-1">
                     <span className="flex items-center gap-1">
@@ -402,7 +749,6 @@ function DetailView({ request }: { request: AdvisoryRequest }) {
             </div>
           </div>
 
-          {/* Meta */}
           <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-4">
             <h3 className="text-sm font-bold text-[#62748e] uppercase mb-3">
               Thông tin báo cáo gốc
@@ -450,9 +796,85 @@ function DetailView({ request }: { request: AdvisoryRequest }) {
 
         {/* Right col */}
         <div className="lg:col-span-3 space-y-6">
-          {request.response ? (
+          {hasResponse && !isPaid ? (
+            /* ── LOCKED: blurred preview + payment CTA ── */
+            <div className="bg-white rounded-xl border border-[#e2e8f0] shadow-sm overflow-hidden">
+              <div className="bg-amber-50 border-b border-amber-200 px-5 py-3 flex items-center gap-2">
+                <Lock className="w-4 h-4 text-[#92400e]" />
+                <span className="text-sm font-medium text-[#92400e]">
+                  Chuyên gia đã phản hồi — thanh toán để xem nội dung
+                </span>
+              </div>
+              <div className="relative">
+                {/* Blurred fake content */}
+                <div className="filter blur-sm pointer-events-none p-6 space-y-5 select-none">
+                  <div className="space-y-2">
+                    <div className="h-3 bg-[#e2e8f0] rounded-full w-1/3" />
+                    <div className="h-4 bg-[#e2e8f0] rounded-full w-full" />
+                    <div className="h-4 bg-[#e2e8f0] rounded-full w-5/6" />
+                    <div className="h-4 bg-[#e2e8f0] rounded-full w-4/6" />
+                  </div>
+                  <div className="space-y-2">
+                    <div className="h-3 bg-[#e2e8f0] rounded-full w-1/4" />
+                    <div className="h-4 bg-[#e2e8f0] rounded-full w-full" />
+                    <div className="h-4 bg-[#e2e8f0] rounded-full w-3/4" />
+                  </div>
+                  <div className="h-24 bg-[#f0fdfa] rounded-xl border border-[#009689]/20" />
+                  <div className="space-y-2">
+                    <div className="h-3 bg-[#e2e8f0] rounded-full w-1/3" />
+                    <div className="h-4 bg-[#e2e8f0] rounded-full w-full" />
+                    <div className="h-4 bg-[#e2e8f0] rounded-full w-2/3" />
+                  </div>
+                </div>
+                {/* Overlay */}
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/88 backdrop-blur-[1px] py-8">
+                  <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#009689] to-[#115e59] flex items-center justify-center text-white text-xl font-bold mb-3 shadow-lg">
+                    {(request.assignedTo ?? "")
+                      .split(" ")
+                      .slice(-2)
+                      .map((n) => n[0])
+                      .join("")}
+                  </div>
+                  <div className="font-bold text-[#115e59] mb-0.5">
+                    {request.assignedTo}
+                  </div>
+                  <div className="text-xs text-[#62748e] mb-6">
+                    đã hoàn thành tư vấn cho yêu cầu này
+                  </div>
+
+                  <div className="text-center mb-6 px-8">
+                    <div className="text-3xl font-extrabold text-[#009689] mb-1">
+                      {PLACEHOLDER_PRICE}
+                    </div>
+                    <div className="text-xs text-[#90a1b9]">
+                      Phí tư vấn · Thanh toán một lần · Xem không giới hạn
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => setShowPaymentModal(true)}
+                    className="bg-[#009689] text-white px-8 py-3 rounded-xl font-semibold hover:bg-[#007f75] transition-all hover:shadow-lg flex items-center gap-2 shadow-md"
+                  >
+                    <CreditCard className="w-5 h-5" />
+                    Thanh toán để xem nội dung
+                  </button>
+                  <div className="mt-3 flex items-center gap-1.5 text-xs text-[#90a1b9]">
+                    <QrCode className="w-3.5 h-3.5" />
+                    Chuyển khoản qua VNPay · Xác nhận tự động
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : hasResponse && isPaid ? (
+            /* ── UNLOCKED ── */
             <>
-              {/* Expert info */}
+              <div className="flex items-center gap-2 px-4 py-2.5 bg-[#dcfce7] border border-[#86efac] rounded-lg text-sm text-[#166534]">
+                <BadgeCheck className="w-4 h-4" />
+                <span className="font-medium">
+                  Đã thanh toán · Nội dung được mở khóa
+                </span>
+              </div>
+
               <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-4">
                 <h3 className="text-sm font-bold text-[#62748e] uppercase mb-3">
                   💼 Phản hồi từ chuyên gia
@@ -484,7 +906,6 @@ function DetailView({ request }: { request: AdvisoryRequest }) {
                 </div>
               </div>
 
-              {/* Diagnosis content */}
               <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-6">
                 <h3 className="font-bold text-[#115e59] mb-4">
                   📋 Nội dung tư vấn
@@ -492,30 +913,29 @@ function DetailView({ request }: { request: AdvisoryRequest }) {
                 <div className="space-y-4">
                   <ConsultSection
                     label="Chẩn đoán"
-                    value={request.response.diagnosis}
+                    value={request.response!.diagnosis}
                   />
                   <ConsultSection
                     label="Nguyên nhân"
-                    value={request.response.observation}
+                    value={request.response!.observation}
                   />
                   <ConsultSection
                     label="Khuyến nghị chi tiết"
-                    value={request.response.recommendation}
+                    value={request.response!.recommendation}
                   />
-                  {request.response.treatmentPlan && (
+                  {request.response!.treatmentPlan && (
                     <div className="p-3 bg-[#f0fdfa] border border-[#009689] rounded-lg">
                       <div className="text-xs text-[#62748e] mb-1">
                         Kế hoạch xử lý
                       </div>
                       <div className="text-sm text-[#009689] font-medium">
-                        {request.response.treatmentPlan}
+                        {request.response!.treatmentPlan}
                       </div>
                     </div>
                   )}
                 </div>
               </div>
 
-              {/* Actions */}
               <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-4">
                 <h3 className="text-sm font-medium text-[#62748e] mb-3">
                   Phương án đề xuất
@@ -539,6 +959,7 @@ function DetailView({ request }: { request: AdvisoryRequest }) {
               </div>
             </>
           ) : (
+            /* ── No response yet ── */
             <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-12 text-center">
               <Clock className="w-16 h-16 text-[#cad5e2] mx-auto mb-4" />
               <h3 className="text-lg font-semibold text-[#115e59] mb-2">
@@ -600,7 +1021,6 @@ function CreateView({
 
   return (
     <div className="flex flex-col gap-6 p-6">
-      {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-[#62748e]">
         <Link to="/advisory" className="hover:text-[#009689]">
           Tư vấn
@@ -671,7 +1091,6 @@ function CreateView({
             </div>
           </div>
 
-          {/* Preview báo cáo đã chọn */}
           {selectedReport && (
             <div className="bg-white rounded-lg border border-[#009689] shadow-sm p-4">
               <h3 className="text-sm font-bold text-[#009689] uppercase mb-3">
@@ -724,7 +1143,7 @@ function CreateView({
           )}
         </div>
 
-        {/* Right: Form gửi */}
+        {/* Right: Form */}
         <div className="lg:col-span-3">
           <form
             onSubmit={handleSubmit}
@@ -735,7 +1154,6 @@ function CreateView({
             </h3>
 
             <div className="space-y-4">
-              {/* Chuyên gia */}
               <div>
                 <label className="block text-sm font-medium text-[#115e59] mb-2">
                   Chọn chuyên gia <span className="text-red-500">*</span>
@@ -759,7 +1177,6 @@ function CreateView({
                 </select>
               </div>
 
-              {/* Mức độ ưu tiên */}
               <div>
                 <label className="block text-sm font-medium text-[#115e59] mb-2">
                   Mức độ ưu tiên
@@ -782,7 +1199,6 @@ function CreateView({
                 </div>
               </div>
 
-              {/* Lời nhắn */}
               <div>
                 <label className="block text-sm font-medium text-[#115e59] mb-2">
                   Lời nhắn cho chuyên gia{" "}
@@ -801,14 +1217,28 @@ function CreateView({
                 </p>
               </div>
 
-              {/* Validation notice */}
+              {/* Fee notice */}
+              <div className="p-3 bg-[#f0fdfa] border border-[#009689]/30 rounded-lg flex items-start gap-2.5">
+                <Receipt className="w-4 h-4 text-[#009689] mt-0.5 shrink-0" />
+                <div className="text-xs text-[#115e59] leading-relaxed">
+                  <span className="font-semibold">
+                    Phí tư vấn: {PLACEHOLDER_PRICE}
+                  </span>
+                  <span className="text-[#62748e]">
+                    {" "}
+                    · Thanh toán sau khi chuyên gia phản hồi. Vào{" "}
+                    <strong>Lịch sử tư vấn</strong> để thanh toán và xem nội
+                    dung.
+                  </span>
+                </div>
+              </div>
+
               {!selectedReport && (
                 <div className="p-3 bg-[#fef3c7] border border-[#f59e0b] rounded-lg text-sm text-[#92400e]">
                   ⚠️ Vui lòng chọn một báo cáo từ danh sách bên trái.
                 </div>
               )}
 
-              {/* Actions */}
               <div className="pt-4 border-t border-[#e2e8f0] flex gap-3">
                 <Link
                   to="/advisory"
@@ -833,8 +1263,25 @@ function CreateView({
 }
 
 // ===================== HISTORY VIEW =====================
-function HistoryView({ history }: { history: ConsultationHistory[] }) {
+function HistoryView({
+  history,
+  requests,
+}: {
+  history: ConsultationHistory[];
+  requests: AdvisoryRequest[];
+}) {
+  const PAGE_SIZE = 10;
+
   const [search, setSearch] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [paidMap, setPaidMap] = useState<Record<string, PaymentState>>(() => {
+    const map: Record<string, PaymentState> = {};
+    history.forEach((h) => {
+      map[h.requestId] = paidRequests.has(h.requestId) ? "paid" : "unpaid";
+    });
+    return map;
+  });
+  const [payingRequestId, setPayingRequestId] = useState<string | null>(null);
 
   const filtered = history.filter((h) => {
     const q = search.toLowerCase();
@@ -847,8 +1294,50 @@ function HistoryView({ history }: { history: ConsultationHistory[] }) {
     );
   });
 
+  // Reset to page 1 whenever search changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const paginated = filtered.slice(
+    (currentPage - 1) * PAGE_SIZE,
+    currentPage * PAGE_SIZE,
+  );
+
+  const handlePaymentSuccess = (requestId: string) => {
+    paidRequests.add(requestId);
+    setPaidMap((prev) => ({ ...prev, [requestId]: "paid" }));
+    setPayingRequestId(null);
+  };
+
+  // Build page number array with ellipsis: [1, …, 4, 5, 6, …, 12]
+  function getPageNumbers(current: number, total: number): (number | "...")[] {
+    if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+    const pages: (number | "...")[] = [1];
+    if (current > 3) pages.push("...");
+    for (
+      let i = Math.max(2, current - 1);
+      i <= Math.min(total - 1, current + 1);
+      i++
+    ) {
+      pages.push(i);
+    }
+    if (current < total - 2) pages.push("...");
+    pages.push(total);
+    return pages;
+  }
+
   return (
     <div className="flex flex-col gap-6 p-6">
+      {payingRequestId && (
+        <PaymentModal
+          requestId={payingRequestId}
+          onSuccess={() => handlePaymentSuccess(payingRequestId)}
+          onClose={() => setPayingRequestId(null)}
+        />
+      )}
+
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-[#62748e]">
         <Link to="/advisory" className="hover:text-[#009689]">
@@ -902,7 +1391,8 @@ function HistoryView({ history }: { history: ConsultationHistory[] }) {
                 "Bệnh / Vấn đề",
                 "Mức độ",
                 "Chuyên gia",
-                "Thời gian phản hồi",
+                "Thời gian",
+                "Thanh toán",
                 "Thao tác",
               ].map((h) => (
                 <th
@@ -915,47 +1405,81 @@ function HistoryView({ history }: { history: ConsultationHistory[] }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-[#e2e8f0]">
-            {filtered.map((item) => (
-              <tr
-                key={item.responseId}
-                className="hover:bg-[#f8fafc] transition-colors"
-              >
-                <td className="px-4 py-3 text-sm font-medium text-[#115e59]">
-                  {item.responseId}
-                </td>
-                <td className="px-4 py-3 text-sm text-[#62748e]">
-                  {item.requestId}
-                </td>
-                <td className="px-4 py-3 text-sm text-[#62748e]">
-                  {item.crop}
-                </td>
-                <td className="px-4 py-3 text-sm text-[#334155]">
-                  {item.disease}
-                </td>
-                <td className="px-4 py-3">
-                  <span
-                    className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${priorityConfig[item.priority]}`}
-                  >
-                    {item.priority}
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-sm text-[#62748e]">
-                  {item.specialist}
-                </td>
-                <td className="px-4 py-3 text-sm text-[#62748e]">
-                  {item.respondedAt}
-                </td>
-                <td className="px-4 py-3">
-                  <Link
-                    to={`/advisory?view=detail&id=${item.requestId}`}
-                    className="flex items-center gap-1 text-[#009689] hover:underline text-sm"
-                  >
-                    <Eye className="w-4 h-4" />
-                    Xem
-                  </Link>
-                </td>
-              </tr>
-            ))}
+            {paginated.map((item) => {
+              const payState = paidMap[item.requestId] ?? "unpaid";
+              return (
+                <tr
+                  key={item.responseId}
+                  className="hover:bg-[#f8fafc] transition-colors"
+                >
+                  <td className="px-4 py-3 text-sm font-medium text-[#115e59]">
+                    {item.responseId}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-[#62748e]">
+                    {item.requestId}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-[#62748e]">
+                    {item.crop}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-[#334155]">
+                    {item.disease}
+                  </td>
+                  <td className="px-4 py-3">
+                    <span
+                      className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${priorityConfig[item.priority]}`}
+                    >
+                      {item.priority}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-sm text-[#62748e]">
+                    {item.specialist}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-[#62748e]">
+                    {item.respondedAt}
+                  </td>
+
+                  {/* Payment column */}
+                  <td className="px-4 py-3">
+                    {payState === "paid" ? (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#dcfce7] text-[#166534] text-xs font-medium whitespace-nowrap">
+                        <BadgeCheck className="w-3.5 h-3.5" />
+                        Đã thanh toán
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => setPayingRequestId(item.requestId)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#009689] text-white text-xs font-semibold hover:bg-[#007f75] transition-colors shadow-sm whitespace-nowrap"
+                      >
+                        <CreditCard className="w-3.5 h-3.5" />
+                        Thanh toán
+                      </button>
+                    )}
+                  </td>
+
+                  {/* View action */}
+                  <td className="px-4 py-3">
+                    {payState === "paid" ? (
+                      <Link
+                        to={`/advisory?view=detail&id=${item.requestId}`}
+                        className="flex items-center gap-1 text-[#009689] hover:underline text-sm whitespace-nowrap"
+                      >
+                        <Eye className="w-4 h-4" />
+                        Xem
+                      </Link>
+                    ) : (
+                      <button
+                        onClick={() => setPayingRequestId(item.requestId)}
+                        title="Cần thanh toán để xem"
+                        className="flex items-center gap-1 text-[#90a1b9] hover:text-[#62748e] transition-colors text-sm whitespace-nowrap"
+                      >
+                        <Lock className="w-4 h-4" />
+                        Xem
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
 
@@ -965,6 +1489,77 @@ function HistoryView({ history }: { history: ConsultationHistory[] }) {
             <p>Chưa có lịch sử tư vấn nào</p>
           </div>
         )}
+
+        {/* Pagination footer — only show when there's data */}
+        {filtered.length > 0 && (
+          <div className="flex items-center justify-between px-4 py-3 border-t border-[#e2e8f0] bg-[#f8fafc]">
+            {/* Result count */}
+            <p className="text-xs text-[#62748e]">
+              {filtered.length === 0
+                ? "Không có kết quả"
+                : `${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, filtered.length)} / ${filtered.length} kết quả`}
+            </p>
+
+            {/* Page controls */}
+            <div className="flex items-center gap-1">
+              {/* Prev */}
+              <button
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="w-8 h-8 flex items-center justify-center rounded-lg border border-[#e2e8f0] text-[#62748e] hover:bg-white hover:border-[#009689] hover:text-[#009689] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+
+              {/* Page numbers */}
+              {getPageNumbers(currentPage, totalPages).map((p, i) =>
+                p === "..." ? (
+                  <span
+                    key={`ellipsis-${i}`}
+                    className="w-8 h-8 flex items-center justify-center text-xs text-[#90a1b9]"
+                  >
+                    …
+                  </span>
+                ) : (
+                  <button
+                    key={p}
+                    onClick={() => setCurrentPage(p)}
+                    className={`w-8 h-8 flex items-center justify-center rounded-lg text-xs font-medium transition-colors border ${
+                      currentPage === p
+                        ? "bg-[#009689] text-white border-[#009689]"
+                        : "border-[#e2e8f0] text-[#62748e] hover:bg-white hover:border-[#009689] hover:text-[#009689]"
+                    }`}
+                  >
+                    {p}
+                  </button>
+                ),
+              )}
+
+              {/* Next */}
+              <button
+                onClick={() =>
+                  setCurrentPage((p) => Math.min(totalPages, p + 1))
+                }
+                disabled={currentPage === totalPages}
+                className="w-8 h-8 flex items-center justify-center rounded-lg border border-[#e2e8f0] text-[#62748e] hover:bg-white hover:border-[#009689] hover:text-[#009689] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Legend */}
+      <div className="flex items-center gap-6 text-xs text-[#90a1b9]">
+        <span className="flex items-center gap-1.5">
+          <Lock className="w-3.5 h-3.5" />
+          Cần thanh toán để xem nội dung tư vấn
+        </span>
+        <span className="flex items-center gap-1.5">
+          <BadgeCheck className="w-3.5 h-3.5 text-[#16a34a]" />
+          Đã thanh toán · Xem không giới hạn
+        </span>
       </div>
     </div>
   );

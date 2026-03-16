@@ -14,6 +14,9 @@ import {
   CheckCircle,
   Lock,
   PlusCircle,
+  ChevronLeft,
+  ChevronRight,
+  CheckSquare,
 } from "lucide-react";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import * as Collapsible from "@radix-ui/react-collapsible";
@@ -26,63 +29,160 @@ import {
   mockFarms,
 } from "../../data/mockData";
 
-// ===================== HELPERS =====================
-const statusConfig: Record<SeasonStatus, string> = {
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+/** Per-plot status inside a season (separate from SeasonStatus) */
+type SeasonPlotStatus = "Đang trồng" | "Đã thu hoạch";
+
+/** PlotAssignment with the new status type */
+interface PlotAssignmentV2 extends Omit<PlotAssignment, "status"> {
+  status: SeasonPlotStatus;
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+const seasonStatusConfig: Record<SeasonStatus, string> = {
   "Đang hoạt động": "bg-[#dcfce7] text-[#008236]",
-  "Đã kết thúc": "bg-[#f1f5f9] text-[#475569]",
-  "Sắp diễn ra": "bg-[#dbeafe] text-[#1e40af]",
+  "Đã kết thúc":    "bg-[#f1f5f9] text-[#475569]",
+  "Sắp diễn ra":    "bg-[#dbeafe] text-[#1e40af]",
+};
+
+const plotStatusConfig: Record<SeasonPlotStatus, string> = {
+  "Đang trồng":    "bg-[#fef9c3] text-[#854d0e]",
+  "Đã thu hoạch":  "bg-[#dcfce7] text-[#008236]",
 };
 
 const cropEmoji: Record<string, string> = {
   "Bắp Cải Trắng": "🥬",
-  "Bắp Cải Tím": "🟣",
-  "Bắp Cải Xoăn": "🌿",
+  "Bắp Cải Tím":   "🟣",
+  "Bắp Cải Xoăn":  "🌿",
 };
 
 /**
- * Parse date strings in formats: DD/MM/YYYY or YYYY-MM-DD or DD-MM-YYYY
- * Returns a Date or null if unparseable.
+ * Naming convention: "[KhuVực]-[NN]"
+ * e.g. area prefix "A" + sequence 3 → "A-03"
+ * Derive prefix from the area label: take the first word that is a single letter A-Z,
+ * fallback to first char of area.
  */
+export function derivePlotPrefix(areaLabel: string): string {
+  const match = areaLabel.match(/\b([A-Z])\b/);
+  if (match) return match[1];
+  return (areaLabel.trim()[0] || "X").toUpperCase();
+}
+
+export function formatPlotName(prefix: string, sequence: number): string {
+  return `${prefix}-${String(sequence).padStart(2, "0")}`;
+}
+
 function parseDate(dateStr: string): Date | null {
   if (!dateStr) return null;
-  // DD/MM/YYYY
   const dmy = dateStr.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
   if (dmy) return new Date(`${dmy[3]}-${dmy[2]}-${dmy[1]}`);
-  // YYYY-MM-DD
   const ymd = dateStr.match(/^\d{4}-\d{2}-\d{2}$/);
   if (ymd) return new Date(dateStr);
-  // DD-MM-YYYY
-  const dmy2 = dateStr.match(/^(\d{2})-(\d{2})-(\d{4})$/);
-  if (dmy2) return new Date(`${dmy2[3]}-${dmy2[2]}-${dmy2[1]}`);
   return null;
 }
 
-/** Returns true if today >= harvestDate of the plot */
 function isHarvestUnlocked(harvestDate: string): boolean {
   const d = parseDate(harvestDate);
   if (!d) return false;
   return new Date() >= d;
 }
 
-/** Format YYYY-MM-DD → DD/MM/YYYY for display. Passes through if already DD/MM/YYYY. */
 function formatDate(dateStr: string): string {
   if (!dateStr) return "";
   const ymd = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (ymd) return `${ymd[3]}/${ymd[2]}/${ymd[1]}`;
-  return dateStr; // already DD/MM/YYYY or unknown format
+  return dateStr;
 }
 
-// ===================== FARM SELECT =====================
-function FarmSelect({
-  value,
-  onChange,
-  placeholder,
-  className,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  placeholder?: string;
-  className?: string;
+/** Cast legacy PlotAssignment status to SeasonPlotStatus */
+function toV2(plot: PlotAssignment): PlotAssignmentV2 {
+  const legacyMap: Record<string, SeasonPlotStatus> = {
+    "Đang hoạt động": "Đang trồng",
+    "Sắp diễn ra":    "Đang trồng",
+    "Đã kết thúc":    "Đã thu hoạch",
+    "Đang trồng":     "Đang trồng",
+    "Đã thu hoạch":   "Đã thu hoạch",
+  };
+  return {
+    ...plot,
+    status: legacyMap[plot.status as string] ?? "Đang trồng",
+  };
+}
+
+// ─── Pagination component ─────────────────────────────────────────────────────
+
+interface PaginationProps {
+  currentPage: number;
+  totalPages: number;
+  onPageChange: (page: number) => void;
+  totalItems: number;
+  pageSize: number;
+}
+
+function Pagination({ currentPage, totalPages, onPageChange, totalItems, pageSize }: PaginationProps) {
+  if (totalPages <= 1) return null;
+  const start = (currentPage - 1) * pageSize + 1;
+  const end = Math.min(currentPage * pageSize, totalItems);
+
+  const pages: (number | "…")[] = [];
+  if (totalPages <= 7) {
+    for (let i = 1; i <= totalPages; i++) pages.push(i);
+  } else {
+    pages.push(1);
+    if (currentPage > 3) pages.push("…");
+    for (let i = Math.max(2, currentPage - 1); i <= Math.min(totalPages - 1, currentPage + 1); i++) pages.push(i);
+    if (currentPage < totalPages - 2) pages.push("…");
+    pages.push(totalPages);
+  }
+
+  return (
+    <div className="flex items-center justify-between px-6 py-4 border-t border-[#e2e8f0]">
+      <span className="text-sm text-[#62748e]">
+        Hiển thị {start}–{end} / {totalItems} mùa vụ
+      </span>
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() => onPageChange(currentPage - 1)}
+          disabled={currentPage === 1}
+          className="p-2 rounded-lg text-[#62748e] hover:bg-[#f0fdfa] hover:text-[#009689] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        >
+          <ChevronLeft className="w-4 h-4" />
+        </button>
+        {pages.map((p, i) =>
+          p === "…" ? (
+            <span key={`ellipsis-${i}`} className="px-2 text-[#90a1b9] text-sm">…</span>
+          ) : (
+            <button
+              key={p}
+              onClick={() => onPageChange(p as number)}
+              className={`w-8 h-8 rounded-lg text-sm font-medium transition-colors ${
+                currentPage === p
+                  ? "bg-[#009689] text-white"
+                  : "text-[#62748e] hover:bg-[#f0fdfa] hover:text-[#009689]"
+              }`}
+            >
+              {p}
+            </button>
+          )
+        )}
+        <button
+          onClick={() => onPageChange(currentPage + 1)}
+          disabled={currentPage === totalPages}
+          className="p-2 rounded-lg text-[#62748e] hover:bg-[#f0fdfa] hover:text-[#009689] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        >
+          <ChevronRight className="w-4 h-4" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Farm Select ──────────────────────────────────────────────────────────────
+
+function FarmSelect({ value, onChange, placeholder, className }: {
+  value: string; onChange: (v: string) => void; placeholder?: string; className?: string;
 }) {
   return (
     <select
@@ -92,43 +192,47 @@ function FarmSelect({
     >
       <option value="">{placeholder ?? "Chọn trang trại"}</option>
       {mockFarms.map((f) => (
-        <option key={f.id} value={f.name}>
-          {f.name}
-        </option>
+        <option key={f.id} value={f.name}>{f.name}</option>
       ))}
     </select>
   );
 }
 
-// ===================== SEASONS PAGE =====================
+// ─── Seasons Page (List) ──────────────────────────────────────────────────────
+
+const PAGE_SIZE_LIST = 8;
+const PAGE_SIZE_DETAIL_PLOTS = 10;
+
 export function SeasonsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const view = searchParams.get("view") || "list";
+  const view     = searchParams.get("view") || "list";
   const seasonId = searchParams.get("id");
 
-  const [seasons, setSeasons] = useState<Season[]>(mockSeasons);
-  const [searchQuery, setSearchQuery] = useState("");
+  const [seasons, setSeasons]           = useState<Season[]>(mockSeasons);
+  const [searchQuery, setSearchQuery]   = useState("");
   const [filterStatus, setFilterStatus] = useState<SeasonStatus | "all">("all");
+  const [currentPage, setCurrentPage]   = useState(1);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [seasonToDelete, setSeasonToDelete] = useState<Season | null>(null);
+  const [seasonToDelete, setSeasonToDelete]     = useState<Season | null>(null);
 
-  const filteredSeasons = seasons.filter((season) => {
-    const matchesSearch =
-      season.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      season.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      season.farm.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesStatus =
-      filterStatus === "all" || season.status === filterStatus;
-    return matchesSearch && matchesStatus;
+  const filteredSeasons = seasons.filter((s) => {
+    const matchSearch =
+      s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      s.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      s.farm.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchStatus = filterStatus === "all" || s.status === filterStatus;
+    return matchSearch && matchStatus;
   });
+
+  const totalPages  = Math.max(1, Math.ceil(filteredSeasons.length / PAGE_SIZE_LIST));
+  const paginated   = filteredSeasons.slice((currentPage - 1) * PAGE_SIZE_LIST, currentPage * PAGE_SIZE_LIST);
+
+  // Reset to page 1 when filters change
+  useEffect(() => { setCurrentPage(1); }, [searchQuery, filterStatus]);
 
   const selectedSeason = seasons.find((s) => s.id === seasonId);
 
-  const handleDelete = (season: Season) => {
-    setSeasonToDelete(season);
-    setDeleteDialogOpen(true);
-  };
-
+  const handleDelete = (season: Season) => { setSeasonToDelete(season); setDeleteDialogOpen(true); };
   const confirmDelete = () => {
     if (seasonToDelete) {
       setSeasons(seasons.filter((s) => s.id !== seasonToDelete.id));
@@ -148,38 +252,19 @@ export function SeasonsPage() {
   };
 
   const handleUpdate = (updatedSeason: Season) => {
-    setSeasons(
-      seasons.map((s) => (s.id === updatedSeason.id ? updatedSeason : s)),
-    );
+    setSeasons(seasons.map((s) => (s.id === updatedSeason.id ? updatedSeason : s)));
     setSearchParams({ view: "list" });
   };
 
-  if (view === "create") {
-    return <CreateSeasonView onCreate={handleCreate} />;
-  }
+  if (view === "create") return <CreateSeasonView onCreate={handleCreate} />;
+  if (view === "detail" && selectedSeason) return <DetailSeasonView season={selectedSeason} />;
+  if (view === "edit"   && selectedSeason) return <EditSeasonView key={selectedSeason.id} season={selectedSeason} onUpdate={handleUpdate} />;
 
-  if (view === "detail" && selectedSeason) {
-    return <DetailSeasonView season={selectedSeason} />;
-  }
-
-  if (view === "edit" && selectedSeason) {
-    return (
-      <EditSeasonView
-        key={selectedSeason.id}
-        season={selectedSeason}
-        onUpdate={handleUpdate}
-      />
-    );
-  }
-
-  // ==================== LIST VIEW ====================
   return (
     <div className="flex flex-col gap-6 p-6">
       {/* Header */}
       <div className="flex items-start justify-between">
-        <h1 className="text-[#115e59] text-2xl font-semibold">
-          Quản Lý Mùa Vụ
-        </h1>
+        <h1 className="text-[#115e59] text-2xl font-semibold">Quản Lý Mùa Vụ</h1>
         <Link
           to="/seasons?view=create"
           className="bg-[#009689] text-white px-4 py-2 rounded-lg hover:bg-[#007f75] transition-colors flex items-center gap-2"
@@ -188,7 +273,7 @@ export function SeasonsPage() {
         </Link>
       </div>
 
-      {/* Search and Filters */}
+      {/* Search & Filters */}
       <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-4">
         <div className="flex items-center gap-4">
           <div className="relative flex-1">
@@ -202,9 +287,7 @@ export function SeasonsPage() {
             />
           </div>
           <div className="flex gap-2">
-            {(
-              ["all", "Đang hoạt động", "Đã kết thúc", "Sắp diễn ra"] as const
-            ).map((s) => (
+            {(["all", "Đang hoạt động", "Đã kết thúc", "Sắp diễn ra"] as const).map((s) => (
               <button
                 key={s}
                 onClick={() => setFilterStatus(s)}
@@ -226,80 +309,36 @@ export function SeasonsPage() {
         <table className="w-full">
           <thead className="bg-[#f8fafc] border-b border-[#e2e8f0]">
             <tr>
-              {[
-                "Mã",
-                "Tên mùa vụ",
-                "Trang trại",
-                "Thời gian",
-                "Số luống",
-                "Trạng thái",
-                "Thao tác",
-              ].map((h) => (
-                <th
-                  key={h}
-                  className="px-6 py-4 text-left text-xs font-bold text-[#62748e] uppercase tracking-wider"
-                >
-                  {h}
-                </th>
+              {["Mã", "Tên mùa vụ", "Trang trại", "Thời gian", "Số luống", "Trạng thái", "Thao tác"].map((h) => (
+                <th key={h} className="px-6 py-4 text-left text-xs font-bold text-[#62748e] uppercase tracking-wider">{h}</th>
               ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-[#e2e8f0]">
-            {filteredSeasons.map((season) => (
-              <tr
-                key={season.id}
-                className="hover:bg-[#f8fafc] transition-colors"
-              >
-                <td className="px-6 py-4 text-sm text-[#115e59] font-medium">
-                  {season.code}
-                </td>
+            {paginated.map((season) => (
+              <tr key={season.id} className="hover:bg-[#f8fafc] transition-colors">
+                <td className="px-6 py-4 text-sm text-[#115e59] font-medium">{season.code}</td>
+                <td className="px-6 py-4 text-sm font-medium text-[#115e59]">{season.name}</td>
+                <td className="px-6 py-4 text-sm text-[#62748e]">{season.farm}</td>
                 <td className="px-6 py-4">
-                  <div className="text-sm font-medium text-[#115e59]">
-                    {season.name}
-                  </div>
+                  <div className="text-xs text-[#62748e]">Bắt đầu: {formatDate(season.startDate)}</div>
+                  <div className="text-xs text-[#62748e]">Kết thúc: {formatDate(season.endDate)}</div>
                 </td>
-                <td className="px-6 py-4 text-sm text-[#62748e]">
-                  {season.farm}
-                </td>
+                <td className="px-6 py-4 text-sm text-[#115e59] font-medium">{season.plots.length}</td>
                 <td className="px-6 py-4">
-                  <div className="text-xs text-[#62748e]">
-                    Bắt đầu: {formatDate(season.startDate)}
-                  </div>
-                  <div className="text-xs text-[#62748e]">
-                    Kết thúc: {formatDate(season.endDate)}
-                  </div>
-                </td>
-                <td className="px-6 py-4 text-sm text-[#115e59] font-medium">
-                  {season.plots.length}
-                </td>
-                <td className="px-6 py-4">
-                  <span
-                    className={`inline-block px-2.5 py-1 rounded text-xs font-medium ${statusConfig[season.status]}`}
-                  >
+                  <span className={`inline-block px-2.5 py-1 rounded text-xs font-medium ${seasonStatusConfig[season.status]}`}>
                     {season.status}
                   </span>
                 </td>
                 <td className="px-6 py-4">
                   <div className="flex items-center justify-center gap-2">
-                    <Link
-                      to={`/seasons?view=detail&id=${season.id}`}
-                      className="p-2 text-[#009689] hover:bg-[#f0fdfa] rounded-lg transition-colors"
-                      title="Xem"
-                    >
+                    <Link to={`/seasons?view=detail&id=${season.id}`} className="p-2 text-[#009689] hover:bg-[#f0fdfa] rounded-lg transition-colors" title="Xem">
                       <Eye className="w-4 h-4" />
                     </Link>
-                    <Link
-                      to={`/seasons?view=edit&id=${season.id}`}
-                      className="p-2 text-[#009689] hover:bg-[#f0fdfa] rounded-lg transition-colors"
-                      title="Chỉnh sửa"
-                    >
+                    <Link to={`/seasons?view=edit&id=${season.id}`} className="p-2 text-[#009689] hover:bg-[#f0fdfa] rounded-lg transition-colors" title="Chỉnh sửa">
                       <Edit className="w-4 h-4" />
                     </Link>
-                    <button
-                      onClick={() => handleDelete(season)}
-                      className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                      title="Xóa"
-                    >
+                    <button onClick={() => handleDelete(season)} className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Xóa">
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
@@ -309,47 +348,37 @@ export function SeasonsPage() {
           </tbody>
         </table>
 
-        {filteredSeasons.length === 0 && (
+        {filteredSeasons.length === 0 ? (
           <div className="flex flex-col items-center py-16 text-[#62748e] gap-3">
             <Calendar className="w-12 h-12 text-[#cad5e2]" />
-            <p>
-              {searchQuery || filterStatus !== "all"
-                ? "Không tìm thấy mùa vụ phù hợp"
-                : "Chưa có mùa vụ nào"}
-            </p>
+            <p>{searchQuery || filterStatus !== "all" ? "Không tìm thấy mùa vụ phù hợp" : "Chưa có mùa vụ nào"}</p>
           </div>
+        ) : (
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            onPageChange={setCurrentPage}
+            totalItems={filteredSeasons.length}
+            pageSize={PAGE_SIZE_LIST}
+          />
         )}
       </div>
 
       {/* Delete Dialog */}
-      <AlertDialog.Root
-        open={deleteDialogOpen}
-        onOpenChange={setDeleteDialogOpen}
-      >
+      <AlertDialog.Root open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialog.Portal>
           <AlertDialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
           <AlertDialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-md bg-white rounded-xl shadow-2xl p-6">
-            <AlertDialog.Title className="text-lg font-semibold text-slate-900 mb-2">
-              Xác nhận xóa mùa vụ
-            </AlertDialog.Title>
+            <AlertDialog.Title className="text-lg font-semibold text-slate-900 mb-2">Xác nhận xóa mùa vụ</AlertDialog.Title>
             <AlertDialog.Description className="text-sm text-slate-600 mb-6">
-              Bạn có chắc chắn muốn xóa{" "}
-              <span className="font-semibold">{seasonToDelete?.name}</span>?
-              Hành động này không thể hoàn tác.
+              Bạn có chắc chắn muốn xóa <span className="font-semibold">{seasonToDelete?.name}</span>? Hành động này không thể hoàn tác.
             </AlertDialog.Description>
             <div className="flex gap-3 justify-end">
               <AlertDialog.Cancel asChild>
-                <button className="px-4 py-2 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-100 transition-colors">
-                  Hủy bỏ
-                </button>
+                <button className="px-4 py-2 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-100 transition-colors">Hủy bỏ</button>
               </AlertDialog.Cancel>
               <AlertDialog.Action asChild>
-                <button
-                  onClick={confirmDelete}
-                  className="px-4 py-2 rounded-lg text-sm font-medium bg-red-600 text-white hover:bg-red-700 transition-colors"
-                >
-                  Xóa mùa vụ
-                </button>
+                <button onClick={confirmDelete} className="px-4 py-2 rounded-lg text-sm font-medium bg-red-600 text-white hover:bg-red-700 transition-colors">Xóa mùa vụ</button>
               </AlertDialog.Action>
             </div>
           </AlertDialog.Content>
@@ -359,390 +388,37 @@ export function SeasonsPage() {
   );
 }
 
-// ==================== CREATE VIEW ====================
-function CreateSeasonView({
-  onCreate,
-}: {
-  onCreate: (season: Omit<Season, "id" | "code">) => void;
-}) {
-  const [step, setStep] = useState(1);
-  const [formData, setFormData] = useState({
-    name: "",
-    farm: "",
-    startDate: "",
-    endDate: "",
-    description: "",
-    status: "Sắp diễn ra" as SeasonStatus,
-    plots: [] as PlotAssignment[],
-  });
-  const [selectedPlots, setSelectedPlots] = useState<string[]>([]);
-  const [plotDetails, setPlotDetails] = useState<
-    Record<
-      string,
-      {
-        crop: CropType;
-        sowingDate: string;
-        harvestDate: string;
-      }
-    >
-  >({});
+// ─── Detail View ──────────────────────────────────────────────────────────────
 
-  const mockPlots = [
-    { id: "A-3", name: "Luống A-3", area: "Khu A (Phía Bắc)", size: "50 m²" },
-    { id: "A-4", name: "Luống A-4", area: "Khu A (Phía Bắc)", size: "45 m²" },
-    { id: "B-2", name: "Luống B-2", area: "Khu B (Phía Nam)", size: "60 m²" },
-  ];
-  const defaultDetail = {
-    crop: "Bắp Cải Trắng" as CropType,
-    sowingDate: "",
-    harvestDate: "",
-  };
-  const cropOptions: CropType[] = [
-    "Bắp Cải Trắng",
-    "Bắp Cải Tím",
-    "Bắp Cải Xoăn",
-  ];
-
-  const handleStep2Submit = () => {
-    const plots: PlotAssignment[] = selectedPlots.map((plotId) => {
-      const plot = mockPlots.find((p) => p.id === plotId)!;
-      const details = plotDetails[plotId] || defaultDetail;
-      return {
-        plotId,
-        plotName: plot.name,
-        area: plot.area,
-        crop: details.crop,
-        sowingDate: details.sowingDate,
-        harvestDate: details.harvestDate,
-        plannedQuantity: 0,
-        actualPlanted: 0,
-        harvestQuantity: 0,
-        status: "Đang hoạt động" as SeasonStatus,
-      };
-    });
-    onCreate({ ...formData, plots });
-  };
-
-  const togglePlot = (plotId: string) =>
-    setSelectedPlots((prev) =>
-      prev.includes(plotId)
-        ? prev.filter((id) => id !== plotId)
-        : [...prev, plotId],
-    );
-
-  const updatePlotDetail = (
-    plotId: string,
-    field: keyof typeof defaultDetail,
-    value: any,
-  ) =>
-    setPlotDetails((prev) => ({
-      ...prev,
-      [plotId]: { ...(prev[plotId] || defaultDetail), [field]: value },
-    }));
-
-  const applyToAll = (sourceId: string) => {
-    const source = plotDetails[sourceId] || defaultDetail;
-    const newDetails: typeof plotDetails = {};
-    selectedPlots.forEach((id) => {
-      newDetails[id] = { ...source };
-    });
-    setPlotDetails(newDetails);
-  };
-
-  return (
-    <div className="flex flex-col gap-6 p-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-[#115e59] text-2xl font-semibold mb-2">
-            Tạo Mùa Vụ Mới
-          </h1>
-          <div className="flex items-center gap-2">
-            {[
-              { n: 1, label: "Bước 1: Thông tin" },
-              { n: 2, label: "Bước 2: Chọn luống" },
-            ].map((s) => (
-              <span
-                key={s.n}
-                className={`px-3 py-1 rounded text-sm font-medium ${step === s.n ? "bg-[#009689] text-white" : "bg-[#f1f5f9] text-[#62748e]"}`}
-              >
-                {s.label}
-              </span>
-            ))}
-          </div>
-        </div>
-        <Link
-          to="/seasons"
-          className="px-4 py-2 bg-[#f1f5f9] text-[#314158] rounded-lg hover:bg-[#e2e8f0] transition-colors flex items-center gap-2"
-        >
-          <ArrowLeft className="w-4 h-4" /> Quay lại
-        </Link>
-      </div>
-
-      {/* Step 1 */}
-      {step === 1 && (
-        <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-6 max-w-2xl">
-          <h3 className="text-sm font-bold text-[#62748e] uppercase mb-4">
-            📝 Thông tin mùa vụ
-          </h3>
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Tên mùa vụ *
-                </label>
-                <input
-                  value={formData.name}
-                  onChange={(e) =>
-                    setFormData((p) => ({ ...p, name: e.target.value }))
-                  }
-                  className="w-full px-3 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                  placeholder="Mùa Hè 2025"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Trang trại
-                </label>
-                <FarmSelect
-                  value={formData.farm}
-                  onChange={(v) => setFormData((p) => ({ ...p, farm: v }))}
-                  placeholder="Chọn trang trại"
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Ngày bắt đầu
-                </label>
-                <input
-                  type="date"
-                  value={formData.startDate}
-                  onChange={(e) =>
-                    setFormData((p) => ({ ...p, startDate: e.target.value }))
-                  }
-                  className="w-full px-3 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Ngày kết thúc
-                </label>
-                <input
-                  type="date"
-                  value={formData.endDate}
-                  onChange={(e) =>
-                    setFormData((p) => ({ ...p, endDate: e.target.value }))
-                  }
-                  className="w-full px-3 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                />
-              </div>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-[#115e59] mb-2">
-                Trạng thái
-              </label>
-              <select
-                value={formData.status}
-                onChange={(e) =>
-                  setFormData((p) => ({
-                    ...p,
-                    status: e.target.value as SeasonStatus,
-                  }))
-                }
-                className="w-full px-3 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] bg-white"
-              >
-                <option value="Sắp diễn ra">Sắp diễn ra</option>
-                <option value="Đang hoạt động">Đang hoạt động</option>
-                <option value="Đã kết thúc">Đã kết thúc</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-[#115e59] mb-2">
-                Mô tả
-              </label>
-              <textarea
-                value={formData.description}
-                onChange={(e) =>
-                  setFormData((p) => ({ ...p, description: e.target.value }))
-                }
-                rows={3}
-                className="w-full px-3 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] resize-none"
-                placeholder="Mô tả mùa vụ..."
-              />
-            </div>
-          </div>
-          <div className="mt-6 flex justify-end">
-            <button
-              onClick={() => setStep(2)}
-              disabled={!formData.name}
-              className="px-6 py-2 bg-[#009689] text-white rounded-lg hover:bg-[#007f75] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Tiếp theo
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Step 2 */}
-      {step === 2 && (
-        <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-6">
-          <h3 className="text-sm font-bold text-[#62748e] uppercase mb-4">
-            🌱 Chọn luống
-          </h3>
-          <div className="space-y-3">
-            {mockPlots.map((plot) => {
-              const isSelected = selectedPlots.includes(plot.id);
-              const details = plotDetails[plot.id] || defaultDetail;
-              return (
-                <div
-                  key={plot.id}
-                  className={`border rounded-lg p-4 ${isSelected ? "border-[#009689] bg-[#f0fdfa]" : "border-[#e2e8f0]"}`}
-                >
-                  <div className="flex items-center gap-3 mb-3">
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      onChange={() => togglePlot(plot.id)}
-                      className="w-4 h-4 accent-[#009689]"
-                    />
-                    <div>
-                      <div className="font-medium text-[#115e59]">
-                        {plot.name}
-                      </div>
-                      <div className="text-xs text-[#62748e]">
-                        {plot.area} • {plot.size}
-                      </div>
-                    </div>
-                  </div>
-                  {isSelected && (
-                    <div className="grid grid-cols-3 gap-3 pl-7">
-                      <div>
-                        <label className="block text-xs text-[#62748e] mb-1">
-                          Cây trồng
-                        </label>
-                        <select
-                          value={details.crop}
-                          onChange={(e) =>
-                            updatePlotDetail(
-                              plot.id,
-                              "crop",
-                              e.target.value as CropType,
-                            )
-                          }
-                          className="w-full px-2 py-1.5 text-sm border border-[#cad5e2] rounded focus:outline-none focus:ring-2 focus:ring-[#009689] bg-white"
-                        >
-                          {cropOptions.map((c) => (
-                            <option key={c} value={c}>
-                              {c}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-xs text-[#62748e] mb-1">
-                          Ngày gieo
-                        </label>
-                        <input
-                          type="date"
-                          value={details.sowingDate}
-                          onChange={(e) =>
-                            updatePlotDetail(
-                              plot.id,
-                              "sowingDate",
-                              e.target.value,
-                            )
-                          }
-                          className="w-full px-2 py-1.5 text-sm border border-[#cad5e2] rounded focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-[#62748e] mb-1">
-                          Ngày thu hoạch
-                        </label>
-                        <input
-                          type="date"
-                          value={details.harvestDate}
-                          onChange={(e) =>
-                            updatePlotDetail(
-                              plot.id,
-                              "harvestDate",
-                              e.target.value,
-                            )
-                          }
-                          className="w-full px-2 py-1.5 text-sm border border-[#cad5e2] rounded focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                        />
-                      </div>
-                      {selectedPlots.length > 1 && (
-                        <div className="col-span-3">
-                          <button
-                            onClick={() => applyToAll(plot.id)}
-                            className="text-xs text-[#009689] hover:underline"
-                          >
-                            Áp dụng cho tất cả luống
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-          <div className="mt-6 flex justify-between">
-            <button
-              onClick={() => setStep(1)}
-              className="px-6 py-2 bg-[#f1f5f9] text-[#314158] rounded-lg hover:bg-[#e2e8f0] transition-colors flex items-center gap-2"
-            >
-              <ArrowLeft className="w-4 h-4" /> Quay lại
-            </button>
-            <button
-              onClick={handleStep2Submit}
-              disabled={selectedPlots.length === 0}
-              className="px-6 py-2 bg-[#009689] text-white rounded-lg hover:bg-[#007f75] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-            >
-              <CheckCircle className="w-4 h-4" /> Tạo mùa vụ
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ==================== DETAIL VIEW ====================
 function DetailSeasonView({ season }: { season: Season }) {
-  const plotsByCrop = season.plots.reduce(
-    (acc, plot) => {
-      if (!acc[plot.crop]) acc[plot.crop] = [];
-      acc[plot.crop].push(plot);
-      return acc;
-    },
-    {} as Record<CropType, PlotAssignment[]>,
-  );
+  const v2Plots = season.plots.map(toV2);
+
+  // Group by area
+  const plotsByArea = v2Plots.reduce((acc, plot) => {
+    if (!acc[plot.area]) acc[plot.area] = [];
+    acc[plot.area].push(plot);
+    return acc;
+  }, {} as Record<string, PlotAssignmentV2[]>);
+
+  // Pagination per area group
+  const [areaPages, setAreaPages] = useState<Record<string, number>>({});
+  const getPage = (area: string) => areaPages[area] ?? 1;
+  const setPage = (area: string, page: number) => setAreaPages((p) => ({ ...p, [area]: page }));
 
   return (
     <div className="flex flex-col gap-6 p-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Link
-            to="/seasons"
-            className="p-2 text-[#62748e] hover:text-[#115e59] transition-colors"
-          >
+          <Link to="/seasons" className="p-2 text-[#62748e] hover:text-[#115e59] transition-colors">
             <ArrowLeft className="w-5 h-5" />
           </Link>
           <div>
-            <h1 className="text-[#115e59] text-2xl font-semibold">
-              {season.name}
-            </h1>
+            <h1 className="text-[#115e59] text-2xl font-semibold">{season.name}</h1>
             <div className="flex items-center gap-2 mt-1">
               <span className="text-sm text-[#62748e]">{season.code}</span>
               <span className="text-[#62748e]">•</span>
-              <span
-                className={`px-2 py-0.5 rounded text-xs font-medium ${statusConfig[season.status]}`}
-              >
-                {season.status}
-              </span>
+              <span className={`px-2 py-0.5 rounded text-xs font-medium ${seasonStatusConfig[season.status]}`}>{season.status}</span>
             </div>
           </div>
         </div>
@@ -754,10 +430,9 @@ function DetailSeasonView({ season }: { season: Season }) {
         </Link>
       </div>
 
+      {/* Info card */}
       <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-6">
-        <h3 className="text-sm font-bold text-[#62748e] uppercase mb-4">
-          🌱 Thông tin chung
-        </h3>
+        <h3 className="text-sm font-bold text-[#62748e] uppercase mb-4">🌱 Thông tin chung</h3>
         <div className="grid grid-cols-3 gap-6">
           <div className="flex items-start gap-3">
             <div className="w-10 h-10 bg-[#dbeafe] rounded-lg flex items-center justify-center shrink-0">
@@ -774,9 +449,7 @@ function DetailSeasonView({ season }: { season: Season }) {
             </div>
             <div>
               <div className="text-xs text-[#62748e] mb-1">THỜI GIAN</div>
-              <div className="font-medium text-[#115e59]">
-                {formatDate(season.startDate)} – {formatDate(season.endDate)}
-              </div>
+              <div className="font-medium text-[#115e59]">{formatDate(season.startDate)} – {formatDate(season.endDate)}</div>
             </div>
           </div>
           <div className="flex items-start gap-3">
@@ -785,113 +458,93 @@ function DetailSeasonView({ season }: { season: Season }) {
             </div>
             <div>
               <div className="text-xs text-[#62748e] mb-1">MÔ TẢ</div>
-              <div className="font-medium text-[#115e59]">
-                {season.description || "Vụ mùa chính trồng bắp cải."}
-              </div>
+              <div className="font-medium text-[#115e59]">{season.description || "Vụ mùa chính trồng bắp cải."}</div>
             </div>
           </div>
         </div>
       </div>
 
+      {/* Plots grouped by area */}
       <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-6">
-        <h3 className="text-sm font-bold text-[#62748e] uppercase mb-4">
-          Thông tin chi tiết
-        </h3>
-        {Object.entries(plotsByCrop).map(([crop, plots]) => {
-          const totalPlanned = plots.reduce(
-            (sum, p) => sum + (p.plannedQuantity ?? 0),
-            0,
-          );
-          const totalActual = plots.reduce(
-            (sum, p) => sum + (p.actualPlanted ?? 0),
-            0,
-          );
-          const totalHarvest = plots.reduce(
-            (sum, p) => sum + (p.harvestQuantity ?? 0),
-            0,
-          );
-          const emoji = cropEmoji[crop] ?? "🌱";
+        <h3 className="text-sm font-bold text-[#62748e] uppercase mb-4">Thông tin chi tiết luống</h3>
+
+        {/* Legend */}
+        <div className="flex items-center gap-4 mb-4 text-xs text-[#62748e]">
+          <span className="flex items-center gap-1.5">
+            <span className="inline-block w-2 h-2 rounded-full bg-[#fbbf24]" /> Đang trồng
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="inline-block w-2 h-2 rounded-full bg-[#22c55e]" /> Đã thu hoạch
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="text-xs">Tên luống: [Khu]-[NN] — ví dụ A-01, B-12</span>
+          </span>
+        </div>
+
+        {Object.entries(plotsByArea).map(([areaLabel, areaPlots]) => {
+          const page    = getPage(areaLabel);
+          const total   = areaPlots.length;
+          const tPages  = Math.max(1, Math.ceil(total / PAGE_SIZE_DETAIL_PLOTS));
+          const paged   = areaPlots.slice((page - 1) * PAGE_SIZE_DETAIL_PLOTS, page * PAGE_SIZE_DETAIL_PLOTS);
+
+          const harvestedCount = areaPlots.filter((p) => p.status === "Đã thu hoạch").length;
+          const totalPlanned   = areaPlots.reduce((s, p) => s + (p.plannedQuantity ?? 0), 0);
+          const totalActual    = areaPlots.reduce((s, p) => s + (p.actualPlanted ?? 0), 0);
+          const totalHarvest   = areaPlots.reduce((s, p) => s + (p.harvestQuantity ?? 0), 0);
+
+          // Derive crop list for summary
+          const crops = [...new Set(areaPlots.map((p) => p.crop))];
+
           return (
-            <Collapsible.Root key={crop} defaultOpen>
-              <Collapsible.Trigger className="flex items-center justify-between w-full py-3 border-b border-[#e2e8f0]">
-                <div className="flex items-center gap-2">
-                  <span>{emoji}</span>
-                  <span className="font-medium text-[#115e59]">{crop}</span>
+            <Collapsible.Root key={areaLabel} defaultOpen className="mb-4">
+              <Collapsible.Trigger className="flex items-center justify-between w-full py-3 px-4 bg-[#f8fafc] rounded-lg border border-[#e2e8f0] hover:bg-[#f0fdfa] transition-colors">
+                <div className="flex items-center gap-3">
+                  <span className="font-semibold text-[#115e59]">{areaLabel}</span>
+                  <div className="flex gap-1.5">
+                    {crops.map((c) => (
+                      <span key={c} className="text-xs px-2 py-0.5 bg-white border border-[#e2e8f0] rounded text-[#62748e]">
+                        {cropEmoji[c]} {c}
+                      </span>
+                    ))}
+                  </div>
                   <span className="text-xs text-[#62748e]">
-                    ({plots.length} luống • dự kiến {totalPlanned} cây • thực tế{" "}
-                    {totalActual} cây • thu hoạch {totalHarvest} kg)
+                    {total} luống • {harvestedCount} đã thu • dự kiến {totalPlanned} cây • thực tế {totalActual} cây • {totalHarvest} kg
                   </span>
                 </div>
                 <ChevronDown className="w-4 h-4 text-[#62748e]" />
               </Collapsible.Trigger>
+
               <Collapsible.Content>
-                <table className="w-full mt-3">
-                  <thead>
+                <table className="w-full mt-2">
+                  <thead className="bg-[#f8fafc]">
                     <tr>
-                      {[
-                        "Luống",
-                        "Khu vực",
-                        "Ngày gieo",
-                        "Thu hoạch",
-                        "SL dự kiến (cây)",
-                        "SL thực tế (cây)",
-                        "Sản lượng (kg)",
-                        "Trạng thái",
-                      ].map((h) => (
-                        <th
-                          key={h}
-                          className="px-4 py-3 text-left text-xs font-medium text-[#62748e] uppercase"
-                        >
-                          {h}
-                        </th>
+                      {["Luống", "Cây trồng", "Ngày gieo", "Thu hoạch", "SL dự kiến", "SL thực tế", "Sản lượng (kg)", "Trạng thái"].map((h) => (
+                        <th key={h} className="px-4 py-3 text-left text-xs font-medium text-[#62748e] uppercase">{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#e2e8f0]">
-                    {plots.map((plot) => {
-                      const harvestUnlocked = isHarvestUnlocked(
-                        plot.harvestDate,
-                      );
+                    {paged.map((plot) => {
+                      const harvestUnlocked = isHarvestUnlocked(plot.harvestDate);
                       return (
-                        <tr key={plot.plotId}>
-                          <td className="px-4 py-3 text-sm text-[#115e59]">
-                            {plot.plotName}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-[#62748e]">
-                            {plot.area}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-[#62748e]">
-                            {formatDate(plot.sowingDate)}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-[#62748e]">
-                            {formatDate(plot.harvestDate)}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-[#62748e]">
-                            {plot.plannedQuantity ?? 0}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-[#62748e]">
-                            {plot.actualPlanted ?? 0}
-                          </td>
+                        <tr key={plot.plotId} className="hover:bg-[#f8fafc] transition-colors">
+                          <td className="px-4 py-3 text-sm font-mono font-medium text-[#115e59]">{plot.plotName}</td>
+                          <td className="px-4 py-3 text-sm text-[#62748e]">{cropEmoji[plot.crop]} {plot.crop}</td>
+                          <td className="px-4 py-3 text-sm text-[#62748e]">{formatDate(plot.sowingDate)}</td>
+                          <td className="px-4 py-3 text-sm text-[#62748e]">{formatDate(plot.harvestDate)}</td>
+                          <td className="px-4 py-3 text-sm text-[#62748e]">{plot.plannedQuantity ?? 0}</td>
+                          <td className="px-4 py-3 text-sm text-[#62748e]">{plot.actualPlanted ?? 0}</td>
                           <td className="px-4 py-3 text-sm text-[#62748e]">
                             {harvestUnlocked ? (
-                              <span>
-                                {plot.harvestQuantity ? (
-                                  `${plot.harvestQuantity} kg`
-                                ) : (
-                                  <span className="text-[#90a1b9]">—</span>
-                                )}
-                              </span>
+                              plot.harvestQuantity ? `${plot.harvestQuantity} kg` : <span className="text-[#90a1b9]">—</span>
                             ) : (
                               <span className="flex items-center gap-1 text-[#90a1b9]">
-                                <Lock className="w-3 h-3" />
-                                Chưa thu hoạch
+                                <Lock className="w-3 h-3" /> Chưa thu
                               </span>
                             )}
                           </td>
                           <td className="px-4 py-3">
-                            <span
-                              className={`inline-block px-2 py-1 rounded text-xs font-medium ${statusConfig[plot.status]}`}
-                            >
+                            <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${plotStatusConfig[plot.status]}`}>
                               {plot.status}
                             </span>
                           </td>
@@ -900,667 +553,543 @@ function DetailSeasonView({ season }: { season: Season }) {
                     })}
                   </tbody>
                 </table>
+                {tPages > 1 && (
+                  <Pagination
+                    currentPage={page}
+                    totalPages={tPages}
+                    onPageChange={(p) => setPage(areaLabel, p)}
+                    totalItems={total}
+                    pageSize={PAGE_SIZE_DETAIL_PLOTS}
+                  />
+                )}
               </Collapsible.Content>
             </Collapsible.Root>
           );
         })}
+
         {season.plots.length === 0 && (
-          <div className="text-center py-8 text-[#62748e]">
-            Chưa có luống nào được gán cho mùa vụ này
-          </div>
+          <div className="text-center py-8 text-[#62748e]">Chưa có luống nào được gán cho mùa vụ này</div>
         )}
       </div>
     </div>
   );
 }
 
-// ==================== EDIT VIEW ====================
+// ─── Create View ──────────────────────────────────────────────────────────────
 
-// Mock available plots per farm (in real app, fetched by farm ID)
-const availablePlotsForFarm = [
-  { id: "A-3", name: "Luống A-3", area: "Khu A (Phía Bắc)", size: "50 m²" },
-  { id: "A-4", name: "Luống A-4", area: "Khu A (Phía Bắc)", size: "45 m²" },
-  { id: "B-2", name: "Luống B-2", area: "Khu B (Phía Nam)", size: "60 m²" },
-  { id: "C-2", name: "Luống C-2", area: "Khu C", size: "55 m²" },
-  { id: "D-1", name: "Luống D-1", area: "Khu D", size: "70 m²" },
-];
-
-const cropOptions: CropType[] = [
-  "Bắp Cải Trắng",
-  "Bắp Cải Tím",
-  "Bắp Cải Xoăn",
-];
-
-function EditSeasonView({
-  season,
-  onUpdate,
-}: {
-  season: Season;
-  onUpdate: (season: Season) => void;
-}) {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
+function CreateSeasonView({ onCreate }: { onCreate: (season: Omit<Season, "id" | "code">) => void }) {
+  const [step, setStep] = useState(1);
   const [formData, setFormData] = useState({
-    name: season.name,
-    farm: season.farm,
-    startDate: season.startDate,
-    endDate: season.endDate,
-    status: season.status,
-    description: season.description,
+    name: "", farm: "", startDate: "", endDate: "",
+    description: "", status: "Sắp diễn ra" as SeasonStatus,
+    plots: [] as PlotAssignment[],
   });
-  const [plots, setPlots] = useState<PlotAssignment[]>(season.plots);
-  const [deletePlotDialogOpen, setDeletePlotDialogOpen] = useState(false);
-  const [plotToDelete, setPlotToDelete] = useState<string | null>(null);
+  const [selectedPlots, setSelectedPlots] = useState<string[]>([]);
+  const [plotDetails, setPlotDetails]     = useState<Record<string, { crop: CropType; sowingDate: string; harvestDate: string }>>({});
 
-  // Sync state nếu season prop thay đổi (e.g. navigate sang season khác)
-  useEffect(() => {
-    setFormData({
-      name: season.name,
-      farm: season.farm,
-      startDate: season.startDate,
-      endDate: season.endDate,
-      status: season.status,
-      description: season.description,
-    });
-    setPlots(season.plots);
-    setFormErrors({});
-    setPlotErrors({});
-    setSubmitAttempted(false);
-  }, [season.id]);
+  const mockPlots = [
+    { id: "A-03", name: "A-03", area: "Khu A (Phía Bắc)", size: "50 m²" },
+    { id: "A-04", name: "A-04", area: "Khu A (Phía Bắc)", size: "45 m²" },
+    { id: "B-02", name: "B-02", area: "Khu B (Phía Nam)", size: "60 m²" },
+  ];
+  const defaultDetail = { crop: "Bắp Cải Trắng" as CropType, sowingDate: "", harvestDate: "" };
+  const cropOptions: CropType[] = ["Bắp Cải Trắng", "Bắp Cải Tím", "Bắp Cải Xoăn"];
 
-  // Validation errors
-  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
-  const [plotErrors, setPlotErrors] = useState<
-    Record<string, Record<string, string>>
-  >({});
-  const [submitAttempted, setSubmitAttempted] = useState(false);
-
-  // Add-plot panel state
-  const [addPlotOpen, setAddPlotOpen] = useState(false);
-  const [selectedNewPlots, setSelectedNewPlots] = useState<string[]>([]);
-  const [newPlotDetails, setNewPlotDetails] = useState<
-    Record<string, { crop: CropType; sowingDate: string; harvestDate: string }>
-  >({});
-
-  const isSeasonEnded = formData.status === "Đã kết thúc";
-
-  // ---- Validation helpers ----
-  const toDate = (s: string) => (s ? new Date(s) : null);
-
-  const validateForm = (
-    data: typeof formData,
-    currentPlots: PlotAssignment[],
-  ) => {
-    const errors: Record<string, string> = {};
-    const pErrors: Record<string, Record<string, string>> = {};
-
-    // Tên không được trống
-    if (!data.name.trim()) errors.name = "Tên mùa vụ không được để trống";
-
-    const start = toDate(data.startDate);
-    const end = toDate(data.endDate);
-
-    // Ngày bắt đầu bắt buộc
-    if (!data.startDate) errors.startDate = "Vui lòng chọn ngày bắt đầu";
-
-    // Ngày kết thúc bắt buộc & phải sau ngày bắt đầu
-    if (!data.endDate) {
-      errors.endDate = "Vui lòng chọn ngày kết thúc";
-    } else if (start && end && end <= start) {
-      errors.endDate = "Ngày kết thúc phải sau ngày bắt đầu";
-    }
-
-    // Nếu mùa đang hoạt động, không thể dời ngày bắt đầu về tương lai
-    if (data.status === "Đang hoạt động" && start && start > today) {
-      errors.startDate =
-        "Mùa đang hoạt động: ngày bắt đầu không thể ở tương lai";
-    }
-
-    // Nếu trạng thái "Sắp diễn ra" nhưng ngày bắt đầu đã qua
-    if (data.status === "Sắp diễn ra" && start && start < today) {
-      errors.status =
-        'Ngày bắt đầu đã qua — không thể để trạng thái "Sắp diễn ra"';
-    }
-
-    // Nếu trạng thái "Đã kết thúc" nhưng ngày kết thúc còn trong tương lai
-    if (data.status === "Đã kết thúc" && end && end > today) {
-      errors.status =
-        'Ngày kết thúc chưa đến — không thể đánh dấu "Đã kết thúc"';
-    }
-
-    // Ngày kết thúc mùa không được sớm hơn ngày thu hoạch muộn nhất của các luống
-    if (end) {
-      currentPlots.forEach((plot) => {
-        const hd = toDate(plot.harvestDate);
-        if (hd && hd > end) {
-          errors.endDate =
-            errors.endDate ||
-            `Ngày kết thúc phải ≥ ngày thu hoạch của ${plot.plotName} (${formatDate(plot.harvestDate)})`;
-        }
-      });
-    }
-
-    // Validate từng luống
-    currentPlots.forEach((plot) => {
-      const pe: Record<string, string> = {};
-      const sow = toDate(plot.sowingDate);
-      const harv = toDate(plot.harvestDate);
-
-      if (plot.sowingDate && start && sow && sow < start) {
-        pe.sowingDate = "Ngày gieo phải sau ngày bắt đầu mùa vụ";
-      }
-      if (plot.sowingDate && end && sow && sow > end) {
-        pe.sowingDate = "Ngày gieo phải trước ngày kết thúc mùa vụ";
-      }
-      if (plot.harvestDate && sow && harv && harv <= sow) {
-        pe.harvestDate = "Ngày thu hoạch phải sau ngày gieo";
-      }
-      if (plot.harvestDate && end && harv && harv > end) {
-        pe.harvestDate =
-          "Ngày thu hoạch phải trước hoặc bằng ngày kết thúc mùa vụ";
-      }
-      if (Object.keys(pe).length > 0) pErrors[plot.plotId] = pe;
-    });
-
-    return { errors, pErrors };
-  };
-
-  // Live-validate on change
-  const updateField = (field: keyof typeof formData, value: string) => {
-    const next = { ...formData, [field]: value };
-    setFormData(next);
-    if (submitAttempted) {
-      const { errors, pErrors } = validateForm(next, plots);
-      setFormErrors(errors);
-      setPlotErrors(pErrors);
-    }
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setSubmitAttempted(true);
-    const { errors, pErrors } = validateForm(formData, plots);
-    setFormErrors(errors);
-    setPlotErrors(pErrors);
-    if (Object.keys(errors).length === 0 && Object.keys(pErrors).length === 0) {
-      onUpdate({ ...season, ...formData, plots });
-    }
-  };
-
-  const updatePlot = (
-    plotId: string,
-    field: keyof PlotAssignment,
-    value: any,
-  ) => {
-    const next = plots.map((plot) =>
-      plot.plotId === plotId ? { ...plot, [field]: value } : plot,
-    );
-    setPlots(next);
-    if (submitAttempted) {
-      const { errors, pErrors } = validateForm(formData, next);
-      setFormErrors(errors);
-      setPlotErrors(pErrors);
-    }
-  };
-
-  // Plots already in the season — shown but disabled in add list
-  const existingPlotIds = new Set(plots.map((p) => p.plotId));
-  const addablePlots = availablePlotsForFarm;
-
-  const removePlot = (plotId: string) => {
-    const plot = plots.find((p) => p.plotId === plotId);
-    if (plot && plot.actualPlanted > 0) {
-      // Guard: cannot remove plot with recorded planting data
-      setFormErrors((prev) => ({
-        ...prev,
-        plotRemove: `Không thể xóa ${plot.plotName} vì đã có dữ liệu trồng thực tế (${plot.actualPlanted} cây)`,
-      }));
-      return;
-    }
-    setPlotToDelete(plotId);
-    setDeletePlotDialogOpen(true);
-  };
-  const confirmRemovePlot = () => {
-    if (plotToDelete) {
-      setPlots((prev) => prev.filter((plot) => plot.plotId !== plotToDelete));
-      setPlotToDelete(null);
-      setDeletePlotDialogOpen(false);
-    }
-  };
-
-  // --- Add plot handlers ---
-  const toggleNewPlot = (plotId: string) =>
-    setSelectedNewPlots((prev) =>
-      prev.includes(plotId)
-        ? prev.filter((id) => id !== plotId)
-        : [...prev, plotId],
-    );
-
-  const updateNewPlotDetail = (
-    plotId: string,
-    field: "crop" | "sowingDate" | "harvestDate",
-    value: any,
-  ) =>
-    setNewPlotDetails((prev) => {
-      const existing = prev[plotId] ?? {
-        crop: "Bắp Cải Trắng" as CropType,
-        sowingDate: "",
-        harvestDate: "",
-      };
-      return { ...prev, [plotId]: { ...existing, [field]: value } };
-    });
-
-  const confirmAddPlots = () => {
-    const newAssignments: PlotAssignment[] = selectedNewPlots.map((plotId) => {
-      const meta = addablePlots.find((p) => p.id === plotId)!;
-      const details = newPlotDetails[plotId] || {
-        crop: "Bắp Cải Trắng" as CropType,
-        sowingDate: "",
-        harvestDate: "",
-      };
+  const handleStep2Submit = () => {
+    const plots: PlotAssignment[] = selectedPlots.map((plotId) => {
+      const plot    = mockPlots.find((p) => p.id === plotId)!;
+      const details = plotDetails[plotId] || defaultDetail;
       return {
         plotId,
-        plotName: meta.name,
-        area: meta.area,
+        plotName: plot.name,
+        area: plot.area,
         crop: details.crop,
         sowingDate: details.sowingDate,
         harvestDate: details.harvestDate,
         plannedQuantity: 0,
         actualPlanted: 0,
         harvestQuantity: 0,
-        status: "Đang hoạt động" as SeasonStatus,
+        status: "Đang trồng" as any,
       };
     });
-    setPlots((prev) => [...prev, ...newAssignments]);
-    setSelectedNewPlots([]);
-    setNewPlotDetails({});
-    setAddPlotOpen(false);
+    onCreate({ ...formData, plots });
+  };
+
+  const togglePlot = (id: string) => setSelectedPlots((p) => p.includes(id) ? p.filter((x) => x !== id) : [...p, id]);
+  const updatePlotDetail = (id: string, field: keyof typeof defaultDetail, value: any) =>
+    setPlotDetails((p) => ({ ...p, [id]: { ...(p[id] || defaultDetail), [field]: value } }));
+  const applyToAll = (sourceId: string) => {
+    const src = plotDetails[sourceId] || defaultDetail;
+    const n: typeof plotDetails = {};
+    selectedPlots.forEach((id) => { n[id] = { ...src }; });
+    setPlotDetails(n);
   };
 
   return (
     <div className="flex flex-col gap-6 p-6">
       <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-[#115e59] text-2xl font-semibold mb-2">Tạo Mùa Vụ Mới</h1>
+          <div className="flex items-center gap-2">
+            {[{ n: 1, label: "Bước 1: Thông tin" }, { n: 2, label: "Bước 2: Chọn luống" }].map((s) => (
+              <span key={s.n} className={`px-3 py-1 rounded text-sm font-medium ${step === s.n ? "bg-[#009689] text-white" : "bg-[#f1f5f9] text-[#62748e]"}`}>{s.label}</span>
+            ))}
+          </div>
+        </div>
+        <Link to="/seasons" className="px-4 py-2 bg-[#f1f5f9] text-[#314158] rounded-lg hover:bg-[#e2e8f0] transition-colors flex items-center gap-2">
+          <ArrowLeft className="w-4 h-4" /> Quay lại
+        </Link>
+      </div>
+
+      {step === 1 && (
+        <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-6 max-w-2xl">
+          <h3 className="text-sm font-bold text-[#62748e] uppercase mb-4">📝 Thông tin mùa vụ</h3>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-[#115e59] mb-2">Tên mùa vụ *</label>
+                <input value={formData.name} onChange={(e) => setFormData((p) => ({ ...p, name: e.target.value }))}
+                  className="w-full px-3 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]" placeholder="Mùa Hè 2025" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-[#115e59] mb-2">Trang trại</label>
+                <FarmSelect value={formData.farm} onChange={(v) => setFormData((p) => ({ ...p, farm: v }))} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-[#115e59] mb-2">Ngày bắt đầu</label>
+                <input type="date" value={formData.startDate} onChange={(e) => setFormData((p) => ({ ...p, startDate: e.target.value }))}
+                  className="w-full px-3 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-[#115e59] mb-2">Ngày kết thúc</label>
+                <input type="date" value={formData.endDate} onChange={(e) => setFormData((p) => ({ ...p, endDate: e.target.value }))}
+                  className="w-full px-3 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]" />
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-[#115e59] mb-2">Trạng thái</label>
+              <select value={formData.status} onChange={(e) => setFormData((p) => ({ ...p, status: e.target.value as SeasonStatus }))}
+                className="w-full px-3 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] bg-white">
+                <option value="Sắp diễn ra">Sắp diễn ra</option>
+                <option value="Đang hoạt động">Đang hoạt động</option>
+                <option value="Đã kết thúc">Đã kết thúc</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-[#115e59] mb-2">Mô tả</label>
+              <textarea value={formData.description} onChange={(e) => setFormData((p) => ({ ...p, description: e.target.value }))}
+                rows={3} className="w-full px-3 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] resize-none" placeholder="Mô tả mùa vụ..." />
+            </div>
+          </div>
+          <div className="mt-6 flex justify-end">
+            <button onClick={() => setStep(2)} disabled={!formData.name}
+              className="px-6 py-2 bg-[#009689] text-white rounded-lg hover:bg-[#007f75] transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+              Tiếp theo
+            </button>
+          </div>
+        </div>
+      )}
+
+      {step === 2 && (
+        <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-6">
+          <h3 className="text-sm font-bold text-[#62748e] uppercase mb-2">🌱 Chọn luống</h3>
+          <p className="text-xs text-[#62748e] mb-4">
+            Tên luống theo quy ước <span className="font-mono font-semibold text-[#009689]">[Khu]-[NN]</span> — ví dụ: <span className="font-mono">A-01</span>, <span className="font-mono">B-12</span>
+          </p>
+          <div className="space-y-3">
+            {mockPlots.map((plot) => {
+              const isSelected = selectedPlots.includes(plot.id);
+              const details    = plotDetails[plot.id] || defaultDetail;
+              return (
+                <div key={plot.id} className={`border rounded-lg p-4 ${isSelected ? "border-[#009689] bg-[#f0fdfa]" : "border-[#e2e8f0]"}`}>
+                  <div className="flex items-center gap-3 mb-3">
+                    <input type="checkbox" checked={isSelected} onChange={() => togglePlot(plot.id)} className="w-4 h-4 accent-[#009689]" />
+                    <div>
+                      <div className="font-mono font-semibold text-[#115e59]">{plot.name}</div>
+                      <div className="text-xs text-[#62748e]">{plot.area} • {plot.size}</div>
+                    </div>
+                  </div>
+                  {isSelected && (
+                    <div className="grid grid-cols-3 gap-3 pl-7">
+                      <div>
+                        <label className="block text-xs text-[#62748e] mb-1">Cây trồng</label>
+                        <select value={details.crop} onChange={(e) => updatePlotDetail(plot.id, "crop", e.target.value as CropType)}
+                          className="w-full px-2 py-1.5 text-sm border border-[#cad5e2] rounded focus:outline-none focus:ring-2 focus:ring-[#009689] bg-white">
+                          {cropOptions.map((c) => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-[#62748e] mb-1">Ngày gieo</label>
+                        <input type="date" value={details.sowingDate} onChange={(e) => updatePlotDetail(plot.id, "sowingDate", e.target.value)}
+                          className="w-full px-2 py-1.5 text-sm border border-[#cad5e2] rounded focus:outline-none focus:ring-2 focus:ring-[#009689]" />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-[#62748e] mb-1">Ngày thu hoạch</label>
+                        <input type="date" value={details.harvestDate} onChange={(e) => updatePlotDetail(plot.id, "harvestDate", e.target.value)}
+                          className="w-full px-2 py-1.5 text-sm border border-[#cad5e2] rounded focus:outline-none focus:ring-2 focus:ring-[#009689]" />
+                      </div>
+                      {selectedPlots.length > 1 && (
+                        <div className="col-span-3">
+                          <button onClick={() => applyToAll(plot.id)} className="text-xs text-[#009689] hover:underline">Áp dụng cho tất cả luống</button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <div className="mt-6 flex justify-between">
+            <button onClick={() => setStep(1)} className="px-6 py-2 bg-[#f1f5f9] text-[#314158] rounded-lg hover:bg-[#e2e8f0] transition-colors flex items-center gap-2">
+              <ArrowLeft className="w-4 h-4" /> Quay lại
+            </button>
+            <button onClick={handleStep2Submit} disabled={selectedPlots.length === 0}
+              className="px-6 py-2 bg-[#009689] text-white rounded-lg hover:bg-[#007f75] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
+              <CheckCircle className="w-4 h-4" /> Tạo mùa vụ
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Edit View ────────────────────────────────────────────────────────────────
+
+const availablePlotsForFarm = [
+  { id: "A-03", name: "A-03", area: "Khu A (Phía Bắc)", size: "50 m²" },
+  { id: "A-04", name: "A-04", area: "Khu A (Phía Bắc)", size: "45 m²" },
+  { id: "B-02", name: "B-02", area: "Khu B (Phía Nam)", size: "60 m²" },
+  { id: "C-02", name: "C-02", area: "Khu C",            size: "55 m²" },
+  { id: "D-01", name: "D-01", area: "Khu D",            size: "70 m²" },
+];
+
+const cropOptions: CropType[] = ["Bắp Cải Trắng", "Bắp Cải Tím", "Bắp Cải Xoăn"];
+
+function EditSeasonView({ season, onUpdate }: { season: Season; onUpdate: (s: Season) => void }) {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+
+  const [formData, setFormData] = useState({
+    name: season.name, farm: season.farm,
+    startDate: season.startDate, endDate: season.endDate,
+    status: season.status, description: season.description,
+  });
+  const [plots, setPlots] = useState<PlotAssignmentV2[]>(season.plots.map(toV2));
+  const [deletePlotDialogOpen, setDeletePlotDialogOpen] = useState(false);
+  const [plotToDelete, setPlotToDelete]                 = useState<string | null>(null);
+  const [formErrors, setFormErrors]                     = useState<Record<string, string>>({});
+  const [plotErrors, setPlotErrors]                     = useState<Record<string, Record<string, string>>>({});
+  const [submitAttempted, setSubmitAttempted]           = useState(false);
+  const [addPlotOpen, setAddPlotOpen]                   = useState(false);
+  const [selectedNewPlots, setSelectedNewPlots]         = useState<string[]>([]);
+  const [newPlotDetails, setNewPlotDetails]             = useState<Record<string, { crop: CropType; sowingDate: string; harvestDate: string }>>({});
+
+  // Bulk-mark area as harvested
+  const [bulkConfirmArea, setBulkConfirmArea] = useState<string | null>(null);
+
+  useEffect(() => {
+    setFormData({ name: season.name, farm: season.farm, startDate: season.startDate, endDate: season.endDate, status: season.status, description: season.description });
+    setPlots(season.plots.map(toV2));
+    setFormErrors({}); setPlotErrors({}); setSubmitAttempted(false);
+  }, [season.id]);
+
+  const isSeasonEnded = formData.status === "Đã kết thúc";
+
+  const toDate = (s: string) => s ? new Date(s) : null;
+
+  const validateForm = (data: typeof formData, currentPlots: PlotAssignmentV2[]) => {
+    const errors: Record<string, string> = {};
+    const pErrors: Record<string, Record<string, string>> = {};
+    if (!data.name.trim()) errors.name = "Tên mùa vụ không được để trống";
+    const start = toDate(data.startDate); const end = toDate(data.endDate);
+    if (!data.startDate) errors.startDate = "Vui lòng chọn ngày bắt đầu";
+    if (!data.endDate) errors.endDate = "Vui lòng chọn ngày kết thúc";
+    else if (start && end && end <= start) errors.endDate = "Ngày kết thúc phải sau ngày bắt đầu";
+    if (data.status === "Đang hoạt động" && start && start > today) errors.startDate = "Mùa đang hoạt động: ngày bắt đầu không thể ở tương lai";
+    if (data.status === "Sắp diễn ra" && start && start < today) errors.status = 'Ngày bắt đầu đã qua — không thể để trạng thái "Sắp diễn ra"';
+    if (data.status === "Đã kết thúc" && end && end > today) errors.status = 'Ngày kết thúc chưa đến — không thể đánh dấu "Đã kết thúc"';
+    if (end) currentPlots.forEach((plot) => {
+      const hd = toDate(plot.harvestDate);
+      if (hd && hd > end) errors.endDate = errors.endDate || `Ngày kết thúc phải ≥ ngày thu hoạch của ${plot.plotName} (${formatDate(plot.harvestDate)})`;
+    });
+    currentPlots.forEach((plot) => {
+      const pe: Record<string, string> = {};
+      const sow = toDate(plot.sowingDate); const harv = toDate(plot.harvestDate);
+      if (plot.sowingDate && start && sow && sow < start) pe.sowingDate = "Ngày gieo phải sau ngày bắt đầu mùa vụ";
+      if (plot.sowingDate && end && sow && sow > end) pe.sowingDate = "Ngày gieo phải trước ngày kết thúc mùa vụ";
+      if (plot.harvestDate && sow && harv && harv <= sow) pe.harvestDate = "Ngày thu hoạch phải sau ngày gieo";
+      if (plot.harvestDate && end && harv && harv > end) pe.harvestDate = "Ngày thu hoạch phải trước hoặc bằng ngày kết thúc mùa vụ";
+      if (Object.keys(pe).length > 0) pErrors[plot.plotId] = pe;
+    });
+    return { errors, pErrors };
+  };
+
+  const updateField = (field: keyof typeof formData, value: string) => {
+    const next = { ...formData, [field]: value }; setFormData(next);
+    if (submitAttempted) { const { errors, pErrors } = validateForm(next, plots); setFormErrors(errors); setPlotErrors(pErrors); }
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault(); setSubmitAttempted(true);
+    const { errors, pErrors } = validateForm(formData, plots); setFormErrors(errors); setPlotErrors(pErrors);
+    if (Object.keys(errors).length === 0 && Object.keys(pErrors).length === 0) {
+      onUpdate({ ...season, ...formData, plots: plots as unknown as PlotAssignment[] });
+    }
+  };
+
+  const updatePlot = (plotId: string, field: keyof PlotAssignmentV2, value: any) => {
+    const next = plots.map((p) => p.plotId === plotId ? { ...p, [field]: value } : p); setPlots(next);
+    if (submitAttempted) { const { errors, pErrors } = validateForm(formData, next); setFormErrors(errors); setPlotErrors(pErrors); }
+  };
+
+  // Bulk-mark all plots in an area as harvested
+  const bulkMarkAreaHarvested = (areaLabel: string) => {
+    setPlots((prev) => prev.map((p) => p.area === areaLabel ? { ...p, status: "Đã thu hoạch" as SeasonPlotStatus } : p));
+    setBulkConfirmArea(null);
+  };
+
+  const existingPlotIds = new Set(plots.map((p) => p.plotId));
+
+  const removePlot = (plotId: string) => {
+    const plot = plots.find((p) => p.plotId === plotId);
+    if (plot && plot.actualPlanted > 0) {
+      setFormErrors((p) => ({ ...p, plotRemove: `Không thể xóa ${plot.plotName} vì đã có dữ liệu trồng thực tế (${plot.actualPlanted} cây)` }));
+      return;
+    }
+    setPlotToDelete(plotId); setDeletePlotDialogOpen(true);
+  };
+  const confirmRemovePlot = () => {
+    if (plotToDelete) { setPlots((prev) => prev.filter((p) => p.plotId !== plotToDelete)); setPlotToDelete(null); setDeletePlotDialogOpen(false); }
+  };
+
+  const toggleNewPlot = (id: string) => setSelectedNewPlots((p) => p.includes(id) ? p.filter((x) => x !== id) : [...p, id]);
+  const updateNewPlotDetail = (id: string, field: "crop" | "sowingDate" | "harvestDate", value: any) =>
+    setNewPlotDetails((p) => ({ ...p, [id]: { ...(p[id] ?? { crop: "Bắp Cải Trắng" as CropType, sowingDate: "", harvestDate: "" }), [field]: value } }));
+
+  const confirmAddPlots = () => {
+    const newAssignments: PlotAssignmentV2[] = selectedNewPlots.map((plotId) => {
+      const meta    = availablePlotsForFarm.find((p) => p.id === plotId)!;
+      const details = newPlotDetails[plotId] ?? { crop: "Bắp Cải Trắng" as CropType, sowingDate: "", harvestDate: "" };
+      return { plotId, plotName: meta.name, area: meta.area, crop: details.crop, sowingDate: details.sowingDate, harvestDate: details.harvestDate, plannedQuantity: 0, actualPlanted: 0, harvestQuantity: 0, status: "Đang trồng" as SeasonPlotStatus };
+    });
+    setPlots((prev) => [...prev, ...newAssignments]);
+    setSelectedNewPlots([]); setNewPlotDetails({}); setAddPlotOpen(false);
+  };
+
+  // Group plots by area for the edit view
+  const plotsByArea = plots.reduce((acc, plot) => {
+    if (!acc[plot.area]) acc[plot.area] = [];
+    acc[plot.area].push(plot);
+    return acc;
+  }, {} as Record<string, PlotAssignmentV2[]>);
+
+  return (
+    <div className="flex flex-col gap-6 p-6">
+      <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Link
-            to="/seasons"
-            className="p-2 text-[#62748e] hover:text-[#115e59] transition-colors"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </Link>
+          <Link to="/seasons" className="p-2 text-[#62748e] hover:text-[#115e59] transition-colors"><ArrowLeft className="w-5 h-5" /></Link>
           <div>
-            <h1 className="text-[#115e59] text-2xl font-semibold">
-              Chỉnh sửa mùa vụ
-            </h1>
+            <h1 className="text-[#115e59] text-2xl font-semibold">Chỉnh sửa mùa vụ</h1>
             <p className="text-sm text-[#62748e] mt-1">{season.code}</p>
           </div>
         </div>
         <div className="flex items-center gap-3">
-          {submitAttempted &&
-            (Object.keys(formErrors).filter((k) => k !== "plotRemove").length >
-              0 ||
-              Object.keys(plotErrors).length > 0) && (
-              <span className="text-xs text-red-500 font-medium">
-                ⚠ Còn{" "}
-                {Object.keys(formErrors).filter((k) => k !== "plotRemove")
-                  .length + Object.keys(plotErrors).length}{" "}
-                lỗi cần sửa
-              </span>
-            )}
-          <Link
-            to="/seasons"
-            className="px-4 py-2 bg-[#f1f5f9] text-[#314158] rounded-lg hover:bg-[#e2e8f0] transition-colors"
-          >
-            Hủy bỏ
-          </Link>
-          <button
-            onClick={handleSubmit}
-            className="px-6 py-2 bg-[#009689] text-white rounded-lg hover:bg-[#007f75] transition-colors"
-          >
-            Lưu thay đổi
-          </button>
+          {submitAttempted && (Object.keys(formErrors).filter((k) => k !== "plotRemove").length > 0 || Object.keys(plotErrors).length > 0) && (
+            <span className="text-xs text-red-500 font-medium">
+              ⚠ Còn {Object.keys(formErrors).filter((k) => k !== "plotRemove").length + Object.keys(plotErrors).length} lỗi cần sửa
+            </span>
+          )}
+          <Link to="/seasons" className="px-4 py-2 bg-[#f1f5f9] text-[#314158] rounded-lg hover:bg-[#e2e8f0] transition-colors">Hủy bỏ</Link>
+          <button onClick={handleSubmit} className="px-6 py-2 bg-[#009689] text-white rounded-lg hover:bg-[#007f75] transition-colors">Lưu thay đổi</button>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Info form */}
         <div className="lg:col-span-1 bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-6">
-          <h3 className="text-sm font-bold text-[#62748e] uppercase mb-4">
-            📝 Thông tin chung
-          </h3>
+          <h3 className="text-sm font-bold text-[#62748e] uppercase mb-4">📝 Thông tin chung</h3>
           <div className="space-y-4">
-            {/* plotRemove error toast */}
             {formErrors.plotRemove && (
               <div className="px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-600 flex items-start gap-2">
                 <span className="shrink-0 mt-0.5">⚠️</span>
                 <span>{formErrors.plotRemove}</span>
-                <button
-                  className="ml-auto text-red-400 hover:text-red-600"
-                  onClick={() =>
-                    setFormErrors((p) => {
-                      const n = { ...p };
-                      delete n.plotRemove;
-                      return n;
-                    })
-                  }
-                >
-                  ×
-                </button>
+                <button className="ml-auto text-red-400 hover:text-red-600" onClick={() => setFormErrors((p) => { const n = { ...p }; delete n.plotRemove; return n; })}>×</button>
               </div>
             )}
             <div>
-              <label className="block text-sm font-medium text-[#115e59] mb-2">
-                Tên mùa vụ
-              </label>
-              <input
-                value={formData.name}
-                onChange={(e) => updateField("name", e.target.value)}
-                placeholder="Mùa Hè 2025"
-                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] ${formErrors.name ? "border-red-400 bg-red-50" : "border-[#cad5e2]"}`}
-              />
-              {formErrors.name && (
-                <p className="text-xs text-red-500 mt-1">{formErrors.name}</p>
-              )}
+              <label className="block text-sm font-medium text-[#115e59] mb-2">Tên mùa vụ</label>
+              <input value={formData.name} onChange={(e) => updateField("name", e.target.value)} placeholder="Mùa Hè 2025"
+                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] ${formErrors.name ? "border-red-400 bg-red-50" : "border-[#cad5e2]"}`} />
+              {formErrors.name && <p className="text-xs text-red-500 mt-1">{formErrors.name}</p>}
             </div>
             <div>
-              <label className="block text-sm font-medium text-[#115e59] mb-2">
-                Trang trại
-              </label>
-              <FarmSelect
-                value={formData.farm}
-                onChange={(v) => updateField("farm", v)}
-                placeholder="Chọn trang trại"
-              />
+              <label className="block text-sm font-medium text-[#115e59] mb-2">Trang trại</label>
+              <FarmSelect value={formData.farm} onChange={(v) => updateField("farm", v)} />
             </div>
             <div>
               <label className="block text-sm font-medium text-[#115e59] mb-2">
                 Ngày bắt đầu
-                {formData.status === "Đang hoạt động" && (
-                  <span className="ml-2 text-xs font-normal text-amber-600">
-                    (Mùa đang chạy — thận trọng khi sửa)
-                  </span>
-                )}
+                {formData.status === "Đang hoạt động" && <span className="ml-2 text-xs font-normal text-amber-600">(Mùa đang chạy — thận trọng)</span>}
               </label>
-              <input
-                type="date"
-                value={formData.startDate}
-                onChange={(e) => updateField("startDate", e.target.value)}
-                disabled={isSeasonEnded}
-                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] disabled:bg-[#f8fafc] disabled:text-[#90a1b9] disabled:cursor-not-allowed ${formErrors.startDate ? "border-red-400 bg-red-50" : "border-[#cad5e2]"}`}
-              />
-              {formErrors.startDate && (
-                <p className="text-xs text-red-500 mt-1">
-                  {formErrors.startDate}
-                </p>
-              )}
+              <input type="date" value={formData.startDate} onChange={(e) => updateField("startDate", e.target.value)} disabled={isSeasonEnded}
+                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] disabled:bg-[#f8fafc] disabled:cursor-not-allowed ${formErrors.startDate ? "border-red-400 bg-red-50" : "border-[#cad5e2]"}`} />
+              {formErrors.startDate && <p className="text-xs text-red-500 mt-1">{formErrors.startDate}</p>}
             </div>
             <div>
-              <label className="block text-sm font-medium text-[#115e59] mb-2">
-                Ngày kết thúc
-              </label>
-              <input
-                type="date"
-                value={formData.endDate}
-                onChange={(e) => updateField("endDate", e.target.value)}
-                min={formData.startDate || undefined}
-                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] ${formErrors.endDate ? "border-red-400 bg-red-50" : "border-[#cad5e2]"}`}
-              />
-              {formErrors.endDate && (
-                <p className="text-xs text-red-500 mt-1">
-                  {formErrors.endDate}
-                </p>
-              )}
+              <label className="block text-sm font-medium text-[#115e59] mb-2">Ngày kết thúc</label>
+              <input type="date" value={formData.endDate} onChange={(e) => updateField("endDate", e.target.value)} min={formData.startDate || undefined}
+                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] ${formErrors.endDate ? "border-red-400 bg-red-50" : "border-[#cad5e2]"}`} />
+              {formErrors.endDate && <p className="text-xs text-red-500 mt-1">{formErrors.endDate}</p>}
             </div>
             <div>
-              <label className="block text-sm font-medium text-[#115e59] mb-2">
-                Trạng thái
-              </label>
-              <select
-                value={formData.status}
-                onChange={(e) => updateField("status", e.target.value)}
-                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] bg-white ${formErrors.status ? "border-red-400 bg-red-50" : "border-[#cad5e2]"}`}
-              >
+              <label className="block text-sm font-medium text-[#115e59] mb-2">Trạng thái mùa vụ</label>
+              <select value={formData.status} onChange={(e) => updateField("status", e.target.value)}
+                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] bg-white ${formErrors.status ? "border-red-400 bg-red-50" : "border-[#cad5e2]"}`}>
                 <option value="Sắp diễn ra">Sắp diễn ra</option>
                 <option value="Đang hoạt động">Đang hoạt động</option>
                 <option value="Đã kết thúc">Đã kết thúc</option>
               </select>
-              {formErrors.status && (
-                <p className="text-xs text-red-500 mt-1">{formErrors.status}</p>
-              )}
+              {formErrors.status && <p className="text-xs text-red-500 mt-1">{formErrors.status}</p>}
             </div>
             <div>
-              <label className="block text-sm font-medium text-[#115e59] mb-2">
-                Mô tả
-              </label>
-              <textarea
-                value={formData.description}
-                onChange={(e) => updateField("description", e.target.value)}
-                rows={3}
-                className="w-full px-3 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] resize-none"
-              />
+              <label className="block text-sm font-medium text-[#115e59] mb-2">Mô tả</label>
+              <textarea value={formData.description} onChange={(e) => updateField("description", e.target.value)} rows={3}
+                className="w-full px-3 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] resize-none" />
             </div>
           </div>
         </div>
 
-        {/* Plots table */}
+        {/* Plots — grouped by area */}
         <div className="lg:col-span-2 bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-bold text-[#62748e] uppercase">
-              🌱 Luống trong mùa vụ
-            </h3>
-            {/* Add plot button — disabled when season ended */}
-            <button
-              onClick={() => setAddPlotOpen(true)}
-              disabled={isSeasonEnded}
-              title={
-                isSeasonEnded
-                  ? "Mùa vụ đã kết thúc, không thể thêm luống"
-                  : "Thêm luống vào mùa vụ"
-              }
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-[#f0fdfa] text-[#009689] border border-[#009689] hover:bg-[#ccfbf1] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              <PlusCircle className="w-4 h-4" />
-              Thêm luống
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-sm font-bold text-[#62748e] uppercase">🌱 Luống trong mùa vụ</h3>
+            <button onClick={() => setAddPlotOpen(true)} disabled={isSeasonEnded}
+              title={isSeasonEnded ? "Mùa vụ đã kết thúc" : "Thêm luống"}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-[#f0fdfa] text-[#009689] border border-[#009689] hover:bg-[#ccfbf1] transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+              <PlusCircle className="w-4 h-4" /> Thêm luống
             </button>
           </div>
 
-          {/* Legend for locked fields */}
+          {/* Naming convention hint */}
+          <div className="mb-3 text-xs text-[#62748e]">
+            Quy ước tên luống: <span className="font-mono font-semibold text-[#009689]">[Khu]-[NN]</span> — ví dụ: <span className="font-mono">A-01</span>, <span className="font-mono">B-12</span>
+          </div>
+
           <div className="flex flex-wrap items-center gap-3 mb-4 text-xs text-[#90a1b9]">
-            <span className="flex items-center gap-1">
-              <Lock className="w-3 h-3" /> Sản lượng thu hoạch mở khóa khi qua
-              ngày thu hoạch của luống
-            </span>
-            {isSeasonEnded && (
-              <span className="text-amber-600 font-medium">
-                • Mùa vụ đã kết thúc: không thể chỉnh sửa
-              </span>
-            )}
+            <span className="flex items-center gap-1"><Lock className="w-3 h-3" /> Sản lượng mở khóa khi qua ngày thu hoạch</span>
+            {isSeasonEnded && <span className="text-amber-600 font-medium">• Mùa vụ đã kết thúc: không thể chỉnh sửa</span>}
           </div>
 
           {plots.length === 0 ? (
-            <div className="text-center py-8 text-[#62748e]">
-              Chưa có luống nào — bấm "Thêm luống" để bắt đầu
-            </div>
+            <div className="text-center py-8 text-[#62748e]">Chưa có luống — bấm "Thêm luống" để bắt đầu</div>
           ) : (
-            <div className="space-y-3">
-              {plots.map((plot) => {
-                const harvestUnlocked = isHarvestUnlocked(plot.harvestDate);
-                const pe = plotErrors[plot.plotId] || {};
-                const hasPlotData = plot.actualPlanted > 0;
+            <div className="space-y-4">
+              {Object.entries(plotsByArea).map(([areaLabel, areaPlots]) => {
+                const allHarvested = areaPlots.every((p) => p.status === "Đã thu hoạch");
+                const someHarvested = areaPlots.some((p) => p.status === "Đã thu hoạch");
+
                 return (
-                  <div
-                    key={plot.plotId}
-                    className={`border rounded-lg p-4 transition-colors ${Object.keys(pe).length > 0 ? "border-red-300 bg-red-50/30" : "border-[#e2e8f0] bg-[#fafcff] hover:border-[#cad5e2]"}`}
-                  >
-                    {/* Header row */}
-                    <div className="flex items-start justify-between mb-3">
-                      <div>
-                        <span className="font-semibold text-[#115e59] text-sm">
-                          {plot.plotName}
-                        </span>
-                        <span className="ml-2 text-xs text-[#62748e]">
-                          {plot.area}
-                        </span>
-                      </div>
-                      <button
-                        onClick={() => removePlot(plot.plotId)}
-                        disabled={isSeasonEnded || hasPlotData}
-                        className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                        title={
-                          hasPlotData
-                            ? `Không thể xóa: luống đã có ${plot.actualPlanted} cây trồng thực tế`
-                            : "Xóa luống khỏi mùa vụ"
-                        }
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-
-                    {/* Fields grid */}
-                    <div className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
-                      {/* Cây trồng */}
-                      <div>
-                        <label className="block text-xs font-medium text-[#62748e] mb-1">
-                          Cây trồng
-                        </label>
-                        <select
-                          value={plot.crop}
-                          onChange={(e) =>
-                            updatePlot(
-                              plot.plotId,
-                              "crop",
-                              e.target.value as CropType,
-                            )
-                          }
-                          disabled={isSeasonEnded}
-                          className="w-full px-2 py-1.5 text-sm border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] bg-white disabled:bg-[#f8fafc] disabled:text-[#90a1b9] disabled:cursor-not-allowed"
-                        >
-                          {cropOptions.map((c) => (
-                            <option key={c} value={c}>
-                              {c}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      {/* Ngày gieo */}
-                      <div>
-                        <label className="block text-xs font-medium text-[#62748e] mb-1">
-                          Ngày gieo
-                        </label>
-                        <input
-                          type="date"
-                          value={plot.sowingDate}
-                          min={formData.startDate || undefined}
-                          max={formData.endDate || undefined}
-                          onChange={(e) =>
-                            updatePlot(
-                              plot.plotId,
-                              "sowingDate",
-                              e.target.value,
-                            )
-                          }
-                          disabled={isSeasonEnded}
-                          className={`w-full px-2 py-1.5 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] disabled:bg-[#f8fafc] disabled:text-[#90a1b9] disabled:cursor-not-allowed ${pe.sowingDate ? "border-red-400" : "border-[#cad5e2]"}`}
-                        />
-                        {pe.sowingDate && (
-                          <p className="text-xs text-red-500 mt-1">
-                            {pe.sowingDate}
-                          </p>
+                  <div key={areaLabel}>
+                    {/* Area header with bulk action */}
+                    <div className="flex items-center justify-between px-3 py-2 bg-[#f8fafc] rounded-t-lg border border-[#e2e8f0]">
+                      <span className="text-sm font-semibold text-[#115e59]">{areaLabel}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-[#62748e]">{areaPlots.filter((p) => p.status === "Đã thu hoạch").length}/{areaPlots.length} đã thu hoạch</span>
+                        {!isSeasonEnded && !allHarvested && (
+                          <button
+                            onClick={() => setBulkConfirmArea(areaLabel)}
+                            className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-[#008236] bg-[#dcfce7] rounded-lg hover:bg-[#bbf7d0] transition-colors"
+                            title="Đánh dấu toàn khu đã thu hoạch"
+                          >
+                            <CheckSquare className="w-3.5 h-3.5" />
+                            Đánh dấu cả khu đã thu hoạch
+                          </button>
                         )}
-                      </div>
-
-                      {/* Ngày thu hoạch */}
-                      <div>
-                        <label className="block text-xs font-medium text-[#62748e] mb-1">
-                          Ngày thu hoạch
-                        </label>
-                        <input
-                          type="date"
-                          value={plot.harvestDate}
-                          min={
-                            plot.sowingDate || formData.startDate || undefined
-                          }
-                          max={formData.endDate || undefined}
-                          onChange={(e) =>
-                            updatePlot(
-                              plot.plotId,
-                              "harvestDate",
-                              e.target.value,
-                            )
-                          }
-                          disabled={isSeasonEnded}
-                          className={`w-full px-2 py-1.5 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] disabled:bg-[#f8fafc] disabled:text-[#90a1b9] disabled:cursor-not-allowed ${pe.harvestDate ? "border-red-400" : "border-[#cad5e2]"}`}
-                        />
-                        {pe.harvestDate && (
-                          <p className="text-xs text-red-500 mt-1">
-                            {pe.harvestDate}
-                          </p>
+                        {allHarvested && (
+                          <span className="px-2.5 py-1 text-xs font-medium text-[#008236] bg-[#dcfce7] rounded-lg">✓ Cả khu đã thu hoạch</span>
                         )}
-                      </div>
-
-                      {/* SL thực tế */}
-                      <div>
-                        <label className="block text-xs font-medium text-[#62748e] mb-1">
-                          SL thực tế (cây)
-                        </label>
-                        <input
-                          type="number"
-                          value={plot.actualPlanted ?? 0}
-                          onChange={(e) =>
-                            updatePlot(
-                              plot.plotId,
-                              "actualPlanted",
-                              parseInt(e.target.value) || 0,
-                            )
-                          }
-                          disabled={isSeasonEnded}
-                          className="w-full px-2 py-1.5 text-sm border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] disabled:bg-[#f8fafc] disabled:text-[#90a1b9] disabled:cursor-not-allowed"
-                        />
                       </div>
                     </div>
 
-                    {/* Sản lượng thu hoạch — full width row, only shown when unlocked or informational */}
-                    <div className="mt-3 pt-3 border-t border-[#e2e8f0]">
-                      <label className="block text-xs font-medium text-[#62748e] mb-1">
-                        Sản lượng thu hoạch (kg)
-                      </label>
-                      {harvestUnlocked ? (
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="number"
-                            value={
-                              plot.harvestQuantity === 0
-                                ? ""
-                                : plot.harvestQuantity
-                            }
-                            onChange={(e) =>
-                              updatePlot(
-                                plot.plotId,
-                                "harvestQuantity",
-                                parseInt(e.target.value) || 0,
-                              )
-                            }
-                            placeholder="Nhập sản lượng thu hoạch..."
-                            className="w-48 px-2 py-1.5 text-sm border border-[#009689] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                          />
-                          <span className="text-xs text-[#009689] font-medium">
-                            ✓ Đã đến ngày thu hoạch — có thể cập nhật
-                          </span>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-1.5 text-sm text-[#90a1b9]">
-                          <Lock className="w-3.5 h-3.5 shrink-0" />
-                          <span>
-                            Chưa thu hoạch
-                            {plot.harvestDate && (
-                              <span className="ml-1 text-xs">
-                                (mở khóa từ {formatDate(plot.harvestDate)})
-                              </span>
-                            )}
-                          </span>
-                        </div>
-                      )}
+                    {/* Plots in this area */}
+                    <div className="space-y-2 border border-t-0 border-[#e2e8f0] rounded-b-lg p-3">
+                      {areaPlots.map((plot) => {
+                        const harvestUnlocked = isHarvestUnlocked(plot.harvestDate);
+                        const pe = plotErrors[plot.plotId] || {};
+                        const hasPlotData = plot.actualPlanted > 0;
+                        return (
+                          <div key={plot.plotId}
+                            className={`border rounded-lg p-3 transition-colors ${Object.keys(pe).length > 0 ? "border-red-300 bg-red-50/30" : "border-[#e2e8f0] bg-white hover:border-[#cad5e2]"}`}>
+                            <div className="flex items-start justify-between mb-2">
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono font-semibold text-[#115e59] text-sm">{plot.plotName}</span>
+                                {/* Per-plot status toggle */}
+                                <button
+                                  onClick={() => updatePlot(plot.plotId, "status", plot.status === "Đang trồng" ? "Đã thu hoạch" : "Đang trồng")}
+                                  disabled={isSeasonEnded}
+                                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium transition-colors disabled:cursor-not-allowed ${plotStatusConfig[plot.status]} hover:opacity-80`}
+                                  title="Nhấn để đổi trạng thái"
+                                >
+                                  {plot.status}
+                                </button>
+                              </div>
+                              <button onClick={() => removePlot(plot.plotId)} disabled={isSeasonEnded || hasPlotData}
+                                className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                title={hasPlotData ? `Không thể xóa: luống đã có ${plot.actualPlanted} cây` : "Xóa luống"}>
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-4">
+                              <div>
+                                <label className="block text-xs font-medium text-[#62748e] mb-1">Cây trồng</label>
+                                <select value={plot.crop} onChange={(e) => updatePlot(plot.plotId, "crop", e.target.value as CropType)} disabled={isSeasonEnded}
+                                  className="w-full px-2 py-1.5 text-sm border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] bg-white disabled:bg-[#f8fafc] disabled:cursor-not-allowed">
+                                  {cropOptions.map((c) => <option key={c} value={c}>{c}</option>)}
+                                </select>
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-[#62748e] mb-1">Ngày gieo</label>
+                                <input type="date" value={plot.sowingDate} min={formData.startDate || undefined} max={formData.endDate || undefined}
+                                  onChange={(e) => updatePlot(plot.plotId, "sowingDate", e.target.value)} disabled={isSeasonEnded}
+                                  className={`w-full px-2 py-1.5 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] disabled:bg-[#f8fafc] disabled:cursor-not-allowed ${pe.sowingDate ? "border-red-400" : "border-[#cad5e2]"}`} />
+                                {pe.sowingDate && <p className="text-xs text-red-500 mt-1">{pe.sowingDate}</p>}
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-[#62748e] mb-1">Ngày thu hoạch</label>
+                                <input type="date" value={plot.harvestDate} min={plot.sowingDate || formData.startDate || undefined} max={formData.endDate || undefined}
+                                  onChange={(e) => updatePlot(plot.plotId, "harvestDate", e.target.value)} disabled={isSeasonEnded}
+                                  className={`w-full px-2 py-1.5 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] disabled:bg-[#f8fafc] disabled:cursor-not-allowed ${pe.harvestDate ? "border-red-400" : "border-[#cad5e2]"}`} />
+                                {pe.harvestDate && <p className="text-xs text-red-500 mt-1">{pe.harvestDate}</p>}
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-[#62748e] mb-1">SL thực tế (cây)</label>
+                                <input type="number" value={plot.actualPlanted ?? 0} onChange={(e) => updatePlot(plot.plotId, "actualPlanted", parseInt(e.target.value) || 0)} disabled={isSeasonEnded}
+                                  className="w-full px-2 py-1.5 text-sm border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] disabled:bg-[#f8fafc] disabled:cursor-not-allowed" />
+                              </div>
+                            </div>
+
+                            <div className="mt-2 pt-2 border-t border-[#e2e8f0]">
+                              <label className="block text-xs font-medium text-[#62748e] mb-1">Sản lượng thu hoạch (kg)</label>
+                              {harvestUnlocked ? (
+                                <div className="flex items-center gap-2">
+                                  <input type="number" value={plot.harvestQuantity === 0 ? "" : plot.harvestQuantity}
+                                    onChange={(e) => updatePlot(plot.plotId, "harvestQuantity", parseInt(e.target.value) || 0)}
+                                    placeholder="Nhập sản lượng..." className="w-40 px-2 py-1.5 text-sm border border-[#009689] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]" />
+                                  <span className="text-xs text-[#009689] font-medium">✓ Đã đến ngày thu hoạch</span>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-1.5 text-sm text-[#90a1b9]">
+                                  <Lock className="w-3.5 h-3.5 shrink-0" />
+                                  <span>Chưa thu hoạch{plot.harvestDate && <span className="ml-1 text-xs">(mở khóa từ {formatDate(plot.harvestDate)})</span>}</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 );
@@ -1570,169 +1099,66 @@ function EditSeasonView({
         </div>
       </div>
 
-      {/* ========== ADD PLOT PANEL (modal-like overlay card) ========== */}
+      {/* Add Plot Panel */}
       {addPlotOpen && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col">
             <div className="flex items-center justify-between p-6 border-b border-[#e2e8f0]">
-              <h2 className="text-lg font-semibold text-[#115e59]">
-                Thêm luống vào mùa vụ
-              </h2>
-              <button
-                onClick={() => {
-                  setAddPlotOpen(false);
-                  setSelectedNewPlots([]);
-                  setNewPlotDetails({});
-                }}
-                className="text-[#62748e] hover:text-[#115e59] text-xl font-bold leading-none"
-              >
-                ×
-              </button>
+              <div>
+                <h2 className="text-lg font-semibold text-[#115e59]">Thêm luống vào mùa vụ</h2>
+                <p className="text-xs text-[#62748e] mt-0.5">Tên luống: <span className="font-mono font-semibold text-[#009689]">[Khu]-[NN]</span> — ví dụ A-03, B-02</p>
+              </div>
+              <button onClick={() => { setAddPlotOpen(false); setSelectedNewPlots([]); setNewPlotDetails({}); }} className="text-[#62748e] hover:text-[#115e59] text-xl font-bold">×</button>
             </div>
-
             <div className="overflow-y-auto p-6 space-y-3 flex-1">
-              {addablePlots.length === 0 ? (
-                <p className="text-center text-[#62748e] py-8">
-                  Không có luống nào trong trang trại
-                </p>
-              ) : (
-                addablePlots.map((plot) => {
-                  const isSelected = selectedNewPlots.includes(plot.id);
-                  const alreadyInSeason = existingPlotIds.has(plot.id);
-                  const details = newPlotDetails[plot.id] || {
-                    crop: "Bắp Cải Trắng" as CropType,
-                    sowingDate: "",
-                    harvestDate: "",
-                    plannedQuantity: 0,
-                  };
-                  return (
-                    <div
-                      key={plot.id}
-                      className={`border rounded-lg p-4 transition-colors ${
-                        alreadyInSeason
-                          ? "border-[#e2e8f0] bg-[#f8fafc] opacity-60"
-                          : isSelected
-                            ? "border-[#009689] bg-[#f0fdfa]"
-                            : "border-[#e2e8f0]"
-                      }`}
-                    >
-                      <div className="flex items-center gap-3 mb-2">
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          disabled={alreadyInSeason}
-                          onChange={() =>
-                            !alreadyInSeason && toggleNewPlot(plot.id)
-                          }
-                          className="w-4 h-4 accent-[#009689] disabled:cursor-not-allowed"
-                        />
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium text-[#115e59] text-sm">
-                              {plot.name}
-                            </span>
-                            {alreadyInSeason && (
-                              <span className="px-2 py-0.5 rounded text-xs font-medium bg-[#e2e8f0] text-[#62748e]">
-                                Đã có trong mùa vụ
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-xs text-[#62748e]">
-                            {plot.area} • {plot.size}
-                          </div>
+              {availablePlotsForFarm.map((plot) => {
+                const isSelected     = selectedNewPlots.includes(plot.id);
+                const alreadyInSeason = existingPlotIds.has(plot.id);
+                const details        = newPlotDetails[plot.id] || { crop: "Bắp Cải Trắng" as CropType, sowingDate: "", harvestDate: "" };
+                return (
+                  <div key={plot.id} className={`border rounded-lg p-4 transition-colors ${alreadyInSeason ? "border-[#e2e8f0] bg-[#f8fafc] opacity-60" : isSelected ? "border-[#009689] bg-[#f0fdfa]" : "border-[#e2e8f0]"}`}>
+                    <div className="flex items-center gap-3 mb-2">
+                      <input type="checkbox" checked={isSelected} disabled={alreadyInSeason} onChange={() => !alreadyInSeason && toggleNewPlot(plot.id)} className="w-4 h-4 accent-[#009689] disabled:cursor-not-allowed" />
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono font-semibold text-[#115e59] text-sm">{plot.name}</span>
+                          {alreadyInSeason && <span className="px-2 py-0.5 rounded text-xs font-medium bg-[#e2e8f0] text-[#62748e]">Đã có trong mùa vụ</span>}
+                        </div>
+                        <div className="text-xs text-[#62748e]">{plot.area} • {plot.size}</div>
+                      </div>
+                    </div>
+                    {isSelected && !alreadyInSeason && (
+                      <div className="grid grid-cols-3 gap-3 pl-7 mt-3">
+                        <div>
+                          <label className="block text-xs text-[#62748e] mb-1">Cây trồng</label>
+                          <select value={details.crop} onChange={(e) => updateNewPlotDetail(plot.id, "crop", e.target.value as CropType)}
+                            className="w-full px-2 py-1.5 text-sm border border-[#cad5e2] rounded focus:outline-none focus:ring-2 focus:ring-[#009689] bg-white">
+                            {cropOptions.map((c) => <option key={c} value={c}>{c}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs text-[#62748e] mb-1">Ngày gieo</label>
+                          <input type="date" value={details.sowingDate} onChange={(e) => updateNewPlotDetail(plot.id, "sowingDate", e.target.value)}
+                            className="w-full px-2 py-1.5 text-sm border border-[#cad5e2] rounded focus:outline-none focus:ring-2 focus:ring-[#009689]" />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-[#62748e] mb-1">Ngày thu hoạch</label>
+                          <input type="date" value={details.harvestDate} onChange={(e) => updateNewPlotDetail(plot.id, "harvestDate", e.target.value)}
+                            className="w-full px-2 py-1.5 text-sm border border-[#cad5e2] rounded focus:outline-none focus:ring-2 focus:ring-[#009689]" />
                         </div>
                       </div>
-                      {isSelected && !alreadyInSeason && (
-                        <div className="grid grid-cols-3 gap-3 pl-7 mt-3">
-                          <div>
-                            <label className="block text-xs text-[#62748e] mb-1">
-                              Cây trồng
-                            </label>
-                            <select
-                              value={details.crop}
-                              onChange={(e) =>
-                                updateNewPlotDetail(
-                                  plot.id,
-                                  "crop",
-                                  e.target.value as CropType,
-                                )
-                              }
-                              className="w-full px-2 py-1.5 text-sm border border-[#cad5e2] rounded focus:outline-none focus:ring-2 focus:ring-[#009689] bg-white"
-                            >
-                              {cropOptions.map((c) => (
-                                <option key={c} value={c}>
-                                  {c}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                          <div>
-                            <label className="block text-xs text-[#62748e] mb-1">
-                              Ngày gieo
-                            </label>
-                            <input
-                              type="date"
-                              value={details.sowingDate}
-                              onChange={(e) =>
-                                updateNewPlotDetail(
-                                  plot.id,
-                                  "sowingDate",
-                                  e.target.value,
-                                )
-                              }
-                              className="w-full px-2 py-1.5 text-sm border border-[#cad5e2] rounded focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs text-[#62748e] mb-1">
-                              Ngày thu hoạch
-                            </label>
-                            <input
-                              type="date"
-                              value={details.harvestDate}
-                              onChange={(e) =>
-                                updateNewPlotDetail(
-                                  plot.id,
-                                  "harvestDate",
-                                  e.target.value,
-                                )
-                              }
-                              className="w-full px-2 py-1.5 text-sm border border-[#cad5e2] rounded focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                            />
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })
-              )}
+                    )}
+                  </div>
+                );
+              })}
             </div>
-
             <div className="flex justify-between items-center p-6 border-t border-[#e2e8f0]">
-              <span className="text-sm text-[#62748e]">
-                Đã chọn: {selectedNewPlots.length} luống
-              </span>
+              <span className="text-sm text-[#62748e]">Đã chọn: {selectedNewPlots.length} luống</span>
               <div className="flex gap-3">
-                <button
-                  onClick={() => {
-                    setAddPlotOpen(false);
-                    setSelectedNewPlots([]);
-                    setNewPlotDetails({});
-                  }}
-                  className="px-4 py-2 rounded-lg text-sm font-medium text-[#62748e] hover:bg-[#f1f5f9] transition-colors"
-                >
-                  Hủy
-                </button>
-                <button
-                  onClick={confirmAddPlots}
-                  disabled={selectedNewPlots.length === 0}
-                  className="px-4 py-2 rounded-lg text-sm font-medium bg-[#009689] text-white hover:bg-[#007f75] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                >
-                  <Plus className="w-4 h-4" />
-                  Thêm{" "}
-                  {selectedNewPlots.length > 0
-                    ? `(${selectedNewPlots.length})`
-                    : ""}
+                <button onClick={() => { setAddPlotOpen(false); setSelectedNewPlots([]); setNewPlotDetails({}); }} className="px-4 py-2 rounded-lg text-sm font-medium text-[#62748e] hover:bg-[#f1f5f9] transition-colors">Hủy</button>
+                <button onClick={confirmAddPlots} disabled={selectedNewPlots.length === 0}
+                  className="px-4 py-2 rounded-lg text-sm font-medium bg-[#009689] text-white hover:bg-[#007f75] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
+                  <Plus className="w-4 h-4" /> Thêm {selectedNewPlots.length > 0 ? `(${selectedNewPlots.length})` : ""}
                 </button>
               </div>
             </div>
@@ -1740,33 +1166,43 @@ function EditSeasonView({
         </div>
       )}
 
-      {/* Remove plot dialog */}
-      <AlertDialog.Root
-        open={deletePlotDialogOpen}
-        onOpenChange={setDeletePlotDialogOpen}
-      >
+      {/* Bulk harvest confirm dialog */}
+      <AlertDialog.Root open={!!bulkConfirmArea} onOpenChange={(open) => !open && setBulkConfirmArea(null)}>
         <AlertDialog.Portal>
           <AlertDialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
           <AlertDialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-sm bg-white rounded-xl shadow-2xl p-6">
-            <AlertDialog.Title className="text-lg font-semibold text-slate-900 mb-2">
-              Xóa luống?
-            </AlertDialog.Title>
+            <AlertDialog.Title className="text-lg font-semibold text-slate-900 mb-2">Đánh dấu cả khu đã thu hoạch?</AlertDialog.Title>
             <AlertDialog.Description className="text-sm text-slate-600 mb-6">
-              Luống sẽ bị xóa khỏi mùa vụ này.
+              Tất cả luống trong <span className="font-semibold">{bulkConfirmArea}</span> sẽ được chuyển sang trạng thái <span className="font-semibold text-[#008236]">Đã thu hoạch</span>. Bạn vẫn có thể đổi lại từng luống sau.
             </AlertDialog.Description>
             <div className="flex gap-3 justify-end">
               <AlertDialog.Cancel asChild>
-                <button className="px-4 py-2 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-100 transition-colors">
-                  Hủy
-                </button>
+                <button className="px-4 py-2 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-100 transition-colors">Hủy</button>
               </AlertDialog.Cancel>
               <AlertDialog.Action asChild>
-                <button
-                  onClick={confirmRemovePlot}
-                  className="px-4 py-2 rounded-lg text-sm font-medium bg-red-600 text-white hover:bg-red-700 transition-colors"
-                >
-                  Xóa
+                <button onClick={() => bulkConfirmArea && bulkMarkAreaHarvested(bulkConfirmArea)}
+                  className="px-4 py-2 rounded-lg text-sm font-medium bg-[#009689] text-white hover:bg-[#007f75] transition-colors">
+                  Xác nhận
                 </button>
+              </AlertDialog.Action>
+            </div>
+          </AlertDialog.Content>
+        </AlertDialog.Portal>
+      </AlertDialog.Root>
+
+      {/* Remove plot dialog */}
+      <AlertDialog.Root open={deletePlotDialogOpen} onOpenChange={setDeletePlotDialogOpen}>
+        <AlertDialog.Portal>
+          <AlertDialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
+          <AlertDialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-sm bg-white rounded-xl shadow-2xl p-6">
+            <AlertDialog.Title className="text-lg font-semibold text-slate-900 mb-2">Xóa luống?</AlertDialog.Title>
+            <AlertDialog.Description className="text-sm text-slate-600 mb-6">Luống sẽ bị xóa khỏi mùa vụ này.</AlertDialog.Description>
+            <div className="flex gap-3 justify-end">
+              <AlertDialog.Cancel asChild>
+                <button className="px-4 py-2 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-100 transition-colors">Hủy</button>
+              </AlertDialog.Cancel>
+              <AlertDialog.Action asChild>
+                <button onClick={confirmRemovePlot} className="px-4 py-2 rounded-lg text-sm font-medium bg-red-600 text-white hover:bg-red-700 transition-colors">Xóa</button>
               </AlertDialog.Action>
             </div>
           </AlertDialog.Content>

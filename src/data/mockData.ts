@@ -334,18 +334,23 @@ export const mockCrops: Crop[] = [
 export type SeasonStatus = "Đang hoạt động" | "Đã kết thúc" | "Sắp diễn ra";
 export type SeasonCropType = "Bắp Cải Trắng" | "Bắp Cải Tím" | "Bắp Cải Xoăn";
 
+// Per-plot status inside a season (separate from SeasonStatus)
+// Convention: "Đang trồng" | "Đã thu hoạch"
+export type SeasonPlotStatus = "Đang trồng" | "Đã thu hoạch";
+
 export interface PlotAssignment {
   plotId: string;
+  // Naming convention: [KhuVực]-[NN]  e.g. "A-01", "B-12"
   plotName: string;
   area: string;
   crop: SeasonCropType;
   sowingDate: string;
   harvestDate: string;
   // --- Quantity fields ---
-  plannedQuantity: number; // Số lượng trồng dự kiến (cây) — nhập lúc tạo, khóa vĩnh viễn
+  plannedQuantity: number; // Số lượng trồng dự kiến (cây)
   actualPlanted: number; // Số lượng trồng thực tế (cây) — khóa khi mùa vụ "Đã kết thúc"
-  harvestQuantity: number; // Sản lượng thu hoạch (kg) — mở khóa khi qua harvestDate của luống
-  status: SeasonStatus;
+  harvestQuantity: number; // Sản lượng thu hoạch (kg) — mở khóa khi qua harvestDate
+  status: SeasonPlotStatus; // Per-plot status (không dùng SeasonStatus)
 }
 
 export interface Season {
@@ -372,40 +377,40 @@ export const mockSeasons: Season[] = [
     description: "Vụ mùa chính trồng bắp cải trắng và bắp cải tím.",
     plots: [
       {
-        plotId: "A-1",
-        plotName: "Luống A-1",
+        plotId: "A-01",
+        plotName: "A-01",
         area: "Khu A (Phía Bắc)",
         crop: "Bắp Cải Trắng",
         sowingDate: "2026-02-05",
-        harvestDate: "2026-04-20", // chưa đến → harvestQuantity khóa
+        harvestDate: "2026-04-20",
         plannedQuantity: 150,
         actualPlanted: 145,
         harvestQuantity: 0,
-        status: "Đang hoạt động",
+        status: "Đang trồng",
       },
       {
-        plotId: "A-2",
-        plotName: "Luống A-2",
+        plotId: "A-02",
+        plotName: "A-02",
         area: "Khu A (Phía Bắc)",
         crop: "Bắp Cải Trắng",
         sowingDate: "2026-02-08",
-        harvestDate: "2026-04-25", // chưa đến → khóa
+        harvestDate: "2026-04-25",
         plannedQuantity: 150,
         actualPlanted: 148,
         harvestQuantity: 0,
-        status: "Đang hoạt động",
+        status: "Đang trồng",
       },
       {
-        plotId: "B-1",
-        plotName: "Luống B-1",
+        plotId: "B-01",
+        plotName: "B-01",
         area: "Khu B (Phía Nam)",
         crop: "Bắp Cải Tím",
         sowingDate: "2026-02-10",
-        harvestDate: "2026-05-15", // chưa đến → khóa
+        harvestDate: "2026-05-15",
         plannedQuantity: 120,
         actualPlanted: 118,
         harvestQuantity: 0,
-        status: "Đang hoạt động",
+        status: "Đang trồng",
       },
     ],
   },
@@ -420,28 +425,28 @@ export const mockSeasons: Season[] = [
     description: "",
     plots: [
       {
-        plotId: "C-1",
-        plotName: "Luống C-1",
+        plotId: "C-01",
+        plotName: "C-01",
         area: "Khu C",
         crop: "Bắp Cải Xoăn",
         sowingDate: "2026-01-15",
-        harvestDate: "2026-03-10", // đã qua → harvestQuantity mở khóa, nhưng chưa nhập
+        harvestDate: "2026-03-10",
         plannedQuantity: 100,
         actualPlanted: 97,
         harvestQuantity: 0,
-        status: "Đang hoạt động",
+        status: "Đang trồng",
       },
       {
-        plotId: "C-2",
-        plotName: "Luống C-2",
+        plotId: "C-02",
+        plotName: "C-02",
         area: "Khu C",
         crop: "Bắp Cải Xoăn",
         sowingDate: "2026-01-18",
-        harvestDate: "2026-03-05", // đã qua → mở khóa, đã nhập sản lượng
+        harvestDate: "2026-03-05",
         plannedQuantity: 80,
         actualPlanted: 78,
         harvestQuantity: 312,
-        status: "Đang hoạt động",
+        status: "Đã thu hoạch",
       },
     ],
   },
@@ -616,82 +621,225 @@ export const mockFarms: Farm[] = [
 ];
 
 // =================== ADVISORY PAGE ===================
+
+// ---------------------------------------------------------------------------
+// ERD-aligned types
+// ERD tables involved:
+//   Image_Analyses_Result  → image_analysis_result_id, ai_label, ai_confidence,
+//                            ai_severity, bounding_box_json, extra_data_json
+//   Pest_Detections        → pest_detection_id, season_id, specialist_id,
+//                            image_analysis_result_id, general_label,
+//                            general_severity, confidence_source,
+//                            detection_status, review_notes, detected_at
+//   Recommendation         → recommendation_id, season_id, pest_detection_id,
+//                            title, content, created_at, updated_at
+// ---------------------------------------------------------------------------
+
 export type RequestStatus =
-  | "Chờ phản hồi"
-  | "Đang xử lý"
-  | "Đã phản hồi"
-  | "Đóng";
+  | "Chờ phản hồi" // Pest_Detection created, no specialist assigned yet
+  | "Đang xử lý" // specialist_id assigned, detection_status = TODO: confirm enum
+  | "Đã phản hồi" // Recommendation row exists for this pest_detection_id
+  | "Đóng"; // detection_status = TODO: confirm enum
+
 export type Priority = "CAO" | "TRUNG BÌNH" | "THẤP";
 export type AdvisoryCropType = "Bắp Cải Trắng" | "Bắp Cải Tím" | "Bắp Cải Xoăn";
 
-/** Báo cáo gốc do Worker tạo từ mobile (FE-14), Owner chọn để gửi tư vấn */
-export interface WorkerReport {
-  id: string;
-  title: string;
-  crop: AdvisoryCropType;
-  field: string; // Khu vực / luống
-  season: string; // Mùa vụ
-  growthStage: string; // Giai đoạn sinh trưởng
-  issue: string; // Vấn đề AI phát hiện
-  aiConfidence: number; // Độ tin cậy AI (0–100)
-  description: string; // Mô tả thêm từ Worker
-  images: string[];
-  createdBy: string;
+// TODO: replace with actual enum values from backend once confirmed
+// Mirrors Pest_Detections.detection_status
+export type DetectionStatus =
+  | "PENDING" // chờ xử lý  — maps to UI "Chờ phản hồi"
+  | "REVIEWING" // đang xử lý — maps to UI "Đang xử lý"
+  | "REVIEWED" // đã phản hồi — maps to UI "Đã phản hồi"
+  | "CLOSED"; // đóng        — maps to UI "Đóng"
+
+// Mirrors Image_Analyses_Result
+export interface ImageAnalysisResult {
+  /** PK — image_analysis_result_id */
+  imageAnalysisResultId: string;
+  /** FK — image_analysis_id (the raw upload) */
+  imageAnalysisId: string;
+  aiLabel: string;
+  aiConfidence: number; // 0–100
+  aiSeverity: string;
+  // boundingBoxJson and extraDataJson omitted from UI layer for now
   createdAt: string;
 }
 
+// Mirrors Pest_Detections
+export interface PestDetection {
+  /** PK — pest_detection_id */
+  pestDetectionId: string;
+  /** FK — season_id */
+  seasonId: string;
+  /** FK — specialist_id (null until assigned) */
+  specialistId?: string;
+  /** FK — image_analysis_result_id */
+  imageAnalysisResultId: string;
+  // Denormalised fields for display convenience
+  generalLabel: string; // = Pest_Detections.general_label
+  generalSeverity: string; // = Pest_Detections.general_severity
+  confidenceSource: string; // e.g. "AI" | "SPECIALIST" | "COMBINED"
+  detectionStatus: DetectionStatus;
+  reviewNotes?: string; // specialist's raw notes before writing Recommendation
+  detectedAt: string;
+  createdAt: string;
+}
+
+// Mirrors Recommendation
+export interface Recommendation {
+  /** PK — recommendation_id */
+  recommendationId: string;
+  /** FK — season_id */
+  seasonId: string;
+  /** FK — pest_detection_id */
+  pestDetectionId: string;
+  title: string;
+  content: string; // full rich text from specialist
+  // Parsed convenience fields derived from content for UI display
+  diagnosis?: string;
+  observation?: string;
+  treatmentPlan?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * AdvisoryRequest — composite UI model.
+ * Combines Pest_Detection + Recommendation + Image_Analyses_Result
+ * into one object used by AdvisoryPage.tsx.
+ *
+ * TODO: when integrating with real API, this should be built in the
+ * API layer (or a React Query selector) rather than stored as-is.
+ */
 export interface AdvisoryRequest {
+  // ── UI identity ──────────────────────────────────────────────────────────
+  /** UI-facing ID. Maps to Pest_Detections.pest_detection_id in production */
   id: string;
-  // Dữ liệu lấy từ WorkerReport (không tự điền)
+
+  // ── ERD foreign keys (for future API integration) ─────────────────────
+  /** Pest_Detections.pest_detection_id */
+  pestDetectionId?: string;
+  /** Recommendation.recommendation_id — present only when specialist responded */
+  recommendationId?: string;
+  /** Image_Analyses_Result.image_analysis_result_id */
+  imageAnalysisResultId?: string;
+  /** Pest_Detections.season_id */
+  seasonId?: string;
+  /** Pest_Detections.specialist_id */
+  specialistId?: string;
+
+  // ── Detection status (mirrors Pest_Detections.detection_status) ────────
+  /** Raw DB enum — TODO: confirm values with backend */
+  detectionStatus?: DetectionStatus;
+
+  // ── Worker report fields (from Image_Analyses_Result + worker upload) ──
   workerReportId: string;
   title: string;
   crop: AdvisoryCropType;
   field: string;
   season: string;
   growthStage: string;
+  /** Pest_Detections.general_label */
   issue: string;
+  /** Image_Analyses_Result.ai_confidence */
   aiConfidence: number;
   description: string;
   images: string[];
-  reportCreatedBy: string; // Worker gốc
-  reportCreatedAt: string; // Thời gian Worker báo cáo
-  // Dữ liệu Owner điền khi tạo yêu cầu
+  reportCreatedBy: string;
+  reportCreatedAt: string;
+
+  // ── Owner-side fields ───────────────────────────────────────────────────
   ownerMessage: string;
+  /** UI status derived from detectionStatus + recommendationId presence */
   status: RequestStatus;
   priority: Priority;
+  /** Display name of assigned specialist (from specialist_id lookup) */
   assignedTo?: string;
-  createdAt: string; // Thời gian Owner gửi yêu cầu
+  createdAt: string;
   responseTime?: string;
+
+  // ── Recommendation fields (Recommendation table) ────────────────────────
+  /**
+   * Present when Recommendation row exists for this pest_detection_id.
+   * Payment gate: Owner must pay before viewing this object.
+   * TODO: link to recommendationId above once payment table is designed.
+   */
   response?: {
+    /** Recommendation.title */
+    title?: string;
+    /** Parsed from Recommendation.content */
     diagnosis: string;
     observation: string;
     recommendation: string;
     treatmentPlan?: string;
+    /** Recommendation.created_at */
+    createdAt?: string;
+    /** Recommendation.updated_at */
+    updatedAt?: string;
   };
 }
 
 /** Lịch sử tư vấn đã hoàn thành (FE-9) */
 export interface ConsultationHistory {
+  /** Recommendation.recommendation_id */
   responseId: string;
+  /** Pest_Detections.pest_detection_id (UI: TV-XXX) */
   requestId: string;
   crop: AdvisoryCropType;
+  /** Pest_Detections.general_label */
   disease: string;
   priority: Priority;
+  /** Specialist display name */
   specialist: string;
   respondedAt: string;
+  /**
+   * Payment status for this recommendation.
+   * TODO: add payment_id / payment_status FK once payment table is designed.
+   * For now tracked client-side via paidRequests Set in AdvisoryPage.tsx.
+   */
+  paymentStatus?: "UNPAID" | "PAID";
 }
 
-// Mock Worker Reports (nguồn để Owner chọn khi tạo yêu cầu)
+/**
+ * WorkerReport — mirrors worker's mobile upload (FE-14).
+ * In the DB this corresponds to the Image_Analyses table (the raw upload)
+ * + Image_Analyses_Result (the AI output).
+ * Worker creates this; Owner picks one to send to a specialist.
+ */
+export interface WorkerReport {
+  /** UI id. Maps to Image_Analyses_Result.image_analysis_id in production */
+  id: string;
+  /** Image_Analyses_Result.image_analysis_result_id — present after AI processing */
+  imageAnalysisResultId?: string;
+  title: string;
+  crop: AdvisoryCropType;
+  field: string;
+  season: string;
+  growthStage: string;
+  /** Image_Analyses_Result.ai_label */
+  issue: string;
+  /** Image_Analyses_Result.ai_confidence */
+  aiConfidence: number;
+  /** Image_Analyses_Result.ai_severity */
+  aiSeverity?: string;
+  description: string;
+  images: string[];
+  createdBy: string;
+  createdAt: string;
+}
+
 export const mockWorkerReports: WorkerReport[] = [
   {
     id: "RPT-001",
+    imageAnalysisResultId: "IAR-001", // Image_Analyses_Result.image_analysis_result_id
     title: "Phát hiện đốm lá trên bắp cải trắng",
     crop: "Bắp Cải Trắng",
     field: "Khu C - Luống C-3",
     season: "Mùa Hè 2025",
     growthStage: "Tuần 4 – Giai đoạn cuộn đầu",
-    issue: "Đốm lá nấm (Septoria)",
-    aiConfidence: 92,
+    issue: "Đốm lá nấm (Septoria)", // ai_label
+    aiConfidence: 92, // ai_confidence
+    aiSeverity: "MEDIUM", // ai_severity — TODO confirm enum
     description:
       "Lá bắp cải xuất hiện các đốm tròn màu nâu với viền vàng, tập trung ở lá già phía dưới.",
     images: [
@@ -703,6 +851,7 @@ export const mockWorkerReports: WorkerReport[] = [
   },
   {
     id: "RPT-002",
+    imageAnalysisResultId: "IAR-002",
     title: "Lớp bột trắng xuất hiện trên bắp cải tím",
     crop: "Bắp Cải Tím",
     field: "Khu B - Nhà kính 1",
@@ -710,6 +859,7 @@ export const mockWorkerReports: WorkerReport[] = [
     growthStage: "Tuần 6 – Giai đoạn phát triển lá",
     issue: "Phấn trắng (Powdery Mildew)",
     aiConfidence: 87,
+    aiSeverity: "HIGH",
     description:
       "Phát hiện lớp bột trắng trên lá bắp cải tím. Có thể là dấu hiệu của bệnh phấn trắng, cần xử lý ngay để tránh lây lan.",
     images: [
@@ -720,6 +870,7 @@ export const mockWorkerReports: WorkerReport[] = [
   },
   {
     id: "RPT-003",
+    imageAnalysisResultId: "IAR-003",
     title: "Vết đen trên lá bắp cải xoăn",
     crop: "Bắp Cải Xoăn",
     field: "Khu C - Ngoài trời",
@@ -727,6 +878,7 @@ export const mockWorkerReports: WorkerReport[] = [
     growthStage: "Tuần 3 – Giai đoạn ra lá mới",
     issue: "Than thư (Anthracnose)",
     aiConfidence: 78,
+    aiSeverity: "HIGH",
     description:
       "Lá bắp cải xoăn có các vết đen, khô và cuộn lại. Nghi ngờ bệnh than thư hoặc thiếu dinh dưỡng.",
     images: [
@@ -737,6 +889,7 @@ export const mockWorkerReports: WorkerReport[] = [
   },
   {
     id: "RPT-004",
+    imageAnalysisResultId: "IAR-004",
     title: "Rệp trắng mặt dưới lá bắp cải trắng",
     crop: "Bắp Cải Trắng",
     field: "Khu D - Nhà kính 3",
@@ -744,6 +897,7 @@ export const mockWorkerReports: WorkerReport[] = [
     growthStage: "Tuần 2 – Giai đoạn cây con",
     issue: "Rệp trắng",
     aiConfidence: 95,
+    aiSeverity: "LOW",
     description:
       "Xuất hiện rệp trắng trên mặt dưới lá bắp cải. Số lượng chưa nhiều nhưng cần kiểm soát sớm.",
     images: [
@@ -756,14 +910,23 @@ export const mockWorkerReports: WorkerReport[] = [
 
 export const mockRequests: AdvisoryRequest[] = [
   {
+    // ── UI identity ──────────────────────────────────────────────────
     id: "TV-001",
+    // ── ERD keys (TODO: populate from API response) ──────────────────
+    pestDetectionId: "PD-001", // Pest_Detections.pest_detection_id
+    recommendationId: undefined, // no Recommendation yet
+    imageAnalysisResultId: "IAR-001", // Image_Analyses_Result.image_analysis_result_id
+    seasonId: "season-2025-summer", // Pest_Detections.season_id
+    specialistId: undefined, // not yet assigned
+    detectionStatus: "PENDING", // Pest_Detections.detection_status
+    // ── Worker report ────────────────────────────────────────────────
     workerReportId: "RPT-001",
     title: "Phát hiện đốm lá trên bắp cải trắng",
     crop: "Bắp Cải Trắng",
     field: "Khu C - Luống C-3",
     season: "Mùa Hè 2025",
     growthStage: "Tuần 4 – Giai đoạn cuộn đầu",
-    issue: "Đốm lá nấm (Septoria)",
+    issue: "Đốm lá nấm (Septoria)", // general_label
     aiConfidence: 92,
     description:
       "Lá bắp cải xuất hiện các đốm tròn màu nâu với viền vàng, tập trung ở lá già phía dưới.",
@@ -777,9 +940,16 @@ export const mockRequests: AdvisoryRequest[] = [
     status: "Chờ phản hồi",
     priority: "CAO",
     createdAt: "15:00 - 15/05/2024",
+    // response: undefined — no Recommendation row yet
   },
   {
     id: "TV-002",
+    pestDetectionId: "PD-002",
+    recommendationId: undefined, // Recommendation exists but payment-gated
+    imageAnalysisResultId: "IAR-002",
+    seasonId: "season-2025-summer",
+    specialistId: "SP-002", // ThS. Hoàng Lan
+    detectionStatus: "REVIEWING", // specialist assigned, still reviewing
     workerReportId: "RPT-002",
     title: "Lớp bột trắng xuất hiện trên bắp cải tím",
     crop: "Bắp Cải Tím",
@@ -801,15 +971,25 @@ export const mockRequests: AdvisoryRequest[] = [
     assignedTo: "ThS. Hoàng Lan",
     createdAt: "11:00 - 14/05/2024",
     response: {
+      // Recommendation.recommendation_id = "REC-002" (payment gate applies)
+      title: "Xử lý bệnh phấn trắng nhà kính 1",
       diagnosis: "Bệnh phấn trắng do nấm",
       observation:
         "Do độ ẩm không khí cao trong những ngày qua tại Khu C kết hợp với nhiệt độ thấp vào ban đêm, tạo điều kiện cho nấm phát triển.",
       recommendation:
         "Cần cách ly ngay các luống bị bệnh. Sử dụng thuốc bảo vệ thực vật có hoạt chất Metalaxyl hoặc Mancozeb để phun phòng trị. Lưu ý phun vét đều hai mặt lá.",
+      createdAt: "13:00 - 14/05/2024",
+      updatedAt: "13:00 - 14/05/2024",
     },
   },
   {
     id: "TV-003",
+    pestDetectionId: "PD-003",
+    recommendationId: "REC-003", // Recommendation exists — payment gate active
+    imageAnalysisResultId: "IAR-003",
+    seasonId: "season-2025-q2-kale",
+    specialistId: "SP-003", // PGS.TS Trần Hùng
+    detectionStatus: "REVIEWED", // Recommendation written and delivered
     workerReportId: "RPT-003",
     title: "Vết đen trên lá bắp cải xoăn",
     crop: "Bắp Cải Xoăn",
@@ -833,16 +1013,27 @@ export const mockRequests: AdvisoryRequest[] = [
     createdAt: "09:00 - 13/05/2024",
     responseTime: "2 giờ trước",
     response: {
+      // Recommendation row: recommendation_id = "REC-003"
+      // Content below is payment-gated — Owner sees blurred until paid
+      title: "Kết quả chẩn đoán than thư + khuyến nghị dinh dưỡng",
       diagnosis: "Thiếu Nitơ và bệnh nấm than thư nhẹ",
       observation:
         "Dựa trên hình ảnh là có các đốm trắng lan rộng và viền lá bị cháy, đây là biểu hiện điển hình của Bệnh Sương Mai (Late Blight) giai đoạn đầu.",
       recommendation:
         "Cần cách ly ngay các luống bị bệnh. Sử dụng thuốc bảo vệ thực vật có hoạt chất Metalaxyl hoặc Mancozeb để phun phòng trị. Lưu ý phun vét đều hai mặt lá. Bổ sung phân đạm để cải thiện sức đề kháng.",
       treatmentPlan: "Xử lý trong vòng 3-5 ngày, theo dõi hàng ngày",
+      createdAt: "11:00 - 13/05/2024",
+      updatedAt: "11:00 - 13/05/2024",
     },
   },
   {
     id: "TV-004",
+    pestDetectionId: "PD-004",
+    recommendationId: "REC-004", // Recommendation exists
+    imageAnalysisResultId: "IAR-004",
+    seasonId: "season-2025-summer",
+    specialistId: "SP-001", // TS. Nguyễn Văn Minh
+    detectionStatus: "CLOSED", // case closed
     workerReportId: "RPT-004",
     title: "Rệp trắng mặt dưới lá bắp cải trắng",
     crop: "Bắp Cải Trắng",
@@ -865,27 +1056,34 @@ export const mockRequests: AdvisoryRequest[] = [
     assignedTo: "TS. Nguyễn Văn Minh",
     createdAt: "17:00 - 10/05/2024",
     responseTime: "5 ngày trước",
+    // No response object — this case was closed without a formal Recommendation
+    // (e.g. specialist handled via reviewNotes only)
   },
 ];
 
 export const mockConsultationHistory: ConsultationHistory[] = [
   {
-    responseId: "PH-001",
-    requestId: "TV-003",
+    // Mirrors: Recommendation.recommendation_id = "REC-003"
+    // linked to Pest_Detections.pest_detection_id = "PD-003"
+    responseId: "REC-003", // Recommendation.recommendation_id
+    requestId: "TV-003", // UI id of AdvisoryRequest (= PD-003)
     crop: "Bắp Cải Xoăn",
-    disease: "Than thư (Anthracnose)",
+    disease: "Than thư (Anthracnose)", // Pest_Detections.general_label
     priority: "CAO",
     specialist: "PGS.TS Trần Hùng",
-    respondedAt: "11:00 - 13/05/2024",
+    respondedAt: "11:00 - 13/05/2024", // Recommendation.created_at
+    paymentStatus: "UNPAID", // TODO: replace with backend payment status
   },
   {
-    responseId: "PH-002",
-    requestId: "TV-004",
-    crop: "Bắp Cải Trắng",
-    disease: "Rệp trắng",
-    priority: "THẤP",
-    specialist: "TS. Nguyễn Văn Minh",
-    respondedAt: "09:30 - 15/05/2024",
+    // Mirrors: Recommendation.recommendation_id = "REC-002"
+    responseId: "REC-002",
+    requestId: "TV-002",
+    crop: "Bắp Cải Tím",
+    disease: "Phấn trắng (Powdery Mildew)",
+    priority: "TRUNG BÌNH",
+    specialist: "ThS. Hoàng Lan",
+    respondedAt: "13:00 - 14/05/2024",
+    paymentStatus: "UNPAID",
   },
 ];
 
