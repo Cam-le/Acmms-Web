@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Link, useSearchParams } from "react-router";
+import { Link, useSearchParams, useNavigate } from "react-router";
 import {
   Plus,
   Search,
@@ -736,7 +736,46 @@ function RequestCard({ request }: { request: AdvisoryRequest }) {
 }
 
 // ===================== DETAIL VIEW =====================
+// ─── Task prefill state passed to TasksPage via router state ────────────────
+export interface TaskPrefill {
+  /** Source advisory request id, for traceability */
+  sourceAdvisoryId: string;
+  /** Suggested task type — maps to one of TASK_TYPES in TasksPage */
+  suggestedTaskType: string;
+  /** Pre-filled area extracted from the advisory request's field */
+  area: string;
+  /** Crop type for template pre-selection */
+  crop: string;
+  /** Pre-filled notes combining specialist recommendation */
+  notes: string;
+}
+
+/** Map an issue label to the closest TASK_TYPE value used in TasksPage */
+function inferTaskType(issue: string): string {
+  const lower = issue.toLowerCase();
+  if (lower.includes("rệp") || lower.includes("sâu") || lower.includes("phấn") || lower.includes("nấm") || lower.includes("đốm") || lower.includes("than thư") || lower.includes("bệnh")) {
+    return "Bảo vệ thực vật";
+  }
+  if (lower.includes("phân") || lower.includes("nitơ") || lower.includes("dinh dưỡng")) {
+    return "Bón phân";
+  }
+  if (lower.includes("tưới") || lower.includes("nước")) {
+    return "Tưới nước";
+  }
+  if (lower.includes("thu hoạch")) {
+    return "Thu hoạch";
+  }
+  return "Kiểm tra";
+}
+
+/** Extract the area code (e.g. "Khu C") from a field string like "Khu C - Luống C-3" */
+function extractArea(field: string): string {
+  const match = field.match(/^(Khu\s+[A-Za-z])/i);
+  return match ? match[1] : "";
+}
+
 function DetailView({ request }: { request: AdvisoryRequest }) {
+  const navigate = useNavigate();
   const hasResponse = request.status === "Đã phản hồi" && !!request.response;
   const [isPaid, setIsPaid] = useState(() => paidRequests.has(request.id));
   const [showPaymentModal, setShowPaymentModal] = useState(
@@ -747,6 +786,20 @@ function DetailView({ request }: { request: AdvisoryRequest }) {
     paidRequests.add(request.id);
     setIsPaid(true);
     setShowPaymentModal(false);
+  };
+
+  /** Navigate to /tasks with pre-filled data from this advisory request */
+  const handleCreateTask = (taskType?: string) => {
+    const prefill: TaskPrefill = {
+      sourceAdvisoryId: request.id,
+      suggestedTaskType: taskType ?? inferTaskType(request.issue),
+      area: extractArea(request.field),
+      crop: request.crop,
+      notes: request.response?.recommendation
+        ? `[Từ tư vấn ${request.id}] ${request.response.recommendation}`
+        : `[Từ tư vấn ${request.id}] ${request.issue} – ${request.field}`,
+    };
+    navigate("/tasks", { state: { taskPrefill: prefill } });
   };
 
   return (
@@ -1093,11 +1146,26 @@ function DetailView({ request }: { request: AdvisoryRequest }) {
                 <h3 className="text-sm font-semibold text-[#62748e] flex items-center gap-2 mb-3">
                   <ListChecks className="w-4 h-4" /> Phương án xử lý
                 </h3>
+                {/* Origin banner — shows which advisory this was created from */}
+                <div className="flex items-center gap-2 px-3 py-2 bg-[#f0fdfa] border border-[#009689]/20 rounded-lg text-xs text-[#115e59] mb-3">
+                  <Info className="w-3.5 h-3.5 shrink-0" />
+                  <span>
+                    Nhấn vào các nút bên dưới để tạo nhiệm vụ trên trang{" "}
+                    <strong>Công việc</strong>. Thông tin tư vấn sẽ được điền sẵn.
+                  </span>
+                </div>
                 <div className="flex gap-3 mb-4">
-                  <button className="flex-1 px-4 py-2 bg-white border border-[#cad5e2] text-[#314158] rounded-lg hover:bg-[#f8fafc] transition-colors text-sm">
+                  <button
+                    onClick={() => handleCreateTask("Kiểm tra")}
+                    className="flex-1 px-4 py-2 bg-white border border-[#cad5e2] text-[#314158] rounded-lg hover:bg-[#f8fafc] transition-colors text-sm flex items-center justify-center gap-1.5"
+                  >
+                    <Settings2 className="w-3.5 h-3.5" />
                     Tạo nhiệm vụ theo dõi
                   </button>
-                  <button className="flex-1 px-4 py-2 bg-[#009689] text-white rounded-lg hover:bg-[#007f75] transition-colors flex items-center justify-center gap-2 text-sm">
+                  <button
+                    onClick={() => handleCreateTask("Bảo vệ thực vật")}
+                    className="flex-1 px-4 py-2 bg-[#009689] text-white rounded-lg hover:bg-[#007f75] transition-colors flex items-center justify-center gap-2 text-sm"
+                  >
                     <CheckCircle className="w-4 h-4" />
                     Tạo nhiệm vụ xử lý
                   </button>
@@ -1105,7 +1173,10 @@ function DetailView({ request }: { request: AdvisoryRequest }) {
                     Đánh dấu đã xử lý
                   </button>
                 </div>
-                <button className="w-full bg-[#009689] text-white px-6 py-3 rounded-lg hover:bg-[#007f75] transition-colors flex items-center justify-center gap-2">
+                <button
+                  onClick={() => handleCreateTask()}
+                  className="w-full bg-[#009689] text-white px-6 py-3 rounded-lg hover:bg-[#007f75] transition-colors flex items-center justify-center gap-2"
+                >
                   <Plus className="w-5 h-5" />
                   Tạo nhiệm vụ từ tư vấn
                 </button>

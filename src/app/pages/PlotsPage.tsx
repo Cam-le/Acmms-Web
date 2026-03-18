@@ -207,7 +207,7 @@ export function PlotsPage() {
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-[#115e59] text-2xl font-semibold mb-1">
-            Quản Lý Khu Đất
+            Quản Lý Vuông Đất
           </h1>
           <p className="text-[#45556c] text-sm">Quản lý đất và luống</p>
         </div>
@@ -216,7 +216,7 @@ export function PlotsPage() {
           className="bg-[#009689] text-white px-4 py-2 rounded-lg hover:bg-[#007f75] transition-colors flex items-center gap-2"
         >
           <Plus className="w-4 h-4" />
-          Thêm khu
+          Thêm vuông
         </button>
       </div>
 
@@ -530,10 +530,10 @@ export function PlotsPage() {
           <AlertDialog.Overlay className="fixed inset-0 bg-black/50 z-50 animate-in fade-in" />
           <AlertDialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-md bg-white rounded-xl shadow-2xl p-6 animate-in fade-in zoom-in-95">
             <AlertDialog.Title className="text-lg font-semibold text-slate-900 mb-2">
-              Xác nhận xóa khu đất
+              Xác nhận xóa vuông đất
             </AlertDialog.Title>
             <AlertDialog.Description className="text-sm text-slate-600 mb-6">
-              Bạn có chắc chắn muốn xóa khu đất này? Tất cả các luống bên trong
+              Bạn có chắc chắn muốn xóa vuông này? Tất cả các luống bên trong
               cũng sẽ bị xóa và không thể hoàn tác.
             </AlertDialog.Description>
             <div className="flex gap-3 justify-end">
@@ -547,7 +547,7 @@ export function PlotsPage() {
                   onClick={confirmDeleteLand}
                   className="px-4 py-2 rounded-lg text-sm font-medium bg-red-600 text-white hover:bg-red-700 transition-colors"
                 >
-                  Xóa khu đất
+                  Xóa vuông đất
                 </button>
               </AlertDialog.Action>
             </div>
@@ -638,7 +638,7 @@ function CreateLandModal({
         <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-2xl bg-white rounded-xl shadow-2xl p-6">
           <div className="flex items-center justify-between mb-6">
             <Dialog.Title className="text-xl font-semibold text-[#115e59]">
-              Thêm khu Đất Mới
+              Thêm vuông Đất Mới
             </Dialog.Title>
             <Dialog.Close asChild>
               <button className="p-2 text-[#62748e] hover:bg-[#f8fafc] rounded-lg transition-colors">
@@ -672,7 +672,7 @@ function CreateLandModal({
                 <input
                   type="text"
                   required
-                  placeholder="Ví dụ: Khu A"
+                  placeholder="Ví dụ: vuông A"
                   value={formData.name}
                   onChange={(e) =>
                     setFormData({ ...formData, name: e.target.value })
@@ -793,7 +793,7 @@ function ViewLandModal({
         <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-md bg-white rounded-xl shadow-2xl p-6">
           <div className="flex items-center justify-between mb-6">
             <Dialog.Title className="text-xl font-semibold text-[#115e59]">
-              Chi Tiết Khu Đất
+              Chi Tiết vuông Đất
             </Dialog.Title>
             <Dialog.Close asChild>
               <button className="p-2 text-[#62748e] hover:bg-[#f8fafc] rounded-lg transition-colors">
@@ -906,7 +906,7 @@ function EditLandModal({
         <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-md bg-white rounded-xl shadow-2xl p-6">
           <div className="flex items-center justify-between mb-6">
             <Dialog.Title className="text-xl font-semibold text-[#115e59]">
-              Chỉnh Sửa Khu Đất
+              Chỉnh Sửa Vuông Đất
             </Dialog.Title>
             <Dialog.Close asChild>
               <button className="p-2 text-[#62748e] hover:bg-[#f8fafc] rounded-lg transition-colors">

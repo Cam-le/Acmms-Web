@@ -34,7 +34,7 @@ export function AppLayout() {
   const navItems = [
     { icon: LayoutDashboard, label: "Dashboard", to: "/dashboard" },
     { icon: Tractor, label: "Trang trại", to: "/farm" },
-    { icon: MapPin, label: "Khu đất", to: "/lands" },
+    { icon: MapPin, label: "Vuông đất", to: "/lands" },
     { icon: CalendarDays, label: "Mùa vụ", to: "/seasons" },
     { icon: Sprout, label: "Cây trồng", to: "/crops" },
     { icon: Users, label: "Nhân viên", to: "/workers" },

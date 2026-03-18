@@ -911,6 +911,47 @@ export const mockWorkerReports: WorkerReport[] = [
     createdBy: "Lê Thị F",
     createdAt: "16:45 - 10/05/2024",
   },
+  {
+    // RPT-005: bệnh sương mai trên bắp cải tím — linked to TV-005 (PAID demo)
+    id: "RPT-005",
+    imageAnalysisResultId: "IAR-005",
+    title: "Đốm nâu lan rộng trên lá bắp cải tím khu A",
+    crop: "Bắp Cải Tím",
+    field: "Khu A - Luống A-2",
+    season: "Vụ Xuân 2026",
+    growthStage: "Tuần 5 – Giai đoạn cuộn đầu sớm",
+    issue: "Sương mai (Late Blight)",
+    aiConfidence: 89,
+    aiSeverity: "HIGH",
+    description:
+      "Lá xuất hiện các đốm nâu viền vàng lan nhanh từ mép lá vào trong. Mặt dưới lá có lớp mốc trắng mỏng vào buổi sáng sớm.",
+    images: [
+      "https://images.unsplash.com/photo-1592921870789-04563d55041c?w=400&h=300&fit=crop",
+      "https://images.unsplash.com/photo-1518977956812-cd3dbadaaf31?w=400&h=300&fit=crop",
+    ],
+    createdBy: "Nguyễn Văn G",
+    createdAt: "07:30 - 02/03/2026",
+  },
+  {
+    // RPT-006: thiếu dinh dưỡng bắp cải xoăn khu B — linked to TV-006 (UNPAID demo)
+    id: "RPT-006",
+    imageAnalysisResultId: "IAR-006",
+    title: "Lá bắp cải xoăn vàng nhạt, mép lá cháy",
+    crop: "Bắp Cải Xoăn",
+    field: "Khu B - Luống B-1",
+    season: "Vụ bắp cải xoăn Q1/2026",
+    growthStage: "Tuần 4 – Giai đoạn phát triển lá",
+    issue: "Thiếu Kali (Potassium deficiency)",
+    aiConfidence: 76,
+    aiSeverity: "MEDIUM",
+    description:
+      "Lá già phía dưới bắp cải xoăn có màu vàng nhạt, mép lá chuyển nâu và khô dần. Cây sinh trưởng chậm hơn bình thường.",
+    images: [
+      "https://images.unsplash.com/photo-1524179091875-bf99a9a6af57?w=400&h=300&fit=crop",
+    ],
+    createdBy: "Trần Văn E",
+    createdAt: "09:15 - 05/03/2026",
+  },
 ];
 
 export const mockRequests: AdvisoryRequest[] = [
@@ -1066,6 +1107,105 @@ export const mockRequests: AdvisoryRequest[] = [
     // No response object — this case was closed without a formal Recommendation
     // (e.g. specialist handled via reviewNotes only)
   },
+  {
+    // ── TV-005: PAID demo ─────────────────────────────────────────────────────
+    // Pre-seeded in paidRequests Set in AdvisoryPage.tsx → unlocked on first load.
+    // Use this to demo the full "Phương án xử lý" section with all three task buttons.
+    id: "TV-005",
+    pestDetectionId: "PD-005",
+    recommendationId: "REC-005",
+    imageAnalysisResultId: "IAR-005",
+    seasonId: "season-2026-spring",
+    specialistId: "SP-002", // ThS. Hoàng Lan
+    detectionStatus: "REVIEWED",
+    workerReportId: "RPT-005",
+    title: "Đốm nâu lan rộng trên lá bắp cải tím khu A",
+    crop: "Bắp Cải Tím",
+    field: "Khu A - Luống A-2",
+    season: "Vụ Xuân 2026",
+    growthStage: "Tuần 5 – Giai đoạn cuộn đầu sớm",
+    issue: "Sương mai (Late Blight)",
+    aiConfidence: 89,
+    description:
+      "Lá xuất hiện các đốm nâu viền vàng lan nhanh từ mép lá vào trong. Mặt dưới lá có lớp mốc trắng mỏng vào buổi sáng sớm.",
+    images: [
+      "https://images.unsplash.com/photo-1592921870789-04563d55041c?w=400&h=300&fit=crop",
+      "https://images.unsplash.com/photo-1518977956812-cd3dbadaaf31?w=400&h=300&fit=crop",
+    ],
+    reportCreatedBy: "Nguyễn Văn G",
+    reportCreatedAt: "07:30 - 02/03/2026",
+    ownerMessage:
+      "Bệnh đang lan sang luống A-3, nhờ chuyên gia tư vấn thuốc đặc trị và liều lượng phun.",
+    status: "Đã phản hồi",
+    priority: "CAO",
+    assignedTo: "ThS. Hoàng Lan",
+    createdAt: "08:00 - 02/03/2026",
+    responseTime: "3 giờ trước",
+    response: {
+      // Recommendation.recommendation_id = "REC-005"
+      // TV-005 is pre-seeded as PAID → content visible without payment modal
+      title: "Xử lý bệnh sương mai bắp cải tím – Khu A",
+      diagnosis: "Bệnh sương mai (Late Blight) do nấm Phytophthora infestans",
+      observation:
+        "Điều kiện thời tiết những ngày gần đây tại Khu A có độ ẩm cao trên 85% và nhiệt độ ban đêm xuống dưới 18°C — đây là môi trường lý tưởng cho Phytophthora phát triển. Bào tử lây lan qua gió và nước tưới nhỏ giọt bị bắn lên lá.",
+      recommendation:
+        "1. Cách ly ngay luống A-2 và A-3, tạm dừng tưới phun sương. Chuyển sang tưới nhỏ giọt gốc để hạn chế ẩm trên lá.\n2. Phun thuốc đặc trị có hoạt chất Metalaxyl-M + Mancozeb (ví dụ: Ridomil Gold MZ 68WG), liều 25g/10 lít nước, phun đều hai mặt lá vào buổi sáng sớm khi trời khô.\n3. Sau 3 ngày kiểm tra lại; nếu lan sang luống kế tiếp, thu gom và tiêu huỷ lá bệnh trước khi phun đợt 2.\n4. Bổ sung Kali (K2O) để tăng sức đề kháng thành tế bào, giúp cây chống chịu tốt hơn.",
+      treatmentPlan:
+        "Phun thuốc đợt 1 trong vòng 24 giờ · Kiểm tra sau 3 ngày · Phun đợt 2 nếu cần · Theo dõi thêm 7 ngày",
+      specialistOrg: "Viện Khoa học Tự nhiên (Viện KHTN)",
+      createdAt: "11:00 - 02/03/2026",
+      updatedAt: "11:00 - 02/03/2026",
+    },
+  },
+  {
+    // ── TV-006: UNPAID demo ───────────────────────────────────────────────────
+    // Status "Đã phản hồi" but NOT in paidRequests → shows the payment-locked state.
+    // Use this to demo the blurred overlay + payment CTA flow.
+    id: "TV-006",
+    pestDetectionId: "PD-006",
+    recommendationId: "REC-006",
+    imageAnalysisResultId: "IAR-006",
+    seasonId: "season-2026-kale-q1",
+    specialistId: "SP-003", // PGS.TS Trần Hùng
+    detectionStatus: "REVIEWED",
+    workerReportId: "RPT-006",
+    title: "Lá bắp cải xoăn vàng nhạt, mép lá cháy",
+    crop: "Bắp Cải Xoăn",
+    field: "Khu B - Luống B-1",
+    season: "Vụ bắp cải xoăn Q1/2026",
+    growthStage: "Tuần 4 – Giai đoạn phát triển lá",
+    issue: "Thiếu Kali (Potassium deficiency)",
+    aiConfidence: 76,
+    description:
+      "Lá già phía dưới bắp cải xoăn có màu vàng nhạt, mép lá chuyển nâu và khô dần. Cây sinh trưởng chậm hơn bình thường.",
+    images: [
+      "https://images.unsplash.com/photo-1524179091875-bf99a9a6af57?w=400&h=300&fit=crop",
+    ],
+    reportCreatedBy: "Trần Văn E",
+    reportCreatedAt: "09:15 - 05/03/2026",
+    ownerMessage:
+      "Nhờ chuyên gia xác nhận có phải thiếu dinh dưỡng không và tư vấn loại phân bù phù hợp.",
+    status: "Đã phản hồi",
+    priority: "TRUNG BÌNH",
+    assignedTo: "PGS.TS Trần Hùng",
+    createdAt: "10:00 - 05/03/2026",
+    responseTime: "1 giờ trước",
+    response: {
+      // Recommendation.recommendation_id = "REC-006"
+      // TV-006 is NOT pre-seeded as paid → content is payment-gated (blurred)
+      title: "Chẩn đoán thiếu Kali – bắp cải xoăn Khu B",
+      diagnosis: "Thiếu Kali (K) điển hình kết hợp stress nhiệt nhẹ",
+      observation:
+        "Triệu chứng vàng lá từ mép vào trong ở lá già là dấu hiệu kinh điển của thiếu Kali. pH đất Khu B hiện dao động 6.8–7.1, hơi cao, làm giảm khả năng hấp thu K của rễ dù hàm lượng trong đất đủ.",
+      recommendation:
+        "Bón bổ sung Kali Sulphate (K2SO4) với liều 15–20 kg/1000m², chia 2 lần bón cách nhau 10 ngày. Kết hợp tưới nhỏ giọt để đưa dinh dưỡng trực tiếp vào vùng rễ. Không sử dụng KCl vì Clo ảnh hưởng xấu đến chất lượng bắp cải xoăn.",
+      treatmentPlan:
+        "Bón phân đợt 1 trong 2 ngày · Kiểm tra màu lá sau 7 ngày · Bón đợt 2 nếu triệu chứng còn",
+      specialistOrg: "Viện Khoa học Tự nhiên (Viện KHTN)",
+      createdAt: "11:30 - 05/03/2026",
+      updatedAt: "11:30 - 05/03/2026",
+    },
+  },
 ];
 
 export const mockConsultationHistory: ConsultationHistory[] = [
@@ -1090,6 +1230,30 @@ export const mockConsultationHistory: ConsultationHistory[] = [
     priority: "TRUNG BÌNH",
     specialist: "ThS. Hoàng Lan",
     respondedAt: "13:00 - 14/05/2024",
+    paymentStatus: "UNPAID",
+  },
+  {
+    // Mirrors: Recommendation.recommendation_id = "REC-005"
+    // TV-005 is pre-seeded as PAID in AdvisoryPage.tsx
+    responseId: "REC-005",
+    requestId: "TV-005",
+    crop: "Bắp Cải Tím",
+    disease: "Sương mai (Late Blight)",
+    priority: "CAO",
+    specialist: "ThS. Hoàng Lan",
+    respondedAt: "11:00 - 02/03/2026",
+    paymentStatus: "PAID",
+  },
+  {
+    // Mirrors: Recommendation.recommendation_id = "REC-006"
+    // TV-006 is NOT pre-seeded as paid → payment-gated
+    responseId: "REC-006",
+    requestId: "TV-006",
+    crop: "Bắp Cải Xoăn",
+    disease: "Thiếu Kali (Potassium deficiency)",
+    priority: "TRUNG BÌNH",
+    specialist: "PGS.TS Trần Hùng",
+    respondedAt: "11:30 - 05/03/2026",
     paymentStatus: "UNPAID",
   },
 ];

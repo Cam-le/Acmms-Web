@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useLocation } from "react-router";
 import {
   Search,
   Plus,
@@ -16,6 +17,7 @@ import {
   Edit,
   ChevronDown,
   ChevronUp,
+  Info,
 } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
@@ -28,6 +30,7 @@ import {
   mockTaskAssignments,
 } from "../../data/mockData";
 import { fetchStaff } from "../../api/mockApi";
+import type { TaskPrefill } from "../pages/AdvisoryPage";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -42,6 +45,23 @@ const TASK_TYPES = [
 ];
 const CROP_TYPES = ["Bắp Cải Trắng", "Bắp Cải Tím", "Bắp Cải Xoăn"];
 const AREAS = ["Khu A", "Khu B", "Khu C", "Khu D", "Khu E"];
+
+/** Luống options keyed by area — mirrors LandPlot data in mockData */
+const PLOTS_BY_AREA: Record<string, string[]> = {
+  "Khu A": ["Luống 01", "Luống 02", "Luống 03", "Luống 04", "Luống 05"],
+  "Khu B": [
+    "Luống 01",
+    "Luống 02",
+    "Luống 03",
+    "Luống 04",
+    "Luống 05",
+    "Luống 06",
+  ],
+  "Khu C": ["Luống 01", "Luống 02", "Luống 03", "Luống 04"],
+  "Khu D": ["Luống 01", "Luống 02", "Luống 03", "Luống 04", "Luống 05"],
+  "Khu E": ["Luống 01", "Luống 02", "Luống 03"],
+};
+
 const DAY_LABELS = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"];
 
 const STATUS_CONFIG = {
@@ -90,6 +110,7 @@ const isoToDisplay = (iso: string) => {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function TasksPage() {
+  const location = useLocation();
   const [staffList, setStaffList] = useState<Staff[]>([]);
   const [activeTab, setActiveTab] = useState("schedule");
 
@@ -117,6 +138,9 @@ export function TasksPage() {
   const [assignmentToDelete, setAssignmentToDelete] =
     useState<TaskAssignment | null>(null);
 
+  // Advisory prefill banner state
+  const [prefillSource, setPrefillSource] = useState<TaskPrefill | null>(null);
+
   // Staff picker
   const [isStaffPickerOpen, setIsStaffPickerOpen] = useState(false);
   const [selectedWorkerIds, setSelectedWorkerIds] = useState<string[]>([]);
@@ -134,14 +158,50 @@ export function TasksPage() {
   const [newAssignment, setNewAssignment] = useState({
     templateId: "",
     area: "",
-    plot: "",
     date: "",
     time: "",
     notes: "",
   });
 
+  // Selected luống (multi-select, tied to area)
+  const [selectedPlots, setSelectedPlots] = useState<string[]>([]);
+
   useEffect(() => {
     fetchStaff().then(setStaffList);
+  }, []);
+
+  // ── Handle advisory prefill from router state ─────────────────────────────
+  useEffect(() => {
+    const prefill = (location.state as { taskPrefill?: TaskPrefill } | null)
+      ?.taskPrefill;
+    if (!prefill) return;
+
+    setPrefillSource(prefill);
+
+    // Find the best matching template by task type
+    const matchedTemplate = templates.find(
+      (t) => t.type === prefill.suggestedTaskType,
+    );
+
+    // Normalise area: "Khu C" → "Khu C" if it matches one of AREAS
+    const matchedArea =
+      AREAS.find((a) => a.toLowerCase() === prefill.area.toLowerCase()) ?? "";
+
+    setNewAssignment({
+      templateId: matchedTemplate?.id ?? "",
+      area: matchedArea,
+      date: "",
+      time: "",
+      notes: prefill.notes,
+    });
+    setSelectedPlots([]);
+
+    // Open the assign dialog automatically
+    setIsAssignOpen(true);
+
+    // Clear router state so a back-navigation doesn't re-trigger
+    window.history.replaceState({}, "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ── Calendar helpers ──────────────────────────────────────────────────────────
@@ -219,7 +279,7 @@ export function TasksPage() {
         taskIcon: tpl.icon,
         taskIconBg: tpl.iconBg,
         area: newAssignment.area,
-        plot: newAssignment.plot,
+        plot: selectedPlots.join(", "),
         date: newAssignment.date,
         displayDate: isoToDisplay(newAssignment.date),
         time: newAssignment.time,
@@ -232,11 +292,11 @@ export function TasksPage() {
     setNewAssignment({
       templateId: "",
       area: "",
-      plot: "",
       date: "",
       time: "",
       notes: "",
     });
+    setSelectedPlots([]);
     setSelectedWorkerIds([]);
     setIsAssignOpen(false);
   };
@@ -505,7 +565,7 @@ export function TasksPage() {
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#90A1B9]" />
                 <input
                   type="text"
-                  placeholder="Tìm theo tên, khu vực, nhân viên..."
+                  placeholder="Tìm theo tên, vuông, nhân viên..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="w-full pl-9 pr-4 py-2 border border-[#cad5e2] rounded-[10px] text-sm focus:outline-none focus:ring-2 focus:ring-[#009689]"
@@ -526,7 +586,7 @@ export function TasksPage() {
                 onChange={(e) => setFilterArea(e.target.value)}
                 className="px-3 py-2 border border-[#cad5e2] rounded-[10px] text-sm bg-white text-[#314158] focus:outline-none focus:ring-2 focus:ring-[#009689]"
               >
-                <option value="all">Khu vực: Tất cả</option>
+                <option value="all">Vuông: Tất cả</option>
                 {AREAS.map((a) => (
                   <option key={a} value={a}>
                     {a}
@@ -541,7 +601,7 @@ export function TasksPage() {
                   <tr>
                     {[
                       "Công việc",
-                      "Khu vực",
+                      "Vuông",
                       "Nhân viên",
                       "Ngày thực hiện",
                       "Trạng thái",
@@ -784,7 +844,16 @@ export function TasksPage() {
       </Dialog.Root>
 
       {/* ══ MODAL: Assign Task ══ */}
-      <Dialog.Root open={isAssignOpen} onOpenChange={setIsAssignOpen}>
+      <Dialog.Root
+        open={isAssignOpen}
+        onOpenChange={(open) => {
+          setIsAssignOpen(open);
+          if (!open) {
+            setSelectedPlots([]);
+            setPrefillSource(null);
+          }
+        }}
+      >
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 bg-black/50 z-40" />
           <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-xl bg-white rounded-xl shadow-2xl p-6 max-h-[90vh] overflow-y-auto">
@@ -799,9 +868,25 @@ export function TasksPage() {
               </Dialog.Close>
             </div>
             <Dialog.Description className="sr-only">
-              Giao một công việc mẫu cho nhân viên tại khu vực và thời gian cụ
-              thể
+              Giao một công việc mẫu cho nhân viên tại vuông và thời gian cụ thể
             </Dialog.Description>
+
+            {/* ── Advisory prefill banner ── */}
+            {prefillSource && (
+              <div className="flex items-start gap-2.5 bg-[#f0fdfa] border border-[#009689]/30 rounded-lg px-3 py-2.5 mb-5 text-xs text-[#115e59]">
+                <Info className="w-3.5 h-3.5 mt-0.5 shrink-0 text-[#009689]" />
+                <div>
+                  <span className="font-semibold">
+                    Được tạo từ tư vấn {prefillSource.sourceAdvisoryId}
+                  </span>
+                  <span className="text-[#62748e]">
+                    {" "}
+                    · Thông tin đã được điền sẵn. Bạn có thể điều chỉnh trước
+                    khi giao.
+                  </span>
+                </div>
+              </div>
+            )}
             <div className="space-y-5">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1.5">
@@ -836,16 +921,17 @@ export function TasksPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                    Khu vực <span className="text-red-500">*</span>
+                    Vuông <span className="text-red-500">*</span>
                   </label>
                   <select
                     value={newAssignment.area}
-                    onChange={(e) =>
-                      setNewAssignment((p) => ({ ...p, area: e.target.value }))
-                    }
+                    onChange={(e) => {
+                      setNewAssignment((p) => ({ ...p, area: e.target.value }));
+                      setSelectedPlots([]); // clear luống when area changes
+                    }}
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#009689]"
                   >
-                    <option value="">Chọn khu vực</option>
+                    <option value="">Chọn vuông</option>
                     {AREAS.map((a) => (
                       <option key={a} value={a}>
                         {a}
@@ -855,17 +941,63 @@ export function TasksPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                    Luống / ô
+                    Luống
                   </label>
-                  <input
-                    type="text"
-                    placeholder="VD: Luống 01"
-                    value={newAssignment.plot}
-                    onChange={(e) =>
-                      setNewAssignment((p) => ({ ...p, plot: e.target.value }))
-                    }
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                  />
+                  {/* Multi-select luống — dropdown + pill tags, tied to area */}
+                  <select
+                    disabled={!newAssignment.area}
+                    value=""
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (!val) return;
+                      setSelectedPlots((prev) =>
+                        prev.includes(val) ? prev : [...prev, val],
+                      );
+                      // Reset select to placeholder after pick
+                      e.target.value = "";
+                    }}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#009689] disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed"
+                  >
+                    <option value="">
+                      {newAssignment.area
+                        ? selectedPlots.length ===
+                          (PLOTS_BY_AREA[newAssignment.area]?.length ?? 0)
+                          ? "Đã chọn tất cả"
+                          : "-- Thêm luống --"
+                        : "Chọn vuông trước"}
+                    </option>
+                    {(PLOTS_BY_AREA[newAssignment.area] ?? [])
+                      .filter((p) => !selectedPlots.includes(p))
+                      .map((p) => (
+                        <option key={p} value={p}>
+                          {p}
+                        </option>
+                      ))}
+                  </select>
+                  {/* Selected luống pills */}
+                  {selectedPlots.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      {selectedPlots.map((p) => (
+                        <span
+                          key={p}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 bg-[#dcfce7] text-[#166534] text-xs rounded-md font-medium"
+                        >
+                          {p}
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setSelectedPlots((prev) =>
+                                prev.filter((x) => x !== p),
+                              )
+                            }
+                            className="hover:text-[#991b1b] transition-colors"
+                          >
+                            <X className="w-2.5 h-2.5" />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
@@ -941,7 +1073,11 @@ export function TasksPage() {
             </div>
             <div className="flex gap-3 mt-6 pt-5 border-t border-[#e2e8f0]">
               <button
-                onClick={() => setIsAssignOpen(false)}
+                onClick={() => {
+                  setIsAssignOpen(false);
+                  setSelectedPlots([]);
+                  setPrefillSource(null);
+                }}
                 className="flex-1 px-4 py-2 rounded-lg text-sm font-medium text-slate-700 border border-[#e2e8f0] hover:bg-slate-50 transition-colors"
               >
                 Hủy
@@ -1002,7 +1138,7 @@ export function TasksPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-3 p-4 bg-[#f8fafc] rounded-lg text-sm">
                   <div>
-                    <p className="text-xs text-[#64748b] mb-0.5">Khu vực</p>
+                    <p className="text-xs text-[#64748b] mb-0.5">Vuông</p>
                     <p className="font-medium text-[#1e293b]">
                       {selectedAssignment.area}
                       {selectedAssignment.plot
