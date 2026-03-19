@@ -13,6 +13,11 @@ import {
   X,
   Loader2,
   WifiOff,
+  TrendingUp,
+  ChevronRight,
+  Thermometer,
+  Droplets,
+  ClipboardList,
 } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
@@ -23,6 +28,8 @@ import {
   CropStatus,
   cropSoilTypes as soilTypes,
   mockCrops,
+  CropGrowthStage,
+  mockGrowthStagesByCropId,
 } from "../../data/mockData";
 import { api, CropResponse } from "../../api/client";
 
@@ -57,6 +64,7 @@ export function CropsPage() {
   );
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const [viewModalOpen, setViewModalOpen] = useState(false);
+  const [growthTrackingModalOpen, setGrowthTrackingModalOpen] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -457,7 +465,17 @@ export function CropsPage() {
                   </div>
                 )}
               </div>
-              <div className="mt-6 flex justify-end">
+              <div className="mt-6 flex justify-between items-center">
+                <button
+                  onClick={() => {
+                    setViewModalOpen(false);
+                    setGrowthTrackingModalOpen(true);
+                  }}
+                  className="flex items-center gap-2 px-4 py-2 bg-[#f0fdf9] text-[#009689] border border-[#009689] rounded-lg text-sm font-medium hover:bg-[#ccfbf1] transition-colors"
+                >
+                  <TrendingUp className="w-4 h-4" />
+                  Theo dõi sinh trưởng
+                </button>
                 <Dialog.Close className="px-4 py-2 bg-[#f1f5f9] text-[#314158] rounded-lg text-sm hover:bg-[#e2e8f0]">
                   Đóng
                 </Dialog.Close>
@@ -465,6 +483,22 @@ export function CropsPage() {
             </Dialog.Content>
           </Dialog.Portal>
         </Dialog.Root>
+      )}
+
+      {/* Growth Tracking Modal */}
+      {selectedCrop && (
+        <GrowthTrackingModal
+          crop={selectedCrop}
+          open={growthTrackingModalOpen}
+          onClose={() => {
+            setGrowthTrackingModalOpen(false);
+            setSelectedCrop(null);
+          }}
+          onBack={() => {
+            setGrowthTrackingModalOpen(false);
+            setViewModalOpen(true);
+          }}
+        />
       )}
 
       {/* Create Modal */}
@@ -519,6 +553,296 @@ export function CropsPage() {
         </AlertDialog.Portal>
       </AlertDialog.Root>
     </div>
+  );
+}
+
+// ===================== GROWTH TRACKING MODAL =====================
+
+function GrowthTrackingModal({
+  crop,
+  open,
+  onClose,
+  onBack,
+}: {
+  crop: Crop;
+  open: boolean;
+  onClose: () => void;
+  onBack: () => void;
+}) {
+  const stages: CropGrowthStage[] = mockGrowthStagesByCropId[crop.id] ?? [];
+  const [activeStageId, setActiveStageId] = useState<string | null>(
+    stages[0]?.stageId ?? null,
+  );
+  const [activeTab, setActiveTab] = useState<"overview" | "tasks">("overview");
+
+  const activeStage = stages.find((s) => s.stageId === activeStageId);
+
+  return (
+    <Dialog.Root
+      open={open}
+      onOpenChange={(o) => {
+        if (!o) onClose();
+      }}
+    >
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
+        <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-hidden z-50 flex flex-col">
+          {/* Header */}
+          <div className="flex items-center justify-between px-6 py-4 border-b border-[#e2e8f0] shrink-0">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={onBack}
+                className="text-[#94a3b8] hover:text-[#62748e] p-1 rounded transition-colors"
+              >
+                <ChevronRight className="w-5 h-5 rotate-180" />
+              </button>
+              <div className="w-8 h-8 bg-[#f0fdf9] rounded-lg flex items-center justify-center">
+                <TrendingUp className="w-4 h-4 text-[#009689]" />
+              </div>
+              <div>
+                <Dialog.Title className="text-base font-bold text-[#115e59] leading-tight">
+                  Giai đoạn sinh trưởng
+                </Dialog.Title>
+                <p className="text-xs text-[#62748e]">{crop.name}</p>
+              </div>
+            </div>
+            <Dialog.Close className="text-[#94a3b8] hover:text-[#62748e]">
+              <X className="w-5 h-5" />
+            </Dialog.Close>
+          </div>
+          <Dialog.Description className="sr-only">
+            Giai đoạn sinh trưởng cho {crop.name}
+          </Dialog.Description>
+
+          {stages.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 text-[#94a3b8]">
+              <TrendingUp className="w-10 h-10 mb-3 opacity-40" />
+              <p className="text-sm">Chưa có dữ liệu giai đoạn sinh trưởng</p>
+            </div>
+          ) : (
+            <div className="flex flex-1 overflow-hidden">
+              {/* Stage sidebar */}
+              <div className="w-48 shrink-0 border-r border-[#e2e8f0] overflow-y-auto bg-[#f8fafc]">
+                <div className="p-3">
+                  <p className="text-xs font-semibold text-[#62748e] uppercase tracking-wider mb-2 px-1">
+                    Giai đoạn
+                  </p>
+                  <div className="space-y-1">
+                    {stages.map((stage) => {
+                      const isActive = activeStageId === stage.stageId;
+                      return (
+                        <button
+                          key={stage.stageId}
+                          onClick={() => {
+                            setActiveStageId(stage.stageId);
+                            setActiveTab("overview");
+                          }}
+                          className={`w-full text-left px-3 py-2.5 rounded-lg transition-colors ${isActive ? "bg-[#009689] text-white" : "hover:bg-white text-[#334155]"}`}
+                        >
+                          <p
+                            className={`text-xs font-medium truncate ${isActive ? "text-white" : "text-[#115e59]"}`}
+                          >
+                            {stage.stageOrder}. {stage.stageName}
+                          </p>
+                          <p
+                            className={`text-[10px] mt-0.5 ${isActive ? "text-[#ccfbf1]" : "text-[#94a3b8]"}`}
+                          >
+                            {stage.expectedDurationDays} ngày
+                          </p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {/* Main content */}
+              {activeStage && (
+                <div className="flex-1 overflow-y-auto">
+                  <div className="p-5">
+                    {/* Stage title */}
+                    <div className="mb-4">
+                      <h3 className="text-base font-bold text-[#115e59]">
+                        Giai đoạn {activeStage.stageOrder}:{" "}
+                        {activeStage.stageName}
+                      </h3>
+                      <p className="text-xs text-[#62748e] mt-0.5">
+                        {activeStage.stageDescription}
+                      </p>
+                    </div>
+
+                    {/* Tabs */}
+                    <div className="flex gap-1 mb-4 bg-[#f1f5f9] rounded-lg p-1">
+                      {(["overview", "tasks"] as const).map((tab) => (
+                        <button
+                          key={tab}
+                          onClick={() => setActiveTab(tab)}
+                          className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${activeTab === tab ? "bg-white text-[#115e59] shadow-sm" : "text-[#62748e] hover:text-[#334155]"}`}
+                        >
+                          {tab === "overview"
+                            ? "Tổng quan"
+                            : `Công việc (${activeStage.tasks.length})`}
+                        </button>
+                      ))}
+                    </div>
+
+                    {activeTab === "overview" && (
+                      <div className="space-y-4">
+                        {/* Environmental requirements */}
+                        <div className="bg-[#f8fafc] rounded-xl p-4">
+                          <p className="text-xs font-semibold text-[#62748e] uppercase tracking-wider mb-3">
+                            Yêu cầu môi trường
+                          </p>
+                          <div className="grid grid-cols-3 gap-3">
+                            <div className="bg-white rounded-lg p-3 border border-[#e2e8f0]">
+                              <div className="flex items-center gap-1.5 mb-1">
+                                <Thermometer className="w-3.5 h-3.5 text-orange-400" />
+                                <span className="text-[10px] text-[#62748e] font-medium">
+                                  Nhiệt độ
+                                </span>
+                              </div>
+                              <p className="text-sm font-bold text-[#115e59]">
+                                {activeStage.temperatureMin}–
+                                {activeStage.temperatureMax}°C
+                              </p>
+                            </div>
+                            <div className="bg-white rounded-lg p-3 border border-[#e2e8f0]">
+                              <div className="flex items-center gap-1.5 mb-1">
+                                <Droplets className="w-3.5 h-3.5 text-blue-400" />
+                                <span className="text-[10px] text-[#62748e] font-medium">
+                                  Độ ẩm KK
+                                </span>
+                              </div>
+                              <p className="text-sm font-bold text-[#115e59]">
+                                {activeStage.humidityMin}–
+                                {activeStage.humidityMax}%
+                              </p>
+                            </div>
+                            <div className="bg-white rounded-lg p-3 border border-[#e2e8f0]">
+                              <div className="flex items-center gap-1.5 mb-1">
+                                <Droplets className="w-3.5 h-3.5 text-teal-500" />
+                                <span className="text-[10px] text-[#62748e] font-medium">
+                                  Ẩm đất
+                                </span>
+                              </div>
+                              <p className="text-sm font-bold text-[#115e59]">
+                                {activeStage.soilMoistureMin}–
+                                {activeStage.soilMoistureMax}%
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Growth indicators & diseases */}
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="bg-[#f0fdf9] rounded-xl p-4 border border-[#ccfbf1]">
+                            <p className="text-xs font-semibold text-[#009689] mb-1.5">
+                              Chỉ số sinh trưởng
+                            </p>
+                            <p className="text-xs text-[#334155] leading-relaxed">
+                              {activeStage.growthIndicators}
+                            </p>
+                          </div>
+                          <div className="bg-[#fff7ed] rounded-xl p-4 border border-[#fed7aa]">
+                            <p className="text-xs font-semibold text-orange-500 mb-1.5">
+                              Bệnh thường gặp
+                            </p>
+                            <p className="text-xs text-[#334155] leading-relaxed">
+                              {activeStage.commonDiseases}
+                            </p>
+                          </div>
+                        </div>
+
+                        {activeStage.notes && (
+                          <div className="bg-[#f1f5f9] rounded-xl px-4 py-3 text-xs text-[#62748e]">
+                            <span className="font-semibold text-[#334155]">
+                              Lưu ý:{" "}
+                            </span>
+                            {activeStage.notes}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {activeTab === "tasks" && (
+                      <div className="space-y-3">
+                        {activeStage.tasks.length === 0 ? (
+                          <p className="text-sm text-[#94a3b8] text-center py-8">
+                            Không có công việc
+                          </p>
+                        ) : (
+                          activeStage.tasks.map((task) => (
+                            <div
+                              key={task.growthTaskId}
+                              className="bg-[#f8fafc] border border-[#e2e8f0] rounded-xl p-4"
+                            >
+                              <div className="flex items-start justify-between gap-2 mb-2">
+                                <div className="flex items-center gap-2">
+                                  <ClipboardList className="w-4 h-4 text-[#009689] shrink-0" />
+                                  <p className="text-sm font-semibold text-[#115e59]">
+                                    {task.taskName}
+                                  </p>
+                                </div>
+                                {task.isMandatory && (
+                                  <span className="shrink-0 px-2 py-0.5 bg-[#fee2e2] text-[#b91c1c] text-[10px] font-medium rounded-full">
+                                    Bắt buộc
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-xs text-[#62748e] mb-3 leading-relaxed">
+                                {task.taskDescription}
+                              </p>
+                              <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+                                <div className="flex justify-between">
+                                  <span className="text-[#94a3b8]">
+                                    Tần suất
+                                  </span>
+                                  <span className="font-medium text-[#334155]">
+                                    {task.frequency}
+                                  </span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-[#94a3b8]">
+                                    Thời gian
+                                  </span>
+                                  <span className="font-medium text-[#334155]">
+                                    {task.durationMinutes} phút
+                                  </span>
+                                </div>
+                                {task.quantityPerUnit > 0 && (
+                                  <div className="flex justify-between col-span-2">
+                                    <span className="text-[#94a3b8]">
+                                      Định lượng
+                                    </span>
+                                    <span className="font-medium text-[#334155]">
+                                      {task.quantityPerUnit} {task.quantityUnit}
+                                    </span>
+                                  </div>
+                                )}
+                                {task.requiredTools && (
+                                  <div className="flex justify-between col-span-2">
+                                    <span className="text-[#94a3b8]">
+                                      Dụng cụ
+                                    </span>
+                                    <span className="font-medium text-[#334155] text-right">
+                                      {task.requiredTools}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
 }
 

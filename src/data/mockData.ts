@@ -1466,6 +1466,419 @@ export const mockTaskTemplates: TaskTemplate[] = [
   },
 ];
 
+// =================== GROWTH TRACKING ===================
+
+export interface CropGrowthTask {
+  growthTaskId: string;
+  stageId: string;
+  taskName: string;
+  taskDescription: string;
+  taskOrder: number;
+  frequency: string;
+  durationMinutes: number;
+  requiredTools: string;
+  quantityPerUnit: number;
+  quantityUnit: string;
+  isMandatory: boolean;
+}
+
+export interface CropGrowthStage {
+  stageId: string;
+  cropId: string;
+  stageName: string;
+  stageOrder: number;
+  stageDescription: string;
+  expectedDurationDays: number;
+  temperatureMin: number;
+  temperatureMax: number;
+  humidityMin: number;
+  humidityMax: number;
+  soilMoistureMin: number;
+  soilMoistureMax: number;
+  growthIndicators: string;
+  commonDiseases: string;
+  notes: string;
+  tasks: CropGrowthTask[];
+}
+
+// Growth stages for crop id "1" (Bắp Cải Trắng)
+export const mockGrowthStagesBapCaiTrang: CropGrowthStage[] = [
+  {
+    stageId: "gs-1-1",
+    cropId: "1",
+    stageName: "Nảy mầm",
+    stageOrder: 1,
+    stageDescription:
+      "Hạt giống hút nước và nảy mầm, rễ mầm xuất hiện trước tiên.",
+    expectedDurationDays: 7,
+    temperatureMin: 18,
+    temperatureMax: 25,
+    humidityMin: 70,
+    humidityMax: 85,
+    soilMoistureMin: 60,
+    soilMoistureMax: 75,
+    growthIndicators: "Hạt nứt vỏ, rễ mầm dài 1–2 cm, lá mầm xuất hiện",
+    commonDiseases: "Thối rễ mầm (Pythium), Lở cổ rễ",
+    notes: "Giữ ẩm đất liên tục, tránh để khô hoặc ngập úng.",
+    tasks: [
+      {
+        growthTaskId: "gt-1-1-1",
+        stageId: "gs-1-1",
+        taskName: "Gieo hạt",
+        taskDescription: "Gieo hạt ở độ sâu 0.5–1 cm, khoảng cách 5 cm.",
+        taskOrder: 1,
+        frequency: "Một lần",
+        durationMinutes: 60,
+        requiredTools: "Khay ươm, bình tưới",
+        quantityPerUnit: 3,
+        quantityUnit: "hạt/ô",
+        isMandatory: true,
+      },
+      {
+        growthTaskId: "gt-1-1-2",
+        stageId: "gs-1-1",
+        taskName: "Tưới nước mầm",
+        taskDescription: "Tưới nhẹ 2 lần/ngày để duy trì độ ẩm khay ươm.",
+        taskOrder: 2,
+        frequency: "Hàng ngày",
+        durationMinutes: 15,
+        requiredTools: "Bình tưới phun sương",
+        quantityPerUnit: 0.5,
+        quantityUnit: "lít/m²",
+        isMandatory: true,
+      },
+    ],
+  },
+  {
+    stageId: "gs-1-2",
+    cropId: "1",
+    stageName: "Cây con",
+    stageOrder: 2,
+    stageDescription: "Cây phát triển 2–4 lá thật, rễ bắt đầu lan rộng.",
+    expectedDurationDays: 14,
+    temperatureMin: 15,
+    temperatureMax: 22,
+    humidityMin: 65,
+    humidityMax: 80,
+    soilMoistureMin: 55,
+    soilMoistureMax: 70,
+    growthIndicators: "4 lá thật, chiều cao 8–12 cm, thân thẳng",
+    commonDiseases: "Sâu tơ, Bọ nhảy, Bệnh chết rạp cây con",
+    notes: "Giai đoạn tỉa cây giữ mật độ tối ưu 40×40 cm.",
+    tasks: [
+      {
+        growthTaskId: "gt-1-2-1",
+        stageId: "gs-1-2",
+        taskName: "Tỉa cây yếu",
+        taskDescription: "Loại bỏ cây còi cọc, giữ 1 cây/hốc.",
+        taskOrder: 1,
+        frequency: "Một lần",
+        durationMinutes: 45,
+        requiredTools: "Kéo cắt, găng tay",
+        quantityPerUnit: 1,
+        quantityUnit: "cây/hốc",
+        isMandatory: true,
+      },
+      {
+        growthTaskId: "gt-1-2-2",
+        stageId: "gs-1-2",
+        taskName: "Bón phân lót NPK",
+        taskDescription: "Bón NPK 16-16-8 lót quanh gốc, không tiếp xúc rễ.",
+        taskOrder: 2,
+        frequency: "Một lần",
+        durationMinutes: 60,
+        requiredTools: "Xẻng nhỏ, bảo hộ lao động",
+        quantityPerUnit: 20,
+        quantityUnit: "g/cây",
+        isMandatory: true,
+      },
+      {
+        growthTaskId: "gt-1-2-3",
+        stageId: "gs-1-2",
+        taskName: "Kiểm tra sâu bệnh",
+        taskDescription: "Quan sát mặt dưới lá, phát hiện sâu tơ và bọ nhảy.",
+        taskOrder: 3,
+        frequency: "3 ngày/lần",
+        durationMinutes: 30,
+        requiredTools: "Kính lúp, sổ ghi chép",
+        quantityPerUnit: 0,
+        quantityUnit: "",
+        isMandatory: false,
+      },
+    ],
+  },
+  {
+    stageId: "gs-1-3",
+    cropId: "1",
+    stageName: "Phát triển lá",
+    stageOrder: 3,
+    stageDescription: "Giai đoạn tăng sinh khối lá nhanh, cây mở rộng tán.",
+    expectedDurationDays: 21,
+    temperatureMin: 13,
+    temperatureMax: 20,
+    humidityMin: 60,
+    humidityMax: 75,
+    soilMoistureMin: 50,
+    soilMoistureMax: 65,
+    growthIndicators: "12–16 lá, tán rộng 25–35 cm, lá màu xanh đậm",
+    commonDiseases: "Sâu tơ Plutella, Bệnh đốm vòng Alternaria",
+    notes: "Tăng cường Kali để lá cứng và chống đổ ngã.",
+    tasks: [
+      {
+        growthTaskId: "gt-1-3-1",
+        stageId: "gs-1-3",
+        taskName: "Bón thúc lần 1",
+        taskDescription:
+          "Bón Ure 46% kết hợp KCl xung quanh gốc bán kính 10 cm.",
+        taskOrder: 1,
+        frequency: "Một lần",
+        durationMinutes: 75,
+        requiredTools: "Xô, cân tiểu ly",
+        quantityPerUnit: 15,
+        quantityUnit: "g/cây",
+        isMandatory: true,
+      },
+      {
+        growthTaskId: "gt-1-3-2",
+        stageId: "gs-1-3",
+        taskName: "Tưới nhỏ giọt",
+        taskDescription: "Duy trì hệ thống tưới nhỏ giọt 2 lần/ngày.",
+        taskOrder: 2,
+        frequency: "Hàng ngày",
+        durationMinutes: 10,
+        requiredTools: "Hệ thống tưới nhỏ giọt",
+        quantityPerUnit: 1.5,
+        quantityUnit: "lít/cây/ngày",
+        isMandatory: true,
+      },
+    ],
+  },
+  {
+    stageId: "gs-1-4",
+    cropId: "1",
+    stageName: "Cuộn bắp",
+    stageOrder: 4,
+    stageDescription: "Lá trong bắt đầu cuộn chặt tạo thành bắp cải.",
+    expectedDurationDays: 21,
+    temperatureMin: 10,
+    temperatureMax: 18,
+    humidityMin: 55,
+    humidityMax: 70,
+    soilMoistureMin: 50,
+    soilMoistureMax: 60,
+    growthIndicators: "Bắp hình cầu đường kính 8–15 cm, chắc tay",
+    commonDiseases: "Sâu xanh bướm trắng, Thối nhũn vi khuẩn",
+    notes: "Giảm tưới 20% để bắp chắc, tránh nứt bắp.",
+    tasks: [
+      {
+        growthTaskId: "gt-1-4-1",
+        stageId: "gs-1-4",
+        taskName: "Bón thúc lần 2",
+        taskDescription: "Bón NPK 15-5-20 giàu Kali hỗ trợ cuộn bắp.",
+        taskOrder: 1,
+        frequency: "Một lần",
+        durationMinutes: 60,
+        requiredTools: "Xô, bảo hộ lao động",
+        quantityPerUnit: 25,
+        quantityUnit: "g/cây",
+        isMandatory: true,
+      },
+      {
+        growthTaskId: "gt-1-4-2",
+        stageId: "gs-1-4",
+        taskName: "Phun phòng bệnh thối nhũn",
+        taskDescription: "Phun Copper Hydroxide 77% để phòng vi khuẩn.",
+        taskOrder: 2,
+        frequency: "7 ngày/lần",
+        durationMinutes: 40,
+        requiredTools: "Bình phun, bảo hộ hóa chất",
+        quantityPerUnit: 30,
+        quantityUnit: "ml/10L nước",
+        isMandatory: false,
+      },
+    ],
+  },
+  {
+    stageId: "gs-1-5",
+    cropId: "1",
+    stageName: "Thu hoạch",
+    stageOrder: 5,
+    stageDescription: "Bắp cải đạt độ chín, sẵn sàng thu hoạch.",
+    expectedDurationDays: 7,
+    temperatureMin: 10,
+    temperatureMax: 20,
+    humidityMin: 50,
+    humidityMax: 70,
+    soilMoistureMin: 40,
+    soilMoistureMax: 55,
+    growthIndicators: "Bắp chắc, nặng 1–2 kg, lá ngoài màu xanh bóng",
+    commonDiseases: "Nứt bắp do mưa lớn",
+    notes:
+      "Thu hoạch vào buổi sáng sớm khi nhiệt độ thấp để bảo quản tươi lâu.",
+    tasks: [
+      {
+        growthTaskId: "gt-1-5-1",
+        stageId: "gs-1-5",
+        taskName: "Kiểm tra độ chín",
+        taskDescription: "Bóp nhẹ bắp, nếu chắc tay và không xốp là đạt.",
+        taskOrder: 1,
+        frequency: "Hàng ngày",
+        durationMinutes: 20,
+        requiredTools: "Cân đồng hồ",
+        quantityPerUnit: 0,
+        quantityUnit: "",
+        isMandatory: true,
+      },
+      {
+        growthTaskId: "gt-1-5-2",
+        stageId: "gs-1-5",
+        taskName: "Thu hoạch và phân loại",
+        taskDescription: "Cắt bắp, loại bỏ lá già, phân loại theo kích thước.",
+        taskOrder: 2,
+        frequency: "Một lần",
+        durationMinutes: 120,
+        requiredTools: "Dao thu hoạch, thùng nhựa, cân",
+        quantityPerUnit: 0,
+        quantityUnit: "",
+        isMandatory: true,
+      },
+    ],
+  },
+];
+
+// Growth stages for crop id "3" (Bắp Cải Xoăn / Kale)
+export const mockGrowthStagesBapCaiXoan: CropGrowthStage[] = [
+  {
+    stageId: "gs-3-1",
+    cropId: "3",
+    stageName: "Nảy mầm",
+    stageOrder: 1,
+    stageDescription: "Hạt giống nảy mầm trong điều kiện nhiệt độ mát.",
+    expectedDurationDays: 5,
+    temperatureMin: 15,
+    temperatureMax: 22,
+    humidityMin: 70,
+    humidityMax: 85,
+    soilMoistureMin: 65,
+    soilMoistureMax: 80,
+    growthIndicators: "Hạt nứt vỏ sau 3–5 ngày, lá mầm xanh nhạt",
+    commonDiseases: "Lở cổ rễ, thối hạt",
+    notes: "Kale cần nhiệt độ mát hơn bắp cải thông thường.",
+    tasks: [
+      {
+        growthTaskId: "gt-3-1-1",
+        stageId: "gs-3-1",
+        taskName: "Gieo hạt trong khay",
+        taskDescription: "Gieo 2 hạt/ô ở độ sâu 0.5 cm.",
+        taskOrder: 1,
+        frequency: "Một lần",
+        durationMinutes: 45,
+        requiredTools: "Khay ươm 50 ô, bình phun",
+        quantityPerUnit: 2,
+        quantityUnit: "hạt/ô",
+        isMandatory: true,
+      },
+    ],
+  },
+  {
+    stageId: "gs-3-2",
+    cropId: "3",
+    stageName: "Cây con & Ra lá xoăn",
+    stageOrder: 2,
+    stageDescription: "Lá đặc trưng xoăn bắt đầu xuất hiện từ lá thật thứ 3.",
+    expectedDurationDays: 20,
+    temperatureMin: 13,
+    temperatureMax: 20,
+    humidityMin: 60,
+    humidityMax: 78,
+    soilMoistureMin: 55,
+    soilMoistureMax: 68,
+    growthIndicators: "5–7 lá xoăn, màu xanh đậm, chiều cao 15 cm",
+    commonDiseases: "Sâu tơ, rệp xanh",
+    notes: "Kale cần ánh sáng đầy đủ để lá xoăn đặc trưng hình thành.",
+    tasks: [
+      {
+        growthTaskId: "gt-3-2-1",
+        stageId: "gs-3-2",
+        taskName: "Cấy chuyển ra luống",
+        taskDescription: "Cấy cây con ra luống khoảng cách 35×35 cm.",
+        taskOrder: 1,
+        frequency: "Một lần",
+        durationMinutes: 90,
+        requiredTools: "Bay cấy, thước đo khoảng cách",
+        quantityPerUnit: 1,
+        quantityUnit: "cây/hốc",
+        isMandatory: true,
+      },
+      {
+        growthTaskId: "gt-3-2-2",
+        stageId: "gs-3-2",
+        taskName: "Bón phân lót",
+        taskDescription: "Bón phân hữu cơ vi sinh 500 g/m² trước cấy.",
+        taskOrder: 2,
+        frequency: "Một lần",
+        durationMinutes: 50,
+        requiredTools: "Xẻng, bảo hộ",
+        quantityPerUnit: 500,
+        quantityUnit: "g/m²",
+        isMandatory: true,
+      },
+    ],
+  },
+  {
+    stageId: "gs-3-3",
+    cropId: "3",
+    stageName: "Phát triển & Thu hoạch liên tục",
+    stageOrder: 3,
+    stageDescription: "Kale trưởng thành, có thể thu hoạch lá ngoài liên tục.",
+    expectedDurationDays: 30,
+    temperatureMin: 10,
+    temperatureMax: 18,
+    humidityMin: 55,
+    humidityMax: 72,
+    soilMoistureMin: 50,
+    soilMoistureMax: 62,
+    growthIndicators: "Cây cao 40–60 cm, lá ngoài đủ kích thước thu hoạch",
+    commonDiseases: "Bệnh đốm lá Alternaria, rệp",
+    notes: "Thu hoạch lá ngoài để kích thích lá trong tiếp tục phát triển.",
+    tasks: [
+      {
+        growthTaskId: "gt-3-3-1",
+        stageId: "gs-3-3",
+        taskName: "Thu hoạch lá ngoài",
+        taskDescription: "Cắt 3–5 lá ngoài cùng, để lại lá trong và chồi ngọn.",
+        taskOrder: 1,
+        frequency: "7 ngày/lần",
+        durationMinutes: 60,
+        requiredTools: "Dao sắc, giỏ thu hoạch",
+        quantityPerUnit: 5,
+        quantityUnit: "lá/cây",
+        isMandatory: true,
+      },
+      {
+        growthTaskId: "gt-3-3-2",
+        stageId: "gs-3-3",
+        taskName: "Bón thúc Đạm",
+        taskDescription:
+          "Bón Ure 46% hòa loãng tưới gốc sau mỗi lần thu hoạch.",
+        taskOrder: 2,
+        frequency: "7 ngày/lần",
+        durationMinutes: 30,
+        requiredTools: "Thùng pha phân, bình tưới",
+        quantityPerUnit: 10,
+        quantityUnit: "g/cây",
+        isMandatory: false,
+      },
+    ],
+  },
+];
+
+// Map cropId → growth stages
+export const mockGrowthStagesByCropId: Record<string, CropGrowthStage[]> = {
+  "1": mockGrowthStagesBapCaiTrang,
+  "3": mockGrowthStagesBapCaiXoan,
+};
+
 export const mockTaskAssignments: TaskAssignment[] = [
   {
     id: "asgn-1",
