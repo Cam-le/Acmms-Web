@@ -28,8 +28,10 @@ import {
   Staff,
   TaskTemplate,
   TaskAssignment,
+  Season,
   mockTaskTemplates,
   mockTaskAssignments,
+  mockSeasons,
 } from "../../data/mockData";
 import { fetchStaff } from "../../api/mockApi";
 import type { TaskPrefill } from "../pages/AdvisoryPage";
@@ -821,6 +823,7 @@ export function TasksPage() {
   // New assignment form
   const [newAssignment, setNewAssignment] = useState({
     templateId: "",
+    seasonId: "",
     date: "",
     startHour: "07",
     startMinute: "00",
@@ -836,7 +839,21 @@ export function TasksPage() {
   // Stores per-group worker breakdown keyed by assignment id
   const [bedGroupsMap, setBedGroupsMap] = useState<
     Record<string, BedGroupSnapshot[]>
-  >({});
+  >({
+    // Demo data for asgn-4: 2 groups, 3 beds each, 2 workers each
+    "asgn-4": [
+      {
+        label: "Nhóm 1",
+        plots: ["Luống 01", "Luống 02", "Luống 03"],
+        workerNames: ["Trần Văn E", "Lê Thị F"],
+      },
+      {
+        label: "Nhóm 2",
+        plots: ["Luống 04", "Luống 05", "Luống 06"],
+        workerNames: ["Vũ Văn I", "Bùi Văn L"],
+      },
+    ],
+  });
 
   useEffect(() => {
     fetchStaff().then(setStaffList);
@@ -1006,6 +1023,7 @@ export function TasksPage() {
         workerNames: workers.map((w) => w.name),
         status: "pending" as const,
         notes: newAssignment.notes,
+        seasonId: newAssignment.seasonId || undefined,
       };
     });
 
@@ -1013,6 +1031,7 @@ export function TasksPage() {
     setBedGroupsMap((prev) => ({ ...prev, ...newGroupEntries }));
     setNewAssignment({
       templateId: "",
+      seasonId: "",
       date: "",
       startHour: "07",
       startMinute: "00",
@@ -1569,11 +1588,69 @@ export function TasksPage() {
                 )}
               </section>
 
-              {/* ── 2. Date & Time ── */}
+              {/* ── 2. Season ── */}
               <section>
                 <h3 className="text-xs font-bold text-[#009689] uppercase tracking-widest mb-3 flex items-center gap-1.5">
                   <span className="w-5 h-5 rounded-full bg-[#009689] text-white text-[10px] flex items-center justify-center font-bold">
                     2
+                  </span>
+                  Mùa vụ
+                </h3>
+                <select
+                  value={newAssignment.seasonId}
+                  onChange={(e) =>
+                    setNewAssignment((p) => ({
+                      ...p,
+                      seasonId: e.target.value,
+                    }))
+                  }
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                >
+                  <option value="">-- Chọn mùa vụ --</option>
+                  {mockSeasons.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                      {s.status === "Đang hoạt động"
+                        ? " ✓"
+                        : s.status === "Đã kết thúc"
+                          ? " (Đã kết thúc)"
+                          : " (Sắp diễn ra)"}
+                    </option>
+                  ))}
+                </select>
+                {newAssignment.seasonId &&
+                  (() => {
+                    const season = mockSeasons.find(
+                      (s) => s.id === newAssignment.seasonId,
+                    );
+                    if (!season) return null;
+                    return (
+                      <div className="mt-2 flex items-center justify-between px-3 py-2 bg-[#f8fafc] rounded-lg border border-[#e2e8f0] text-xs">
+                        <span className="text-[#64748b]">
+                          {season.startDate.split("-").reverse().join("/")} –{" "}
+                          {season.endDate.split("-").reverse().join("/")}
+                        </span>
+                        <span
+                          className={`font-medium px-2 py-0.5 rounded-full ${
+                            season.status === "Đang hoạt động"
+                              ? "bg-[#d1fae5] text-[#065f46]"
+                              : season.status === "Đã kết thúc"
+                                ? "bg-[#f1f5f9] text-[#64748b]"
+                                : "bg-[#fef3c7] text-[#92400e]"
+                          }`}
+                        >
+                          {season.status}
+                        </span>
+                      </div>
+                    );
+                  })()}
+              </section>
+
+              {/* ── 3. Date & Time ── */}
+              <section>
+                <h3 className="text-xs font-bold text-[#009689] uppercase tracking-widest mb-3 flex items-center gap-1.5">
+                  <span className="w-5 h-5 rounded-full bg-[#009689] text-white text-[10px] flex items-center justify-center font-bold">
+                    3
                   </span>
                   Ngày &amp; Giờ
                 </h3>
@@ -1633,11 +1710,11 @@ export function TasksPage() {
                 </div>
               </section>
 
-              {/* ── 3. Areas & Bed Groups ── */}
+              {/* ── 4. Areas & Bed Groups ── */}
               <section>
                 <h3 className="text-xs font-bold text-[#009689] uppercase tracking-widest mb-1 flex items-center gap-1.5">
                   <span className="w-5 h-5 rounded-full bg-[#009689] text-white text-[10px] flex items-center justify-center font-bold">
-                    3
+                    4
                   </span>
                   Vuông, Luống &amp; Nhân viên
                 </h3>
@@ -1693,11 +1770,11 @@ export function TasksPage() {
                 </div>
               </section>
 
-              {/* ── 4. Notes ── */}
+              {/* ── 5. Notes ── */}
               <section>
                 <h3 className="text-xs font-bold text-[#009689] uppercase tracking-widest mb-3 flex items-center gap-1.5">
                   <span className="w-5 h-5 rounded-full bg-[#009689] text-white text-[10px] flex items-center justify-center font-bold">
-                    4
+                    5
                   </span>
                   Ghi chú
                 </h3>
@@ -1799,7 +1876,7 @@ export function TasksPage() {
                       </div>
                     </div>
 
-                    {/* Meta row */}
+                    {/* Meta row — 2×2 grid */}
                     <div className="grid grid-cols-2 gap-3 p-3 bg-[#f8fafc] rounded-lg text-sm">
                       <div>
                         <p className="text-xs text-[#64748b] mb-0.5">Vuông</p>
@@ -1815,16 +1892,26 @@ export function TasksPage() {
                           {selectedAssignment.displayDate}
                         </p>
                       </div>
-                      {selectedAssignment.time && (
-                        <div className="col-span-2">
-                          <p className="text-xs text-[#64748b] mb-0.5">
-                            Khung giờ
-                          </p>
+                      <div>
+                        <p className="text-xs text-[#64748b] mb-0.5">
+                          Khung giờ
+                        </p>
+                        <p className="font-medium text-[#1e293b]">
+                          {selectedAssignment.time || "—"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-[#64748b] mb-0.5">Mùa vụ</p>
+                        {selectedAssignment.seasonId ? (
                           <p className="font-medium text-[#1e293b]">
-                            {selectedAssignment.time}
+                            {mockSeasons.find(
+                              (s) => s.id === selectedAssignment.seasonId,
+                            )?.name ?? "—"}
                           </p>
-                        </div>
-                      )}
+                        ) : (
+                          <p className="font-medium text-[#94a3b8]">—</p>
+                        )}
+                      </div>
                     </div>
 
                     {/* Bed groups with workers */}

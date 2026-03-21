@@ -1416,6 +1416,7 @@ export interface TaskAssignment {
   workerNames: string[];
   status: "pending" | "in-progress" | "completed";
   notes: string;
+  seasonId?: string;
 }
 
 export const mockTaskTemplates: TaskTemplate[] = [
@@ -1927,5 +1928,23 @@ export const mockTaskAssignments: TaskAssignment[] = [
     workerNames: ["Trần Văn E"],
     status: "pending",
     notes: "",
+  },
+  {
+    id: "asgn-4",
+    templateId: "tpl-4",
+    taskName: "Kiểm tra sức khoẻ cây",
+    taskIcon: "🔍",
+    taskIconBg: "#f3e8ff",
+    area: "Khu A",
+    // plot is a summary string; full group detail is in bedGroupsMap in TasksPage
+    plot: "Nhóm 1: Luống 01, Luống 02, Luống 03 | Nhóm 2: Luống 04, Luống 05, Luống 06",
+    date: "2023-12-18",
+    displayDate: "18/12/2023",
+    time: "06:00 - 08:00",
+    workerIds: ["1", "2", "5", "6"],
+    workerNames: ["Trần Văn E", "Lê Thị F", "Vũ Văn I", "Bùi Văn L"],
+    status: "pending",
+    notes: "Kiểm tra kỹ dấu hiệu đốm lá và sâu cuốn lá.",
+    seasonId: "1",
   },
 ];
