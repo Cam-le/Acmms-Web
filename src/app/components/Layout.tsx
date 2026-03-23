@@ -18,6 +18,7 @@ import {
   ClipboardList,
   History,
   UserCog,
+  Layers,
 } from "lucide-react";
 import * as Popover from "@radix-ui/react-popover";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
@@ -29,6 +30,7 @@ const ownerNavItems = [
   { icon: MapPin, label: "Vuông đất", to: "/lands" },
   { icon: CalendarDays, label: "Mùa vụ", to: "/seasons" },
   { icon: Sprout, label: "Cây trồng", to: "/crops" },
+  { icon: Layers, label: "Loại đất", to: "/soils" },
   { icon: Users, label: "Nhân viên", to: "/workers" },
   { icon: Briefcase, label: "Công việc", to: "/tasks" },
   { icon: MessagesSquare, label: "Tư vấn", to: "/advisory" },
