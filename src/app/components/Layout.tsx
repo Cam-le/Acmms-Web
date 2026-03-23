@@ -12,46 +12,102 @@ import {
   Leaf,
   LogOut,
   ChevronUp,
-  Layers,
   MessagesSquare,
   ChevronLeft,
   ChevronRight,
+  ClipboardList,
+  History,
+  UserCog,
 } from "lucide-react";
 import * as Popover from "@radix-ui/react-popover";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
 
+// ── Nav definitions per role ─────────────────────────────────────────────────
+const ownerNavItems = [
+  { icon: LayoutDashboard, label: "Dashboard", to: "/dashboard" },
+  { icon: Tractor, label: "Trang trại", to: "/farm" },
+  { icon: MapPin, label: "Vuông đất", to: "/lands" },
+  { icon: CalendarDays, label: "Mùa vụ", to: "/seasons" },
+  { icon: Sprout, label: "Cây trồng", to: "/crops" },
+  { icon: Users, label: "Nhân viên", to: "/workers" },
+  { icon: Briefcase, label: "Công việc", to: "/tasks" },
+  { icon: MessagesSquare, label: "Tư vấn", to: "/advisory" },
+];
+
+const specialistNavItems = [
+  {
+    icon: LayoutDashboard,
+    label: "Dashboard",
+    to: "/specialist/dashboard",
+  },
+  {
+    icon: ClipboardList,
+    label: "Quản lý tư vấn",
+    to: "/specialist/consultations",
+  },
+  { icon: History, label: "Lịch sử", to: "/specialist/history" },
+];
+
+// ── Role label helper ────────────────────────────────────────────────────────
+function getRoleLabel(role: string | null) {
+  if (role === "Specialist") return "Chuyên gia nông nghiệp";
+  if (role === "Owner") return "Chủ nông trại";
+  return "Quản trị hệ thống";
+}
+
+function getHeaderTitle(role: string | null) {
+  if (role === "Specialist") return "Chuyên gia";
+  return "Tổng quan";
+}
+
 export function AppLayout() {
   const navigate = useNavigate();
-  const [user] = useState({ name: "Nguyễn Văn A", role: "Chủ nông trại" });
+
+  const storedName = localStorage.getItem("userName") ?? "Người dùng";
+  const storedRole = localStorage.getItem("userRole");
+
+  const [user] = useState({
+    name: storedName,
+    role: getRoleLabel(storedRole),
+  });
+
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
+  const isSpecialist = storedRole === "Specialist";
+  const navItems = isSpecialist ? specialistNavItems : ownerNavItems;
+
+  // Initials from name
+  const initials = storedName
+    .split(" ")
+    .slice(-2)
+    .map((w) => w[0])
+    .join("")
+    .toUpperCase();
+
   const handleLogout = () => {
     localStorage.removeItem("isAuthenticated");
+    localStorage.removeItem("userRole");
+    localStorage.removeItem("userName");
     navigate("/login");
   };
-
-  const navItems = [
-    { icon: LayoutDashboard, label: "Dashboard", to: "/dashboard" },
-    { icon: Tractor, label: "Trang trại", to: "/farm" },
-    { icon: MapPin, label: "Vuông đất", to: "/lands" },
-    { icon: CalendarDays, label: "Mùa vụ", to: "/seasons" },
-    { icon: Sprout, label: "Cây trồng", to: "/crops" },
-    { icon: Users, label: "Nhân viên", to: "/workers" },
-    { icon: Briefcase, label: "Công việc", to: "/tasks" },
-    { icon: MessagesSquare, label: "Tư vấn", to: "/advisory" },
-  ];
 
   return (
     <div className="flex h-screen bg-[#f1f5f9] overflow-hidden font-sans">
       {/* Sidebar */}
       <aside
-        className={`${isSidebarCollapsed ? "w-[80px]" : "w-[260px]"} bg-[#009689] flex flex-col shrink-0 text-white shadow-xl z-20 transition-all duration-300`}
+        className={`${
+          isSidebarCollapsed ? "w-[80px]" : "w-[260px]"
+        } bg-[#009689] flex flex-col shrink-0 text-white shadow-xl z-20 transition-all duration-300`}
       >
         {/* Logo */}
         <div className="h-[80px] flex items-center px-6 gap-3 shrink-0">
           <div className="w-10 h-10 bg-[#ffffff33] rounded-[10px] flex items-center justify-center shadow-sm shrink-0">
-            <Leaf className="w-6 h-6 text-white" />
+            {isSpecialist ? (
+              <UserCog className="w-6 h-6 text-white" />
+            ) : (
+              <Leaf className="w-6 h-6 text-white" />
+            )}
           </div>
           {!isSidebarCollapsed && (
             <div>
@@ -59,7 +115,7 @@ export function AppLayout() {
                 ACMMS
               </h1>
               <p className="text-xs text-[#ffffffcc] font-medium">
-                Quản trị hệ thống
+                {isSpecialist ? "Chuyên gia" : "Quản trị hệ thống"}
               </p>
             </div>
           )}
@@ -93,10 +149,12 @@ export function AppLayout() {
           <Popover.Root>
             <Popover.Trigger asChild>
               <button
-                className={`w-full bg-[#007f73] hover:bg-[#006d63] active:scale-[0.98] transition-all rounded-[12px] p-3 flex items-center gap-3 cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-white/50 ${isSidebarCollapsed ? "justify-center" : ""}`}
+                className={`w-full bg-[#007f73] hover:bg-[#006d63] active:scale-[0.98] transition-all rounded-[12px] p-3 flex items-center gap-3 cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-white/50 ${
+                  isSidebarCollapsed ? "justify-center" : ""
+                }`}
               >
                 <div className="w-10 h-10 bg-[#dcfce7] rounded-full flex items-center justify-center text-[#009689] font-bold text-sm shrink-0 border-2 border-white/20">
-                  NA
+                  {initials}
                 </div>
                 {!isSidebarCollapsed && (
                   <>
@@ -126,7 +184,6 @@ export function AppLayout() {
                   </p>
                   <p className="text-xs text-slate-500 truncate">{user.role}</p>
                 </div>
-
                 <button
                   onClick={() => setShowLogoutConfirm(true)}
                   className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors font-medium"
@@ -144,7 +201,7 @@ export function AppLayout() {
       {/* Toggle Sidebar Button */}
       <button
         onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-        className="absolute left-[calc(260px-20px)] top-4 z-30 w-10 h-10 bg-white rounded-full shadow-lg flex items-center justify-center text-[#009689] hover:bg-[#f8fafc] transition-all border border-slate-200"
+        className="absolute top-4 z-30 w-10 h-10 bg-white rounded-full shadow-lg flex items-center justify-center text-[#009689] hover:bg-[#f8fafc] transition-all border border-slate-200"
         style={{
           left: isSidebarCollapsed ? "calc(80px - 20px)" : "calc(260px - 20px)",
         }}
@@ -191,14 +248,22 @@ export function AppLayout() {
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
-        {/* Top Header / Breadcrumb area could go here */}
         <header className="bg-white border-b border-slate-200 h-16 flex items-center justify-between px-6 shrink-0 z-10">
-          <h2 className="text-lg font-semibold text-slate-800">Tổng quan</h2>
+          <h2 className="text-lg font-semibold text-slate-800">
+            {getHeaderTitle(storedRole)}
+          </h2>
           <div className="flex items-center gap-4">
             <button className="p-2 text-slate-500 hover:bg-slate-100 rounded-full transition-colors relative">
               <Bell className="w-5 h-5" />
               <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border border-white"></span>
             </button>
+            {/* Role badge */}
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-[#f0fdf9] rounded-lg border border-[#009689]/20">
+              <div className="w-2 h-2 rounded-full bg-[#009689]" />
+              <span className="text-xs font-medium text-[#009689]">
+                {user.role}
+              </span>
+            </div>
           </div>
         </header>
 

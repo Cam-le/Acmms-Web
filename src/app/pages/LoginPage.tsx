@@ -6,11 +6,27 @@ import { mockAccounts } from "../../data/mockAccounts";
 
 type Mode = "mock" | "api";
 
-function saveSesssion(userId: string, email: string, mode: Mode) {
+// ── Session helper ────────────────────────────────────────────────────────────
+// Stores role + name alongside the existing session fields so that
+// Layout.tsx and routes.tsx can read them for nav-switching and redirects.
+function saveSession(
+  userId: string,
+  email: string,
+  mode: Mode,
+  roleName?: string,
+  fullname?: string,
+) {
   localStorage.setItem("isAuthenticated", "true");
   localStorage.setItem("userId", userId);
   localStorage.setItem("userEmail", email);
   localStorage.setItem("authMode", mode);
+  if (roleName) localStorage.setItem("userRole", roleName);
+  if (fullname) localStorage.setItem("userName", fullname);
+}
+
+// ── Redirect helper ───────────────────────────────────────────────────────────
+function dashboardByRole(role?: string) {
+  return role === "Specialist" ? "/specialist/dashboard" : "/dashboard";
 }
 
 export function LoginPage() {
@@ -25,7 +41,7 @@ export function LoginPage() {
     "idle",
   );
 
-  // ── Mock login (default path) ──────────────────────────────────────────────
+  // ── Mock login (default path) ─────────────────────────────────────────────
   const handleMockLogin = (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -42,19 +58,26 @@ export function LoginPage() {
     );
 
     if (!found) {
-      // Also accept any non-empty credentials as a guest mock session
-      // so testers aren't blocked — use a generic mock identity
-      const fallbackId = "mock-guest";
-      saveSesssion(fallbackId, email, "mock");
+      // Fallback guest session — no known role, default to Owner view
+      saveSession("mock-guest", email, "mock", "Owner", email);
     } else {
-      saveSesssion(found.userId, found.email, "mock");
+      saveSession(
+        found.userId,
+        found.email,
+        "mock",
+        found.roleName,
+        found.fullname,
+      );
     }
 
     setLoading(false);
-    navigate("/dashboard");
+    navigate(dashboardByRole(found?.roleName));
   };
 
-  // ── API login (opt-in) ─────────────────────────────────────────────────────
+  // ── API login (opt-in) ────────────────────────────────────────────────────
+  // NOTE: your apiLogin response must include roleName + fullname fields for
+  // role-based redirect to work. If those fields have different names in your
+  // API response, map them here before calling saveSession.
   const handleApiLogin = async () => {
     setError("");
 
@@ -71,8 +94,14 @@ export function LoginPage() {
 
       if (res.success && res.data) {
         setApiStatus("success");
-        saveSesssion(res.data.userId, res.data.email, "api");
-        navigate("/dashboard");
+        saveSession(
+          res.data.userId,
+          res.data.email,
+          "api",
+          res.data.roleName, // map to your actual API field name if different
+          res.data.fullname, // map to your actual API field name if different
+        );
+        navigate(dashboardByRole(res.data.roleName));
       } else {
         setApiStatus("failed");
         setError(
@@ -120,11 +149,17 @@ export function LoginPage() {
           </span>
         </div>
 
-        {/* Demo accounts hint */}
+        {/* Demo accounts hint — now shows both roles */}
         <div className="mb-5 p-3 bg-[#f0fdf9] border border-[#99f6e4] rounded-xl text-xs text-[#0f766e]">
-          <p className="font-semibold mb-1">Tài khoản demo:</p>
-          <p>admin@gmail.com</p>
-          <p>123456</p>
+          <p className="font-semibold mb-1.5">Tài khoản demo:</p>
+          <p className="mb-0.5">
+            <span className="font-medium">Chủ nông trại:</span> owner@gmail.com
+            / 123456
+          </p>
+          <p>
+            <span className="font-medium">Chuyên gia:</span>{" "}
+            specialist@gmail.com / 123456
+          </p>
         </div>
 
         <form onSubmit={handleMockLogin} className="space-y-4">

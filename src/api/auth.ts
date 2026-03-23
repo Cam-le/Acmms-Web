@@ -22,6 +22,8 @@ export interface RegisterRequest {
 export interface LoginData {
   userId: string;
   email: string;
+  roleName?: string; // e.g. "Owner" | "Specialist" | "Admin"
+  fullname?: string;
 }
 
 export interface AuthApiResponse<T = null> {

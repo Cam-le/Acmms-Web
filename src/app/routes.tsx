@@ -11,12 +11,26 @@ import { SeasonsPage } from "./pages/SeasonsPage";
 import { PlotsPage } from "./pages/PlotsPage";
 import { AppLayout } from "./components/Layout";
 
+// Specialist pages
+import { SpecialistDashboardPage } from "./pages/specialist/SpecialistDashboardPage";
+import { SpecialistConsultationPage } from "./pages/specialist/SpecialistConsultationPage";
+import { SpecialistConsultationDetailPage } from "./pages/specialist/SpecialistConsultationDetailPage";
+import { SpecialistHistoryPage } from "./pages/specialist/SpecialistHistoryPage";
+
 function protectedLoader() {
   const isAuthenticated = localStorage.getItem("isAuthenticated");
   if (!isAuthenticated) {
     return redirect("/login");
   }
   return null;
+}
+
+function roleBasedIndex() {
+  const role = localStorage.getItem("userRole");
+  if (role === "Specialist") {
+    return <Navigate to="/specialist/dashboard" replace />;
+  }
+  return <Navigate to="/dashboard" replace />;
 }
 
 export const router = createBrowserRouter([
@@ -35,8 +49,10 @@ export const router = createBrowserRouter([
     children: [
       {
         index: true,
-        element: <Navigate to="/dashboard" replace />,
+        element: roleBasedIndex(),
       },
+
+      // ── Owner routes ──────────────────────────────────────────────────────
       {
         path: "dashboard",
         Component: DashboardPage,
@@ -69,9 +85,28 @@ export const router = createBrowserRouter([
         path: "advisory",
         Component: AdvisoryPage,
       },
+
+      // ── Specialist routes ─────────────────────────────────────────────────
+      {
+        path: "specialist/dashboard",
+        Component: SpecialistDashboardPage,
+      },
+      {
+        path: "specialist/consultations",
+        Component: SpecialistConsultationPage,
+      },
+      {
+        path: "specialist/consultations/:id",
+        Component: SpecialistConsultationDetailPage,
+      },
+      {
+        path: "specialist/history",
+        Component: SpecialistHistoryPage,
+      },
+
       {
         path: "*",
-        Component: DashboardPage,
+        element: roleBasedIndex(),
       },
     ],
   },
