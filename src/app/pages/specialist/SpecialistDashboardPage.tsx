@@ -63,7 +63,7 @@ export function SpecialistDashboardPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-slate-800">
-          Bảng điều khiển Chuyên gia
+          Dashboard Chuyên gia
         </h1>
         <p className="text-sm text-slate-500 mt-1 flex items-center gap-1.5">
           <span className="inline-block opacity-60">📅</span>
@@ -96,7 +96,7 @@ export function SpecialistDashboardPage() {
           <div className="flex items-start justify-between">
             <div>
               <p className="text-sm text-slate-500 mb-1">
-                Số ca phát hiện sâu bệnh
+                Tổng số ca phát hiện sâu bệnh
               </p>
               <p className="text-4xl font-bold text-slate-800 mt-2">
                 {stats.totalDiseaseCases}

@@ -65,38 +65,46 @@ function cardIcon(s: Severity) {
 export function SpecialistConsultationPage() {
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
-  const [filterStatus, setFilterStatus] = useState<string>("all");
   const [filterSeverity, setFilterSeverity] = useState<string>("all");
+  const [sortByHighest, setSortByHighest] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
 
-  const total = mockConsultationRequests.length;
-  const pending = mockConsultationRequests.filter(
-    (r) => r.detectionStatus === "Chờ phản hồi",
-  ).length;
-  const responded = mockConsultationRequests.filter(
-    (r) => r.detectionStatus === "Đã phản hồi",
-  ).length;
+  const severityOrder: Record<string, number> = {
+    "Nghiêm trọng": 4,
+    Cao: 3,
+    "Trung bình": 2,
+    Thấp: 1,
+  };
 
-  const filtered = mockConsultationRequests.filter((r) => {
-    const q = search.toLowerCase();
-    const matchSearch =
-      !q ||
-      r.requestCode.toLowerCase().includes(q) ||
-      r.crop.toLowerCase().includes(q) ||
-      r.location.toLowerCase().includes(q) ||
-      r.issue.toLowerCase().includes(q) ||
-      r.farmName.toLowerCase().includes(q);
-    const matchStatus =
-      filterStatus === "all" || r.detectionStatus === filterStatus;
-    const matchSeverity =
-      filterSeverity === "all" || r.severity === filterSeverity;
-    return matchSearch && matchStatus && matchSeverity;
-  });
+  // Only show pending items on this page — responded items live in Lịch sử
+  const pendingOnly = mockConsultationRequests.filter(
+    (r) => r.detectionStatus !== "Đã phản hồi",
+  );
+
+  const filtered = pendingOnly
+    .filter((r) => {
+      const q = search.toLowerCase();
+      const matchSearch =
+        !q ||
+        r.requestCode.toLowerCase().includes(q) ||
+        r.crop.toLowerCase().includes(q) ||
+        r.location.toLowerCase().includes(q) ||
+        r.issue.toLowerCase().includes(q) ||
+        r.farmName.toLowerCase().includes(q);
+      const matchSeverity =
+        filterSeverity === "all" || r.severity === filterSeverity;
+      return matchSearch && matchSeverity;
+    })
+    .sort((a, b) =>
+      sortByHighest
+        ? (severityOrder[b.severity] ?? 0) - (severityOrder[a.severity] ?? 0)
+        : 0,
+    );
 
   // Reset to page 1 when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [search, filterStatus, filterSeverity]);
+  }, [search, filterSeverity, sortByHighest]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paginated = filtered.slice(
@@ -116,32 +124,6 @@ export function SpecialistConsultationPage() {
         </p>
       </div>
 
-      {/* Stats Row */}
-      <div className="grid grid-cols-3 gap-4">
-        <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
-          <p className="text-sm text-slate-500">Tổng số yêu cầu</p>
-          <p className="text-3xl font-bold text-slate-800 mt-1">{total}</p>
-        </div>
-        <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-slate-500">Chưa phản hồi</p>
-            <span className="text-xs font-bold bg-rose-100 text-rose-600 px-2 py-0.5 rounded-full">
-              Mới
-            </span>
-          </div>
-          <p className="text-3xl font-bold text-slate-800 mt-1">{pending}</p>
-        </div>
-        <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-slate-500">Đã phản hồi</p>
-            <span className="text-xs font-bold bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
-              Hoàn thành
-            </span>
-          </div>
-          <p className="text-3xl font-bold text-slate-800 mt-1">{responded}</p>
-        </div>
-      </div>
-
       {/* Filter Bar */}
       <div className="flex flex-wrap gap-3">
         <div className="relative flex-1 min-w-[240px]">
@@ -155,17 +137,6 @@ export function SpecialistConsultationPage() {
         </div>
 
         <select
-          value={filterStatus}
-          onChange={(e) => setFilterStatus(e.target.value)}
-          className="px-4 py-2.5 text-sm border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-[#009689]/30 text-slate-600"
-        >
-          <option value="all">Trạng thái</option>
-          <option value="Chờ phản hồi">Chờ phản hồi</option>
-          <option value="Đã phản hồi">Đã phản hồi</option>
-          <option value="Yêu cầu bổ sung">Yêu cầu bổ sung</option>
-        </select>
-
-        <select
           value={filterSeverity}
           onChange={(e) => setFilterSeverity(e.target.value)}
           className="px-4 py-2.5 text-sm border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-[#009689]/30 text-slate-600"
@@ -176,9 +147,16 @@ export function SpecialistConsultationPage() {
           <option value="Thấp">Thấp</option>
         </select>
 
-        <button className="flex items-center gap-2 px-4 py-2.5 text-sm border border-slate-200 rounded-xl bg-white text-slate-600 hover:bg-slate-50 transition-colors">
+        <button
+          onClick={() => setSortByHighest((v) => !v)}
+          className={`flex items-center gap-2 px-4 py-2.5 text-sm border rounded-xl transition-colors ${
+            sortByHighest
+              ? "bg-[#009689] text-white border-[#009689]"
+              : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+          }`}
+        >
           <SlidersHorizontal className="w-4 h-4" />
-          Sắp xếp
+          Ưu tiên cao nhất
         </button>
       </div>
 
@@ -244,7 +222,7 @@ export function SpecialistConsultationPage() {
                 </div>
                 <div>
                   <p className="text-xs text-slate-400 uppercase tracking-wide font-medium mb-1">
-                    Nông Trại
+                    Nông trại
                   </p>
                   <p className="text-slate-700 font-medium flex items-center gap-1">
                     <MapPin className="w-3.5 h-3.5 text-[#009689]" />

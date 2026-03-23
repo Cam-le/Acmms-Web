@@ -32,13 +32,11 @@ export type DetectionStatus =
   | "Yêu cầu bổ sung";
 
 // ── Specialist recommendation response — maps to Recommendation table ────────
+// API: POST/PUT /api/Recommendations accepts: title, content, pestSeverity
 export interface SpecialistResponse {
   title: string; // Recommendation.title
-  diagnosis: string; // specialist's confirmed diagnosis (review_notes)
-  content: string; // Recommendation.content — treatment steps
-  followUpAdvice: string; // follow-up guidance
-  priority: Severity; // priority set by specialist
-  attachments: string[]; // filenames
+  content: string; // Recommendation.content — full specialist write-up
+  priority: Severity; // pestSeverity (mapped Low/Medium/High/Critical)
   respondedAt: string; // Recommendation.created_at
 }
 
@@ -64,19 +62,18 @@ export interface ConsultationRequest {
   response?: SpecialistResponse; // filled once specialist responds — Recommendation row
 }
 
-// ── History view row — maps to Recommendation table joined with Pest_Detections ─
+// ── History view row — maps to Recommendation JOIN Pest_Detections ─
 export interface ConsultationHistoryRow {
   id: string;
+  recommendationId: string; // Recommendation.recommendation_id — used for PUT /api/Recommendations/{id}
   responseCode: string; // display ID, e.g. #RES-8821
   requestCode: string; // linked pest_detection display ID
   crop: string; // AdvisoryRequest.crop
-  issue: string; // disease name / general_label
-  priority: Severity; // Recommendation priority
+  issue: string; // disease name / general_label (pestLabel from API)
+  priority: Severity; // pestSeverity mapped to Vietnamese
   respondedAt: string; // Recommendation.created_at
-  diagnosis: string; // review_notes
+  title: string; // Recommendation.title
   content: string; // Recommendation.content
-  followUpAdvice: string;
-  attachments: string[];
 }
 
 // ── Consultation requests (pending + responded) ──────────────────────────────
@@ -155,14 +152,9 @@ export const mockConsultationRequests: ConsultationRequest[] = [
       "Phun Spinosad hoặc Bacillus thuringiensis (Bt). Đặt bẫy pheromone.",
     response: {
       title: "Phản hồi: Sâu tơ trên Bắp cải Xoăn (#REQ-2088)",
-      diagnosis:
-        "Xác nhận sâu tơ (Plutella xylostella). Mức độ gây hại nhẹ, chưa ảnh hưởng năng suất nếu xử lý kịp thời.",
       content:
-        "1. Phun Spinosad 25SC liều 0.5ml/lít nước, 7 ngày/lần trong 2 tuần.\n2. Đặt bẫy pheromone để theo dõi mật độ sâu trưởng thành.\n3. Loại bỏ lá bị hại nặng để giảm nguồn sâu.",
-      followUpAdvice:
-        "Kiểm tra mặt dưới lá mỗi 3 ngày. Nếu mật độ tăng trở lại sau 2 tuần, chuyển sang Emamectin benzoate.",
+        "Xác nhận sâu tơ (Plutella xylostella). Mức độ nhẹ, chưa ảnh hưởng năng suất nếu xử lý kịp thời.\n\n1. Phun Spinosad 25SC liều 0.5ml/lít nước, 7 ngày/lần trong 2 tuần.\n2. Đặt bẫy pheromone để theo dõi mật độ sâu trưởng thành.\n3. Loại bỏ lá bị hại nặng để giảm nguồn sâu.\n\nTheo dõi: Kiểm tra mặt dưới lá mỗi 3 ngày. Nếu mật độ tăng trở lại sau 2 tuần, chuyển sang Emamectin benzoate.",
       priority: "Thấp",
-      attachments: [],
       respondedAt: "2023-10-24T08:30:00",
     },
   },
@@ -230,14 +222,9 @@ export const mockConsultationRequests: ConsultationRequest[] = [
     aiRecommendation: "Phun Propiconazole. Tăng khoảng cách trồng.",
     response: {
       title: "Phản hồi: Đạo ôn lá trên Bắp cải Xoăn (#REQ-2079)",
-      diagnosis:
-        "Bệnh đốm lá do Alternaria brassicae. Thường xuất hiện khi có sương mù kéo dài và nhiệt độ thấp.",
       content:
-        "1. Phun Propiconazole 25EC (Tilt) liều 0.5ml/lít.\n2. Nhổ bỏ lá già bệnh nặng.\n3. Bón bổ sung Kali để tăng sức đề kháng.",
-      followUpAdvice:
-        "Đánh giá lại sau 10 ngày. Luân canh với rau họ khác vụ tới.",
+        "Bệnh đốm lá do Alternaria brassicae. Thường xuất hiện khi có sương mù kéo dài và nhiệt độ thấp.\n\n1. Phun Propiconazole 25EC (Tilt) liều 0.5ml/lít.\n2. Nhổ bỏ lá già bệnh nặng.\n3. Bón bổ sung Kali để tăng sức đề kháng.\n\nTheo dõi: Đánh giá lại sau 10 ngày. Luân canh với rau họ khác vụ tới.",
       priority: "Trung bình",
-      attachments: [],
       respondedAt: "2023-10-23T14:00:00",
     },
   },
@@ -262,14 +249,9 @@ export const mockConsultationRequests: ConsultationRequest[] = [
       "Phun Chlorfenapyr 240SC liều 1ml/lít, buổi chiều mát. Đặt bẫy bả protein.",
     response: {
       title: "Phản hồi: Sâu keo mùa thu (#REQ-2075)",
-      diagnosis:
-        "Sâu keo mùa thu (Spodoptera frugiperda). Gây hại nghiêm trọng giai đoạn ra cuộn.",
       content:
-        "1. Phun Chlorfenapyr 240SC liều 1ml/lít buổi chiều.\n2. Đặt bẫy bả protein thủy phân.\n3. Kiểm tra và diệt ổ trứng thủ công.",
-      followUpAdvice:
-        "Phun nhắc lại sau 5 ngày nếu còn sâu non. Báo cáo ngay nếu >3 con/cây.",
+        "Sâu keo mùa thu (Spodoptera frugiperda). Gây hại nghiêm trọng giai đoạn ra cuộn.\n\n1. Phun Chlorfenapyr 240SC liều 1ml/lít buổi chiều.\n2. Đặt bẫy bả protein thủy phân.\n3. Kiểm tra và diệt ổ trứng thủ công.\n\nTheo dõi: Phun nhắc lại sau 5 ngày nếu còn sâu non. Báo cáo ngay nếu >3 con/cây.",
       priority: "Cao",
-      attachments: ["bao_cao_sau_keo.pdf"],
       respondedAt: "2023-10-22T09:10:00",
     },
   },
@@ -293,13 +275,9 @@ export const mockConsultationRequests: ConsultationRequest[] = [
       "Phun Iprodione 50WP liều 1.5g/lít. Cắt tỉa lá già, tăng thông thoáng.",
     response: {
       title: "Phản hồi: Mốc sương trên Bắp cải Tím (#REQ-2070)",
-      diagnosis:
-        "Bệnh mốc sương do Botrytis cinerea. Bùng phát sau mưa liên tục, ẩm độ >90%.",
       content:
-        "1. Phun Iprodione 50WP liều 1.5g/lít.\n2. Cắt tỉa lá già, lá sát mặt đất.\n3. Tăng lưu thông không khí.",
-      followUpAdvice: "Phun phòng định kỳ 2 tuần/lần mùa mưa.",
+        "Bệnh mốc sương do Botrytis cinerea. Bùng phát sau mưa liên tục, ẩm độ >90%.\n\n1. Phun Iprodione 50WP liều 1.5g/lít.\n2. Cắt tỉa lá già, lá sát mặt đất.\n3. Tăng lưu thông không khí.\n\nTheo dõi: Phun phòng định kỳ 2 tuần/lần mùa mưa.",
       priority: "Trung bình",
-      attachments: [],
       respondedAt: "2023-10-21T11:45:00",
     },
   },
@@ -312,17 +290,15 @@ export const mockConsultationHistory: ConsultationHistoryRow[] =
     .filter((r) => r.detectionStatus === "Đã phản hồi" && !!r.response)
     .map((r, idx) => ({
       id: `res-${8821 - idx * 6}`,
+      recommendationId: `mock-rec-${8821 - idx * 6}`, // replaced by real UUID from API
       responseCode: `#RES-${8821 - idx * 6}`,
       requestCode: r.requestCode,
       crop: r.crop,
-      issue:
-        r.response!.title.split(":")[1]?.trim().split(" trên")[0] ?? r.issue,
+      issue: r.issue,
       priority: r.response!.priority,
       respondedAt: r.response!.respondedAt,
-      diagnosis: r.response!.diagnosis,
+      title: r.response!.title,
       content: r.response!.content,
-      followUpAdvice: r.response!.followUpAdvice,
-      attachments: r.response!.attachments,
     }));
 
 // ── Dashboard summary stats ──────────────────────────────────────────────────
@@ -333,6 +309,9 @@ export const mockSpecialistStats = {
   pendingNew: 3,
   totalDiseaseCases: mockConsultationRequests.length,
   diseaseCasesChangePercent: 12,
-  urgentCount: mockConsultationRequests.filter((r) => r.severity === "Cao")
-    .length,
+  urgentCount: mockConsultationRequests.filter(
+    (r) =>
+      r.detectionStatus !== "Đã phản hồi" &&
+      (r.severity === "Cao" || r.severity === "Nghiêm trọng"),
+  ).length,
 };

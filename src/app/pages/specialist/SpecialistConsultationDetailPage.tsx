@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { useParams, useNavigate } from "react-router";
 import {
   ArrowLeft,
@@ -8,13 +8,13 @@ import {
   Droplets,
   CheckCircle2,
   ChevronDown,
-  Upload,
-  X,
   Lightbulb,
   Bot,
+  AlertTriangle,
 } from "lucide-react";
 import {
   mockConsultationRequests,
+  type ConsultationRequest,
   type Severity,
 } from "../../../data/mockSpecialistData";
 
@@ -28,26 +28,19 @@ function severityBadgeCss(s: string) {
 
 // ── Response Form ─────────────────────────────────────────────────────────────
 function ResponseForm({
-  requestCode,
+  req,
   onBack,
 }: {
-  requestCode: string;
+  req: ConsultationRequest;
   onBack: () => void;
 }) {
-  const [diagnosis, setDiagnosis] = useState("");
-  const [treatment, setTreatment] = useState("");
+  const [title, setTitle] = useState(`Phản hồi tư vấn ${req.requestCode}`);
+  const [content, setContent] = useState("");
   const [priority, setPriority] = useState<Severity>("Trung bình");
-  const [followUp, setFollowUp] = useState("");
-  const [attachments, setAttachments] = useState<File[]>([]);
   const [submitted, setSubmitted] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setAttachments((prev) => [...prev, ...Array.from(e.target.files ?? [])]);
-  };
 
   const handleSubmit = () => {
-    if (!diagnosis.trim() || !treatment.trim()) return;
+    if (!title.trim() || !content.trim()) return;
     setSubmitted(true);
   };
 
@@ -74,142 +67,158 @@ function ResponseForm({
   }
 
   return (
-    <div className="space-y-6">
-      {/* Context banner */}
-      <div className="flex items-start gap-3 bg-[#f0fdf9] border border-[#009689]/20 rounded-xl p-4">
-        <div className="w-8 h-8 bg-[#009689]/10 rounded-lg flex items-center justify-center shrink-0 mt-0.5">
-          <ClipboardEdit className="w-4 h-4 text-[#009689]" />
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+      {/* ── Left: disease context (read-only reference) ── */}
+      <div className="space-y-4">
+        {/* AI Analysis */}
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Bot className="w-4 h-4 text-[#009689]" />
+              <h3 className="font-semibold text-slate-800 text-sm">
+                Phân tích từ AI
+              </h3>
+            </div>
+            <span className="text-xs bg-[#009689]/10 text-[#009689] font-semibold px-2 py-0.5 rounded-full">
+              {req.aiConfidence}% tin cậy
+            </span>
+          </div>
+
+          <div className="bg-[#f0fdf9] rounded-xl p-3 border border-[#009689]/10 mb-3">
+            <p className="text-xs text-slate-400 uppercase tracking-wide font-semibold mb-1">
+              Dự đoán bệnh
+            </p>
+            <p className="text-lg font-bold text-slate-800">
+              {req.aiDiagnosis}
+            </p>
+            <span
+              className={`inline-block mt-1.5 text-xs font-semibold px-2.5 py-0.5 rounded-full ${severityBadgeCss(req.severity)}`}
+            >
+              {req.severity}
+            </span>
+          </div>
+
+          <div>
+            <p className="text-xs font-medium text-slate-500 mb-2 flex items-center gap-1">
+              📋 Triệu chứng phát hiện:
+            </p>
+            <ul className="space-y-1.5">
+              {req.aiSymptoms.map((s, i) => (
+                <li
+                  key={i}
+                  className="flex items-center gap-2 text-sm text-slate-600"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5 text-[#009689] shrink-0" />
+                  {s}
+                </li>
+              ))}
+            </ul>
+          </div>
         </div>
-        <div>
-          <p className="text-sm font-semibold text-slate-800">
-            Yêu cầu tư vấn: {requestCode}
+
+        {/* AI Recommendation */}
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
+          <div className="flex items-center gap-2 mb-2">
+            <Lightbulb className="w-4 h-4 text-yellow-500" />
+            <h3 className="font-semibold text-slate-800 text-sm">
+              Khuyến nghị từ AI
+            </h3>
+          </div>
+          <p className="text-sm text-slate-600 leading-relaxed bg-yellow-50 rounded-xl p-3 border border-yellow-100">
+            {req.aiRecommendation}
           </p>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Vui lòng điền đầy đủ thông tin chuyên môn để phản hồi cho nông dân.
+        </div>
+
+        {/* Symptom description from farm */}
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
+          <div className="flex items-center gap-2 mb-2">
+            <AlertTriangle className="w-4 h-4 text-orange-400" />
+            <h3 className="font-semibold text-slate-800 text-sm">
+              Mô tả từ nông trại
+            </h3>
+          </div>
+          <div className="space-y-2 text-xs text-slate-500 mb-3">
+            <p className="flex items-center gap-1.5">
+              <MapPin className="w-3 h-3 text-red-400 shrink-0" />
+              {req.location}
+            </p>
+            <p className="flex items-center gap-1.5">
+              🌱 {req.crop} · Giai đoạn: {req.growthStage}
+            </p>
+            {req.temperature && (
+              <p className="flex items-center gap-3">
+                <span className="flex items-center gap-1">
+                  <Thermometer className="w-3 h-3" />
+                  {req.temperature}°C
+                </span>
+                <span className="flex items-center gap-1">
+                  <Droplets className="w-3 h-3" />
+                  {req.humidity}%
+                </span>
+              </p>
+            )}
+          </div>
+          <p className="text-sm text-slate-600 italic leading-relaxed bg-slate-50 rounded-xl p-3 border border-slate-100">
+            "{req.symptomDescription}"
           </p>
         </div>
       </div>
 
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 space-y-6">
+      {/* ── Right: write response ── */}
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 space-y-5">
         <div>
-          <h3 className="font-semibold text-slate-800 mb-1">
+          <h3 className="font-semibold text-slate-800 mb-0.5">
             Nội dung tư vấn &amp; Điều trị
           </h3>
-          <p className="text-sm text-slate-500">
+          <p className="text-xs text-slate-400">
             Vui lòng điền đầy đủ thông tin chuyên môn để phản hồi cho nông dân.
           </p>
         </div>
 
-        {/* Diagnosis — maps to Recommendation.content + review_notes */}
+        {/* Title */}
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-2">
-            Chẩn đoán của chuyên gia <span className="text-red-500">*</span>
+          <label className="block text-sm font-medium text-slate-700 mb-1.5">
+            Tiêu đề <span className="text-red-500">*</span>
+          </label>
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#009689]/30"
+          />
+        </div>
+
+        {/* Content */}
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1.5">
+            Nội dung tư vấn <span className="text-red-500">*</span>
+          </label>
+          <textarea
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            rows={10}
+            placeholder="Nhập chẩn đoán, phương pháp điều trị và lời khuyên theo dõi..."
+            className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#009689]/30 resize-none"
+          />
+        </div>
+
+        {/* Priority */}
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1.5">
+            Mức độ ưu tiên
           </label>
           <div className="relative">
-            <textarea
-              value={diagnosis}
-              onChange={(e) => setDiagnosis(e.target.value)}
-              rows={4}
-              placeholder="Nhập chi tiết chẩn đoán bệnh, nguyên nhân và tình trạng hiện tại..."
-              className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#009689]/30 resize-none"
-            />
-            <ClipboardEdit className="absolute right-3 top-3 w-4 h-4 text-slate-300" />
-          </div>
-        </div>
-
-        {/* Treatment — maps to Recommendation.content */}
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-2">
-            Phương pháp điều trị khuyến nghị{" "}
-            <span className="text-red-500">*</span>
-          </label>
-          <textarea
-            value={treatment}
-            onChange={(e) => setTreatment(e.target.value)}
-            rows={5}
-            placeholder="Liệt kê các bước xử lý, loại thuốc cần dùng, liều lượng và cách thức thực hiện..."
-            className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#009689]/30 resize-none"
-          />
-        </div>
-
-        {/* Priority + Attachments */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">
-              Mức độ ưu tiên
-            </label>
-            <div className="relative">
-              <select
-                value={priority}
-                onChange={(e) => setPriority(e.target.value as Severity)}
-                className="w-full appearance-none border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#009689]/30 bg-white text-slate-700"
-              >
-                <option value="Thấp">Thấp</option>
-                <option value="Trung bình">Trung bình</option>
-                <option value="Cao">Cao</option>
-                <option value="Nghiêm trọng">Nghiêm trọng</option>
-              </select>
-              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">
-              Tải lên tài liệu đính kèm
-            </label>
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="w-full border-2 border-dashed border-slate-200 rounded-xl p-4 flex flex-col items-center gap-2 hover:border-[#009689]/40 hover:bg-[#f0fdf9] transition-colors"
+            <select
+              value={priority}
+              onChange={(e) => setPriority(e.target.value as Severity)}
+              className="w-full appearance-none border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#009689]/30 bg-white text-slate-700"
             >
-              <Upload className="w-6 h-6 text-slate-400" />
-              <span className="text-xs text-slate-400">
-                Chọn hoặc kéo thả file tài liệu
-              </span>
-              <span className="text-xs text-slate-300">(PDF, JPG, PNG...)</span>
-            </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              accept=".pdf,.jpg,.jpeg,.png"
-              className="hidden"
-              onChange={handleFileChange}
-            />
-            {attachments.length > 0 && (
-              <div className="mt-2 space-y-1">
-                {attachments.map((f, i) => (
-                  <div
-                    key={i}
-                    className="flex items-center justify-between bg-slate-50 rounded-lg px-3 py-1.5 text-xs text-slate-600"
-                  >
-                    <span className="truncate">{f.name}</span>
-                    <button
-                      onClick={() =>
-                        setAttachments((prev) => prev.filter((_, j) => j !== i))
-                      }
-                    >
-                      <X className="w-3.5 h-3.5 text-slate-400 hover:text-red-500" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
+              <option value="Thấp">Thấp</option>
+              <option value="Trung bình">Trung bình</option>
+              <option value="Cao">Cao</option>
+              <option value="Nghiêm trọng">Nghiêm trọng</option>
+            </select>
+            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
           </div>
-        </div>
-
-        {/* Follow-up advice */}
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-2">
-            Lời khuyên theo dõi
-          </label>
-          <textarea
-            value={followUp}
-            onChange={(e) => setFollowUp(e.target.value)}
-            rows={3}
-            placeholder="Hướng dẫn nông dân cách theo dõi sau khi xử lý, các dấu hiệu cần lưu ý..."
-            className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#009689]/30 resize-none"
-          />
         </div>
 
         <div className="flex justify-end gap-3 pt-2 border-t border-slate-100">
@@ -221,11 +230,11 @@ function ResponseForm({
           </button>
           <button
             onClick={handleSubmit}
-            disabled={!diagnosis.trim() || !treatment.trim()}
+            disabled={!title.trim() || !content.trim()}
             className="px-6 py-2.5 rounded-xl text-sm font-semibold bg-[#009689] text-white hover:bg-[#007f73] transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
           >
             <ClipboardEdit className="w-4 h-4" />
-            Gửi phản hồi chuyên gia
+            Gửi phản hồi
           </button>
         </div>
       </div>
@@ -267,7 +276,7 @@ export function SpecialistConsultationDetailPage() {
         </button>
         <h1 className="text-2xl font-bold text-slate-800">Tạo phản hồi</h1>
         <ResponseForm
-          requestCode={req.requestCode}
+          req={req}
           onBack={() => navigate("/specialist/consultations")}
         />
       </div>
@@ -291,7 +300,7 @@ export function SpecialistConsultationDetailPage() {
             className="flex items-center gap-2 px-5 py-2.5 bg-[#009689] text-white text-sm font-semibold rounded-xl hover:bg-[#007f73] transition-colors"
           >
             <ClipboardEdit className="w-4 h-4" />
-            Tạo phản hồi chuyên gia
+            Tạo phản hồi
           </button>
         )}
       </div>
@@ -477,32 +486,15 @@ export function SpecialistConsultationDetailPage() {
           <div className="flex items-center gap-2 mb-4">
             <ClipboardEdit className="w-5 h-5 text-[#009689]" />
             <h3 className="font-semibold text-slate-800">
-              Phản hồi chuyên gia
+              {req.response.title}
             </h3>
             <span className="text-xs text-slate-400 ml-auto">
               {new Date(req.response.respondedAt).toLocaleDateString("vi-VN")}
             </span>
           </div>
-          <div className="space-y-4 text-sm text-slate-600">
-            <div>
-              <p className="font-semibold text-slate-700 mb-1">Chẩn đoán</p>
-              <p className="leading-relaxed">{req.response.diagnosis}</p>
-            </div>
-            <div>
-              <p className="font-semibold text-slate-700 mb-1">Điều trị</p>
-              <pre className="whitespace-pre-wrap leading-relaxed font-sans">
-                {req.response.content}
-              </pre>
-            </div>
-            {req.response.followUpAdvice && (
-              <div>
-                <p className="font-semibold text-slate-700 mb-1">
-                  Lời khuyên theo dõi
-                </p>
-                <p className="leading-relaxed">{req.response.followUpAdvice}</p>
-              </div>
-            )}
-          </div>
+          <pre className="whitespace-pre-wrap text-sm text-slate-600 leading-relaxed font-sans">
+            {req.response.content}
+          </pre>
         </div>
       )}
     </div>

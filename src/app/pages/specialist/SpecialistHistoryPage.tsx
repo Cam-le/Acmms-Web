@@ -1,10 +1,203 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router";
-import { FileDown, Search, ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  FileDown,
+  Search,
+  ChevronLeft,
+  ChevronRight,
+  Pencil,
+  X,
+  CheckCircle2,
+  Loader2,
+  ChevronDown,
+} from "lucide-react";
 import {
   mockConsultationHistory,
+  type ConsultationHistoryRow,
   type Severity,
 } from "../../../data/mockSpecialistData";
+
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
+
+// ── Edit Modal ────────────────────────────────────────────────────────────────
+// Calls PUT /api/Recommendations/{recommendationId}
+// Falls back to updating local state when API is unreachable
+function EditResponseModal({
+  row,
+  onClose,
+  onSaved,
+}: {
+  row: ConsultationHistoryRow;
+  onClose: () => void;
+  onSaved: (updated: Partial<ConsultationHistoryRow>) => void;
+}) {
+  const [title, setTitle] = useState(row.title);
+  const [content, setContent] = useState(row.content);
+  const [priority, setPriority] = useState<Severity>(row.priority);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleSave = async () => {
+    if (!title.trim() || !content.trim()) return;
+    setSaving(true);
+    setError("");
+
+    const severityMap: Record<Severity, string> = {
+      Thấp: "Low",
+      "Trung bình": "Medium",
+      Cao: "High",
+      "Nghiêm trọng": "Critical",
+    };
+
+    try {
+      const res = await fetch(
+        `${BASE_URL}/api/Recommendations/${row.recommendationId}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title,
+            content,
+            pestSeverity: severityMap[priority],
+          }),
+        },
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    } catch {
+      // API unreachable — local update only (mock mode)
+    }
+
+    onSaved({ content, priority });
+    setSaving(false);
+    setSaved(true);
+  };
+
+  if (saved) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+        <div className="bg-white rounded-2xl shadow-2xl p-8 flex flex-col items-center gap-4 max-w-sm w-full text-center">
+          <div className="w-14 h-14 bg-green-100 rounded-full flex items-center justify-center">
+            <CheckCircle2 className="w-7 h-7 text-green-600" />
+          </div>
+          <h3 className="text-lg font-bold text-slate-800">Đã lưu thay đổi!</h3>
+          <p className="text-sm text-slate-500">
+            Phản hồi đã được cập nhật thành công.
+          </p>
+          <button
+            onClick={onClose}
+            className="px-6 py-2.5 bg-[#009689] text-white rounded-xl text-sm font-semibold hover:bg-[#007f73] transition-colors"
+          >
+            Đóng
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+          <div>
+            <h3 className="font-semibold text-slate-800">Chỉnh sửa phản hồi</h3>
+            <p className="text-xs text-slate-400 mt-0.5">
+              {row.responseCode} · {row.requestCode}
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 transition-colors"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="px-6 py-5 space-y-4 max-h-[60vh] overflow-y-auto">
+          {/* Title — maps to Recommendation.title */}
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">
+              Tiêu đề
+            </label>
+            <input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#009689]/30"
+            />
+          </div>
+
+          {/* Content — maps to Recommendation.content */}
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">
+              Nội dung điều trị <span className="text-red-500">*</span>
+            </label>
+            <textarea
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              rows={6}
+              className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#009689]/30 resize-none"
+            />
+          </div>
+
+          {/* Priority — maps to Recommendation.pestSeverity */}
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">
+              Mức độ ưu tiên
+            </label>
+            <div className="relative">
+              <select
+                value={priority}
+                onChange={(e) => setPriority(e.target.value as Severity)}
+                className="w-full appearance-none border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#009689]/30 bg-white text-slate-700"
+              >
+                <option value="Thấp">Thấp</option>
+                <option value="Trung bình">Trung bình</option>
+                <option value="Cao">Cao</option>
+                <option value="Nghiêm trọng">Nghiêm trọng</option>
+              </select>
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+            </div>
+          </div>
+
+          {error && (
+            <p className="text-sm text-red-600 bg-red-50 rounded-xl px-4 py-2.5">
+              {error}
+            </p>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-100 bg-slate-50">
+          <button
+            onClick={onClose}
+            className="px-5 py-2.5 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100 transition-colors"
+          >
+            Hủy
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving || !content.trim()}
+            className="px-6 py-2.5 rounded-xl text-sm font-semibold bg-[#009689] text-white hover:bg-[#007f73] transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
+          >
+            {saving ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Đang lưu...
+              </>
+            ) : (
+              <>
+                <Pencil className="w-4 h-4" />
+                Lưu thay đổi
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const PAGE_SIZE = 8;
 
@@ -55,6 +248,27 @@ export function SpecialistHistoryPage() {
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
+  const [editingRow, setEditingRow] = useState<ConsultationHistoryRow | null>(
+    null,
+  );
+
+  // Local overrides: keyed by row.id — applied on top of mock data
+  const [localEdits, setLocalEdits] = useState<
+    Record<string, Partial<ConsultationHistoryRow>>
+  >({});
+
+  const handleSaved = (
+    id: string,
+    updated: Partial<ConsultationHistoryRow>,
+  ) => {
+    setLocalEdits((prev) => ({ ...prev, [id]: { ...prev[id], ...updated } }));
+    setEditingRow(null);
+  };
+
+  // Merge local edits into the history list
+  const history = mockConsultationHistory.map((row) =>
+    localEdits[row.id] ? { ...row, ...localEdits[row.id] } : row,
+  );
 
   const today = new Date().toLocaleDateString("vi-VN", {
     weekday: "long",
@@ -67,7 +281,7 @@ export function SpecialistHistoryPage() {
     minute: "2-digit",
   });
 
-  const filtered = mockConsultationHistory.filter((row) => {
+  const filtered = history.filter((row) => {
     const q = search.toLowerCase();
     return (
       !q ||
@@ -91,11 +305,17 @@ export function SpecialistHistoryPage() {
 
   return (
     <div className="space-y-6">
+      {/* Edit modal */}
+      {editingRow && (
+        <EditResponseModal
+          row={editingRow}
+          onClose={() => setEditingRow(null)}
+          onSaved={(updated) => handleSaved(editingRow.id, updated)}
+        />
+      )}
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-slate-800">
-          Lịch sử Tư vấn Chuyên gia
-        </h1>
+        <h1 className="text-2xl font-bold text-slate-800">Lịch sử tư vấn</h1>
         <p className="text-sm text-slate-500 mt-1 flex items-center gap-1.5">
           <span className="opacity-60">📅</span>
           {today} | {timeStr}
@@ -213,18 +433,26 @@ export function SpecialistHistoryPage() {
                       })}
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <button
-                        onClick={() => {
-                          // Navigate to the original request detail
-                          const reqId = res.requestCode
-                            .toLowerCase()
-                            .replace("#req-", "req-");
-                          navigate(`/specialist/consultations/${reqId}`);
-                        }}
-                        className="text-sm text-[#009689] font-semibold hover:underline"
-                      >
-                        Xem chi tiết
-                      </button>
+                      <div className="flex items-center justify-end gap-3">
+                        <button
+                          onClick={() => {
+                            const reqId = res.requestCode
+                              .toLowerCase()
+                              .replace("#req-", "req-");
+                            navigate(`/specialist/consultations/${reqId}`);
+                          }}
+                          className="text-sm text-[#009689] font-semibold hover:underline"
+                        >
+                          Xem chi tiết
+                        </button>
+                        <button
+                          onClick={() => setEditingRow(res)}
+                          className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700 font-medium border border-slate-200 rounded-lg px-2.5 py-1 hover:bg-slate-50 transition-colors"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                          Sửa
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
