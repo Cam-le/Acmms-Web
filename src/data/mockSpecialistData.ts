@@ -301,6 +301,80 @@ export const mockConsultationHistory: ConsultationHistoryRow[] =
       content: r.response!.content,
     }));
 
+// ── Payment history — maps to Payments table (owner → specialist) ────────────
+// TODO: replace mockPaymentHistory with GET /api/payments/specialist
+//       Backend should return payments linked to this specialist's responses.
+//       Each record joins via responseCode (Recommendation.recommendation_id display)
+//       and requestCode (Pest_Detections display ID).
+//
+// Amount is fixed at 150,000 VND per consultation (all disease types).
+// Expand status union to "Chờ thanh toán" | "Đã thanh toán" | "Hoàn tiền" once BE is ready.
+export type PaymentRecord = {
+  id: string;
+  /** maps to ConsultationHistoryRow.responseCode / Recommendation display ID */
+  responseCode: string;
+  /** maps to ConsultationHistoryRow.requestCode / Pest_Detections display ID */
+  requestCode: string;
+  /** human-readable transaction ID from payment gateway (VNPay / bank transfer) */
+  transactionId: string;
+  /** VND amount owner paid to unlock this specialist response — fixed 150,000đ */
+  amount: number;
+  paidAt: string; // ISO datetime — Payment.paid_at
+  /** simplified status — expand once BE schema is confirmed */
+  status: "Đã thanh toán";
+  /** owner's farm name — for display context, from Farmers / Fields join */
+  farmName: string;
+  /** disease label — mirrors ConsultationRequest.issue, for detail modal only */
+  issue: string;
+};
+
+export const mockPaymentHistory: PaymentRecord[] = [
+  {
+    id: "pay-001",
+    responseCode: "#RES-8821",
+    requestCode: "#REQ-2088",
+    transactionId: "VCB20231024112045",
+    amount: 150000,
+    paidAt: "2023-10-24T11:20:45",
+    status: "Đã thanh toán",
+    farmName: "Nông trại Bình Minh",
+    issue: "Sâu đục lá",
+  },
+  {
+    id: "pay-002",
+    responseCode: "#RES-8815",
+    requestCode: "#REQ-2079",
+    transactionId: "VCB20231023153302",
+    amount: 150000,
+    paidAt: "2023-10-23T15:33:02",
+    status: "Đã thanh toán",
+    farmName: "Nông trại Xanh",
+    issue: "Đạo ôn lá",
+  },
+  {
+    id: "pay-003",
+    responseCode: "#RES-8809",
+    requestCode: "#REQ-2075",
+    transactionId: "VCB20231022094417",
+    amount: 150000,
+    paidAt: "2023-10-22T09:44:17",
+    status: "Đã thanh toán",
+    farmName: "Nông trại Xanh",
+    issue: "Sâu keo",
+  },
+  {
+    id: "pay-004",
+    responseCode: "#RES-8803",
+    requestCode: "#REQ-2070",
+    transactionId: "VCB20231021120830",
+    amount: 150000,
+    paidAt: "2023-10-21T12:08:30",
+    status: "Đã thanh toán",
+    farmName: "Nông trại Bình Minh",
+    issue: "Mốc sương",
+  },
+];
+
 // ── Dashboard summary stats ──────────────────────────────────────────────────
 export const mockSpecialistStats = {
   pendingCount: mockConsultationRequests.filter(
