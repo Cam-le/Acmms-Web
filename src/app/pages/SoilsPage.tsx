@@ -10,9 +10,20 @@ import {
   X,
   FlaskConical,
   Sprout,
-  MapPin,
+  CheckCircle2,
+  AlertCircle,
+  XCircle,
+  LandPlot,
+  AlertTriangle,
 } from "lucide-react";
-import { mockSoils, type Soil } from "../../data/mockSoils";
+import {
+  mockSoils,
+  mockSoilCropCompatibilities,
+  type Soil,
+  type SoilCropCompatibility,
+  type CompatibilityLevel,
+} from "../../data/mockSoils";
+import { mockCrops } from "../../data/mockData";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -29,10 +40,39 @@ interface FormState {
 
 const emptyForm: FormState = { name: "", scienceName: "" };
 
+// ─── Compatibility config ─────────────────────────────────────────────────────
+
+const compatConfig: Record<
+  CompatibilityLevel,
+  { label: string; color: string; bg: string; icon: React.ReactNode }
+> = {
+  Tốt: {
+    label: "Tốt",
+    color: "text-[#008236]",
+    bg: "bg-[#dcfce7]",
+    icon: <CheckCircle2 className="w-3.5 h-3.5" />,
+  },
+  "Trung bình": {
+    label: "Trung bình",
+    color: "text-[#92400e]",
+    bg: "bg-[#fef3c7]",
+    icon: <AlertCircle className="w-3.5 h-3.5" />,
+  },
+  Kém: {
+    label: "Kém",
+    color: "text-[#dc2626]",
+    bg: "bg-[#fee2e2]",
+    icon: <XCircle className="w-3.5 h-3.5" />,
+  },
+};
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function SoilsPage() {
   const [soils, setSoils] = useState<Soil[]>(mockSoils);
+  const [compatibilities, setCompatibilities] = useState<
+    SoilCropCompatibility[]
+  >(mockSoilCropCompatibilities);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
 
@@ -58,6 +98,16 @@ export function SoilsPage() {
     (currentPage - 1) * PAGE_SIZE,
     currentPage * PAGE_SIZE,
   );
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  function getCompatForSoil(soilId: string) {
+    return compatibilities
+      .filter((c) => c.soilId === soilId)
+      .map((c) => {
+        const crop = mockCrops.find((cr) => cr.id === c.cropId);
+        return { ...c, cropName: crop?.name ?? `Cây #${c.cropId}` };
+      });
+  }
 
   // ── Modal helpers ─────────────────────────────────────────────────────────
   function openView(soil: Soil) {
@@ -108,8 +158,6 @@ export function SoilsPage() {
       soilId: `soil-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       name: form.name.trim(),
       scienceName: form.scienceName.trim(),
-      cropsCount: 0,
-      plotsCount: 0,
     };
     setSoils((prev) => [newSoil, ...prev]);
     setPage(1);
@@ -135,6 +183,9 @@ export function SoilsPage() {
   function handleDelete() {
     if (!selectedSoil) return;
     setSoils((prev) => prev.filter((s) => s.soilId !== selectedSoil.soilId));
+    setCompatibilities((prev) =>
+      prev.filter((c) => c.soilId !== selectedSoil.soilId),
+    );
     closeModal();
   }
 
@@ -188,7 +239,7 @@ export function SoilsPage() {
             <thead>
               <tr className="bg-[#f8fafc] border-b border-[#e2e8f0]">
                 <th className="text-left px-5 py-3 text-xs font-semibold text-[#62748e] uppercase tracking-wide">
-                  #
+                  No.
                 </th>
                 <th className="text-left px-5 py-3 text-xs font-semibold text-[#62748e] uppercase tracking-wide">
                   Tên loại đất
@@ -212,57 +263,53 @@ export function SoilsPage() {
                   </td>
                 </tr>
               ) : (
-                paginated.map((soil, idx) => (
-                  <tr
-                    key={soil.soilId}
-                    className="border-b border-[#f1f5f9] hover:bg-[#f8fafc] transition-colors"
-                  >
-                    <td className="px-5 py-4 text-[#94a3b8] font-mono text-xs">
-                      {(currentPage - 1) * PAGE_SIZE + idx + 1}
-                    </td>
-                    <td className="px-5 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-[#fef3c7] flex items-center justify-center shrink-0">
-                          <span className="text-base">🪨</span>
-                        </div>
+                paginated.map((soil, idx) => {
+                  return (
+                    <tr
+                      key={soil.soilId}
+                      className="border-b border-[#f1f5f9] hover:bg-[#f8fafc] transition-colors"
+                    >
+                      <td className="px-5 py-4 text-[#94a3b8] font-mono text-xs">
+                        {(currentPage - 1) * PAGE_SIZE + idx + 1}
+                      </td>
+                      <td className="px-5 py-4">
                         <span className="font-medium text-[#115e59]">
                           {soil.name}
                         </span>
-                      </div>
-                    </td>
-                    <td className="px-5 py-4">
-                      <span className="flex items-center gap-1.5 text-[#62748e] italic">
-                        <FlaskConical className="w-3.5 h-3.5 text-[#94a3b8] shrink-0" />
-                        {soil.scienceName}
-                      </span>
-                    </td>
-                    <td className="px-5 py-4">
-                      <div className="flex items-center justify-center gap-2">
-                        <button
-                          onClick={() => openView(soil)}
-                          className="p-2 rounded-lg text-[#62748e] hover:bg-[#f1f5f9] transition-colors"
-                          title="Xem chi tiết"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => openEdit(soil)}
-                          className="p-2 rounded-lg text-[#009689] hover:bg-[#f0fdf9] transition-colors"
-                          title="Chỉnh sửa"
-                        >
-                          <Pencil className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => openDelete(soil)}
-                          className="p-2 rounded-lg text-[#dc2626] hover:bg-[#fee2e2] transition-colors"
-                          title="Xóa"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                      </td>
+                      <td className="px-5 py-4">
+                        <span className="text-[#62748e] italic">
+                          {soil.scienceName}
+                        </span>
+                      </td>
+                      <td className="px-5 py-4">
+                        <div className="flex items-center justify-center gap-2">
+                          <button
+                            onClick={() => openView(soil)}
+                            className="p-2 rounded-lg text-[#62748e] hover:bg-[#f1f5f9] transition-colors"
+                            title="Xem chi tiết"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => openEdit(soil)}
+                            className="p-2 rounded-lg text-[#009689] hover:bg-[#f0fdf9] transition-colors"
+                            title="Chỉnh sửa"
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => openDelete(soil)}
+                            className="p-2 rounded-lg text-[#dc2626] hover:bg-[#fee2e2] transition-colors"
+                            title="Xóa"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -305,7 +352,11 @@ export function SoilsPage() {
 
       {/* ── Modals ── */}
       {modalMode === "view" && selectedSoil && (
-        <ViewModal soil={selectedSoil} onClose={closeModal} />
+        <ViewModal
+          soil={selectedSoil}
+          compat={getCompatForSoil(selectedSoil.soilId)}
+          onClose={closeModal}
+        />
       )}
 
       {(modalMode === "create" || modalMode === "edit") && (
@@ -324,6 +375,7 @@ export function SoilsPage() {
       {modalMode === "delete" && selectedSoil && (
         <DeleteModal
           soil={selectedSoil}
+          compatCount={getCompatForSoil(selectedSoil.soilId).length}
           onConfirm={handleDelete}
           onClose={closeModal}
         />
@@ -354,15 +406,27 @@ function PaginationBtn({
   );
 }
 
-function ViewModal({ soil, onClose }: { soil: Soil; onClose: () => void }) {
+// ── View Modal ────────────────────────────────────────────────────────────────
+
+type CompatRow = SoilCropCompatibility & { cropName: string };
+
+function ViewModal({
+  soil,
+  compat,
+  onClose,
+}: {
+  soil: Soil;
+  compat: CompatRow[];
+  onClose: () => void;
+}) {
   return (
     <Backdrop onClose={onClose}>
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-6">
         {/* header */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-lg bg-[#fef3c7] flex items-center justify-center shrink-0">
-              <span className="text-xl">🪨</span>
+              <LandPlot className="w-5 h-5 text-[#92400e]" />
             </div>
             <div>
               <h2 className="text-lg font-bold text-[#115e59]">{soil.name}</h2>
@@ -380,34 +444,50 @@ function ViewModal({ soil, onClose }: { soil: Soil; onClose: () => void }) {
           </button>
         </div>
 
-        {/* detail rows */}
-        <div className="flex flex-col gap-3">
-          <DetailRow
-            icon={<Sprout className="w-4 h-4 text-[#008236]" />}
-            iconBg="bg-[#dcfce7]"
-            label="Cây trồng sử dụng"
-            value={
-              soil.cropsCount > 0
-                ? `${soil.cropsCount} loại cây trồng`
-                : "Chưa có cây trồng nào"
-            }
-            valueColor={
-              soil.cropsCount > 0 ? "text-[#115e59]" : "text-[#94a3b8]"
-            }
-          />
-          <DetailRow
-            icon={<MapPin className="w-4 h-4 text-[#1e40af]" />}
-            iconBg="bg-[#dbeafe]"
-            label="Vuông đất áp dụng"
-            value={
-              soil.plotsCount > 0
-                ? `${soil.plotsCount} vuông đất`
-                : "Chưa áp dụng cho vuông đất nào"
-            }
-            valueColor={
-              soil.plotsCount > 0 ? "text-[#115e59]" : "text-[#94a3b8]"
-            }
-          />
+        {/* compatibility section */}
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <Sprout className="w-4 h-4 text-[#009689]" />
+            <h3 className="text-sm font-semibold text-[#115e59]">
+              Cây trồng tương thích
+            </h3>
+          </div>
+
+          {compat.length === 0 ? (
+            <p className="text-sm text-[#94a3b8] py-4 text-center">
+              Chưa có dữ liệu tương thích
+            </p>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {compat.map((c) => {
+                const cfg = compatConfig[c.compatibility];
+                return (
+                  <div
+                    key={c.comptId}
+                    className="flex items-start gap-3 p-3 bg-[#f8fafc] rounded-lg border border-[#e2e8f0]"
+                  >
+                    {/* crop name + badge */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-sm font-medium text-[#115e59]">
+                          {c.cropName}
+                        </span>
+                        <span
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${cfg.bg} ${cfg.color}`}
+                        >
+                          {cfg.icon}
+                          {cfg.label}
+                        </span>
+                      </div>
+                      {c.note && (
+                        <p className="text-xs text-[#62748e]">{c.note}</p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         <div className="flex justify-end mt-6">
@@ -423,33 +503,7 @@ function ViewModal({ soil, onClose }: { soil: Soil; onClose: () => void }) {
   );
 }
 
-function DetailRow({
-  icon,
-  iconBg,
-  label,
-  value,
-  valueColor,
-}: {
-  icon: React.ReactNode;
-  iconBg: string;
-  label: string;
-  value: string;
-  valueColor: string;
-}) {
-  return (
-    <div className="flex items-center gap-4 p-4 bg-[#f8fafc] rounded-lg border border-[#e2e8f0]">
-      <div
-        className={`w-9 h-9 ${iconBg} rounded-lg flex items-center justify-center shrink-0`}
-      >
-        {icon}
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-xs text-[#62748e] mb-0.5">{label}</p>
-        <p className={`text-sm font-medium ${valueColor}`}>{value}</p>
-      </div>
-    </div>
-  );
-}
+// ── Form Modal ────────────────────────────────────────────────────────────────
 
 function FormModal({
   mode,
@@ -557,17 +611,19 @@ function Field({
   );
 }
 
+// ── Delete Modal ──────────────────────────────────────────────────────────────
+
 function DeleteModal({
   soil,
+  compatCount,
   onConfirm,
   onClose,
 }: {
   soil: Soil;
+  compatCount: number;
   onConfirm: () => void;
   onClose: () => void;
 }) {
-  const hasUsage = soil.cropsCount > 0 || soil.plotsCount > 0;
-
   return (
     <Backdrop onClose={onClose}>
       <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6">
@@ -578,20 +634,17 @@ function DeleteModal({
           <h2 className="text-lg font-bold text-[#115e59]">Xóa loại đất</h2>
         </div>
 
-        <p className="text-sm text-[#62748e] mb-2">
+        <p className="text-sm text-[#62748e] mb-3">
           Bạn có chắc muốn xóa loại đất{" "}
           <span className="font-semibold text-[#115e59]">"{soil.name}"</span>?
         </p>
 
-        {hasUsage && (
+        {compatCount > 0 && (
           <div className="flex items-start gap-2 p-3 bg-[#fffbeb] border border-[#fde68a] rounded-lg mb-4 text-xs text-[#92400e]">
-            <span className="shrink-0">⚠️</span>
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
             <p>
-              Loại đất này đang được sử dụng bởi{" "}
-              {soil.cropsCount > 0 && `${soil.cropsCount} loại cây trồng`}
-              {soil.cropsCount > 0 && soil.plotsCount > 0 && " và "}
-              {soil.plotsCount > 0 && `${soil.plotsCount} vuông đất`}. Việc xóa
-              có thể ảnh hưởng đến dữ liệu liên quan.
+              Loại đất này đang có {compatCount} bản ghi tương thích cây trồng.
+              Toàn bộ dữ liệu liên quan sẽ bị xóa theo.
             </p>
           </div>
         )}
@@ -614,6 +667,8 @@ function DeleteModal({
     </Backdrop>
   );
 }
+
+// ── Backdrop ──────────────────────────────────────────────────────────────────
 
 function Backdrop({
   onClose,

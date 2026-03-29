@@ -1,6 +1,7 @@
 import { useState } from "react";
+import type { ElementType } from "react";
 import {
-  Droplets,
+  LandPlot,
   Sprout,
   Users,
   TrendingUp,
@@ -9,6 +10,10 @@ import {
   Calendar,
   Eye,
   ShieldAlert,
+  Bug,
+  Wrench,
+  Wheat,
+  MapPin,
 } from "lucide-react";
 import {
   BarChart,
@@ -41,20 +46,32 @@ interface Alert {
 
 const alertTypeConfig: Record<
   AlertType,
-  { icon: string; label: string; badgeColor: string }
+  {
+    icon: ElementType;
+    iconColor: string;
+    iconBg: string;
+    label: string;
+    badgeColor: string;
+  }
 > = {
   disease: {
-    icon: "🦠",
+    icon: Bug,
+    iconColor: "text-[#991b1b]",
+    iconBg: "bg-[#fee2e2]",
     label: "PHÁT HIỆN BỆNH",
     badgeColor: "bg-[#fee2e2] text-[#991b1b]",
   },
   maintenance: {
-    icon: "🔧",
+    icon: Wrench,
+    iconColor: "text-[#1e40af]",
+    iconBg: "bg-[#dbeafe]",
     label: "BẢO DƯỠNG",
     badgeColor: "bg-[#dbeafe] text-[#1e40af]",
   },
   harvest: {
-    icon: "🌾",
+    icon: Wheat,
+    iconColor: "text-[#008236]",
+    iconBg: "bg-[#dcfce7]",
     label: "THU HOẠCH",
     badgeColor: "bg-[#dcfce7] text-[#008236]",
   },
@@ -117,7 +134,7 @@ export function DashboardPage() {
         <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-6">
           <div className="flex items-center gap-3 mb-3">
             <div className="w-11 h-11 bg-[#dbeafe] rounded-lg flex items-center justify-center shrink-0">
-              <Droplets className="w-5 h-5 text-[#1e40af]" />
+              <LandPlot className="w-5 h-5 text-[#1e40af]" />
             </div>
             <div className="text-sm text-[#62748e]">Tổng diện tích</div>
           </div>
@@ -373,7 +390,11 @@ function AlertRow({ alert, urgent }: { alert: Alert; urgent: boolean }) {
           : "bg-[#f8fafc] hover:bg-[#f1f5f9]"
       }`}
     >
-      <div className="text-2xl shrink-0">{config.icon}</div>
+      <div
+        className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${config.iconBg}`}
+      >
+        <config.icon className={`w-5 h-5 ${config.iconColor}`} />
+      </div>
 
       <div className="flex-1 min-w-0">
         <div className="flex items-start justify-between gap-2 mb-1.5">
@@ -391,7 +412,9 @@ function AlertRow({ alert, urgent }: { alert: Alert; urgent: boolean }) {
           <span className="flex items-center gap-1">
             <Sprout className="w-3.5 h-3.5" /> {alert.crop}
           </span>
-          <span className="flex items-center gap-1">📍 {alert.location}</span>
+          <span className="flex items-center gap-1">
+            <MapPin className="w-3.5 h-3.5" /> {alert.location}
+          </span>
           <span className="flex items-center gap-1.5">
             <span className={`w-1.5 h-1.5 rounded-full ${sev.dot}`} />
             <span className={sev.color}>Mức độ: {alert.severity}</span>

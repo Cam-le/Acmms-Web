@@ -101,10 +101,6 @@ export function SpecialistDashboardPage() {
               <p className="text-4xl font-bold text-slate-800 mt-2">
                 {stats.totalDiseaseCases}
               </p>
-              <p className="text-xs text-rose-500 font-medium mt-2 flex items-center gap-1">
-                <TrendingUp className="w-3.5 h-3.5" />
-                Tăng {stats.diseaseCasesChangePercent}% tuần này
-              </p>
             </div>
             <div className="w-11 h-11 rounded-xl bg-red-50 flex items-center justify-center shrink-0">
               <Bug className="w-5 h-5 text-red-500" />

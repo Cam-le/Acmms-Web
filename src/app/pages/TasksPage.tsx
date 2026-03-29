@@ -20,6 +20,13 @@ import {
   Eye,
   Pencil,
   Trash2,
+  Droplets,
+  Sprout,
+  Shield,
+  Wheat,
+  ScanSearch,
+  Leaf,
+  ClipboardList,
 } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
@@ -91,15 +98,27 @@ const STATUS_CONFIG = {
   },
 };
 
-const ICON_MAP: Record<string, string> = {
-  "Tưới nước": "💧",
-  "Bón phân": "🌱",
-  "Bảo vệ thực vật": "🛡️",
-  "Thu hoạch": "🌾",
-  "Kiểm tra": "🔍",
-  "Chăm sóc": "🌿",
-  Khác: "📋",
+const ICON_MAP: Record<string, React.ElementType> = {
+  "Tưới nước": Droplets,
+  "Bón phân": Sprout,
+  "Bảo vệ thực vật": Shield,
+  "Thu hoạch": Wheat,
+  "Kiểm tra": ScanSearch,
+  "Chăm sóc": Leaf,
+  Khác: ClipboardList,
 };
+
+/** Renders the Lucide icon for a task type, with a fallback to ClipboardList. */
+function TaskIcon({
+  type,
+  className = "w-4 h-4",
+}: {
+  type: string;
+  className?: string;
+}) {
+  const Icon = ICON_MAP[type] ?? ClipboardList;
+  return <Icon className={className} />;
+}
 const BG_MAP: Record<string, string> = {
   "Tưới nước": "#dbeafe",
   "Bón phân": "#dcfce7",
@@ -510,7 +529,9 @@ function BedGroupEditor({
                         }
                       >
                         {plot}
-                        {sel && " ✓"}
+                        {sel && (
+                          <CheckCircle2 className="w-3 h-3 inline ml-1" />
+                        )}
                       </button>
                     );
                   })}
@@ -730,9 +751,6 @@ function CalendarDayCard({
           >
             <div className="bg-white px-2 py-1.5">
               <div className="flex items-start gap-1.5">
-                <span className="text-sm leading-none mt-0.5">
-                  {a.taskIcon}
-                </span>
                 <p className="text-[11px] font-semibold text-[#1e293b] line-clamp-2 leading-tight flex-1">
                   {a.taskName}
                 </p>
@@ -929,7 +947,7 @@ export function TasksPage() {
         type: newTemplate.type,
         description: newTemplate.description,
         crop: "",
-        icon: ICON_MAP[newTemplate.type] ?? "📋",
+        icon: ICON_MAP[newTemplate.type] ? newTemplate.type : "Khác",
         iconBg: BG_MAP[newTemplate.type] ?? "#f1f5f9",
       },
     ]);
@@ -955,7 +973,9 @@ export function TasksPage() {
         t.id === editTpl.id
           ? {
               ...editTpl,
-              icon: ICON_MAP[editTpl.type] ?? editTpl.icon,
+              icon: ICON_MAP[editTpl.type]
+                ? editTpl.type
+                : (editTpl.icon ?? "Khác"),
               iconBg: BG_MAP[editTpl.type] ?? editTpl.iconBg,
             }
           : t,
@@ -1012,7 +1032,7 @@ export function TasksPage() {
         id,
         templateId: tpl.id,
         taskName: tpl.name,
-        taskIcon: tpl.icon,
+        taskIcon: tpl.type,
         taskIconBg: tpl.iconBg,
         area: sel.area,
         plot: plotStr,
@@ -1246,17 +1266,9 @@ export function TasksPage() {
                         className="hover:bg-[#f8fafc] transition-colors group"
                       >
                         <td className="px-6 py-3.5">
-                          <div className="flex items-center gap-3">
-                            <div
-                              className="w-8 h-8 rounded-lg flex items-center justify-center text-base shrink-0"
-                              style={{ backgroundColor: tpl.iconBg }}
-                            >
-                              {tpl.icon}
-                            </div>
-                            <span className="text-sm font-medium text-[#1e293b]">
-                              {tpl.name}
-                            </span>
-                          </div>
+                          <span className="text-sm font-medium text-[#1e293b]">
+                            {tpl.name}
+                          </span>
                         </td>
                         <td className="px-6 py-3.5">
                           <span className="inline-block px-2 py-0.5 rounded-full text-[11px] font-medium bg-[#f1f5f9] text-[#64748b]">
@@ -1577,7 +1589,7 @@ export function TasksPage() {
                   <option value="">-- Chọn công việc --</option>
                   {templates.map((t) => (
                     <option key={t.id} value={t.id}>
-                      {t.icon} {t.name} ({t.type})
+                      {t.name} ({t.type})
                     </option>
                   ))}
                 </select>
@@ -1611,7 +1623,7 @@ export function TasksPage() {
                     <option key={s.id} value={s.id}>
                       {s.name}
                       {s.status === "Đang hoạt động"
-                        ? " ✓"
+                        ? " (Đang hoạt động)"
                         : s.status === "Đã kết thúc"
                           ? " (Đã kết thúc)"
                           : " (Sắp diễn ra)"}
@@ -1857,12 +1869,15 @@ export function TasksPage() {
                     {/* Task header */}
                     <div className="flex items-center gap-3">
                       <div
-                        className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl shrink-0"
+                        className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0"
                         style={{
                           backgroundColor: selectedAssignment.taskIconBg,
                         }}
                       >
-                        {selectedAssignment.taskIcon}
+                        <TaskIcon
+                          type={selectedAssignment.taskIcon}
+                          className="w-6 h-6 text-[#475569]"
+                        />
                       </div>
                       <div>
                         <p className="font-semibold text-[#1e293b]">
@@ -2110,10 +2125,13 @@ export function TasksPage() {
               <div className="space-y-3">
                 <div className="flex items-center gap-3">
                   <div
-                    className="w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0"
+                    className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
                     style={{ backgroundColor: selectedTpl.iconBg }}
                   >
-                    {selectedTpl.icon}
+                    <TaskIcon
+                      type={selectedTpl.type}
+                      className="w-5 h-5 text-[#475569]"
+                    />
                   </div>
                   <div>
                     <p className="font-semibold text-[#1e293b] text-sm">

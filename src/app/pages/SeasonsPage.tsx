@@ -17,6 +17,11 @@ import {
   ChevronLeft,
   ChevronRight,
   CheckSquare,
+  Wheat,
+  Info,
+  FileText,
+  AlertTriangle,
+  Check,
 } from "lucide-react";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import * as Collapsible from "@radix-ui/react-collapsible";
@@ -50,12 +55,6 @@ const seasonStatusConfig: Record<SeasonStatus, string> = {
 const plotStatusConfig: Record<SeasonPlotStatus, string> = {
   "Đang trồng": "bg-[#fef9c3] text-[#854d0e]",
   "Đã thu hoạch": "bg-[#dcfce7] text-[#008236]",
-};
-
-const cropEmoji: Record<string, string> = {
-  "Bắp Cải Trắng": "🥬",
-  "Bắp Cải Tím": "🟣",
-  "Bắp Cải Xoăn": "🌿",
 };
 
 /**
@@ -601,8 +600,8 @@ function DetailSeasonView({ season }: { season: Season }) {
 
       {/* Info card */}
       <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-6">
-        <h3 className="text-sm font-bold text-[#62748e] uppercase mb-4">
-          🌱 Thông tin chung
+        <h3 className="text-sm font-bold text-[#62748e] uppercase mb-4 flex items-center gap-2">
+          <Sprout className="w-4 h-4" /> Thông tin chung
         </h3>
         <div className="grid grid-cols-3 gap-6">
           <div className="flex items-start gap-3">
@@ -655,7 +654,7 @@ function DetailSeasonView({ season }: { season: Season }) {
             ).length;
             return (
               <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[#f0fdfa] border border-[#99f6e4] rounded-lg">
-                <span className="text-sm">🌾</span>
+                <Wheat className="w-4 h-4 text-[#008236]" />
                 <span className="text-xs text-[#62748e]">
                   Tổng sản lượng thu hoạch:
                 </span>
@@ -739,8 +738,9 @@ function DetailSeasonView({ season }: { season: Season }) {
                         {/* Week sub-header */}
                         <div className="flex items-center justify-between px-4 py-2 bg-[#f8fafc] border-b border-[#e2e8f0]">
                           <div className="flex items-center gap-3">
-                            <span className="text-xs font-semibold text-[#475569]">
-                              📅 Thu hoạch: {formatWeekRange(weekKey)}
+                            <span className="flex items-center gap-1 text-xs font-semibold text-[#475569]">
+                              <Calendar className="w-3.5 h-3.5" /> Thu hoạch:{" "}
+                              {formatWeekRange(weekKey)}
                             </span>
                             <div className="flex gap-1">
                               {crops.map((c) => (
@@ -748,7 +748,7 @@ function DetailSeasonView({ season }: { season: Season }) {
                                   key={c}
                                   className="text-xs px-1.5 py-0.5 bg-white border border-[#e2e8f0] rounded text-[#62748e]"
                                 >
-                                  {cropEmoji[c]} {c}
+                                  {c}
                                 </span>
                               ))}
                             </div>
@@ -758,8 +758,8 @@ function DetailSeasonView({ season }: { season: Season }) {
                               {weekHarvested}/{total} đã thu
                             </span>
                             {allDone && (
-                              <span className="px-2 py-0.5 text-xs font-medium text-[#008236] bg-[#dcfce7] rounded-full">
-                                ✓ Xong
+                              <span className="flex items-center gap-1 px-2 py-0.5 text-xs font-medium text-[#008236] bg-[#dcfce7] rounded-full">
+                                <Check className="w-3 h-3" /> Xong
                               </span>
                             )}
                           </div>
@@ -802,7 +802,7 @@ function DetailSeasonView({ season }: { season: Season }) {
                                     {plot.plotName}
                                   </td>
                                   <td className="px-4 py-2.5 text-sm text-[#62748e]">
-                                    {cropEmoji[plot.crop]} {plot.crop}
+                                    {plot.crop}
                                   </td>
                                   <td className="px-4 py-2.5 text-sm text-[#62748e]">
                                     {formatDate(plot.sowingDate)}
@@ -982,8 +982,8 @@ function CreateSeasonView({
 
       {step === 1 && (
         <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-6 max-w-2xl">
-          <h3 className="text-sm font-bold text-[#62748e] uppercase mb-4">
-            📝 Thông tin mùa vụ
+          <h3 className="text-sm font-bold text-[#62748e] uppercase mb-4 flex items-center gap-2">
+            <FileText className="w-4 h-4" /> Thông tin mùa vụ
           </h3>
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
@@ -1086,8 +1086,8 @@ function CreateSeasonView({
 
       {step === 2 && (
         <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-6">
-          <h3 className="text-sm font-bold text-[#62748e] uppercase mb-2">
-            🌱 Chọn luống
+          <h3 className="text-sm font-bold text-[#62748e] uppercase mb-2 flex items-center gap-2">
+            <Sprout className="w-4 h-4" /> Chọn luống
           </h3>
           <p className="text-xs text-[#62748e] mb-4">
             Tên luống theo quy ước{" "}
@@ -1482,8 +1482,8 @@ function EditSeasonView({
             (Object.keys(formErrors).filter((k) => k !== "plotRemove").length >
               0 ||
               Object.keys(plotErrors).length > 0) && (
-              <span className="text-xs text-red-500 font-medium">
-                ⚠ Còn{" "}
+              <span className="flex items-center gap-1 text-xs text-red-500 font-medium">
+                <AlertTriangle className="w-3.5 h-3.5" /> Còn{" "}
                 {Object.keys(formErrors).filter((k) => k !== "plotRemove")
                   .length + Object.keys(plotErrors).length}{" "}
                 lỗi cần sửa
@@ -1507,13 +1507,13 @@ function EditSeasonView({
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Info form */}
         <div className="lg:col-span-1 bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-6">
-          <h3 className="text-sm font-bold text-[#62748e] uppercase mb-4">
-            📝 Thông tin chung
+          <h3 className="text-sm font-bold text-[#62748e] uppercase mb-4 flex items-center gap-2">
+            <FileText className="w-4 h-4" /> Thông tin chung
           </h3>
           <div className="space-y-4">
             {formErrors.plotRemove && (
               <div className="px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-600 flex items-start gap-2">
-                <span className="shrink-0 mt-0.5">⚠️</span>
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                 <span>{formErrors.plotRemove}</span>
                 <button
                   className="ml-auto text-red-400 hover:text-red-600"
@@ -1625,8 +1625,8 @@ function EditSeasonView({
         {/* Plots — grouped by area */}
         <div className="lg:col-span-2 bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-6">
           <div className="flex items-center justify-between mb-2">
-            <h3 className="text-sm font-bold text-[#62748e] uppercase">
-              🌱 Luống trong mùa vụ
+            <h3 className="text-sm font-bold text-[#62748e] uppercase flex items-center gap-2">
+              <Sprout className="w-4 h-4" /> Luống trong mùa vụ
             </h3>
             <button
               onClick={() => setAddPlotOpen(true)}
@@ -1636,16 +1636,6 @@ function EditSeasonView({
             >
               <PlusCircle className="w-4 h-4" /> Thêm luống
             </button>
-          </div>
-
-          {/* Naming convention hint */}
-          <div className="mb-3 text-xs text-[#62748e]">
-            Quy ước tên luống:{" "}
-            <span className="font-mono font-semibold text-[#009689]">
-              [Khu]-[NN]
-            </span>{" "}
-            — ví dụ: <span className="font-mono">A-01</span>,{" "}
-            <span className="font-mono">B-12</span>
           </div>
 
           <div className="flex flex-wrap items-center gap-3 mb-4 text-xs text-[#90a1b9]">
@@ -1700,8 +1690,9 @@ function EditSeasonView({
                             {/* Week sub-header */}
                             <div className="flex items-center justify-between mb-2">
                               <div className="flex items-center gap-2">
-                                <span className="text-xs font-semibold text-[#475569]">
-                                  📅 Thu hoạch: {formatWeekRange(weekKey)}
+                                <span className="flex items-center gap-1 text-xs font-semibold text-[#475569]">
+                                  <Calendar className="w-3.5 h-3.5" /> Thu
+                                  hoạch: {formatWeekRange(weekKey)}
                                 </span>
                                 <div className="flex gap-1">
                                   {crops.map((c) => (
@@ -1709,7 +1700,7 @@ function EditSeasonView({
                                       key={c}
                                       className="text-xs px-1.5 py-0.5 bg-white border border-[#e2e8f0] rounded text-[#62748e]"
                                     >
-                                      {cropEmoji[c]} {c}
+                                      {c}
                                     </span>
                                   ))}
                                 </div>
@@ -1733,8 +1724,9 @@ function EditSeasonView({
                                   </button>
                                 )}
                                 {allHarvested && (
-                                  <span className="px-2.5 py-1 text-xs font-medium text-[#008236] bg-[#dcfce7] rounded-lg">
-                                    ✓ Đợt đã thu xong
+                                  <span className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-[#008236] bg-[#dcfce7] rounded-lg">
+                                    <Check className="w-3 h-3" /> Đợt đã thu
+                                    xong
                                   </span>
                                 )}
                               </div>
@@ -1911,8 +1903,9 @@ function EditSeasonView({
                                             placeholder="Nhập sản lượng..."
                                             className="w-40 px-2 py-1.5 text-sm border border-[#009689] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
                                           />
-                                          <span className="text-xs text-[#009689] font-medium">
-                                            ✓ Đã đến ngày thu hoạch
+                                          <span className="flex items-center gap-1 text-xs text-[#009689] font-medium">
+                                            <Check className="w-3 h-3" /> Đã đến
+                                            ngày thu hoạch
                                           </span>
                                         </div>
                                       ) : (
