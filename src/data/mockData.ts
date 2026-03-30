@@ -1012,7 +1012,7 @@ export const mockRequests: AdvisoryRequest[] = [
     reportCreatedBy: "Nguyễn Văn B",
     reportCreatedAt: "10:30 - 14/05/2024",
     ownerMessage: "Khu nhà kính 1 có nguy cơ lây lan cao, cần xử lý gấp.",
-    status: "Đang xử lý",
+    status: "Chờ phản hồi",
     priority: "TRUNG BÌNH",
     assignedTo: "ThS. Hoàng Lan",
     createdAt: "11:00 - 14/05/2024",

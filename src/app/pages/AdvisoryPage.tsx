@@ -498,7 +498,7 @@ export function AdvisoryPage() {
           <p className="text-[#45556c] text-sm">
             {showAll
               ? "Hiển thị tất cả yêu cầu."
-              : "Chỉ hiển thị các yêu cầu chưa giải quyết."}
+              : "Không hiển thị các yêu cầu đã giải quyết"}
           </p>
         </div>
         <div className="flex gap-2">
@@ -753,10 +753,22 @@ export interface TaskPrefill {
 /** Map an issue label to the closest TASK_TYPE value used in TasksPage */
 function inferTaskType(issue: string): string {
   const lower = issue.toLowerCase();
-  if (lower.includes("rệp") || lower.includes("sâu") || lower.includes("phấn") || lower.includes("nấm") || lower.includes("đốm") || lower.includes("than thư") || lower.includes("bệnh")) {
+  if (
+    lower.includes("rệp") ||
+    lower.includes("sâu") ||
+    lower.includes("phấn") ||
+    lower.includes("nấm") ||
+    lower.includes("đốm") ||
+    lower.includes("than thư") ||
+    lower.includes("bệnh")
+  ) {
     return "Bảo vệ thực vật";
   }
-  if (lower.includes("phân") || lower.includes("nitơ") || lower.includes("dinh dưỡng")) {
+  if (
+    lower.includes("phân") ||
+    lower.includes("nitơ") ||
+    lower.includes("dinh dưỡng")
+  ) {
     return "Bón phân";
   }
   if (lower.includes("tưới") || lower.includes("nước")) {
@@ -1151,7 +1163,8 @@ function DetailView({ request }: { request: AdvisoryRequest }) {
                   <Info className="w-3.5 h-3.5 shrink-0" />
                   <span>
                     Nhấn vào các nút bên dưới để tạo nhiệm vụ trên trang{" "}
-                    <strong>Công việc</strong>. Thông tin tư vấn sẽ được điền sẵn.
+                    <strong>Công việc</strong>. Thông tin tư vấn sẽ được điền
+                    sẵn.
                   </span>
                 </div>
                 <div className="flex gap-3 mb-4">
@@ -1215,6 +1228,7 @@ function CreateView({
   const [specialist, setSpecialist] = useState("");
   const [priority, setPriority] = useState<Priority>("TRUNG BÌNH");
   const [ownerMessage, setOwnerMessage] = useState("");
+  const [isReportPanelOpen, setIsReportPanelOpen] = useState(true);
 
   const selectedReport = mockWorkerReports.find(
     (r) => r.id === selectedReportId,
@@ -1270,49 +1284,67 @@ function CreateView({
         {/* Left: Chọn báo cáo */}
         <div className="lg:col-span-2 space-y-4">
           <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-4">
-            <h3 className="text-sm font-semibold text-[#62748e] flex items-center gap-2 mb-3">
-              <FileText className="w-4 h-4" /> Chọn báo cáo từ nhân viên
-            </h3>
-            <div className="space-y-2">
-              {mockWorkerReports.map((report) => (
-                <button
-                  key={report.id}
-                  onClick={() => setSelectedReportId(report.id)}
-                  className={`w-full text-left p-3 rounded-lg border transition-colors ${
-                    selectedReportId === report.id
-                      ? "border-[#009689] bg-[#f0fdfa]"
-                      : "border-[#e2e8f0] hover:bg-[#f8fafc]"
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs text-[#90a1b9]">{report.id}</div>
-                      <div className="font-medium text-sm text-[#115e59] truncate">
-                        {report.title}
+            <button
+              type="button"
+              onClick={() => setIsReportPanelOpen((prev) => !prev)}
+              className="w-full flex items-center justify-between mb-3 group"
+            >
+              <h3 className="text-sm font-semibold text-[#62748e] flex items-center gap-2">
+                <FileText className="w-4 h-4" /> Chọn báo cáo từ nhân viên
+                {selectedReportId && (
+                  <span className="ml-1 px-1.5 py-0.5 rounded-full bg-[#009689] text-white text-[10px] font-medium leading-none">
+                    ✓
+                  </span>
+                )}
+              </h3>
+              <span className="text-[#90a1b9] group-hover:text-[#009689] transition-colors text-xs select-none">
+                {isReportPanelOpen ? "Thu gọn ▲" : "Mở rộng ▼"}
+              </span>
+            </button>
+            {isReportPanelOpen && (
+              <div className="space-y-2">
+                {mockWorkerReports.map((report) => (
+                  <button
+                    key={report.id}
+                    onClick={() => setSelectedReportId(report.id)}
+                    className={`w-full text-left p-3 rounded-lg border transition-colors ${
+                      selectedReportId === report.id
+                        ? "border-[#009689] bg-[#f0fdfa]"
+                        : "border-[#e2e8f0] hover:bg-[#f8fafc]"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs text-[#90a1b9]">
+                          {report.id}
+                        </div>
+                        <div className="font-medium text-sm text-[#115e59] truncate">
+                          {report.title}
+                        </div>
+                        <div className="text-xs text-[#62748e] mt-0.5">
+                          {report.field}
+                        </div>
                       </div>
-                      <div className="text-xs text-[#62748e] mt-0.5">
-                        {report.field}
+                      <div className="flex items-center gap-1 shrink-0">
+                        <Cpu className="w-3 h-3 text-[#f59e0b]" />
+                        <span className="text-xs text-[#92400e] font-medium">
+                          {report.aiConfidence}%
+                        </span>
                       </div>
                     </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <Cpu className="w-3 h-3 text-[#f59e0b]" />
-                      <span className="text-xs text-[#92400e] font-medium">
-                        {report.aiConfidence}%
+                    <div className="mt-1.5 flex items-center gap-1">
+                      <AlertTriangle className="w-3 h-3 text-[#f59e0b] shrink-0" />
+                      <span className="text-xs text-[#92400e]">
+                        {report.issue}
                       </span>
                     </div>
-                  </div>
-                  <div className="mt-1.5 flex items-center gap-1">
-                    <AlertTriangle className="w-3 h-3 text-[#f59e0b] shrink-0" />
-                    <span className="text-xs text-[#92400e]">
-                      {report.issue}
-                    </span>
-                  </div>
-                  <div className="mt-1 text-xs text-[#90a1b9]">
-                    {report.createdBy} · {report.createdAt}
-                  </div>
-                </button>
-              ))}
-            </div>
+                    <div className="mt-1 text-xs text-[#90a1b9]">
+                      {report.createdBy} · {report.createdAt}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           {selectedReport && (
@@ -1402,7 +1434,7 @@ function CreateView({
                   Mức độ ưu tiên
                 </label>
                 <div className="flex gap-2">
-                  {(["CAO", "TRUNG BÌNH", "THẤP"] as Priority[]).map((p) => (
+                  {(["THẤP", "TRUNG BÌNH", "CAO"] as Priority[]).map((p) => (
                     <button
                       key={p}
                       type="button"
