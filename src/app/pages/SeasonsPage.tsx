@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Link, useSearchParams } from "react-router";
 import {
   Plus,
@@ -22,6 +22,7 @@ import {
   FileText,
   AlertTriangle,
   Check,
+  Database,
 } from "lucide-react";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import * as Collapsible from "@radix-ui/react-collapsible";
@@ -33,6 +34,14 @@ import {
   mockSeasons,
   mockFarms,
 } from "../../data/mockData";
+import {
+  api,
+  SeasonResponse,
+  SeasonDetailResponse,
+  FarmResponse,
+  BedResponse,
+  CropResponse,
+} from "../../api/client";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -246,11 +255,13 @@ function FarmSelect({
   onChange,
   placeholder,
   className,
+  farms,
 }: {
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
   className?: string;
+  farms: FarmResponse[];
 }) {
   return (
     <select
@@ -259,14 +270,97 @@ function FarmSelect({
       className={`w-full px-3 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] bg-white text-[#334155] ${className ?? ""}`}
     >
       <option value="">{placeholder ?? "Chọn trang trại"}</option>
-      {mockFarms.map((f) => (
-        <option key={f.id} value={f.name}>
-          {f.name}
+      {farms.map((f) => (
+        <option key={f.farmId} value={f.farmName}>
+          {f.farmName}
         </option>
       ))}
     </select>
   );
 }
+
+// ─── API Status Mapping ───────────────────────────────────────────────────────
+
+/**
+ * API trả về status dạng "active" / "Active" / "inactive" / "Inactive" (inconsistent).
+ * Normalize về SeasonStatus (Vietnamese) để dùng trong UI.
+ */
+function normalizeSeasonStatus(raw: string | undefined): SeasonStatus {
+  const s = (raw ?? "").toLowerCase().trim();
+  if (s === "active") return "Đang hoạt động";
+  if (s === "inactive" || s === "ended") return "Đã kết thúc";
+  if (s === "upcoming" || s === "planned") return "Sắp diễn ra";
+  return "Sắp diễn ra"; // safe default
+}
+
+/** Reverse: SeasonStatus → API string */
+function toApiStatus(status: SeasonStatus): string {
+  if (status === "Đang hoạt động") return "Active";
+  if (status === "Đã kết thúc") return "Inactive";
+  return "Upcoming";
+}
+
+/**
+ * Map SeasonResponse + FarmResponse[] + SeasonDetailResponse[] → Season (UI type).
+ * Defensive: mọi field có thể undefined/null đều được guard.
+ */
+function mapApiSeasonToUi(
+  s: SeasonResponse,
+  farms: FarmResponse[],
+  details: SeasonDetailResponse[],
+): Season {
+  const farm = farms.find((f) => f.farmId === s.farmId);
+  const seasonDetails = details.filter((d) => d.seasonId === s.seasonId);
+
+  const plots: PlotAssignment[] = seasonDetails.map(
+    (d) =>
+      ({
+        plotId: d.seasonDetailId,
+        plotName: d.bedName ?? d.bedId ?? "—",
+        area: d.bedName ?? "Không rõ khu",
+        crop: (d.cropName ?? "Bắp Cải Trắng") as CropType,
+        sowingDate: d.startDate ?? "",
+        harvestDate: d.seasonExpectedHarvestDate ?? "",
+        plannedQuantity: d.cropQuantity ?? 0,
+        actualPlanted: d.cropQuantity ?? 0,
+        harvestQuantity: d.totalHarvestYield ?? 0,
+        status: "Đang trồng" as any,
+        _seasonDetailId: d.seasonDetailId,
+        _bedId: d.bedId,
+        _cropId: d.cropId,
+      }) as any as PlotAssignment,
+  );
+
+  const shortId = s.seasonId?.slice(0, 8).toUpperCase() ?? "——";
+
+  return {
+    id: s.seasonId ?? "",
+    code: `MV-${shortId}`,
+    name: s.seasonName ?? "(Không có tên)",
+    farm: farm?.farmName ?? s.farmId ?? "—",
+    startDate: s.seasonStartDate ?? "",
+    endDate: s.seasonEndDate ?? "",
+    description: s.description ?? s.seasonNotes ?? "",
+    status: normalizeSeasonStatus(s.status),
+    plots,
+  };
+}
+
+// ─── Mock fallback data ───────────────────────────────────────────────────────
+
+const mockBedsForFallback = [
+  { id: "bed-mock-1", name: "A-01", area: "Khu A (Phía Bắc)", size: "50 m²" },
+  { id: "bed-mock-2", name: "A-02", area: "Khu A (Phía Bắc)", size: "45 m²" },
+  { id: "bed-mock-3", name: "B-01", area: "Khu B (Phía Nam)", size: "60 m²" },
+  { id: "bed-mock-4", name: "B-02", area: "Khu B (Phía Nam)", size: "55 m²" },
+  { id: "bed-mock-5", name: "C-01", area: "Khu C", size: "70 m²" },
+];
+
+const mockCropsForFallback: CropResponse[] = [
+  { cropId: "mock-crop-1", cropName: "Bắp Cải Trắng", cropStatus: "Active" },
+  { cropId: "mock-crop-2", cropName: "Bắp Cải Tím", cropStatus: "Active" },
+  { cropId: "mock-crop-3", cropName: "Bắp Cải Xoăn", cropStatus: "Active" },
+];
 
 // ─── Seasons Page (List) ──────────────────────────────────────────────────────
 
@@ -279,17 +373,81 @@ export function SeasonsPage() {
   const seasonId = searchParams.get("id");
 
   const [seasons, setSeasons] = useState<Season[]>(mockSeasons);
+  const [farms, setFarms] = useState<FarmResponse[]>([]);
+  const [allDetails, setAllDetails] = useState<SeasonDetailResponse[]>([]);
+  const [beds, setBeds] = useState<BedResponse[]>([]);
+  const [crops, setCrops] = useState<CropResponse[]>([]);
+  const [isUsingMock, setIsUsingMock] = useState(false);
+  const [loading, setLoading] = useState(true);
+
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState<SeasonStatus | "all">("all");
   const [currentPage, setCurrentPage] = useState(1);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [seasonToDelete, setSeasonToDelete] = useState<Season | null>(null);
 
+  // ── Load all data ──────────────────────────────────────────────────────────
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [apiSeasons, apiDetails, apiFarms, apiBeds, apiCrops] =
+        await Promise.all([
+          api.getSeasons(),
+          api.getSeasonsDetails(),
+          api.getFarms(),
+          api.getBeds(),
+          api.getCrops(),
+        ]);
+      const safeSeasons = Array.isArray(apiSeasons) ? apiSeasons : [];
+      const safeDetails = Array.isArray(apiDetails) ? apiDetails : [];
+      const safeFarms = Array.isArray(apiFarms) ? apiFarms : [];
+      const safeBeds = Array.isArray(apiBeds) ? apiBeds : [];
+      const safeCrops = Array.isArray(apiCrops)
+        ? apiCrops.filter(
+            (c) => (c.cropStatus ?? "Active").toLowerCase() === "active",
+          )
+        : [];
+
+      setFarms(safeFarms);
+      setAllDetails(safeDetails);
+      setBeds(safeBeds);
+      setCrops(safeCrops.length > 0 ? safeCrops : mockCropsForFallback);
+      setSeasons(
+        safeSeasons.map((s) => mapApiSeasonToUi(s, safeFarms, safeDetails)),
+      );
+      setIsUsingMock(false);
+    } catch {
+      // Fallback: mock data, local state only
+      setSeasons(mockSeasons);
+      setFarms(
+        mockFarms.map((f) => ({
+          farmId: f.id,
+          farmName: f.name,
+          farmLocation: "",
+          farmArea: 0,
+          farmStatus: "Active",
+          farmCreatedAt: "",
+          seasonsCount: 0,
+        })),
+      );
+      setCrops(mockCropsForFallback);
+      setIsUsingMock(true);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  // ── Filtered + paginated ───────────────────────────────────────────────────
   const filteredSeasons = seasons.filter((s) => {
+    const q = searchQuery.toLowerCase();
     const matchSearch =
-      s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.farm.toLowerCase().includes(searchQuery.toLowerCase());
+      (s.name ?? "").toLowerCase().includes(q) ||
+      (s.code ?? "").toLowerCase().includes(q) ||
+      (s.farm ?? "").toLowerCase().includes(q);
     const matchStatus = filterStatus === "all" || s.status === filterStatus;
     return matchSearch && matchStatus;
   });
@@ -303,43 +461,167 @@ export function SeasonsPage() {
     currentPage * PAGE_SIZE_LIST,
   );
 
-  // Reset to page 1 when filters change
   useEffect(() => {
     setCurrentPage(1);
   }, [searchQuery, filterStatus]);
 
   const selectedSeason = seasons.find((s) => s.id === seasonId);
 
+  // ── CRUD handlers ──────────────────────────────────────────────────────────
   const handleDelete = (season: Season) => {
     setSeasonToDelete(season);
     setDeleteDialogOpen(true);
   };
-  const confirmDelete = () => {
-    if (seasonToDelete) {
-      setSeasons(seasons.filter((s) => s.id !== seasonToDelete.id));
-      setSeasonToDelete(null);
-      setDeleteDialogOpen(false);
+
+  const confirmDelete = async () => {
+    if (!seasonToDelete) return;
+    if (!isUsingMock) {
+      try {
+        await api.deleteSeason(seasonToDelete.id);
+        await loadData();
+      } catch {
+        // Fallback: xóa local state
+        setSeasons((prev) => prev.filter((s) => s.id !== seasonToDelete.id));
+      }
+    } else {
+      setSeasons((prev) => prev.filter((s) => s.id !== seasonToDelete.id));
     }
+    setSeasonToDelete(null);
+    setDeleteDialogOpen(false);
   };
 
-  const handleCreate = (season: Omit<Season, "id" | "code">) => {
-    const newSeason: Season = {
-      ...season,
-      id: Date.now().toString(),
-      code: `MV${String(seasons.length + 1).padStart(3, "0")}`,
-    };
-    setSeasons([newSeason, ...seasons]);
+  const handleCreate = async (
+    seasonData: Omit<Season, "id" | "code">,
+    detailsToCreate: Array<{
+      bedId: string;
+      cropId: string;
+      cropQuantity: number;
+      startDate: string;
+      endDate: string;
+      harvestDate: string;
+    }>,
+  ) => {
+    if (!isUsingMock) {
+      try {
+        const farmId =
+          farms.find((f) => f.farmName === seasonData.farm)?.farmId ?? "";
+        const created = await api.createSeason({
+          farmId,
+          seasonName: seasonData.name,
+          seasonStartDate: seasonData.startDate,
+          seasonEndDate: seasonData.endDate,
+          description: seasonData.description,
+          status: toApiStatus(seasonData.status),
+        });
+        // Tạo season details (beds) sau khi có seasonId
+        if (created?.seasonId && detailsToCreate.length > 0) {
+          await Promise.allSettled(
+            detailsToCreate.map((d) =>
+              api.createSeasonDetail({
+                seasonId: created.seasonId,
+                bedId: d.bedId,
+                cropId: d.cropId,
+                cropQuantity: d.cropQuantity,
+                startDate: d.startDate,
+                endDate: d.endDate,
+                seasonExpectedHarvestDate: d.harvestDate,
+                totalHarvestYield: 0,
+              }),
+            ),
+          );
+        }
+        await loadData();
+      } catch {
+        // Fallback: mock create
+        const newSeason: Season = {
+          ...seasonData,
+          id: Date.now().toString(),
+          code: `MV-${String(seasons.length + 1).padStart(3, "0")}`,
+        };
+        setSeasons((prev) => [newSeason, ...prev]);
+      }
+    } else {
+      const newSeason: Season = {
+        ...seasonData,
+        id: Date.now().toString(),
+        code: `MV-${String(seasons.length + 1).padStart(3, "0")}`,
+      };
+      setSeasons((prev) => [newSeason, ...prev]);
+    }
     setSearchParams({ view: "list" });
   };
 
-  const handleUpdate = (updatedSeason: Season) => {
-    setSeasons(
-      seasons.map((s) => (s.id === updatedSeason.id ? updatedSeason : s)),
+  const handleUpdate = async (
+    updatedSeason: Season,
+    detailOps?: {
+      toAdd: Array<{
+        bedId: string;
+        cropId: string;
+        cropQuantity: number;
+        startDate: string;
+        endDate: string;
+        harvestDate: string;
+      }>;
+      toDelete: string[]; // seasonDetailIds
+    },
+  ) => {
+    if (!isUsingMock) {
+      try {
+        const farmId =
+          farms.find((f) => f.farmName === updatedSeason.farm)?.farmId ??
+          farms[0]?.farmId ??
+          "";
+        await api.updateSeason(updatedSeason.id, {
+          farmId,
+          seasonName: updatedSeason.name,
+          seasonStartDate: updatedSeason.startDate,
+          seasonEndDate: updatedSeason.endDate,
+          description: updatedSeason.description,
+          status: toApiStatus(updatedSeason.status),
+        });
+        // Handle detail CRUD
+        if (detailOps) {
+          await Promise.allSettled([
+            ...detailOps.toDelete.map((id) => api.deleteSeasonDetail(id)),
+            ...detailOps.toAdd.map((d) =>
+              api.createSeasonDetail({
+                seasonId: updatedSeason.id,
+                bedId: d.bedId,
+                cropId: d.cropId,
+                cropQuantity: d.cropQuantity,
+                startDate: d.startDate,
+                endDate: d.endDate,
+                seasonExpectedHarvestDate: d.harvestDate,
+                totalHarvestYield: 0,
+              }),
+            ),
+          ]);
+        }
+        await loadData();
+      } catch {
+        setSeasons((prev) =>
+          prev.map((s) => (s.id === updatedSeason.id ? updatedSeason : s)),
+        );
+      }
+    } else {
+      setSeasons((prev) =>
+        prev.map((s) => (s.id === updatedSeason.id ? updatedSeason : s)),
+      );
+    }
+    setSearchParams({ view: "list" });
+  };
+
+  // ── Route to sub-views ─────────────────────────────────────────────────────
+  if (view === "create")
+    return (
+      <CreateSeasonView
+        farms={farms}
+        beds={beds}
+        crops={crops}
+        isUsingMock={isUsingMock}
+        onCreate={handleCreate}
+      />
     );
-    setSearchParams({ view: "list" });
-  };
-
-  if (view === "create") return <CreateSeasonView onCreate={handleCreate} />;
   if (view === "detail" && selectedSeason)
     return <DetailSeasonView season={selectedSeason} />;
   if (view === "edit" && selectedSeason)
@@ -347,6 +629,10 @@ export function SeasonsPage() {
       <EditSeasonView
         key={selectedSeason.id}
         season={selectedSeason}
+        farms={farms}
+        beds={beds}
+        crops={crops}
+        isUsingMock={isUsingMock}
         onUpdate={handleUpdate}
       />
     );
@@ -355,9 +641,16 @@ export function SeasonsPage() {
     <div className="flex flex-col gap-6 p-6">
       {/* Header */}
       <div className="flex items-start justify-between">
-        <h1 className="text-[#115e59] text-2xl font-semibold">
-          Quản Lý Mùa Vụ
-        </h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-[#115e59] text-2xl font-semibold">
+            Quản Lý Mùa Vụ
+          </h1>
+          {isUsingMock && (
+            <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-700 border border-amber-200">
+              <Database className="w-3 h-3" /> Dữ liệu mẫu
+            </span>
+          )}
+        </div>
         <Link
           to="/seasons?view=create"
           className="bg-[#009689] text-white px-4 py-2 rounded-lg hover:bg-[#007f75] transition-colors flex items-center gap-2"
@@ -401,91 +694,98 @@ export function SeasonsPage() {
 
       {/* Table */}
       <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm overflow-hidden">
-        <table className="w-full">
-          <thead className="bg-[#f8fafc] border-b border-[#e2e8f0]">
-            <tr>
-              {[
-                "Mã",
-                "Tên mùa vụ",
-                "Trang trại",
-                "Thời gian",
-                "Số luống",
-                "Trạng thái",
-                "Thao tác",
-              ].map((h) => (
-                <th
-                  key={h}
-                  className="px-6 py-4 text-left text-xs font-bold text-[#62748e] uppercase tracking-wider"
-                >
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-[#e2e8f0]">
-            {paginated.map((season) => (
-              <tr
-                key={season.id}
-                className="hover:bg-[#f8fafc] transition-colors"
-              >
-                <td className="px-6 py-4 text-sm text-[#115e59] font-medium">
-                  {season.code}
-                </td>
-                <td className="px-6 py-4 text-sm font-medium text-[#115e59]">
-                  {season.name}
-                </td>
-                <td className="px-6 py-4 text-sm text-[#62748e]">
-                  {season.farm}
-                </td>
-                <td className="px-6 py-4">
-                  <div className="text-xs text-[#62748e]">
-                    Bắt đầu: {formatDate(season.startDate)}
-                  </div>
-                  <div className="text-xs text-[#62748e]">
-                    Kết thúc: {formatDate(season.endDate)}
-                  </div>
-                </td>
-                <td className="px-6 py-4 text-sm text-[#115e59] font-medium">
-                  {season.plots.length}
-                </td>
-                <td className="px-6 py-4">
-                  <span
-                    className={`inline-block px-2.5 py-1 rounded text-xs font-medium ${seasonStatusConfig[season.status]}`}
+        {loading ? (
+          <div className="flex items-center justify-center py-20 text-[#62748e]">
+            <div className="w-6 h-6 border-2 border-[#009689] border-t-transparent rounded-full animate-spin mr-3" />
+            Đang tải dữ liệu...
+          </div>
+        ) : (
+          <table className="w-full">
+            <thead className="bg-[#f8fafc] border-b border-[#e2e8f0]">
+              <tr>
+                {[
+                  "Mã",
+                  "Tên mùa vụ",
+                  "Trang trại",
+                  "Thời gian",
+                  "Số luống",
+                  "Trạng thái",
+                  "Thao tác",
+                ].map((h) => (
+                  <th
+                    key={h}
+                    className="px-6 py-4 text-left text-xs font-bold text-[#62748e] uppercase tracking-wider"
                   >
-                    {season.status}
-                  </span>
-                </td>
-                <td className="px-6 py-4">
-                  <div className="flex items-center justify-center gap-2">
-                    <Link
-                      to={`/seasons?view=detail&id=${season.id}`}
-                      className="p-2 text-[#009689] hover:bg-[#f0fdfa] rounded-lg transition-colors"
-                      title="Xem"
-                    >
-                      <Eye className="w-4 h-4" />
-                    </Link>
-                    <Link
-                      to={`/seasons?view=edit&id=${season.id}`}
-                      className="p-2 text-[#009689] hover:bg-[#f0fdfa] rounded-lg transition-colors"
-                      title="Chỉnh sửa"
-                    >
-                      <Edit className="w-4 h-4" />
-                    </Link>
-                    <button
-                      onClick={() => handleDelete(season)}
-                      className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                      title="Xóa"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </td>
+                    {h}
+                  </th>
+                ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-[#e2e8f0]">
+              {paginated.map((season) => (
+                <tr
+                  key={season.id}
+                  className="hover:bg-[#f8fafc] transition-colors"
+                >
+                  <td className="px-6 py-4 text-sm text-[#115e59] font-medium">
+                    {season.code}
+                  </td>
+                  <td className="px-6 py-4 text-sm font-medium text-[#115e59]">
+                    {season.name}
+                  </td>
+                  <td className="px-6 py-4 text-sm text-[#62748e]">
+                    {season.farm}
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="text-xs text-[#62748e]">
+                      Bắt đầu: {formatDate(season.startDate)}
+                    </div>
+                    <div className="text-xs text-[#62748e]">
+                      Kết thúc: {formatDate(season.endDate)}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 text-sm text-[#115e59] font-medium">
+                    {season.plots?.length ?? 0}
+                  </td>
+                  <td className="px-6 py-4">
+                    <span
+                      className={`inline-block px-2.5 py-1 rounded text-xs font-medium ${seasonStatusConfig[season.status] ?? "bg-gray-100 text-gray-600"}`}
+                    >
+                      {season.status}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="flex items-center justify-center gap-2">
+                      <Link
+                        to={`/seasons?view=detail&id=${season.id}`}
+                        className="p-2 text-[#009689] hover:bg-[#f0fdfa] rounded-lg transition-colors"
+                        title="Xem"
+                      >
+                        <Eye className="w-4 h-4" />
+                      </Link>
+                      <Link
+                        to={`/seasons?view=edit&id=${season.id}`}
+                        className="p-2 text-[#009689] hover:bg-[#f0fdfa] rounded-lg transition-colors"
+                        title="Chỉnh sửa"
+                      >
+                        <Edit className="w-4 h-4" />
+                      </Link>
+                      <button
+                        onClick={() => handleDelete(season)}
+                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                        title="Xóa"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
 
-        {filteredSeasons.length === 0 ? (
+        {!loading && filteredSeasons.length === 0 ? (
           <div className="flex flex-col items-center py-16 text-[#62748e] gap-3">
             <Calendar className="w-12 h-12 text-[#cad5e2]" />
             <p>
@@ -495,13 +795,15 @@ export function SeasonsPage() {
             </p>
           </div>
         ) : (
-          <Pagination
-            currentPage={currentPage}
-            totalPages={totalPages}
-            onPageChange={setCurrentPage}
-            totalItems={filteredSeasons.length}
-            pageSize={PAGE_SIZE_LIST}
-          />
+          !loading && (
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              onPageChange={setCurrentPage}
+              totalItems={filteredSeasons.length}
+              pageSize={PAGE_SIZE_LIST}
+            />
+          )
         )}
       </div>
 
@@ -728,7 +1030,9 @@ function DetailSeasonView({ season }: { season: Season }) {
                       (p) => p.status === "Đã thu hoạch",
                     ).length;
                     const allDone = weekHarvested === total;
-                    const crops = [...new Set(weekPlots.map((p) => p.crop))];
+                    const cropLabels = [
+                      ...new Set(weekPlots.map((p) => p.crop)),
+                    ];
 
                     return (
                       <div
@@ -743,7 +1047,7 @@ function DetailSeasonView({ season }: { season: Season }) {
                               {formatWeekRange(weekKey)}
                             </span>
                             <div className="flex gap-1">
-                              {crops.map((c) => (
+                              {cropLabels.map((c) => (
                                 <span
                                   key={c}
                                   className="text-xs px-1.5 py-0.5 bg-white border border-[#e2e8f0] rounded text-[#62748e]"
@@ -874,9 +1178,27 @@ function DetailSeasonView({ season }: { season: Season }) {
 // ─── Create View ──────────────────────────────────────────────────────────────
 
 function CreateSeasonView({
+  farms,
+  beds,
+  crops,
+  isUsingMock,
   onCreate,
 }: {
-  onCreate: (season: Omit<Season, "id" | "code">) => void;
+  farms: FarmResponse[];
+  beds: BedResponse[];
+  crops: CropResponse[];
+  isUsingMock: boolean;
+  onCreate: (
+    season: Omit<Season, "id" | "code">,
+    detailsToCreate: Array<{
+      bedId: string;
+      cropId: string;
+      cropQuantity: number;
+      startDate: string;
+      endDate: string;
+      harvestDate: string;
+    }>,
+  ) => void;
 }) {
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState({
@@ -890,28 +1212,44 @@ function CreateSeasonView({
   });
   const [selectedPlots, setSelectedPlots] = useState<string[]>([]);
   const [plotDetails, setPlotDetails] = useState<
-    Record<string, { crop: CropType; sowingDate: string; harvestDate: string }>
+    Record<
+      string,
+      {
+        crop: CropType;
+        cropId: string;
+        cropQuantity: number;
+        sowingDate: string;
+        harvestDate: string;
+      }
+    >
   >({});
 
-  const mockPlots = [
-    { id: "A-03", name: "A-03", area: "Khu A (Phía Bắc)", size: "50 m²" },
-    { id: "A-04", name: "A-04", area: "Khu A (Phía Bắc)", size: "45 m²" },
-    { id: "B-02", name: "B-02", area: "Khu B (Phía Nam)", size: "60 m²" },
-  ];
+  // Beds từ API hoặc fallback mock
+  const availableBeds =
+    beds.length > 0
+      ? beds.map((b) => ({
+          id: b.bedId,
+          name: b.bedName,
+          area: b.plotName ?? "Không rõ khu",
+          size: b.bedArea ? `${b.bedArea} m²` : "—",
+        }))
+      : mockBedsForFallback;
+
+  // Dùng crops từ API; mỗi option có cropId thực
+  const firstCropId = crops[0]?.cropId ?? "";
+  const firstCropName = (crops[0]?.cropName ?? "Bắp Cải Trắng") as CropType;
+
   const defaultDetail = {
-    crop: "Bắp Cải Trắng" as CropType,
+    crop: firstCropName,
+    cropId: firstCropId,
+    cropQuantity: 0,
     sowingDate: "",
     harvestDate: "",
   };
-  const cropOptions: CropType[] = [
-    "Bắp Cải Trắng",
-    "Bắp Cải Tím",
-    "Bắp Cải Xoăn",
-  ];
 
   const handleStep2Submit = () => {
     const plots: PlotAssignment[] = selectedPlots.map((plotId) => {
-      const plot = mockPlots.find((p) => p.id === plotId)!;
+      const plot = availableBeds.find((p) => p.id === plotId)!;
       const details = plotDetails[plotId] || defaultDetail;
       return {
         plotId,
@@ -920,13 +1258,26 @@ function CreateSeasonView({
         crop: details.crop,
         sowingDate: details.sowingDate,
         harvestDate: details.harvestDate,
-        plannedQuantity: 0,
+        plannedQuantity: details.cropQuantity,
         actualPlanted: 0,
         harvestQuantity: 0,
         status: "Đang trồng" as any,
       };
     });
-    onCreate({ ...formData, plots });
+
+    const detailsToCreate = selectedPlots.map((plotId) => {
+      const details = plotDetails[plotId] || defaultDetail;
+      return {
+        bedId: plotId,
+        cropId: details.cropId,
+        cropQuantity: details.cropQuantity,
+        startDate: details.sowingDate || formData.startDate,
+        endDate: formData.endDate,
+        harvestDate: details.harvestDate,
+      };
+    });
+
+    onCreate({ ...formData, plots }, detailsToCreate);
   };
 
   const togglePlot = (id: string) =>
@@ -1007,6 +1358,7 @@ function CreateSeasonView({
                 <FarmSelect
                   value={formData.farm}
                   onChange={(v) => setFormData((p) => ({ ...p, farm: v }))}
+                  farms={farms}
                 />
               </div>
             </div>
@@ -1089,6 +1441,12 @@ function CreateSeasonView({
           <h3 className="text-sm font-bold text-[#62748e] uppercase mb-2 flex items-center gap-2">
             <Sprout className="w-4 h-4" /> Chọn luống
           </h3>
+          {isUsingMock && (
+            <div className="mb-4 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700 flex items-center gap-2">
+              <Database className="w-3.5 h-3.5 shrink-0" />
+              Đang dùng dữ liệu luống mẫu — kết nối API để xem luống thực tế
+            </div>
+          )}
           <p className="text-xs text-[#62748e] mb-4">
             Tên luống theo quy ước{" "}
             <span className="font-mono font-semibold text-[#009689]">
@@ -1098,7 +1456,7 @@ function CreateSeasonView({
             <span className="font-mono">B-12</span>
           </p>
           <div className="space-y-3">
-            {mockPlots.map((plot) => {
+            {availableBeds.map((plot) => {
               const isSelected = selectedPlots.includes(plot.id);
               const details = plotDetails[plot.id] || defaultDetail;
               return (
@@ -1123,28 +1481,54 @@ function CreateSeasonView({
                     </div>
                   </div>
                   {isSelected && (
-                    <div className="grid grid-cols-3 gap-3 pl-7">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pl-7">
                       <div>
                         <label className="block text-xs text-[#62748e] mb-1">
                           Cây trồng
                         </label>
                         <select
-                          value={details.crop}
-                          onChange={(e) =>
-                            updatePlotDetail(
-                              plot.id,
-                              "crop",
-                              e.target.value as CropType,
-                            )
-                          }
+                          value={details.cropId}
+                          onChange={(e) => {
+                            const selected = crops.find(
+                              (c) => c.cropId === e.target.value,
+                            );
+                            if (!selected) return;
+                            setPlotDetails((p) => ({
+                              ...p,
+                              [plot.id]: {
+                                ...(p[plot.id] || defaultDetail),
+                                cropId: selected.cropId,
+                                crop: selected.cropName as CropType,
+                              },
+                            }));
+                          }}
                           className="w-full px-2 py-1.5 text-sm border border-[#cad5e2] rounded focus:outline-none focus:ring-2 focus:ring-[#009689] bg-white"
                         >
-                          {cropOptions.map((c) => (
-                            <option key={c} value={c}>
-                              {c}
+                          {crops.map((c) => (
+                            <option key={c.cropId} value={c.cropId}>
+                              {c.cropName}
                             </option>
                           ))}
                         </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-[#62748e] mb-1">
+                          Số lượng cây
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          value={details.cropQuantity || ""}
+                          onChange={(e) =>
+                            updatePlotDetail(
+                              plot.id,
+                              "cropQuantity",
+                              parseInt(e.target.value) || 0,
+                            )
+                          }
+                          placeholder="0"
+                          className="w-full px-2 py-1.5 text-sm border border-[#cad5e2] rounded focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                        />
                       </div>
                       <div>
                         <label className="block text-xs text-[#62748e] mb-1">
@@ -1181,7 +1565,7 @@ function CreateSeasonView({
                         />
                       </div>
                       {selectedPlots.length > 1 && (
-                        <div className="col-span-3">
+                        <div className="col-span-full">
                           <button
                             onClick={() => applyToAll(plot.id)}
                             className="text-xs text-[#009689] hover:underline"
@@ -1219,29 +1603,53 @@ function CreateSeasonView({
 
 // ─── Edit View ────────────────────────────────────────────────────────────────
 
-const availablePlotsForFarm = [
-  { id: "A-03", name: "A-03", area: "Khu A (Phía Bắc)", size: "50 m²" },
-  { id: "A-04", name: "A-04", area: "Khu A (Phía Bắc)", size: "45 m²" },
-  { id: "B-02", name: "B-02", area: "Khu B (Phía Nam)", size: "60 m²" },
-  { id: "C-02", name: "C-02", area: "Khu C", size: "55 m²" },
-  { id: "D-01", name: "D-01", area: "Khu D", size: "70 m²" },
-];
-
-const cropOptions: CropType[] = [
-  "Bắp Cải Trắng",
-  "Bắp Cải Tím",
-  "Bắp Cải Xoăn",
-];
-
 function EditSeasonView({
   season,
+  farms,
+  beds,
+  crops,
+  isUsingMock,
   onUpdate,
 }: {
   season: Season;
-  onUpdate: (s: Season) => void;
+  farms: FarmResponse[];
+  beds: BedResponse[];
+  crops: CropResponse[];
+  isUsingMock: boolean;
+  onUpdate: (
+    s: Season,
+    detailOps?: {
+      toAdd: Array<{
+        bedId: string;
+        cropId: string;
+        cropQuantity: number;
+        startDate: string;
+        endDate: string;
+        harvestDate: string;
+      }>;
+      toDelete: string[];
+    },
+  ) => void;
 }) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+
+  // Use API beds or fallback mock
+  const availablePlotsForFarm =
+    beds.length > 0
+      ? beds.map((b) => ({
+          id: b.bedId,
+          name: b.bedName,
+          area: b.plotName ?? "Không rõ khu",
+          size: b.bedArea ? `${b.bedArea} m²` : "—",
+        }))
+      : [
+          { id: "A-03", name: "A-03", area: "Khu A (Phía Bắc)", size: "50 m²" },
+          { id: "A-04", name: "A-04", area: "Khu A (Phía Bắc)", size: "45 m²" },
+          { id: "B-02", name: "B-02", area: "Khu B (Phía Nam)", size: "60 m²" },
+          { id: "C-02", name: "C-02", area: "Khu C", size: "55 m²" },
+          { id: "D-01", name: "D-01", area: "Khu D", size: "70 m²" },
+        ];
 
   const [formData, setFormData] = useState({
     name: season.name,
@@ -1264,7 +1672,15 @@ function EditSeasonView({
   const [addPlotOpen, setAddPlotOpen] = useState(false);
   const [selectedNewPlots, setSelectedNewPlots] = useState<string[]>([]);
   const [newPlotDetails, setNewPlotDetails] = useState<
-    Record<string, { crop: CropType; sowingDate: string; harvestDate: string }>
+    Record<
+      string,
+      {
+        crop: CropType;
+        cropId: string;
+        sowingDate: string;
+        harvestDate: string;
+      }
+    >
   >({});
 
   // Bulk-mark area as harvested
@@ -1354,11 +1770,36 @@ function EditSeasonView({
     setFormErrors(errors);
     setPlotErrors(pErrors);
     if (Object.keys(errors).length === 0 && Object.keys(pErrors).length === 0) {
-      onUpdate({
-        ...season,
-        ...formData,
-        plots: plots as unknown as PlotAssignment[],
-      });
+      // Tính toán detail ops cho API
+      const originalDetailIds = new Set(
+        season.plots.map((p) => (p as any)._seasonDetailId).filter(Boolean),
+      );
+      const currentDetailIds = new Set(
+        plots.map((p) => (p as any)._seasonDetailId).filter(Boolean),
+      );
+      const toDelete = [...originalDetailIds].filter(
+        (id) => !currentDetailIds.has(id),
+      ) as string[];
+      // Plots mới là những plot chưa có _seasonDetailId
+      const toAdd = plots
+        .filter((p) => !(p as any)._seasonDetailId)
+        .map((p) => ({
+          bedId: (p as any)._bedId ?? p.plotId,
+          cropId: (p as any)._cropId ?? "",
+          cropQuantity: p.plannedQuantity ?? 0,
+          startDate: p.sowingDate || formData.startDate,
+          endDate: formData.endDate,
+          harvestDate: p.harvestDate,
+        }));
+
+      onUpdate(
+        {
+          ...season,
+          ...formData,
+          plots: plots as unknown as PlotAssignment[],
+        },
+        { toAdd, toDelete },
+      );
     }
   };
 
@@ -1406,14 +1847,15 @@ function EditSeasonView({
     );
   const updateNewPlotDetail = (
     id: string,
-    field: "crop" | "sowingDate" | "harvestDate",
+    field: "crop" | "cropId" | "sowingDate" | "harvestDate",
     value: any,
   ) =>
     setNewPlotDetails((p) => ({
       ...p,
       [id]: {
         ...(p[id] ?? {
-          crop: "Bắp Cải Trắng" as CropType,
+          crop: (crops[0]?.cropName ?? "Bắp Cải Trắng") as CropType,
+          cropId: crops[0]?.cropId ?? "",
           sowingDate: "",
           harvestDate: "",
         }),
@@ -1422,11 +1864,14 @@ function EditSeasonView({
     }));
 
   const confirmAddPlots = () => {
+    const firstCropId = crops[0]?.cropId ?? "";
+    const firstCropName = (crops[0]?.cropName ?? "Bắp Cải Trắng") as CropType;
     const newAssignments: PlotAssignmentV2[] = selectedNewPlots.map(
       (plotId) => {
         const meta = availablePlotsForFarm.find((p) => p.id === plotId)!;
         const details = newPlotDetails[plotId] ?? {
-          crop: "Bắp Cải Trắng" as CropType,
+          crop: firstCropName,
+          cropId: firstCropId,
           sowingDate: "",
           harvestDate: "",
         };
@@ -1441,7 +1886,9 @@ function EditSeasonView({
           actualPlanted: 0,
           harvestQuantity: 0,
           status: "Đang trồng" as SeasonPlotStatus,
-        };
+          _bedId: plotId, // bedId thực để dùng khi submit API
+          _cropId: details.cropId, // cropId thực
+        } as any;
       },
     );
     setPlots((prev) => [...prev, ...newAssignments]);
@@ -1550,6 +1997,7 @@ function EditSeasonView({
               <FarmSelect
                 value={formData.farm}
                 onChange={(v) => updateField("farm", v)}
+                farms={farms}
               />
             </div>
             <div>
@@ -1681,7 +2129,7 @@ function EditSeasonView({
                           (p) => p.status === "Đã thu hoạch",
                         ).length;
                         const allHarvested = weekHarvested === weekPlots.length;
-                        const crops = [
+                        const cropLabels = [
                           ...new Set(weekPlots.map((p) => p.crop)),
                         ];
 
@@ -1695,7 +2143,7 @@ function EditSeasonView({
                                   hoạch: {formatWeekRange(weekKey)}
                                 </span>
                                 <div className="flex gap-1">
-                                  {crops.map((c) => (
+                                  {cropLabels.map((c) => (
                                     <span
                                       key={c}
                                       className="text-xs px-1.5 py-0.5 bg-white border border-[#e2e8f0] rounded text-[#62748e]"
@@ -1788,20 +2236,45 @@ function EditSeasonView({
                                           Cây trồng
                                         </label>
                                         <select
-                                          value={plot.crop}
-                                          onChange={(e) =>
+                                          value={
+                                            crops.find(
+                                              (c) => c.cropName === plot.crop,
+                                            )?.cropId ??
+                                            (plot as any)._cropId ??
+                                            ""
+                                          }
+                                          onChange={(e) => {
+                                            const selected = crops.find(
+                                              (c) =>
+                                                c.cropId === e.target.value,
+                                            );
+                                            if (!selected) return;
                                             updatePlot(
                                               plot.plotId,
                                               "crop",
-                                              e.target.value as CropType,
-                                            )
-                                          }
+                                              selected.cropName as CropType,
+                                            );
+                                            // ghi thêm _cropId để dùng khi submit
+                                            setPlots((prev) =>
+                                              prev.map((p) =>
+                                                p.plotId === plot.plotId
+                                                  ? ({
+                                                      ...p,
+                                                      _cropId: selected.cropId,
+                                                    } as any)
+                                                  : p,
+                                              ),
+                                            );
+                                          }}
                                           disabled={isSeasonEnded}
                                           className="w-full px-2 py-1.5 text-sm border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] bg-white disabled:bg-[#f8fafc] disabled:cursor-not-allowed"
                                         >
-                                          {cropOptions.map((c) => (
-                                            <option key={c} value={c}>
-                                              {c}
+                                          {crops.map((c) => (
+                                            <option
+                                              key={c.cropId}
+                                              value={c.cropId}
+                                            >
+                                              {c.cropName}
                                             </option>
                                           ))}
                                         </select>
@@ -2014,19 +2487,31 @@ function EditSeasonView({
                             Cây trồng
                           </label>
                           <select
-                            value={details.crop}
-                            onChange={(e) =>
-                              updateNewPlotDetail(
-                                plot.id,
-                                "crop",
-                                e.target.value as CropType,
-                              )
-                            }
+                            value={details.cropId ?? crops[0]?.cropId ?? ""}
+                            onChange={(e) => {
+                              const selected = crops.find(
+                                (c) => c.cropId === e.target.value,
+                              );
+                              if (!selected) return;
+                              setNewPlotDetails((p) => ({
+                                ...p,
+                                [plot.id]: {
+                                  ...(p[plot.id] ?? {
+                                    crop: selected.cropName as CropType,
+                                    cropId: selected.cropId,
+                                    sowingDate: "",
+                                    harvestDate: "",
+                                  }),
+                                  cropId: selected.cropId,
+                                  crop: selected.cropName as CropType,
+                                },
+                              }));
+                            }}
                             className="w-full px-2 py-1.5 text-sm border border-[#cad5e2] rounded focus:outline-none focus:ring-2 focus:ring-[#009689] bg-white"
                           >
-                            {cropOptions.map((c) => (
-                              <option key={c} value={c}>
-                                {c}
+                            {crops.map((c) => (
+                              <option key={c.cropId} value={c.cropId}>
+                                {c.cropName}
                               </option>
                             ))}
                           </select>

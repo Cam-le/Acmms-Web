@@ -608,7 +608,7 @@ export const mockFarms: Farm[] = [
   },
   {
     id: "3",
-    name: "Trang trại Sông Nội",
+    name: "Trang trại Sông Núi",
     location: "Quận Sonoma, CA",
     status: "Không hoạt động",
     area: 5000,

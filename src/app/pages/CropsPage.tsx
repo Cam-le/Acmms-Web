@@ -26,32 +26,75 @@ import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import * as Select from "@radix-ui/react-select";
 import {
   Crop,
-  CropSoilType as SoilType,
   CropStatus,
-  cropSoilTypes as soilTypes,
   mockCrops,
   CropGrowthStage,
   CropGrowthTask,
   mockGrowthStagesByCropId,
 } from "../../data/mockData";
-import { api, CropResponse } from "../../api/client";
+import { api, CropResponse, CompatibleSoil } from "../../api/client";
 
-// Map API response → local Crop shape
-function mapCrop(c: CropResponse): Crop {
+// Local extended type — adds API-only fields on top of the mockData Crop shape
+type CropEx = Crop & {
+  plantSpacing?: number;
+  compatibleSoils?: CompatibleSoil[];
+  cropQuantities?: number;
+};
+
+// Mock data shaped to CropEx for fallback
+const mockCropsEx: CropEx[] = (mockCrops as CropEx[]).map((c) => ({
+  ...c,
+  plantSpacing: c.plantDistance?.row ?? 0,
+  compatibleSoils: [],
+  cropQuantities: undefined,
+}));
+
+// ---- Status normalisation (defensive: API returns inconsistent casing/language) ----
+function normaliseStatus(raw?: string): CropStatus {
+  if (!raw) return "Không sử dụng";
+  const s = raw.trim().toLowerCase();
+  if (s === "active" || s === "đang sử dụng" || s === "hoạt động")
+    return "Đang sử dụng";
+  return "Không sử dụng";
+}
+
+// Map API response → local CropEx shape
+function mapCrop(c: CropResponse): CropEx {
+  const primarySoil = (c.compatibleSoils ?? [])[0]?.soilName ?? "";
   return {
     id: c.cropId,
-    name: c.cropName,
+    name: c.cropName ?? "",
     scientificName: c.cropScientificName ?? "",
     growthPeriod: c.cropDefaultGrowthDays ?? 0,
-    soilType: (c.soilName as SoilType) ?? "Đất Thịt",
-    status: c.cropStatus === "Active" ? "Đang sử dụng" : "Không sử dụng",
+    soilType: primarySoil as Crop["soilType"],
+    status: normaliseStatus(c.cropStatus),
     image: "",
     description: "",
-    plantDistance: { row: 0, column: 0 },
+    // plantSpacing is a single value (cm); store in both row/column for UI compatibility
+    plantDistance: {
+      row: c.plantSpacing ?? 0,
+      column: c.plantSpacing ?? 0,
+    },
+    // Extended fields
+    plantSpacing: c.plantSpacing,
+    compatibleSoils: c.compatibleSoils ?? [],
+    cropQuantities: c.cropQuantities,
   };
 }
 
-const getSoilBadgeColor = (_: SoilType) => "bg-[#cbfbf1] text-[#00786f]";
+const getSoilBadgeColor = () => "bg-[#cbfbf1] text-[#00786f]";
+const getCompatibilityBadgeColor = (compat: string) => {
+  const c = compat.toLowerCase();
+  if (c === "high") return "bg-[#dcfce7] text-[#008236]";
+  if (c === "medium") return "bg-[#fef9c3] text-[#a16207]";
+  return "bg-[#fee2e2] text-[#991b1b]";
+};
+const compatibilityLabel = (compat: string) => {
+  const c = compat.toLowerCase();
+  if (c === "high") return "Cao";
+  if (c === "medium") return "Trung bình";
+  return "Thấp";
+};
 const getStatusBadgeColor = (status: CropStatus) =>
   status === "Đang sử dụng"
     ? "bg-[#dcfce7] text-[#008236]"
@@ -59,7 +102,7 @@ const getStatusBadgeColor = (status: CropStatus) =>
 
 export function CropsPage() {
   const [activeTab, setActiveTab] = useState<"list" | "growth">("list");
-  const [crops, setCrops] = useState<Crop[]>([]);
+  const [crops, setCrops] = useState<CropEx[]>([]);
   const [loading, setLoading] = useState(true);
   const [usingMock, setUsingMock] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -71,8 +114,8 @@ export function CropsPage() {
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [selectedCrop, setSelectedCrop] = useState<Crop | null>(null);
-  const [cropToDelete, setCropToDelete] = useState<Crop | null>(null);
+  const [selectedCrop, setSelectedCrop] = useState<CropEx | null>(null);
+  const [cropToDelete, setCropToDelete] = useState<CropEx | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -86,7 +129,7 @@ export function CropsPage() {
       setCrops(data.map(mapCrop));
       setUsingMock(false);
     } catch {
-      setCrops([...mockCrops]);
+      setCrops([...mockCropsEx]);
       setUsingMock(true);
     } finally {
       setLoading(false);
@@ -121,7 +164,7 @@ export function CropsPage() {
         : order[b.status] - order[a.status];
     });
 
-  const handleCreate = async (cropData: Omit<Crop, "id">) => {
+  const handleCreate = async (cropData: Omit<CropEx, "id">) => {
     setSubmitting(true);
     try {
       if (usingMock) {
@@ -132,8 +175,12 @@ export function CropsPage() {
       } else {
         await api.createCrop({
           cropName: cropData.name,
-          cropScientificName: cropData.scientificName,
-          cropDefaultGrowthDays: cropData.growthPeriod,
+          cropScientificName: cropData.scientificName || undefined,
+          cropDefaultGrowthDays: cropData.growthPeriod || undefined,
+          plantSpacing:
+            (cropData as CropEx).plantSpacing ||
+            cropData.plantDistance.row ||
+            undefined,
           cropStatus:
             cropData.status === "Đang sử dụng" ? "Active" : "Inactive",
         });
@@ -150,7 +197,7 @@ export function CropsPage() {
     }
   };
 
-  const handleUpdate = async (updatedCrop: Crop) => {
+  const handleUpdate = async (updatedCrop: CropEx) => {
     setSubmitting(true);
     try {
       if (usingMock) {
@@ -160,8 +207,12 @@ export function CropsPage() {
       } else {
         await api.updateCrop(updatedCrop.id, {
           cropName: updatedCrop.name,
-          cropScientificName: updatedCrop.scientificName,
-          cropDefaultGrowthDays: updatedCrop.growthPeriod,
+          cropScientificName: updatedCrop.scientificName || undefined,
+          cropDefaultGrowthDays: updatedCrop.growthPeriod || undefined,
+          plantSpacing:
+            updatedCrop.plantSpacing ||
+            updatedCrop.plantDistance.row ||
+            undefined,
           cropStatus:
             updatedCrop.status === "Đang sử dụng" ? "Active" : "Inactive",
         });
@@ -341,11 +392,11 @@ export function CropsPage() {
                       <td className="px-6 py-4 text-sm text-[#62748e] italic">
                         {crop.scientificName || "—"}
                       </td>
-                      {/* Loại đất — whitespace-nowrap prevents wrapping */}
+                      {/* Loại đất */}
                       <td className="px-6 py-4">
                         {crop.soilType ? (
                           <span
-                            className={`px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap ${getSoilBadgeColor(crop.soilType)}`}
+                            className={`px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap ${getSoilBadgeColor()}`}
                           >
                             {crop.soilType}
                           </span>
@@ -462,21 +513,18 @@ export function CropsPage() {
                             : "—",
                       },
                       {
-                        label: "Loại đất",
-                        value: selectedCrop.soilType || "—",
-                      },
-                      {
-                        label: "Khoảng cách hàng",
+                        label: "Khoảng cách trồng",
                         value:
-                          selectedCrop.plantDistance.row > 0
-                            ? `${selectedCrop.plantDistance.row} cm`
+                          (selectedCrop.plantSpacing ??
+                            selectedCrop.plantDistance.row) > 0
+                            ? `${selectedCrop.plantSpacing ?? selectedCrop.plantDistance.row} cm`
                             : "—",
                       },
                       {
-                        label: "Khoảng cách cột",
+                        label: "Số lượng cây",
                         value:
-                          selectedCrop.plantDistance.column > 0
-                            ? `${selectedCrop.plantDistance.column} cm`
+                          selectedCrop.cropQuantities != null
+                            ? selectedCrop.cropQuantities.toString()
                             : "—",
                       },
                     ].map(({ label, value }) => (
@@ -490,6 +538,32 @@ export function CropsPage() {
                         </span>
                       </div>
                     ))}
+                    {/* Compatible soils list */}
+                    <div className="py-2 border-b border-[#f1f5f9]">
+                      <span className="text-sm text-[#62748e]">
+                        Loại đất phù hợp
+                      </span>
+                      {(selectedCrop.compatibleSoils ?? []).length === 0 ? (
+                        <span className="block text-sm font-medium text-[#115e59] mt-0.5">
+                          —
+                        </span>
+                      ) : (
+                        <div className="flex flex-wrap gap-1.5 mt-1.5">
+                          {(selectedCrop.compatibleSoils ?? []).map(
+                            (s: CompatibleSoil) => (
+                              <span
+                                key={s.soilId}
+                                className={`px-2 py-0.5 rounded-full text-xs font-medium ${getCompatibilityBadgeColor(s.compatibility)}`}
+                                title={`Độ tương thích: ${compatibilityLabel(s.compatibility)}`}
+                              >
+                                {s.soilName} ·{" "}
+                                {compatibilityLabel(s.compatibility)}
+                              </span>
+                            ),
+                          )}
+                        </div>
+                      )}
+                    </div>
                     {selectedCrop.description && (
                       <div className="pt-2">
                         <div className="text-xs text-[#62748e] mb-1">Mô tả</div>
@@ -573,7 +647,7 @@ function GrowthStagesTab({
   crops,
   loading,
 }: {
-  crops: Crop[];
+  crops: CropEx[];
   loading: boolean;
 }) {
   const [selectedCropId, setSelectedCropId] = useState<string | null>(null);
@@ -1616,12 +1690,10 @@ function CropFormFields({
     name: string;
     scientificName: string;
     growthPeriod: string;
-    soilType: SoilType | "";
     status: CropStatus;
     image: string;
     description: string;
-    plantDistanceRow: string;
-    plantDistanceColumn: string;
+    plantSpacing: string;
   };
   setFormData: React.Dispatch<React.SetStateAction<typeof formData>>;
 }) {
@@ -1659,28 +1731,6 @@ function CropFormFields({
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium text-[#45556c] mb-1">
-            Loại đất
-          </label>
-          <select
-            value={formData.soilType}
-            onChange={(e) =>
-              setFormData((p) => ({
-                ...p,
-                soilType: e.target.value as SoilType,
-              }))
-            }
-            className="w-full px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] bg-white text-[#334155]"
-          >
-            <option value="">Chọn loại đất</option>
-            {soilTypes.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-[#45556c] mb-1">
             Chu kỳ sinh trưởng (ngày)
           </label>
           <input
@@ -1693,37 +1743,18 @@ function CropFormFields({
             placeholder="90"
           />
         </div>
-      </div>
-      <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium text-[#45556c] mb-1">
-            Khoảng cách hàng (cm)
+            Khoảng cách trồng (cm)
           </label>
           <input
             type="number"
-            value={formData.plantDistanceRow}
+            value={formData.plantSpacing}
             onChange={(e) =>
-              setFormData((p) => ({ ...p, plantDistanceRow: e.target.value }))
+              setFormData((p) => ({ ...p, plantSpacing: e.target.value }))
             }
             className="w-full px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155]"
-            placeholder="40"
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-[#45556c] mb-1">
-            Khoảng cách cột (cm)
-          </label>
-          <input
-            type="number"
-            value={formData.plantDistanceColumn}
-            onChange={(e) =>
-              setFormData((p) => ({
-                ...p,
-                plantDistanceColumn: e.target.value,
-              }))
-            }
-            className="w-full px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155]"
-            placeholder="35"
+            placeholder="50"
           />
         </div>
       </div>
@@ -1764,12 +1795,10 @@ const defaultFormData = {
   name: "",
   scientificName: "",
   growthPeriod: "",
-  soilType: "" as SoilType | "",
   status: "Đang sử dụng" as CropStatus,
   image: "",
   description: "",
-  plantDistanceRow: "",
-  plantDistanceColumn: "",
+  plantSpacing: "",
 };
 
 function CreateCropModal({
@@ -1780,7 +1809,7 @@ function CreateCropModal({
 }: {
   open: boolean;
   onClose: () => void;
-  onCreate: (c: Omit<Crop, "id">) => void;
+  onCreate: (c: Omit<CropEx, "id">) => void;
   submitting: boolean;
 }) {
   const [formData, setFormData] = useState(defaultFormData);
@@ -1790,14 +1819,16 @@ function CreateCropModal({
       name: formData.name,
       scientificName: formData.scientificName,
       growthPeriod: parseInt(formData.growthPeriod) || 0,
-      soilType: (formData.soilType as SoilType) || "Đất Thịt",
+      soilType: "" as Crop["soilType"],
       status: formData.status,
       image: formData.image,
       description: formData.description,
       plantDistance: {
-        row: parseInt(formData.plantDistanceRow) || 0,
-        column: parseInt(formData.plantDistanceColumn) || 0,
+        row: parseInt(formData.plantSpacing) || 0,
+        column: parseInt(formData.plantSpacing) || 0,
       },
+      plantSpacing: parseInt(formData.plantSpacing) || undefined,
+      compatibleSoils: [],
     });
     setFormData(defaultFormData);
   };
@@ -1849,32 +1880,28 @@ function EditCropModal({
   onUpdate,
   submitting,
 }: {
-  crop: Crop;
+  crop: CropEx;
   open: boolean;
   onClose: () => void;
-  onUpdate: (c: Crop) => void;
+  onUpdate: (c: CropEx) => void;
   submitting: boolean;
 }) {
   const [formData, setFormData] = useState<{
     name: string;
     scientificName: string;
     growthPeriod: string;
-    soilType: SoilType | "";
     status: CropStatus;
     image: string;
     description: string;
-    plantDistanceRow: string;
-    plantDistanceColumn: string;
+    plantSpacing: string;
   }>({
     name: crop.name,
     scientificName: crop.scientificName,
     growthPeriod: crop.growthPeriod.toString(),
-    soilType: crop.soilType,
     status: crop.status,
     image: crop.image,
     description: crop.description,
-    plantDistanceRow: crop.plantDistance.row.toString(),
-    plantDistanceColumn: crop.plantDistance.column.toString(),
+    plantSpacing: (crop.plantSpacing ?? crop.plantDistance.row ?? 0).toString(),
   });
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1883,14 +1910,14 @@ function EditCropModal({
       name: formData.name,
       scientificName: formData.scientificName,
       growthPeriod: parseInt(formData.growthPeriod) || 0,
-      soilType: formData.soilType as SoilType,
       status: formData.status,
       image: formData.image,
       description: formData.description,
       plantDistance: {
-        row: parseInt(formData.plantDistanceRow) || 0,
-        column: parseInt(formData.plantDistanceColumn) || 0,
+        row: parseInt(formData.plantSpacing) || 0,
+        column: parseInt(formData.plantSpacing) || 0,
       },
+      plantSpacing: parseInt(formData.plantSpacing) || undefined,
     });
   };
   return (

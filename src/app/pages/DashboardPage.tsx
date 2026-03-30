@@ -153,15 +153,14 @@ export function DashboardPage() {
             <div className="w-11 h-11 bg-[#dcfce7] rounded-lg flex items-center justify-center shrink-0">
               <Sprout className="w-5 h-5 text-[#008236]" />
             </div>
-            <div className="text-sm text-[#62748e]">Sản lượng dự kiến</div>
+            <div className="text-sm text-[#62748e]">Sản lượng thu hoạch</div>
           </div>
           <div className="text-2xl font-bold text-[#115e59]">
             850{" "}
             <span className="text-base font-normal text-[#62748e]">tấn</span>
           </div>
-          <div className="mt-2 flex items-center gap-1 text-xs text-[#008236]">
-            <TrendingUp className="w-3 h-3" />
-            +12% so với vụ trước
+          <div className="mt-2 flex items-center gap-1 text-xs text-[#115e59]">
+            Của mùa vụ hiện tại
           </div>
         </div>
 

@@ -80,16 +80,21 @@ export interface SeasonsDetailDto {
   totalHarvestYield: number;
 }
 
+export interface CompatibleSoil {
+  soilId: string;
+  soilName: string;
+  compatibility: string; // "High" | "Medium" | "Low"
+}
+
 export interface CropResponse {
   cropId: string;
-  soilId?: string;
   cropName: string;
   cropScientificName?: string;
   cropDefaultGrowthDays?: number;
+  plantSpacing?: number;
   cropQuantities?: number;
   cropStatus?: string;
-  soilName?: string;
-  soilScienceName?: string;
+  compatibleSoils?: CompatibleSoil[];
 }
 
 export interface SoilResponse {
@@ -176,10 +181,10 @@ export interface SeasonRequest {
 }
 
 export interface CropRequest {
-  soilId?: string;
   cropName: string;
   cropScientificName?: string;
   cropDefaultGrowthDays?: number;
+  plantSpacing?: number;
   cropQuantities?: number;
   cropStatus?: string;
 }
@@ -196,6 +201,33 @@ export interface WorkerRequest {
 export interface LoginRequest {
   email: string;
   password: string;
+}
+
+export interface SeasonDetailResponse {
+  seasonDetailId: string;
+  seasonId: string;
+  bedId: string;
+  cropId: string;
+  cropQuantity: number;
+  startDate: string;
+  endDate: string;
+  seasonExpectedHarvestDate: string;
+  totalHarvestYield: number;
+  seasonName: string;
+  bedName: string;
+  cropName: string;
+  photosCount: number;
+}
+
+export interface SeasonDetailRequest {
+  seasonId: string;
+  bedId: string;
+  cropId: string;
+  cropQuantity: number;
+  startDate: string;
+  endDate: string;
+  seasonExpectedHarvestDate: string;
+  totalHarvestYield: number;
 }
 
 // ==================== API Methods ====================
@@ -260,6 +292,18 @@ export const api = {
   updateSoil: (id: string, body: SoilRequest) =>
     request<SoilResponse>("PUT", `/api/Soils/${id}`, body),
   deleteSoil: (id: string) => request<unknown>("DELETE", `/api/Soils/${id}`),
+
+  // Seasons Details
+  getSeasonsDetails: () =>
+    request<SeasonDetailResponse[]>("GET", "/api/seasons-details"),
+  getSeasonDetail: (id: string) =>
+    request<SeasonDetailResponse>("GET", `/api/seasons-details/${id}`),
+  createSeasonDetail: (body: SeasonDetailRequest) =>
+    request<SeasonDetailResponse>("POST", "/api/seasons-details", body),
+  updateSeasonDetail: (id: string, body: SeasonDetailRequest) =>
+    request<SeasonDetailResponse>("PUT", `/api/seasons-details/${id}`, body),
+  deleteSeasonDetail: (id: string) =>
+    request<unknown>("DELETE", `/api/seasons-details/${id}`),
 
   // Workers
   getWorkers: () => request<UserResponse[]>("GET", "/api/workers"),

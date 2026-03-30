@@ -209,7 +209,15 @@ export function FarmPage() {
     setLoading(true);
     try {
       const data = await api.getFarms();
-      setFarms(data.map(mapFarm));
+      setFarms(
+        data
+          .sort(
+            (a, b) =>
+              new Date(a.farmCreatedAt ?? 0).getTime() -
+              new Date(b.farmCreatedAt ?? 0).getTime(),
+          )
+          .map(mapFarm),
+      );
       setUsingMock(false);
     } catch {
       setFarms([...mockFarms]);

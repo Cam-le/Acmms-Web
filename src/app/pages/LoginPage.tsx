@@ -140,15 +140,6 @@ export function LoginPage() {
           <p className="text-[#64748b] text-sm">Đăng nhập để tiếp tục</p>
         </div>
 
-        {/* Mock-data notice banner */}
-        <div className="flex items-start gap-2 mb-5 p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
-          <WifiOff size={14} className="mt-0.5 shrink-0 text-amber-500" />
-          <span>
-            Hệ thống đang dùng <strong>dữ liệu demo</strong>. Nhấn{" "}
-            <strong>"Kết nối API"</strong> để thử đăng nhập thật.
-          </span>
-        </div>
-
         {/* Demo accounts hint — now shows both roles */}
         <div className="mb-5 p-3 bg-[#f0fdf9] border border-[#99f6e4] rounded-xl text-xs text-[#0f766e]">
           <p className="font-semibold mb-1.5">Tài khoản demo:</p>
