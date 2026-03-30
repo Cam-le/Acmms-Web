@@ -92,6 +92,60 @@ export interface CropResponse {
   soilScienceName?: string;
 }
 
+export interface SoilResponse {
+  soilId: string;
+  name: string;
+  scienceName: string;
+  cropsCount: number;
+  plotsCount: number;
+}
+
+export interface PlotResponse {
+  plotId: string;
+  farmId: string;
+  soilId: string;
+  plotName: string;
+  plotArea: number;
+  plotStatus: string;
+  bedCreatedAt: string;
+  farmName: string;
+  soilName: string;
+  bedsCount: number;
+}
+
+export interface PlotRequest {
+  farmId: string;
+  soilId: string;
+  plotName: string;
+  plotArea: number;
+  plotStatus: string;
+}
+
+export interface BedResponse {
+  bedId: string;
+  plotId: string;
+  bedName: string;
+  bedArea: number;
+  bedStatus: string;
+  bedCreatedAt: string;
+  cropQuantities: number;
+  plotName: string;
+  seasonsDetailsCount: number;
+}
+
+export interface BedRequest {
+  plotId: string;
+  bedName: string;
+  bedArea: number;
+  bedStatus: string;
+  cropQuantities: number;
+}
+
+export interface SoilRequest {
+  name: string;
+  scienceName: string;
+}
+
 export interface UserResponse {
   userId: string;
   email: string;
@@ -180,6 +234,32 @@ export const api = {
     request<SeasonResponse>("PUT", `/api/seasons/${id}`, body),
   deleteSeason: (id: string) =>
     request<unknown>("DELETE", `/api/seasons/${id}`),
+
+  // Plots
+  getPlots: () => request<PlotResponse[]>("GET", "/api/Plots"),
+  getPlot: (id: string) => request<PlotResponse>("GET", `/api/Plots/${id}`),
+  createPlot: (body: PlotRequest) =>
+    request<PlotResponse>("POST", "/api/Plots", body),
+  updatePlot: (id: string, body: PlotRequest) =>
+    request<PlotResponse>("PUT", `/api/Plots/${id}`, body),
+  deletePlot: (id: string) => request<unknown>("DELETE", `/api/Plots/${id}`),
+
+  // Beds
+  getBeds: () => request<BedResponse[]>("GET", "/api/Beds"),
+  getBed: (id: string) => request<BedResponse>("GET", `/api/Beds/${id}`),
+  createBed: (body: BedRequest) =>
+    request<BedResponse>("POST", "/api/Beds", body),
+  updateBed: (id: string, body: BedRequest) =>
+    request<BedResponse>("PUT", `/api/Beds/${id}`, body),
+  deleteBed: (id: string) => request<unknown>("DELETE", `/api/Beds/${id}`),
+
+  // Soils
+  getSoils: () => request<SoilResponse[]>("GET", "/api/Soils"),
+  createSoil: (body: SoilRequest) =>
+    request<SoilResponse>("POST", "/api/Soils", body),
+  updateSoil: (id: string, body: SoilRequest) =>
+    request<SoilResponse>("PUT", `/api/Soils/${id}`, body),
+  deleteSoil: (id: string) => request<unknown>("DELETE", `/api/Soils/${id}`),
 
   // Workers
   getWorkers: () => request<UserResponse[]>("GET", "/api/workers"),

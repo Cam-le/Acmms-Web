@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   Plus,
   Search,
@@ -10,26 +10,26 @@ import {
   X,
   FlaskConical,
   Sprout,
-  CheckCircle2,
-  AlertCircle,
-  XCircle,
   LandPlot,
   AlertTriangle,
 } from "lucide-react";
 import {
   mockSoils,
   mockSoilCropCompatibilities,
-  type Soil,
   type SoilCropCompatibility,
   type CompatibilityLevel,
 } from "../../data/mockSoils";
 import { mockCrops } from "../../data/mockData";
+import { api, type SoilResponse } from "../../api/client";
+import { CheckCircle2, AlertCircle, XCircle } from "lucide-react";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const PAGE_SIZE = 6;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+
+type Soil = SoilResponse; // alias for readability within this file
 
 type ModalMode = "view" | "create" | "edit" | "delete" | null;
 
@@ -69,7 +69,9 @@ const compatConfig: Record<
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function SoilsPage() {
-  const [soils, setSoils] = useState<Soil[]>(mockSoils);
+  const [soils, setSoils] = useState<Soil[]>([]);
+  const [isMock, setIsMock] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [compatibilities, setCompatibilities] = useState<
     SoilCropCompatibility[]
   >(mockSoilCropCompatibilities);
@@ -80,6 +82,34 @@ export function SoilsPage() {
   const [selectedSoil, setSelectedSoil] = useState<Soil | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm);
   const [errors, setErrors] = useState<Partial<FormState>>({});
+
+  // ── Load soils on mount ───────────────────────────────────────────────────
+  useEffect(() => {
+    async function load() {
+      try {
+        const data = await api.getSoils();
+        setSoils(data);
+        setIsMock(false);
+      } catch {
+        // Fallback: convert mockSoils to SoilResponse shape
+        setSoils(
+          mockSoils.map((s) => ({
+            soilId: s.soilId,
+            name: s.name,
+            scienceName: s.scienceName,
+            cropsCount: mockSoilCropCompatibilities.filter(
+              (c) => c.soilId === s.soilId,
+            ).length,
+            plotsCount: 0,
+          })),
+        );
+        setIsMock(true);
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
+  }, []);
 
   // ── Filtered + Paginated ──────────────────────────────────────────────────
   const filtered = useMemo(() => {
@@ -152,41 +182,77 @@ export function SoilsPage() {
   }
 
   // ── CRUD ──────────────────────────────────────────────────────────────────
-  function handleCreate() {
+  async function handleCreate() {
     if (!validate()) return;
-    const newSoil: Soil = {
-      soilId: `soil-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    const body = {
       name: form.name.trim(),
       scienceName: form.scienceName.trim(),
     };
-    setSoils((prev) => [newSoil, ...prev]);
-    setPage(1);
-    closeModal();
+    if (isMock) {
+      const newSoil: Soil = {
+        soilId: `soil-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        cropsCount: 0,
+        plotsCount: 0,
+        ...body,
+      };
+      setSoils((prev) => [newSoil, ...prev]);
+      setPage(1);
+      closeModal();
+      return;
+    }
+    try {
+      await api.createSoil(body);
+      const refreshed = await api.getSoils();
+      setSoils(refreshed);
+      setPage(1);
+      closeModal();
+    } catch {
+      alert("Tạo loại đất thất bại. Vui lòng thử lại.");
+    }
   }
 
-  function handleEdit() {
+  async function handleEdit() {
     if (!validate() || !selectedSoil) return;
-    setSoils((prev) =>
-      prev.map((s) =>
-        s.soilId === selectedSoil.soilId
-          ? {
-              ...s,
-              name: form.name.trim(),
-              scienceName: form.scienceName.trim(),
-            }
-          : s,
-      ),
-    );
-    closeModal();
+    const body = {
+      name: form.name.trim(),
+      scienceName: form.scienceName.trim(),
+    };
+    if (isMock) {
+      setSoils((prev) =>
+        prev.map((s) =>
+          s.soilId === selectedSoil.soilId ? { ...s, ...body } : s,
+        ),
+      );
+      closeModal();
+      return;
+    }
+    try {
+      await api.updateSoil(selectedSoil.soilId, body);
+      const refreshed = await api.getSoils();
+      setSoils(refreshed);
+      closeModal();
+    } catch {
+      alert("Cập nhật loại đất thất bại. Vui lòng thử lại.");
+    }
   }
 
-  function handleDelete() {
+  async function handleDelete() {
     if (!selectedSoil) return;
-    setSoils((prev) => prev.filter((s) => s.soilId !== selectedSoil.soilId));
-    setCompatibilities((prev) =>
-      prev.filter((c) => c.soilId !== selectedSoil.soilId),
-    );
-    closeModal();
+    if (isMock) {
+      setSoils((prev) => prev.filter((s) => s.soilId !== selectedSoil.soilId));
+      setCompatibilities((prev) =>
+        prev.filter((c) => c.soilId !== selectedSoil.soilId),
+      );
+      closeModal();
+      return;
+    }
+    try {
+      await api.deleteSoil(selectedSoil.soilId);
+      setSoils((prev) => prev.filter((s) => s.soilId !== selectedSoil.soilId));
+      closeModal();
+    } catch {
+      alert("Xóa loại đất thất bại. Vui lòng thử lại.");
+    }
   }
 
   function handleSearch(v: string) {
@@ -201,9 +267,16 @@ export function SoilsPage() {
       {/* ── Header ── */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-[#115e59] text-2xl font-semibold">
-            Quản lý loại đất
-          </h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-[#115e59] text-2xl font-semibold">
+              Quản lý loại đất
+            </h1>
+            {isMock && (
+              <span className="px-2 py-0.5 text-xs font-medium bg-amber-100 text-amber-700 rounded-full border border-amber-200">
+                Dữ liệu mẫu
+              </span>
+            )}
+          </div>
           <p className="text-sm text-[#62748e] mt-1">
             Danh sách các loại đất sử dụng trong hệ thống
           </p>
@@ -253,7 +326,16 @@ export function SoilsPage() {
               </tr>
             </thead>
             <tbody>
-              {paginated.length === 0 ? (
+              {loading ? (
+                <tr>
+                  <td
+                    colSpan={4}
+                    className="text-center py-16 text-[#94a3b8] text-sm"
+                  >
+                    Đang tải dữ liệu...
+                  </td>
+                </tr>
+              ) : paginated.length === 0 ? (
                 <tr>
                   <td
                     colSpan={4}
@@ -354,7 +436,8 @@ export function SoilsPage() {
       {modalMode === "view" && selectedSoil && (
         <ViewModal
           soil={selectedSoil}
-          compat={getCompatForSoil(selectedSoil.soilId)}
+          compat={isMock ? getCompatForSoil(selectedSoil.soilId) : []}
+          isMock={isMock}
           onClose={closeModal}
         />
       )}
@@ -367,7 +450,15 @@ export function SoilsPage() {
           onChange={(field, value) =>
             setForm((prev) => ({ ...prev, [field]: value }))
           }
-          onSubmit={modalMode === "create" ? handleCreate : handleEdit}
+          onSubmit={
+            modalMode === "create"
+              ? () => {
+                  void handleCreate();
+                }
+              : () => {
+                  void handleEdit();
+                }
+          }
           onClose={closeModal}
         />
       )}
@@ -375,8 +466,14 @@ export function SoilsPage() {
       {modalMode === "delete" && selectedSoil && (
         <DeleteModal
           soil={selectedSoil}
-          compatCount={getCompatForSoil(selectedSoil.soilId).length}
-          onConfirm={handleDelete}
+          compatCount={
+            isMock
+              ? getCompatForSoil(selectedSoil.soilId).length
+              : selectedSoil.cropsCount + selectedSoil.plotsCount
+          }
+          onConfirm={() => {
+            void handleDelete();
+          }}
           onClose={closeModal}
         />
       )}
@@ -413,10 +510,12 @@ type CompatRow = SoilCropCompatibility & { cropName: string };
 function ViewModal({
   soil,
   compat,
+  isMock,
   onClose,
 }: {
   soil: Soil;
   compat: CompatRow[];
+  isMock: boolean;
   onClose: () => void;
 }) {
   return (
@@ -424,17 +523,11 @@ function ViewModal({
       <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-6">
         {/* header */}
         <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-[#fef3c7] flex items-center justify-center shrink-0">
-              <LandPlot className="w-5 h-5 text-[#92400e]" />
-            </div>
-            <div>
-              <h2 className="text-lg font-bold text-[#115e59]">{soil.name}</h2>
-              <p className="text-xs text-[#62748e] italic flex items-center gap-1 mt-0.5">
-                <FlaskConical className="w-3 h-3" />
-                {soil.scienceName}
-              </p>
-            </div>
+          <div>
+            <h2 className="text-lg font-bold text-[#115e59]">{soil.name}</h2>
+            <p className="text-xs text-[#62748e] italic mt-0.5">
+              {soil.scienceName}
+            </p>
           </div>
           <button
             onClick={onClose}
@@ -444,51 +537,63 @@ function ViewModal({
           </button>
         </div>
 
-        {/* compatibility section */}
-        <div>
-          <div className="flex items-center gap-2 mb-3">
-            <Sprout className="w-4 h-4 text-[#009689]" />
-            <h3 className="text-sm font-semibold text-[#115e59]">
+        {/* counts from API or compat list from mock */}
+        {!isMock ? (
+          <div className="grid grid-cols-2 gap-3 mb-6">
+            <div className="p-3 bg-[#f8fafc] rounded-lg border border-[#e2e8f0]">
+              <p className="text-xs text-[#62748e]">Giống cây trồng</p>
+              <p className="text-sm font-semibold text-[#115e59] mt-1">
+                {soil.cropsCount}
+              </p>
+            </div>
+            <div className="p-3 bg-[#f8fafc] rounded-lg border border-[#e2e8f0]">
+              <p className="text-xs text-[#62748e]">Luống đang dùng</p>
+              <p className="text-sm font-semibold text-[#115e59] mt-1">
+                {soil.plotsCount}
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div>
+            <h3 className="text-sm font-semibold text-[#115e59] mb-3">
               Cây trồng tương thích
             </h3>
-          </div>
 
-          {compat.length === 0 ? (
-            <p className="text-sm text-[#94a3b8] py-4 text-center">
-              Chưa có dữ liệu tương thích
-            </p>
-          ) : (
-            <div className="flex flex-col gap-2">
-              {compat.map((c) => {
-                const cfg = compatConfig[c.compatibility];
-                return (
-                  <div
-                    key={c.comptId}
-                    className="flex items-start gap-3 p-3 bg-[#f8fafc] rounded-lg border border-[#e2e8f0]"
-                  >
-                    {/* crop name + badge */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-sm font-medium text-[#115e59]">
-                          {c.cropName}
-                        </span>
-                        <span
-                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${cfg.bg} ${cfg.color}`}
-                        >
-                          {cfg.icon}
-                          {cfg.label}
-                        </span>
+            {compat.length === 0 ? (
+              <p className="text-sm text-[#94a3b8] py-4 text-center">
+                Chưa có dữ liệu tương thích
+              </p>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {compat.map((c) => {
+                  const cfg = compatConfig[c.compatibility];
+                  return (
+                    <div
+                      key={c.comptId}
+                      className="flex items-start gap-3 p-3 bg-[#f8fafc] rounded-lg border border-[#e2e8f0]"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-sm font-medium text-[#115e59]">
+                            {c.cropName}
+                          </span>
+                          <span
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${cfg.bg} ${cfg.color}`}
+                          >
+                            {cfg.label}
+                          </span>
+                        </div>
+                        {c.note && (
+                          <p className="text-xs text-[#62748e]">{c.note}</p>
+                        )}
                       </div>
-                      {c.note && (
-                        <p className="text-xs text-[#62748e]">{c.note}</p>
-                      )}
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="flex justify-end mt-6">
           <button
