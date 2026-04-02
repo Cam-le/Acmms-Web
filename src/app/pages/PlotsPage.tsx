@@ -467,6 +467,29 @@ export function PlotsPage() {
     const count = Math.floor(calcRemainingArea(plot) / bedSize);
     if (count === 0) return;
     const existing = bedsForPlot(plotId).length;
+
+    if (isMockData) {
+      const newBeds: BedResponse[] = Array.from({ length: count }, (_, i) => ({
+        bedId: `mock-bed-${Date.now()}-${i}`,
+        plotId,
+        bedName: `${prefix}_${String(existing + i + 1).padStart(2, "0")}`,
+        bedArea: bedSize,
+        bedStatus: "Active",
+        bedCreatedAt: new Date().toISOString(),
+        cropQuantities,
+        plotName: plot.plotName,
+        seasonsDetailsCount: 0,
+      }));
+      setBeds((prev) => [...prev, ...newBeds]);
+      setPlots((prev) =>
+        prev.map((p) =>
+          p.plotId === plotId ? { ...p, bedsCount: p.bedsCount + count } : p,
+        ),
+      );
+      setAutoPlotOpen(false);
+      return;
+    }
+
     for (let i = 0; i < count; i++) {
       await handleCreateBed({
         plotId,
@@ -674,9 +697,6 @@ export function PlotsPage() {
                                   Số lượng cây
                                 </th>
                                 <th className="px-4 py-3 text-left text-xs font-medium text-[#62748e] uppercase">
-                                  Mùa vụ
-                                </th>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-[#62748e] uppercase">
                                   Trạng thái
                                 </th>
                                 <th className="px-4 py-3 text-center text-xs font-medium text-[#62748e] uppercase">
@@ -699,11 +719,6 @@ export function PlotsPage() {
                                   <td className="px-4 py-3 text-sm text-[#62748e]">
                                     {bed.cropQuantities > 0
                                       ? bed.cropQuantities
-                                      : "-"}
-                                  </td>
-                                  <td className="px-4 py-3 text-sm text-[#62748e]">
-                                    {bed.seasonsDetailsCount > 0
-                                      ? `${bed.seasonsDetailsCount} mùa`
                                       : "-"}
                                   </td>
                                   <td className="px-4 py-3">

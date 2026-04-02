@@ -46,7 +46,7 @@ import {
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 /** Per-plot status inside a season (separate from SeasonStatus) */
-type SeasonPlotStatus = "Đang trồng" | "Đã thu hoạch";
+type SeasonPlotStatus = "Chưa trồng" | "Đang trồng" | "Đã thu hoạch";
 
 /** PlotAssignment with the new status type */
 interface PlotAssignmentV2 extends Omit<PlotAssignment, "status"> {
@@ -61,9 +61,22 @@ const seasonStatusConfig: Record<SeasonStatus, string> = {
   "Sắp diễn ra": "bg-[#dbeafe] text-[#1e40af]",
 };
 
-const plotStatusConfig: Record<SeasonPlotStatus, string> = {
-  "Đang trồng": "bg-[#fef9c3] text-[#854d0e]",
-  "Đã thu hoạch": "bg-[#dcfce7] text-[#008236]",
+const plotStatusConfig: Record<
+  SeasonPlotStatus,
+  { badge: string; dot: string }
+> = {
+  "Chưa trồng": {
+    badge: "bg-[#f1f5f9] text-[#475569] border border-[#cbd5e1]",
+    dot: "bg-[#94a3b8]",
+  },
+  "Đang trồng": {
+    badge: "bg-[#fef9c3] text-[#854d0e] border border-[#fde68a]",
+    dot: "bg-[#f59e0b]",
+  },
+  "Đã thu hoạch": {
+    badge: "bg-[#dcfce7] text-[#008236] border border-[#86efac]",
+    dot: "bg-[#22c55e]",
+  },
 };
 
 /**
@@ -156,14 +169,15 @@ export function groupByHarvestWeek(
 function toV2(plot: PlotAssignment): PlotAssignmentV2 {
   const legacyMap: Record<string, SeasonPlotStatus> = {
     "Đang hoạt động": "Đang trồng",
-    "Sắp diễn ra": "Đang trồng",
+    "Sắp diễn ra": "Chưa trồng",
     "Đã kết thúc": "Đã thu hoạch",
+    "Chưa trồng": "Chưa trồng",
     "Đang trồng": "Đang trồng",
     "Đã thu hoạch": "Đã thu hoạch",
   };
   return {
     ...plot,
-    status: legacyMap[plot.status as string] ?? "Đang trồng",
+    status: legacyMap[plot.status as string] ?? "Chưa trồng",
   };
 }
 
@@ -324,7 +338,7 @@ function mapApiSeasonToUi(
         plannedQuantity: d.cropQuantity ?? 0,
         actualPlanted: d.cropQuantity ?? 0,
         harvestQuantity: d.totalHarvestYield ?? 0,
-        status: "Đang trồng" as any,
+        status: "Chưa trồng" as any,
         _seasonDetailId: d.seasonDetailId,
         _bedId: d.bedId,
         _cropId: d.cropId,
@@ -1137,7 +1151,7 @@ function DetailSeasonView({ season }: { season: Season }) {
                                   </td>
                                   <td className="px-4 py-2.5">
                                     <span
-                                      className={`inline-block px-2 py-1 rounded text-xs font-medium ${plotStatusConfig[plot.status]}`}
+                                      className={`inline-block px-2 py-1 rounded text-xs font-medium ${plotStatusConfig[plot.status]?.badge ?? ""}`}
                                     >
                                       {plot.status}
                                     </span>
@@ -1261,7 +1275,7 @@ function CreateSeasonView({
         plannedQuantity: details.cropQuantity,
         actualPlanted: 0,
         harvestQuantity: 0,
-        status: "Đang trồng" as any,
+        status: "Chưa trồng" as any,
       };
     });
 
@@ -1885,7 +1899,7 @@ function EditSeasonView({
           plannedQuantity: 0,
           actualPlanted: 0,
           harvestQuantity: 0,
-          status: "Đang trồng" as SeasonPlotStatus,
+          status: "Chưa trồng" as SeasonPlotStatus,
           _bedId: plotId, // bedId thực để dùng khi submit API
           _cropId: details.cropId, // cropId thực
         } as any;
@@ -2136,8 +2150,8 @@ function EditSeasonView({
                         return (
                           <div key={weekKey} className="p-3">
                             {/* Week sub-header */}
-                            <div className="flex items-center justify-between mb-2">
-                              <div className="flex items-center gap-2">
+                            <div className="flex items-start justify-between mb-1.5 gap-3">
+                              <div className="flex items-center gap-2 flex-wrap">
                                 <span className="flex items-center gap-1 text-xs font-semibold text-[#475569]">
                                   <Calendar className="w-3.5 h-3.5" /> Thu
                                   hoạch: {formatWeekRange(weekKey)}
@@ -2153,31 +2167,25 @@ function EditSeasonView({
                                   ))}
                                 </div>
                               </div>
-                              <div className="flex items-center gap-2">
-                                <span className="text-xs text-[#62748e]">
-                                  {weekHarvested}/{weekPlots.length} đã thu
+                              {!isSeasonEnded && !allHarvested && (
+                                <button
+                                  onClick={() =>
+                                    setBulkConfirmArea(
+                                      `${areaLabel}::${weekKey}`,
+                                    )
+                                  }
+                                  className="shrink-0 flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-[#008236] bg-[#dcfce7] border border-[#86efac] rounded-lg hover:bg-[#bbf7d0] transition-colors"
+                                >
+                                  <CheckSquare className="w-3.5 h-3.5" />
+                                  Đánh dấu tất cả đã thu hoạch
+                                </button>
+                              )}
+                              {allHarvested && (
+                                <span className="shrink-0 flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-[#008236] bg-[#dcfce7] border border-[#86efac] rounded-lg">
+                                  <Check className="w-3 h-3" /> Đã thu hoạch
+                                  toàn bộ đợt
                                 </span>
-                                {!isSeasonEnded && !allHarvested && (
-                                  <button
-                                    onClick={() =>
-                                      setBulkConfirmArea(
-                                        `${areaLabel}::${weekKey}`,
-                                      )
-                                    }
-                                    className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-[#008236] bg-[#dcfce7] rounded-lg hover:bg-[#bbf7d0] transition-colors"
-                                    title="Đánh dấu cả đợt này đã thu hoạch"
-                                  >
-                                    <CheckSquare className="w-3.5 h-3.5" />
-                                    Đánh dấu cả đợt đã thu
-                                  </button>
-                                )}
-                                {allHarvested && (
-                                  <span className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-[#008236] bg-[#dcfce7] rounded-lg">
-                                    <Check className="w-3 h-3" /> Đợt đã thu
-                                    xong
-                                  </span>
-                                )}
-                              </div>
+                              )}
                             </div>
 
                             {/* Plot cards in this week bucket */}
@@ -2198,23 +2206,43 @@ function EditSeasonView({
                                         <span className="font-mono font-semibold text-[#115e59] text-sm">
                                           {plot.plotName}
                                         </span>
-                                        {/* Per-plot status toggle */}
-                                        <button
-                                          onClick={() =>
-                                            updatePlot(
-                                              plot.plotId,
-                                              "status",
-                                              plot.status === "Đang trồng"
-                                                ? "Đã thu hoạch"
-                                                : "Đang trồng",
-                                            )
-                                          }
-                                          disabled={isSeasonEnded}
-                                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium transition-colors disabled:cursor-not-allowed ${plotStatusConfig[plot.status]} hover:opacity-80`}
-                                          title="Nhấn để đổi trạng thái"
-                                        >
-                                          {plot.status}
-                                        </button>
+                                        {/* Per-plot status — explicit select */}
+                                        <div className="flex items-center gap-1.5">
+                                          <span
+                                            className={`inline-block w-2 h-2 rounded-full ${plotStatusConfig[plot.status].dot}`}
+                                          />
+                                          <select
+                                            value={plot.status}
+                                            onChange={(e) =>
+                                              updatePlot(
+                                                plot.plotId,
+                                                "status",
+                                                e.target
+                                                  .value as SeasonPlotStatus,
+                                              )
+                                            }
+                                            disabled={isSeasonEnded}
+                                            className={`text-xs font-medium rounded-full px-2 py-0.5 border focus:outline-none focus:ring-2 focus:ring-[#009689] disabled:cursor-not-allowed appearance-none cursor-pointer pr-5 ${plotStatusConfig[plot.status].badge}`}
+                                            style={{
+                                              backgroundImage: isSeasonEnded
+                                                ? "none"
+                                                : `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%2362748e' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E")`,
+                                              backgroundRepeat: "no-repeat",
+                                              backgroundPosition:
+                                                "right 6px center",
+                                            }}
+                                          >
+                                            <option value="Chưa trồng">
+                                              Chưa trồng
+                                            </option>
+                                            <option value="Đang trồng">
+                                              Đang trồng
+                                            </option>
+                                            <option value="Đã thu hoạch">
+                                              Đã thu hoạch
+                                            </option>
+                                          </select>
+                                        </div>
                                       </div>
                                       <button
                                         onClick={() => removePlot(plot.plotId)}
