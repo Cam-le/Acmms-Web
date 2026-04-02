@@ -11,6 +11,8 @@ import {
   WifiOff,
   ChevronUp,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   ArrowUpDown,
 } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
@@ -41,6 +43,8 @@ const getStatusBadgeColor = (status: "active" | "inactive") =>
 const getStatusLabel = (status: "active" | "inactive") =>
   status === "active" ? "Đang làm việc" : "Ngừng làm việc";
 
+const PAGE_SIZE = 8;
+
 export function WorkersPage() {
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [loading, setLoading] = useState(true);
@@ -50,6 +54,7 @@ export function WorkersPage() {
   const [sortField, setSortField] = useState<"dateJoined" | "status" | null>(
     null,
   );
+  const [page, setPage] = useState(1);
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
@@ -92,6 +97,7 @@ export function WorkersPage() {
       setSortField(field);
       setSortDirection("asc");
     }
+    setPage(1);
   };
 
   const filteredWorkers = workers
@@ -121,6 +127,13 @@ export function WorkersPage() {
         ? order[a.status] - order[b.status]
         : order[b.status] - order[a.status];
     });
+
+  const totalPages = Math.max(1, Math.ceil(filteredWorkers.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const pagedWorkers = filteredWorkers.slice(
+    (currentPage - 1) * PAGE_SIZE,
+    currentPage * PAGE_SIZE,
+  );
 
   const resetForm = () =>
     setFormData({
@@ -288,14 +301,20 @@ export function WorkersPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#94a3b8]" />
             <input
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setPage(1);
+              }}
               placeholder="Tìm kiếm nhân viên..."
               className="w-full pl-9 pr-4 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689]"
             />
           </div>
           <select
             value={filterRole}
-            onChange={(e) => setFilterRole(e.target.value)}
+            onChange={(e) => {
+              setFilterRole(e.target.value);
+              setPage(1);
+            }}
             className="px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] bg-white text-[#334155] shrink-0"
           >
             <option value="all">Tất cả vai trò</option>
@@ -365,7 +384,7 @@ export function WorkersPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#e2e8f0]">
-                {filteredWorkers.map((worker) => (
+                {pagedWorkers.map((worker) => (
                   <tr
                     key={worker.id}
                     className="hover:bg-[#f8fafc] transition-colors"
@@ -426,6 +445,36 @@ export function WorkersPage() {
               </tbody>
             </table>
           )}
+          {/* pagination */}
+          <div className="flex items-center justify-end px-5 py-4 border-t border-[#e2e8f0]">
+            <div className="flex items-center gap-1">
+              <PaginationBtn
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </PaginationBtn>
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+                <button
+                  key={p}
+                  onClick={() => setPage(p)}
+                  className={`w-8 h-8 text-sm rounded-lg transition-colors ${
+                    p === currentPage
+                      ? "bg-[#009689] text-white font-semibold"
+                      : "text-[#62748e] hover:bg-[#f1f5f9]"
+                  }`}
+                >
+                  {p}
+                </button>
+              ))}
+              <PaginationBtn
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+              >
+                <ChevronRight className="w-4 h-4" />
+              </PaginationBtn>
+            </div>
+          </div>
         </div>
       </div>
       {/* end filters+table wrapper */}
@@ -705,5 +754,26 @@ function WorkerForm({
         </>
       )}
     </div>
+  );
+}
+
+// ── Pagination Button ─────────────────────────────────────────────────────────
+function PaginationBtn({
+  onClick,
+  disabled,
+  children,
+}: {
+  onClick: () => void;
+  disabled: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className="w-8 h-8 flex items-center justify-center rounded-lg text-[#62748e] hover:bg-[#f1f5f9] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+    >
+      {children}
+    </button>
   );
 }

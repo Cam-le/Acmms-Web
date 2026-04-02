@@ -2007,11 +2007,15 @@ function EditSeasonView({
             <div>
               <label className="block text-sm font-medium text-[#115e59] mb-2">
                 Trang trại
+                <span className="ml-2 text-xs font-normal text-[#90a1b9]">
+                  (không thể thay đổi)
+                </span>
               </label>
               <FarmSelect
                 value={formData.farm}
-                onChange={(v) => updateField("farm", v)}
+                onChange={() => {}}
                 farms={farms}
+                className="bg-[#f8fafc] text-[#90a1b9] cursor-not-allowed pointer-events-none opacity-75"
               />
             </div>
             <div>
@@ -2294,8 +2298,15 @@ function EditSeasonView({
                                               ),
                                             );
                                           }}
-                                          disabled={isSeasonEnded}
-                                          className="w-full px-2 py-1.5 text-sm border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] bg-white disabled:bg-[#f8fafc] disabled:cursor-not-allowed"
+                                          disabled={
+                                            isSeasonEnded || hasPlotData
+                                          }
+                                          title={
+                                            hasPlotData
+                                              ? "Không thể thay đổi: luống đã có dữ liệu trồng thực tế"
+                                              : undefined
+                                          }
+                                          className="w-full px-2 py-1.5 text-sm border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] bg-white disabled:bg-[#f8fafc] disabled:text-[#90a1b9] disabled:cursor-not-allowed"
                                         >
                                           {crops.map((c) => (
                                             <option

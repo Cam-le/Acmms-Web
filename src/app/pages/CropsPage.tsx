@@ -14,6 +14,7 @@ import {
   Loader2,
   WifiOff,
   TrendingUp,
+  ChevronLeft,
   ChevronRight,
   Thermometer,
   Droplets,
@@ -100,9 +101,12 @@ const getStatusBadgeColor = (status: CropStatus) =>
     ? "bg-[#dcfce7] text-[#008236]"
     : "bg-[#fee2e2] text-[#991b1b]";
 
+const PAGE_SIZE = 8;
+
 export function CropsPage() {
   const [activeTab, setActiveTab] = useState<"list" | "growth">("list");
   const [crops, setCrops] = useState<CropEx[]>([]);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [usingMock, setUsingMock] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -143,6 +147,7 @@ export function CropsPage() {
       setSortField(field);
       setSortDirection("asc");
     }
+    setPage(1);
   };
 
   const filteredCrops = crops
@@ -163,6 +168,13 @@ export function CropsPage() {
         ? order[a.status] - order[b.status]
         : order[b.status] - order[a.status];
     });
+
+  const totalPages = Math.max(1, Math.ceil(filteredCrops.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const pagedCrops = filteredCrops.slice(
+    (currentPage - 1) * PAGE_SIZE,
+    currentPage * PAGE_SIZE,
+  );
 
   const handleCreate = async (cropData: Omit<CropEx, "id">) => {
     setSubmitting(true);
@@ -312,7 +324,10 @@ export function CropsPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#94a3b8]" />
             <input
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setPage(1);
+              }}
               placeholder="Tìm kiếm cây trồng..."
               className="w-full pl-9 pr-4 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689]"
             />
@@ -364,7 +379,7 @@ export function CropsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#e2e8f0]">
-                  {filteredCrops.map((crop) => (
+                  {pagedCrops.map((crop) => (
                     <tr
                       key={crop.id}
                       className="hover:bg-[#f8fafc] transition-colors"
@@ -455,6 +470,38 @@ export function CropsPage() {
                 </tbody>
               </table>
             )}
+            {/* pagination */}
+            <div className="flex items-center justify-end px-5 py-4 border-t border-[#e2e8f0]">
+              <div className="flex items-center gap-1">
+                <CropPaginationBtn
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </CropPaginationBtn>
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map(
+                  (p) => (
+                    <button
+                      key={p}
+                      onClick={() => setPage(p)}
+                      className={`w-8 h-8 text-sm rounded-lg transition-colors ${
+                        p === currentPage
+                          ? "bg-[#009689] text-white font-semibold"
+                          : "text-[#62748e] hover:bg-[#f1f5f9]"
+                      }`}
+                    >
+                      {p}
+                    </button>
+                  ),
+                )}
+                <CropPaginationBtn
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </CropPaginationBtn>
+              </div>
+            </div>
           </div>
 
           {/* View Modal */}
@@ -1958,5 +2005,26 @@ function EditCropModal({
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
+  );
+}
+
+// ── Pagination Button ─────────────────────────────────────────────────────────
+function CropPaginationBtn({
+  onClick,
+  disabled,
+  children,
+}: {
+  onClick: () => void;
+  disabled: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className="w-8 h-8 flex items-center justify-center rounded-lg text-[#62748e] hover:bg-[#f1f5f9] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+    >
+      {children}
+    </button>
   );
 }

@@ -202,7 +202,7 @@ export function PlotsPage() {
   const [isMockData, setIsMockData] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  const [selectedFarmId, setSelectedFarmId] = useState<string>("all");
+  const [selectedFarmId, setSelectedFarmId] = useState<string>("");
   const [openPlotIds, setOpenPlotIds] = useState<string[]>([]);
 
   const [createPlotOpen, setCreatePlotOpen] = useState(false);
@@ -238,9 +238,12 @@ export function PlotsPage() {
         useMock = true;
       }
       try {
-        setFarms(await api.getFarms());
+        const farmsData = await api.getFarms();
+        setFarms(farmsData);
+        if (farmsData.length > 0) setSelectedFarmId(farmsData[0].farmId);
       } catch {
         setFarms(mockFarms);
+        if (mockFarms.length > 0) setSelectedFarmId(mockFarms[0].farmId);
       }
       try {
         setSoils(await api.getSoils());
@@ -269,11 +272,8 @@ export function PlotsPage() {
     return Math.max(0, plot.plotArea - used);
   };
 
-  const filteredPlots = (
-    selectedFarmId === "all"
-      ? plots
-      : plots.filter((p) => p.farmId === selectedFarmId)
-  )
+  const filteredPlots = plots
+    .filter((p) => p.farmId === selectedFarmId)
     .filter((p): p is PlotResponse => !!p?.plotId)
     .sort(
       (a, b) =>
@@ -546,7 +546,6 @@ export function PlotsPage() {
           onChange={(e) => setSelectedFarmId(e.target.value)}
           className="w-full max-w-md px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
         >
-          <option value="all">Tất cả trang trại</option>
           {farmOptions.map((f) => (
             <option key={f.farmId} value={f.farmId}>
               {f.farmName}

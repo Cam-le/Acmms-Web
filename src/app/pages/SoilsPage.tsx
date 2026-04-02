@@ -398,10 +398,7 @@ export function SoilsPage() {
         </div>
 
         {/* pagination */}
-        <div className="flex items-center justify-between px-5 py-4 border-t border-[#e2e8f0]">
-          <span className="text-sm text-[#62748e]">
-            Trang {currentPage} / {totalPages}
-          </span>
+        <div className="flex items-center justify-end px-5 py-4 border-t border-[#e2e8f0]">
           <div className="flex items-center gap-1">
             <PaginationBtn
               onClick={() => setPage((p) => Math.max(1, p - 1))}
