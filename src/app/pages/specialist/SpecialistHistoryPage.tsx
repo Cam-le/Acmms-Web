@@ -17,13 +17,14 @@ import {
 } from "lucide-react";
 import {
   mockConsultationHistory,
+  mockConsultationRequests,
   mockPaymentHistory,
   type ConsultationHistoryRow,
   type PaymentRecord,
   type Severity,
 } from "../../../data/mockSpecialistData";
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://localhost:7093";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PAYMENT DETAIL MODAL
@@ -70,7 +71,15 @@ function PaymentDetailModal({
                 đ
               </span>
             </p>
-            <span className="inline-flex items-center gap-1 mt-2 text-xs font-semibold text-green-700 bg-green-100 px-3 py-1 rounded-full">
+            <span
+              className={`inline-flex items-center gap-1 mt-2 text-xs font-semibold px-3 py-1 rounded-full ${
+                record.status === "Đã thanh toán"
+                  ? "text-green-700 bg-green-100"
+                  : record.status === "Hoàn tiền"
+                    ? "text-red-700 bg-red-100"
+                    : "text-amber-700 bg-amber-100"
+              }`}
+            >
               <BadgeCheck className="w-3.5 h-3.5" />
               {record.status}
             </span>
@@ -166,8 +175,19 @@ function EditResponseModal({
         },
       );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    } catch {
-      // API unreachable — local update only (mock mode)
+    } catch (err) {
+      const isNetworkError =
+        err instanceof TypeError && err.message.includes("fetch");
+      if (!isNetworkError) {
+        setSaving(false);
+        setError(
+          err instanceof Error
+            ? `Lỗi lưu phản hồi: ${err.message}`
+            : "Có lỗi xảy ra, vui lòng thử lại.",
+        );
+        return;
+      }
+      // Network unreachable → apply local update silently (mock mode)
     }
 
     onSaved({ content, priority });
@@ -274,7 +294,7 @@ function EditResponseModal({
           </button>
           <button
             onClick={handleSave}
-            disabled={saving || !content.trim()}
+            disabled={saving || !title.trim() || !content.trim()}
             className="px-6 py-2.5 rounded-xl text-sm font-semibold bg-[#009689] text-white hover:bg-[#007f73] transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
           >
             {saving ? (
@@ -530,10 +550,12 @@ function ConsultationHistoryTab() {
                       <div className="flex items-center justify-end gap-3">
                         <button
                           onClick={() => {
-                            const reqId = res.requestCode
-                              .toLowerCase()
-                              .replace("#req-", "req-");
-                            navigate(`/specialist/consultations/${reqId}`);
+                            const match = mockConsultationRequests.find(
+                              (r) => r.requestCode === res.requestCode,
+                            );
+                            if (match) {
+                              navigate(`/specialist/consultations/${match.id}`);
+                            }
                           }}
                           className="text-sm text-[#009689] font-semibold hover:underline"
                         >

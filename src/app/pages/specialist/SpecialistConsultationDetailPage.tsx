@@ -11,6 +11,7 @@ import {
   Lightbulb,
   Bot,
   AlertTriangle,
+  Loader2,
 } from "lucide-react";
 import {
   mockConsultationRequests,
@@ -38,10 +39,21 @@ function ResponseForm({
   const [content, setContent] = useState("");
   const [priority, setPriority] = useState<Severity>("Trung bình");
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!title.trim() || !content.trim()) return;
-    setSubmitted(true);
+    setSubmitting(true);
+    try {
+      // TODO: replace with real API call when endpoint is available
+      // await api.specialist.createResponse({ requestId: req.id, title, content, priority });
+      await new Promise((res) => setTimeout(res, 600)); // mock latency
+      setSubmitted(true);
+    } catch {
+      // In mock mode this won't trigger; real API errors will surface here
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   if (submitted) {
@@ -230,11 +242,20 @@ function ResponseForm({
           </button>
           <button
             onClick={handleSubmit}
-            disabled={!title.trim() || !content.trim()}
+            disabled={submitting || !title.trim() || !content.trim()}
             className="px-6 py-2.5 rounded-xl text-sm font-semibold bg-[#009689] text-white hover:bg-[#007f73] transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
           >
-            <ClipboardEdit className="w-4 h-4" />
-            Gửi phản hồi
+            {submitting ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Đang gửi...
+              </>
+            ) : (
+              <>
+                <ClipboardEdit className="w-4 h-4" />
+                Gửi phản hồi
+              </>
+            )}
           </button>
         </div>
       </div>
@@ -247,6 +268,8 @@ export function SpecialistConsultationDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [showResponseForm, setShowResponseForm] = useState(false);
+  const [imgScale, setImgScale] = useState(1);
+  const [imgRotate, setImgRotate] = useState(0);
 
   const req = mockConsultationRequests.find((r) => r.id === id);
 
@@ -294,7 +317,7 @@ export function SpecialistConsultationDetailPage() {
           <ArrowLeft className="w-4 h-4" />
           Quay lại danh sách
         </button>
-        {req.detectionStatus === "Chờ phản hồi" && (
+        {req.detectionStatus === "Chờ phản hồi" ? (
           <button
             onClick={() => setShowResponseForm(true)}
             className="flex items-center gap-2 px-5 py-2.5 bg-[#009689] text-white text-sm font-semibold rounded-xl hover:bg-[#007f73] transition-colors"
@@ -302,6 +325,11 @@ export function SpecialistConsultationDetailPage() {
             <ClipboardEdit className="w-4 h-4" />
             Tạo phản hồi
           </button>
+        ) : (
+          <span className="flex items-center gap-2 px-4 py-2.5 bg-green-50 text-green-700 text-sm font-medium rounded-xl border border-green-200">
+            <CheckCircle2 className="w-4 h-4" />
+            Đã phản hồi yêu cầu này
+          </span>
         )}
       </div>
 
@@ -375,8 +403,14 @@ export function SpecialistConsultationDetailPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Image placeholder */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-          <div className="relative bg-slate-900 h-72 flex items-center justify-center">
-            <div className="text-slate-500 text-center">
+          <div className="relative bg-slate-900 h-72 flex items-center justify-center overflow-hidden">
+            <div
+              style={{
+                transform: `scale(${imgScale}) rotate(${imgRotate}deg)`,
+                transition: "transform 0.2s ease",
+              }}
+              className="text-slate-500 text-center"
+            >
               <div className="w-16 h-16 bg-slate-700 rounded-xl mx-auto mb-3 flex items-center justify-center">
                 <span className="text-2xl">📸</span>
               </div>
@@ -397,10 +431,35 @@ export function SpecialistConsultationDetailPage() {
             </div>
           </div>
           <div className="flex items-center justify-center gap-3 py-3 border-t border-slate-100">
-            {["🔍+", "🔍-", "↺", "↻"].map((icon, i) => (
+            {[
+              {
+                icon: "🔍+",
+                title: "Phóng to",
+                action: () =>
+                  setImgScale((s) => Math.min(3, +(s + 0.25).toFixed(2))),
+              },
+              {
+                icon: "🔍-",
+                title: "Thu nhỏ",
+                action: () =>
+                  setImgScale((s) => Math.max(0.5, +(s - 0.25).toFixed(2))),
+              },
+              {
+                icon: "↺",
+                title: "Xoay trái",
+                action: () => setImgRotate((r) => r - 90),
+              },
+              {
+                icon: "↻",
+                title: "Xoay phải",
+                action: () => setImgRotate((r) => r + 90),
+              },
+            ].map(({ icon, title, action }) => (
               <button
-                key={i}
-                className="w-9 h-9 rounded-lg border border-slate-200 flex items-center justify-center text-sm text-slate-500 hover:bg-slate-50"
+                key={icon}
+                title={title}
+                onClick={action}
+                className="w-9 h-9 rounded-lg border border-slate-200 flex items-center justify-center text-sm text-slate-500 hover:bg-slate-50 transition-colors"
               >
                 {icon}
               </button>
