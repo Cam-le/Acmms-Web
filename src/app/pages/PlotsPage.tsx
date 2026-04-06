@@ -12,6 +12,10 @@ import {
   Sprout,
   Calendar,
   MapPin,
+  Cpu,
+  Radio,
+  CheckCircle2,
+  XCircle,
 } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
@@ -182,6 +186,38 @@ const bedStatusConfig: Record<string, string> = {
   active: "bg-[#dbeafe] text-[#1e40af]",
   Inactive: "bg-[#f1f5f9] text-[#475569]",
   inactive: "bg-[#f1f5f9] text-[#475569]",
+};
+
+// ==================== IoT Types ====================
+
+export interface IotDeviceForm {
+  name: string;
+  type: string;
+  status: string;
+  installation_date: string;
+  latitude: number | "";
+  longitude: number | "";
+}
+
+const iotDeviceTypeOptions = [
+  { value: "temperature", label: "Cảm biến nhiệt độ" },
+  { value: "humidity", label: "Cảm biến độ ẩm" },
+  { value: "soil_moisture", label: "Cảm biến độ ẩm đất" },
+  { value: "light", label: "Cảm biến ánh sáng" },
+  { value: "camera", label: "Camera giám sát" },
+  { value: "other", label: "Khác" },
+];
+
+const iotStatusMap: Record<string, string> = {
+  Active: "Hoạt động",
+  Inactive: "Không hoạt động",
+  Maintenance: "Bảo trì",
+};
+
+const iotStatusConfig: Record<string, string> = {
+  Active: "bg-[#dcfce7] text-[#008236]",
+  Inactive: "bg-[#fee2e2] text-[#991b1b]",
+  Maintenance: "bg-amber-100 text-amber-700",
 };
 
 function formatDate(iso: string) {
@@ -1188,6 +1224,7 @@ function EditPlotModal({
     plotArea: plot.plotArea,
     plotStatus: plot.plotStatus,
   });
+  const [iotModalOpen, setIotModalOpen] = useState(false);
 
   useEffect(() => {
     if (open)
@@ -1201,130 +1238,564 @@ function EditPlotModal({
   }, [open, plot]);
 
   return (
+    <>
+      <Dialog.Root open={open} onOpenChange={onClose}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
+          <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-lg bg-white rounded-xl shadow-2xl p-6">
+            <div className="flex items-center justify-between mb-6">
+              <Dialog.Title className="text-xl font-semibold text-[#115e59]">
+                Chỉnh Sửa Vuông Đất
+              </Dialog.Title>
+              <Dialog.Close asChild>
+                <button className="p-2 text-[#62748e] hover:bg-[#f8fafc] rounded-lg transition-colors">
+                  <X className="w-5 h-5" />
+                </button>
+              </Dialog.Close>
+            </div>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                onUpdate(plot.plotId, formData);
+              }}
+              className="space-y-4"
+            >
+              <div>
+                <label className="block text-sm font-medium text-[#115e59] mb-2">
+                  Tên Vuông Đất
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={formData.plotName}
+                  onChange={(e) =>
+                    setFormData({ ...formData, plotName: e.target.value })
+                  }
+                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-[#115e59] mb-2">
+                    Trang Trại
+                  </label>
+                  <select
+                    value={formData.farmId}
+                    onChange={(e) =>
+                      setFormData({ ...formData, farmId: e.target.value })
+                    }
+                    className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                  >
+                    {farms.map((f) => (
+                      <option key={f.farmId} value={f.farmId}>
+                        {f.farmName}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-[#115e59] mb-2">
+                    Loại Đất
+                  </label>
+                  <select
+                    value={formData.soilId}
+                    onChange={(e) =>
+                      setFormData({ ...formData, soilId: e.target.value })
+                    }
+                    className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                  >
+                    {soils.map((s) => (
+                      <option key={s.soilId} value={s.soilId}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-[#115e59] mb-2">
+                    Diện Tích (m²)
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min={1}
+                    value={formData.plotArea}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        plotArea: parseFloat(e.target.value) || 0,
+                      })
+                    }
+                    className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-[#115e59] mb-2">
+                    Trạng Thái
+                  </label>
+                  <select
+                    value={formData.plotStatus}
+                    onChange={(e) =>
+                      setFormData({ ...formData, plotStatus: e.target.value })
+                    }
+                    className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                  >
+                    <option value="Active">Hoạt động</option>
+                    <option value="Inactive">Không hoạt động</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* IoT Devices Section */}
+              <div className="border border-[#e2e8f0] rounded-lg p-4 bg-[#f8fafc]">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Cpu className="w-4 h-4 text-[#009689]" />
+                    <span className="text-sm font-medium text-[#115e59]">
+                      Thiết Bị IoT
+                    </span>
+                    <span className="text-xs text-[#62748e]">
+                      (áp dụng cho tất cả luống trong vuông này)
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIotModalOpen(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-[#009689] text-white rounded-lg hover:bg-[#007f75] transition-colors"
+                  >
+                    <Radio className="w-4 h-4" />
+                    Quản lý thiết bị
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-6 py-2 bg-[#f1f5f9] text-[#314158] rounded-lg hover:bg-[#e2e8f0] transition-colors"
+                >
+                  Hủy Bỏ
+                </button>
+                <button
+                  type="submit"
+                  className="px-6 py-2 bg-[#009689] text-white rounded-lg hover:bg-[#007f75] transition-colors"
+                >
+                  Lưu Thay Đổi
+                </button>
+              </div>
+            </form>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+
+      {/* IoT Devices Modal — rendered outside the edit modal to avoid z-index stacking issues */}
+      <IotDevicesModal
+        open={iotModalOpen}
+        onClose={() => setIotModalOpen(false)}
+        plot={plot}
+      />
+    </>
+  );
+}
+
+// ==================== IoT Devices Modal ====================
+
+function IotDevicesModal({
+  open,
+  onClose,
+  plot,
+}: {
+  open: boolean;
+  onClose: () => void;
+  plot: PlotResponse;
+}) {
+  const emptyForm: IotDeviceForm = {
+    name: "",
+    type: "temperature",
+    status: "Active",
+    installation_date: new Date().toISOString().split("T")[0],
+    latitude: "",
+    longitude: "",
+  };
+
+  // UI-only state — no API calls yet
+  const [devices, setDevices] = useState<(IotDeviceForm & { id: string })[]>(
+    [],
+  );
+  const [addOpen, setAddOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<
+    (IotDeviceForm & { id: string }) | null
+  >(null);
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  const [formData, setFormData] = useState<IotDeviceForm>(emptyForm);
+
+  // Reset form when sub-panels open
+  useEffect(() => {
+    if (addOpen) setFormData(emptyForm);
+  }, [addOpen]);
+
+  useEffect(() => {
+    if (editTarget) setFormData({ ...editTarget });
+  }, [editTarget]);
+
+  const handleAdd = () => {
+    setDevices((prev) => [...prev, { ...formData, id: `iot-${Date.now()}` }]);
+    setAddOpen(false);
+  };
+
+  const handleEdit = () => {
+    if (!editTarget) return;
+    setDevices((prev) =>
+      prev.map((d) => (d.id === editTarget.id ? { ...formData, id: d.id } : d)),
+    );
+    setEditTarget(null);
+  };
+
+  const handleDelete = (id: string) => {
+    setDevices((prev) => prev.filter((d) => d.id !== id));
+    setDeleteTargetId(null);
+  };
+
+  const DeviceForm = ({
+    onSubmit,
+    submitLabel,
+  }: {
+    onSubmit: () => void;
+    submitLabel: string;
+  }) => (
+    <div className="space-y-4 mt-4">
+      {/* Name */}
+      <div>
+        <label className="block text-sm font-medium text-[#115e59] mb-1.5">
+          Tên Thiết Bị <span className="text-red-500">*</span>
+        </label>
+        <input
+          type="text"
+          required
+          placeholder="Ví dụ: Cảm biến nhiệt độ A1"
+          value={formData.name}
+          onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+          className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+        />
+      </div>
+
+      {/* Type + Status */}
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-[#115e59] mb-1.5">
+            Loại Thiết Bị <span className="text-red-500">*</span>
+          </label>
+          <select
+            value={formData.type}
+            onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+            className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+          >
+            {iotDeviceTypeOptions.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-[#115e59] mb-1.5">
+            Trạng Thái
+          </label>
+          <select
+            value={formData.status}
+            onChange={(e) =>
+              setFormData({ ...formData, status: e.target.value })
+            }
+            className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+          >
+            <option value="Active">Hoạt động</option>
+            <option value="Inactive">Không hoạt động</option>
+            <option value="Maintenance">Bảo trì</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Installation Date */}
+      <div>
+        <label className="block text-sm font-medium text-[#115e59] mb-1.5">
+          Ngày Lắp Đặt
+        </label>
+        <input
+          type="date"
+          value={formData.installation_date}
+          onChange={(e) =>
+            setFormData({ ...formData, installation_date: e.target.value })
+          }
+          className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+        />
+      </div>
+
+      {/* Coordinates */}
+      <div>
+        <label className="block text-sm font-medium text-[#115e59] mb-1.5 flex items-center gap-1.5">
+          <MapPin className="w-3.5 h-3.5" />
+          Tọa Độ (tuỳ chọn)
+        </label>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <input
+              type="number"
+              step="any"
+              placeholder="Latitude"
+              value={formData.latitude}
+              onChange={(e) =>
+                setFormData({
+                  ...formData,
+                  latitude:
+                    e.target.value === "" ? "" : parseFloat(e.target.value),
+                })
+              }
+              className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] text-sm"
+            />
+            <p className="mt-1 text-xs text-[#62748e]">Vĩ độ</p>
+          </div>
+          <div>
+            <input
+              type="number"
+              step="any"
+              placeholder="Longitude"
+              value={formData.longitude}
+              onChange={(e) =>
+                setFormData({
+                  ...formData,
+                  longitude:
+                    e.target.value === "" ? "" : parseFloat(e.target.value),
+                })
+              }
+              className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] text-sm"
+            />
+            <p className="mt-1 text-xs text-[#62748e]">Kinh độ</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex justify-end gap-3 pt-2">
+        <button
+          type="button"
+          onClick={() => {
+            setAddOpen(false);
+            setEditTarget(null);
+          }}
+          className="px-5 py-2 bg-[#f1f5f9] text-[#314158] rounded-lg hover:bg-[#e2e8f0] transition-colors text-sm"
+        >
+          Hủy
+        </button>
+        <button
+          type="button"
+          onClick={onSubmit}
+          disabled={!formData.name.trim()}
+          className="px-5 py-2 bg-[#009689] text-white rounded-lg hover:bg-[#007f75] transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {submitLabel}
+        </button>
+      </div>
+    </div>
+  );
+
+  return (
     <Dialog.Root open={open} onOpenChange={onClose}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-lg bg-white rounded-xl shadow-2xl p-6">
-          <div className="flex items-center justify-between mb-6">
-            <Dialog.Title className="text-xl font-semibold text-[#115e59]">
-              Chỉnh Sửa Vuông Đất
-            </Dialog.Title>
+        <Dialog.Overlay className="fixed inset-0 bg-black/50 z-[60]" />
+        <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[60] w-full max-w-2xl bg-white rounded-xl shadow-2xl flex flex-col max-h-[90vh]">
+          {/* Header */}
+          <div className="flex items-center justify-between px-6 py-5 border-b border-[#e2e8f0]">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 bg-[#f0fdfa] rounded-lg flex items-center justify-center">
+                <Cpu className="w-5 h-5 text-[#009689]" />
+              </div>
+              <div>
+                <Dialog.Title className="text-lg font-semibold text-[#115e59]">
+                  Thiết Bị IoT — {plot.plotName}
+                </Dialog.Title>
+                <p className="text-xs text-[#62748e] mt-0.5">
+                  Thiết bị sẽ được gán cho tất cả luống trong vuông này
+                </p>
+              </div>
+            </div>
             <Dialog.Close asChild>
               <button className="p-2 text-[#62748e] hover:bg-[#f8fafc] rounded-lg transition-colors">
                 <X className="w-5 h-5" />
               </button>
             </Dialog.Close>
           </div>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              onUpdate(plot.plotId, formData);
-            }}
-            className="space-y-4"
-          >
+
+          {/* Scrollable body */}
+          <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+            {/* Add new device panel */}
+            {!editTarget && (
+              <div className="border border-[#e2e8f0] rounded-lg overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setAddOpen((v) => !v)}
+                  className="w-full flex items-center justify-between px-4 py-3 bg-[#f8fafc] hover:bg-[#f0fdfa] transition-colors text-sm font-medium text-[#115e59]"
+                >
+                  <span className="flex items-center gap-2">
+                    <Plus className="w-4 h-4 text-[#009689]" />
+                    Thêm thiết bị mới
+                  </span>
+                  {addOpen ? (
+                    <ChevronUp className="w-4 h-4 text-[#62748e]" />
+                  ) : (
+                    <ChevronDown className="w-4 h-4 text-[#62748e]" />
+                  )}
+                </button>
+                {addOpen && (
+                  <div className="px-4 pb-4">
+                    <DeviceForm
+                      onSubmit={handleAdd}
+                      submitLabel="Thêm Thiết Bị"
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Edit panel */}
+            {editTarget && (
+              <div className="border-2 border-[#009689] rounded-lg px-4 pb-4">
+                <div className="flex items-center justify-between py-3">
+                  <span className="text-sm font-medium text-[#115e59] flex items-center gap-2">
+                    <Edit className="w-4 h-4 text-[#009689]" />
+                    Chỉnh sửa: {editTarget.name}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setEditTarget(null)}
+                    className="text-[#62748e] hover:text-[#314158]"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                <DeviceForm onSubmit={handleEdit} submitLabel="Lưu Thay Đổi" />
+              </div>
+            )}
+
+            {/* Device list */}
             <div>
-              <label className="block text-sm font-medium text-[#115e59] mb-2">
-                Tên Vuông Đất
-              </label>
-              <input
-                type="text"
-                required
-                value={formData.plotName}
-                onChange={(e) =>
-                  setFormData({ ...formData, plotName: e.target.value })
-                }
-                className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Trang Trại
-                </label>
-                <select
-                  value={formData.farmId}
-                  onChange={(e) =>
-                    setFormData({ ...formData, farmId: e.target.value })
-                  }
-                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                >
-                  {farms.map((f) => (
-                    <option key={f.farmId} value={f.farmId}>
-                      {f.farmName}
-                    </option>
+              <h3 className="text-sm font-medium text-[#62748e] mb-3 uppercase tracking-wide">
+                Danh sách thiết bị ({devices.length})
+              </h3>
+              {devices.length === 0 ? (
+                <div className="border border-dashed border-[#cad5e2] rounded-lg py-10 text-center text-[#62748e]">
+                  <Cpu className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                  <p className="text-sm">Chưa có thiết bị nào được thêm</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {devices.map((device) => (
+                    <div
+                      key={device.id}
+                      className="border border-[#e2e8f0] rounded-lg p-4 bg-white"
+                    >
+                      {deleteTargetId === device.id ? (
+                        <div className="flex items-center justify-between">
+                          <p className="text-sm text-[#314158]">
+                            Xóa thiết bị{" "}
+                            <span className="font-medium">{device.name}</span>?
+                          </p>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setDeleteTargetId(null)}
+                              className="px-3 py-1.5 text-xs bg-[#f1f5f9] text-[#314158] rounded-lg hover:bg-[#e2e8f0] transition-colors"
+                            >
+                              Hủy
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDelete(device.id)}
+                              className="px-3 py-1.5 text-xs bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                            >
+                              Xác nhận xóa
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex items-start gap-3">
+                            <div className="w-8 h-8 bg-[#f0fdfa] rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
+                              <Radio className="w-4 h-4 text-[#009689]" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="font-medium text-[#115e59] text-sm">
+                                {device.name}
+                              </p>
+                              <p className="text-xs text-[#62748e] mt-0.5">
+                                {iotDeviceTypeOptions.find(
+                                  (o) => o.value === device.type,
+                                )?.label ?? device.type}
+                                {device.installation_date && (
+                                  <> · Lắp đặt: {device.installation_date}</>
+                                )}
+                              </p>
+                              {(device.latitude !== "" ||
+                                device.longitude !== "") && (
+                                <p className="text-xs text-[#62748e] flex items-center gap-1 mt-0.5">
+                                  <MapPin className="w-3 h-3" />
+                                  {device.latitude}, {device.longitude}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            <span
+                              className={`px-2 py-0.5 rounded text-xs font-medium ${
+                                iotStatusConfig[device.status] ??
+                                "bg-[#f1f5f9] text-[#475569]"
+                              }`}
+                            >
+                              {iotStatusMap[device.status] ?? device.status}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAddOpen(false);
+                                setEditTarget(device);
+                              }}
+                              className="p-1.5 text-[#009689] hover:bg-[#f0fdfa] rounded-lg transition-colors"
+                              title="Chỉnh sửa"
+                            >
+                              <Edit className="w-4 h-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setDeleteTargetId(device.id)}
+                              className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                              title="Xóa"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Loại Đất
-                </label>
-                <select
-                  value={formData.soilId}
-                  onChange={(e) =>
-                    setFormData({ ...formData, soilId: e.target.value })
-                  }
-                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                >
-                  {soils.map((s) => (
-                    <option key={s.soilId} value={s.soilId}>
-                      {s.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+                </div>
+              )}
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Diện Tích (m²)
-                </label>
-                <input
-                  type="number"
-                  required
-                  min={1}
-                  value={formData.plotArea}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      plotArea: parseFloat(e.target.value) || 0,
-                    })
-                  }
-                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Trạng Thái
-                </label>
-                <select
-                  value={formData.plotStatus}
-                  onChange={(e) =>
-                    setFormData({ ...formData, plotStatus: e.target.value })
-                  }
-                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                >
-                  <option value="Active">Hoạt động</option>
-                  <option value="Inactive">Không hoạt động</option>
-                </select>
-              </div>
-            </div>
-            <div className="flex justify-end gap-3 pt-4">
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-6 py-2 bg-[#f1f5f9] text-[#314158] rounded-lg hover:bg-[#e2e8f0] transition-colors"
-              >
-                Hủy Bỏ
-              </button>
-              <button
-                type="submit"
-                className="px-6 py-2 bg-[#009689] text-white rounded-lg hover:bg-[#007f75] transition-colors"
-              >
-                Lưu Thay Đổi
-              </button>
-            </div>
-          </form>
+          </div>
+
+          {/* Footer */}
+          <div className="px-6 py-4 border-t border-[#e2e8f0] bg-[#f8fafc] flex justify-between items-center rounded-b-xl">
+            <p className="text-xs text-[#62748e]">
+              {devices.length} thiết bị · Chưa kết nối API
+            </p>
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-5 py-2 bg-[#009689] text-white rounded-lg hover:bg-[#007f75] transition-colors text-sm"
+            >
+              Xong
+            </button>
+          </div>
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
