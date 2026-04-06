@@ -1,32 +1,30 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router";
 import { Eye, EyeOff, Loader2, Wifi, WifiOff } from "lucide-react";
-import { apiLogin } from "../../api/auth";
+import {
+  apiLogin,
+  decodeJwt,
+  saveApiSession,
+  dashboardByRole,
+  ALLOWED_WEB_ROLES,
+} from "../../api/auth";
 import { mockAccounts } from "../../data/mockAccounts";
 
 type Mode = "mock" | "api";
 
-// ── Session helper ────────────────────────────────────────────────────────────
-// Stores role + name alongside the existing session fields so that
-// Layout.tsx and routes.tsx can read them for nav-switching and redirects.
-function saveSession(
+// ── Mock session helper (kept separate from API session) ─────────────────────
+function saveMockSession(
   userId: string,
   email: string,
-  mode: Mode,
   roleName?: string,
   fullname?: string,
 ) {
   localStorage.setItem("isAuthenticated", "true");
   localStorage.setItem("userId", userId);
   localStorage.setItem("userEmail", email);
-  localStorage.setItem("authMode", mode);
+  localStorage.setItem("authMode", "mock" satisfies Mode);
   if (roleName) localStorage.setItem("userRole", roleName);
   if (fullname) localStorage.setItem("userName", fullname);
-}
-
-// ── Redirect helper ───────────────────────────────────────────────────────────
-function dashboardByRole(role?: string) {
-  return role === "Specialist" ? "/specialist/dashboard" : "/dashboard";
 }
 
 export function LoginPage() {
@@ -37,11 +35,9 @@ export function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [apiLoading, setApiLoading] = useState(false);
   const [error, setError] = useState("");
-  const [apiStatus, setApiStatus] = useState<"idle" | "success" | "failed">(
-    "idle",
-  );
+  const [apiSuccess, setApiSuccess] = useState(false);
 
-  // ── Mock login (default path) ─────────────────────────────────────────────
+  // ── Mock login (default / demo path) ─────────────────────────────────────
   const handleMockLogin = (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -58,13 +54,12 @@ export function LoginPage() {
     );
 
     if (!found) {
-      // Fallback guest session — no known role, default to Owner view
-      saveSession("mock-guest", email, "mock", "Owner", email);
+      // Fallback guest session — default to Owner view
+      saveMockSession("mock-guest", email, "Owner", email);
     } else {
-      saveSession(
+      saveMockSession(
         found.userId,
         found.email,
-        "mock",
         found.roleName,
         found.fullname,
       );
@@ -74,12 +69,10 @@ export function LoginPage() {
     navigate(dashboardByRole(found?.roleName));
   };
 
-  // ── API login (opt-in) ────────────────────────────────────────────────────
-  // NOTE: your apiLogin response must include roleName + fullname fields for
-  // role-based redirect to work. If those fields have different names in your
-  // API response, map them here before calling saveSession.
+  // ── API login (real backend) ──────────────────────────────────────────────
   const handleApiLogin = async () => {
     setError("");
+    setApiSuccess(false);
 
     if (!email || !password) {
       setError("Vui lòng nhập email và mật khẩu trước");
@@ -87,29 +80,42 @@ export function LoginPage() {
     }
 
     setApiLoading(true);
-    setApiStatus("idle");
 
     try {
       const res = await apiLogin({ email, password });
 
-      if (res.success && res.data) {
-        setApiStatus("success");
-        saveSession(
-          res.data.userId,
-          res.data.email,
-          "api",
-          res.data.roleName, // map to your actual API field name if different
-          res.data.fullname, // map to your actual API field name if different
-        );
-        navigate(dashboardByRole(res.data.roleName));
-      } else {
-        setApiStatus("failed");
+      if (!res.success || !res.data?.token) {
         setError(
           res.message || "Đăng nhập thất bại. Dùng tài khoản demo để tiếp tục.",
         );
+        return;
       }
+
+      // Decode JWT to get role + userId without an extra round-trip
+      const payload = decodeJwt(res.data.token);
+      if (!payload) {
+        setError("Token không hợp lệ. Vui lòng thử lại.");
+        return;
+      }
+
+      // Block Worker accounts from the web app
+      if (
+        !ALLOWED_WEB_ROLES.includes(
+          payload.role as (typeof ALLOWED_WEB_ROLES)[number],
+        )
+      ) {
+        setError(
+          `Tài khoản "${payload.role}" không được phép đăng nhập vào web. Vui lòng dùng ứng dụng di động.`,
+        );
+        return;
+      }
+
+      // Persist token + decoded fields
+      saveApiSession(res.data.token, payload);
+
+      setApiSuccess(true);
+      navigate(dashboardByRole(payload.role));
     } catch {
-      setApiStatus("failed");
       setError("Không thể kết nối máy chủ. Dùng tài khoản demo để tiếp tục.");
     } finally {
       setApiLoading(false);
@@ -140,7 +146,7 @@ export function LoginPage() {
           <p className="text-[#64748b] text-sm">Đăng nhập để tiếp tục</p>
         </div>
 
-        {/* Demo accounts hint — now shows both roles */}
+        {/* Demo accounts hint */}
         <div className="mb-5 p-3 bg-[#f0fdf9] border border-[#99f6e4] rounded-xl text-xs text-[#0f766e]">
           <p className="font-semibold mb-1.5">Tài khoản demo:</p>
           <p className="mb-0.5">
@@ -161,7 +167,7 @@ export function LoginPage() {
             <input
               type="text"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => setEmail(e.target.value.trim())}
               className="w-full px-4 py-3 rounded-[10px] border border-[#cbd5e1] focus:outline-none focus:ring-2 focus:ring-[#009689] focus:border-transparent transition-all text-[#334155]"
               placeholder="admin@farm.com"
               disabled={loading || apiLoading}
@@ -176,7 +182,7 @@ export function LoginPage() {
               <input
                 type={showPassword ? "text" : "password"}
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(e) => setPassword(e.target.value.trim())}
                 className="w-full px-4 py-3 rounded-[10px] border border-[#cbd5e1] focus:outline-none focus:ring-2 focus:ring-[#009689] focus:border-transparent transition-all text-[#334155]"
                 placeholder="••••••••"
                 disabled={loading || apiLoading}
@@ -197,13 +203,13 @@ export function LoginPage() {
             </div>
           )}
 
-          {apiStatus === "success" && (
+          {apiSuccess && (
             <div className="p-3 bg-green-50 text-green-700 text-sm rounded-lg flex items-center gap-2">
               <Wifi size={16} /> Kết nối API thành công!
             </div>
           )}
 
-          {/* Primary: mock login */}
+          {/* Primary: mock/demo login */}
           <button
             type="submit"
             disabled={loading || apiLoading}
@@ -219,7 +225,7 @@ export function LoginPage() {
             )}
           </button>
 
-          {/* Secondary: real API attempt */}
+          {/* Secondary: real API login */}
           <button
             type="button"
             onClick={handleApiLogin}

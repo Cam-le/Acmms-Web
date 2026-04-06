@@ -7,7 +7,7 @@
  *  - Raw DTO: Tasks, Crops
  */
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:7093";
 
 async function request<T>(
   method: string,
@@ -18,9 +18,9 @@ async function request<T>(
     "Content-Type": "application/json",
   };
 
-  // Uncomment when auth is enforced:
-  // const token = localStorage.getItem("token");
-  // if (token) headers["Authorization"] = `Bearer ${token}`;
+  // Attach Bearer token when available (set by API login flow)
+  const token = localStorage.getItem("authToken");
+  if (token) headers["Authorization"] = `Bearer ${token}`;
 
   const res = await fetch(`${BASE_URL}${path}`, {
     method,
