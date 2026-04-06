@@ -850,6 +850,16 @@ export function TasksPage() {
     notes: "",
   });
 
+  // Inline "create task" form inside the assign modal
+  const [showInlineNewTask, setShowInlineNewTask] = useState(false);
+  const [inlineNewTask, setInlineNewTask] = useState({
+    name: "",
+    type: "",
+    description: "",
+  });
+  const [inlineShowNewTypeInput, setInlineShowNewTypeInput] = useState(false);
+  const [inlineNewTypeInput, setInlineNewTypeInput] = useState("");
+
   // Multi-area + bed group selections
   const [areaSelections, setAreaSelections] = useState<AreaSelection[]>([]);
   const [areaPickerOpen, setAreaPickerOpen] = useState(false);
@@ -992,6 +1002,34 @@ export function TasksPage() {
     setNewTemplate((p) => ({ ...p, type: t }));
     setShowNewTypeInput(false);
     setNewTypeInput("");
+  };
+
+  const handleInlineAddCustomType = () => {
+    const t = inlineNewTypeInput.trim();
+    if (!t || customTaskTypes.includes(t) || TASK_TYPES.includes(t)) return;
+    setCustomTaskTypes((p) => [...p, t]);
+    setInlineNewTask((p) => ({ ...p, type: t }));
+    setInlineShowNewTypeInput(false);
+    setInlineNewTypeInput("");
+  };
+
+  const handleInlineCreateTask = () => {
+    if (!inlineNewTask.name || !inlineNewTask.type) return;
+    const newTpl: TaskTemplate = {
+      id: `tpl-${Date.now()}`,
+      name: inlineNewTask.name,
+      type: inlineNewTask.type,
+      description: inlineNewTask.description,
+      crop: "",
+      icon: ICON_MAP[inlineNewTask.type] ? inlineNewTask.type : "Khác",
+      iconBg: BG_MAP[inlineNewTask.type] ?? "#f1f5f9",
+    };
+    setTemplates((prev) => [...prev, newTpl]);
+    setNewAssignment((p) => ({ ...p, templateId: newTpl.id }));
+    setInlineNewTask({ name: "", type: "", description: "" });
+    setInlineShowNewTypeInput(false);
+    setInlineNewTypeInput("");
+    setShowInlineNewTask(false);
   };
 
   const handleCreateAssignment = () => {
@@ -1528,6 +1566,10 @@ export function TasksPage() {
             setAreaSelections([]);
             setPrefillSource(null);
             setAreaPickerOpen(false);
+            setShowInlineNewTask(false);
+            setInlineNewTask({ name: "", type: "", description: "" });
+            setInlineShowNewTypeInput(false);
+            setInlineNewTypeInput("");
           }
         }}
       >
@@ -1576,24 +1618,191 @@ export function TasksPage() {
                   </span>
                   Công việc
                 </h3>
-                <select
-                  value={newAssignment.templateId}
-                  onChange={(e) =>
-                    setNewAssignment((p) => ({
-                      ...p,
-                      templateId: e.target.value,
-                    }))
-                  }
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                >
-                  <option value="">-- Chọn công việc --</option>
-                  {templates.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name} ({t.type})
-                    </option>
-                  ))}
-                </select>
-                {selectedTemplate && (
+                <div className="flex gap-2">
+                  <select
+                    value={newAssignment.templateId}
+                    onChange={(e) => {
+                      setNewAssignment((p) => ({
+                        ...p,
+                        templateId: e.target.value,
+                      }));
+                      if (showInlineNewTask) setShowInlineNewTask(false);
+                    }}
+                    className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                  >
+                    <option value="">-- Chọn công việc --</option>
+                    {templates.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name} ({t.type})
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={() => {
+                      setShowInlineNewTask((p) => !p);
+                      if (!showInlineNewTask) {
+                        setNewAssignment((p) => ({ ...p, templateId: "" }));
+                      }
+                    }}
+                    title="Tạo công việc mới"
+                    className={`shrink-0 w-9 h-9 rounded-lg border flex items-center justify-center transition-colors ${
+                      showInlineNewTask
+                        ? "bg-[#009689] border-[#009689] text-white"
+                        : "border-slate-300 text-[#009689] hover:border-[#009689] hover:bg-[#f0fdfa]"
+                    }`}
+                  >
+                    {showInlineNewTask ? (
+                      <X className="w-4 h-4" />
+                    ) : (
+                      <Plus className="w-4 h-4" />
+                    )}
+                  </button>
+                </div>
+
+                {/* Inline create task form */}
+                {showInlineNewTask && (
+                  <div className="mt-3 rounded-xl border border-[#009689]/30 bg-[#f0fdfa] p-4 space-y-3">
+                    <p className="text-xs font-semibold text-[#009689] flex items-center gap-1.5">
+                      <Plus className="w-3.5 h-3.5" /> Tạo công việc mới
+                    </p>
+
+                    {/* Name */}
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">
+                        Tên công việc <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="VD: Phun thuốc phòng bệnh..."
+                        value={inlineNewTask.name}
+                        onChange={(e) =>
+                          setInlineNewTask((p) => ({
+                            ...p,
+                            name: e.target.value,
+                          }))
+                        }
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                      />
+                    </div>
+
+                    {/* Type */}
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">
+                        Loại <span className="text-red-500">*</span>
+                      </label>
+                      {!inlineShowNewTypeInput ? (
+                        <div className="flex gap-2">
+                          <select
+                            value={inlineNewTask.type}
+                            onChange={(e) =>
+                              setInlineNewTask((p) => ({
+                                ...p,
+                                type: e.target.value,
+                              }))
+                            }
+                            className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                          >
+                            <option value="">-- Chọn loại --</option>
+                            {[...TASK_TYPES, ...customTaskTypes].map((t) => (
+                              <option key={t} value={t}>
+                                {t}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            onClick={() => setInlineShowNewTypeInput(true)}
+                            className="shrink-0 px-2.5 py-1.5 rounded-lg border border-dashed border-[#009689]/50 text-xs text-[#009689] hover:bg-white transition-colors"
+                          >
+                            + Loại mới
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            placeholder="Tên loại mới..."
+                            value={inlineNewTypeInput}
+                            onChange={(e) =>
+                              setInlineNewTypeInput(e.target.value)
+                            }
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter")
+                                handleInlineAddCustomType();
+                              if (e.key === "Escape") {
+                                setInlineShowNewTypeInput(false);
+                                setInlineNewTypeInput("");
+                              }
+                            }}
+                            className="flex-1 px-3 py-2 border border-[#009689] rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                            autoFocus
+                          />
+                          <button
+                            onClick={handleInlineAddCustomType}
+                            disabled={!inlineNewTypeInput.trim()}
+                            className="shrink-0 px-3 py-1.5 rounded-lg bg-[#009689] text-white text-xs font-medium disabled:opacity-40 transition-colors"
+                          >
+                            Thêm
+                          </button>
+                          <button
+                            onClick={() => {
+                              setInlineShowNewTypeInput(false);
+                              setInlineNewTypeInput("");
+                            }}
+                            className="shrink-0 px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs text-slate-600 hover:bg-white transition-colors"
+                          >
+                            Hủy
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Description */}
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">
+                        Mô tả
+                      </label>
+                      <textarea
+                        rows={2}
+                        placeholder="Ghi chú thêm nếu cần..."
+                        value={inlineNewTask.description}
+                        onChange={(e) =>
+                          setInlineNewTask((p) => ({
+                            ...p,
+                            description: e.target.value,
+                          }))
+                        }
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#009689] resize-none"
+                      />
+                    </div>
+
+                    <div className="flex gap-2 pt-1">
+                      <button
+                        onClick={() => {
+                          setShowInlineNewTask(false);
+                          setInlineNewTask({
+                            name: "",
+                            type: "",
+                            description: "",
+                          });
+                          setInlineShowNewTypeInput(false);
+                          setInlineNewTypeInput("");
+                        }}
+                        className="flex-1 px-3 py-2 rounded-lg text-xs font-medium text-slate-600 border border-slate-300 hover:bg-white transition-colors"
+                      >
+                        Hủy
+                      </button>
+                      <button
+                        onClick={handleInlineCreateTask}
+                        disabled={!inlineNewTask.name || !inlineNewTask.type}
+                        className="flex-1 px-3 py-2 rounded-lg text-xs font-medium bg-[#009689] text-white hover:bg-[#007f73] disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-1.5"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5" /> Tạo &amp; chọn
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {selectedTemplate && !showInlineNewTask && (
                   <p className="mt-2 text-xs text-[#64748b] bg-[#f8fafc] rounded-lg px-3 py-2 border border-[#e2e8f0]">
                     {selectedTemplate.description || "Không có mô tả"}
                   </p>

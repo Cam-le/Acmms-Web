@@ -142,6 +142,7 @@ export function SpecialistConsultationPage() {
           className="px-4 py-2.5 text-sm border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-[#009689]/30 text-slate-600"
         >
           <option value="all">Mức độ nghiêm trọng</option>
+          <option value="Nghiêm trọng">Nghiêm trọng</option>
           <option value="Cao">Cao</option>
           <option value="Trung bình">Trung bình</option>
           <option value="Thấp">Thấp</option>

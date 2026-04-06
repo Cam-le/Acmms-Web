@@ -17,13 +17,12 @@ import {
 } from "lucide-react";
 import {
   mockConsultationHistory,
+  mockConsultationRequests,
   mockPaymentHistory,
   type ConsultationHistoryRow,
   type PaymentRecord,
   type Severity,
 } from "../../../data/mockSpecialistData";
-
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PAYMENT DETAIL MODAL
@@ -70,7 +69,15 @@ function PaymentDetailModal({
                 đ
               </span>
             </p>
-            <span className="inline-flex items-center gap-1 mt-2 text-xs font-semibold text-green-700 bg-green-100 px-3 py-1 rounded-full">
+            <span
+              className={`inline-flex items-center gap-1 mt-2 text-xs font-semibold px-3 py-1 rounded-full ${
+                record.status === "Đã thanh toán"
+                  ? "text-green-700 bg-green-100"
+                  : record.status === "Hoàn tiền"
+                    ? "text-red-700 bg-red-100"
+                    : "text-amber-700 bg-amber-100"
+              }`}
+            >
               <BadgeCheck className="w-3.5 h-3.5" />
               {record.status}
             </span>
@@ -154,7 +161,7 @@ function EditResponseModal({
 
     try {
       const res = await fetch(
-        `${BASE_URL}/api/Recommendations/${row.recommendationId}`,
+        `${import.meta.env.VITE_API_BASE_URL || "http://localhost:8080"}/api/Recommendations/${row.recommendationId}`,
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -166,8 +173,19 @@ function EditResponseModal({
         },
       );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    } catch {
-      // API unreachable — local update only (mock mode)
+    } catch (err) {
+      const isNetworkError =
+        err instanceof TypeError && err.message.includes("fetch");
+      if (!isNetworkError) {
+        setSaving(false);
+        setError(
+          err instanceof Error
+            ? `Lỗi lưu phản hồi: ${err.message}`
+            : "Có lỗi xảy ra, vui lòng thử lại.",
+        );
+        return;
+      }
+      // Network unreachable → apply local update silently (mock mode)
     }
 
     onSaved({ content, priority });
@@ -274,7 +292,7 @@ function EditResponseModal({
           </button>
           <button
             onClick={handleSave}
-            disabled={saving || !content.trim()}
+            disabled={saving || !title.trim() || !content.trim()}
             className="px-6 py-2.5 rounded-xl text-sm font-semibold bg-[#009689] text-white hover:bg-[#007f73] transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
           >
             {saving ? (
@@ -530,10 +548,12 @@ function ConsultationHistoryTab() {
                       <div className="flex items-center justify-end gap-3">
                         <button
                           onClick={() => {
-                            const reqId = res.requestCode
-                              .toLowerCase()
-                              .replace("#req-", "req-");
-                            navigate(`/specialist/consultations/${reqId}`);
+                            const match = mockConsultationRequests.find(
+                              (r) => r.requestCode === res.requestCode,
+                            );
+                            if (match) {
+                              navigate(`/specialist/consultations/${match.id}`);
+                            }
                           }}
                           className="text-sm text-[#009689] font-semibold hover:underline"
                         >
@@ -557,60 +577,49 @@ function ConsultationHistoryTab() {
 
         {/* Pagination footer */}
         {filtered.length > 0 && (
-          <div className="flex items-center justify-between px-6 py-3 border-t border-slate-100 bg-slate-50">
-            <p className="text-xs text-slate-500">
-              {filtered.length <= PAGE_SIZE
-                ? `${filtered.length} phản hồi`
-                : `${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(
-                    currentPage * PAGE_SIZE,
-                    filtered.length,
-                  )} / ${filtered.length} phản hồi`}
-            </p>
+          <div className="flex items-center justify-end px-6 py-3 border-t border-slate-100 bg-slate-50">
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="w-7 h-7 flex items-center justify-center rounded border border-slate-200 text-slate-500 hover:border-[#009689] hover:text-[#009689] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+              </button>
 
-            {totalPages > 1 && (
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                  disabled={currentPage === 1}
-                  className="w-7 h-7 flex items-center justify-center rounded border border-slate-200 text-slate-500 hover:border-[#009689] hover:text-[#009689] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                >
-                  <ChevronLeft className="w-3.5 h-3.5" />
-                </button>
+              {getPageNumbers(currentPage, totalPages).map((p, i) =>
+                p === "..." ? (
+                  <span
+                    key={`e-${i}`}
+                    className="w-7 h-7 flex items-center justify-center text-xs text-slate-400"
+                  >
+                    …
+                  </span>
+                ) : (
+                  <button
+                    key={p}
+                    onClick={() => setCurrentPage(p as number)}
+                    className={`w-7 h-7 flex items-center justify-center rounded text-xs font-medium border transition-colors ${
+                      currentPage === p
+                        ? "bg-[#009689] text-white border-[#009689]"
+                        : "border-slate-200 text-slate-500 hover:border-[#009689] hover:text-[#009689]"
+                    }`}
+                  >
+                    {p}
+                  </button>
+                ),
+              )}
 
-                {getPageNumbers(currentPage, totalPages).map((p, i) =>
-                  p === "..." ? (
-                    <span
-                      key={`e-${i}`}
-                      className="w-7 h-7 flex items-center justify-center text-xs text-slate-400"
-                    >
-                      …
-                    </span>
-                  ) : (
-                    <button
-                      key={p}
-                      onClick={() => setCurrentPage(p as number)}
-                      className={`w-7 h-7 flex items-center justify-center rounded text-xs font-medium border transition-colors ${
-                        currentPage === p
-                          ? "bg-[#009689] text-white border-[#009689]"
-                          : "border-slate-200 text-slate-500 hover:border-[#009689] hover:text-[#009689]"
-                      }`}
-                    >
-                      {p}
-                    </button>
-                  ),
-                )}
-
-                <button
-                  onClick={() =>
-                    setCurrentPage((p) => Math.min(totalPages, p + 1))
-                  }
-                  disabled={currentPage === totalPages}
-                  className="w-7 h-7 flex items-center justify-center rounded border border-slate-200 text-slate-500 hover:border-[#009689] hover:text-[#009689] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                >
-                  <ChevronRight className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            )}
+              <button
+                onClick={() =>
+                  setCurrentPage((p) => Math.min(totalPages, p + 1))
+                }
+                disabled={currentPage === totalPages}
+                className="w-7 h-7 flex items-center justify-center rounded border border-slate-200 text-slate-500 hover:border-[#009689] hover:text-[#009689] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
         )}
       </div>
@@ -797,60 +806,49 @@ function PaymentHistoryTab() {
 
           {/* Pagination footer */}
           {filtered.length > 0 && (
-            <div className="flex items-center justify-between px-6 py-3 border-t border-slate-100 bg-slate-50">
-              <p className="text-xs text-slate-500">
-                {filtered.length <= PAGE_SIZE
-                  ? `${filtered.length} giao dịch`
-                  : `${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(
-                      currentPage * PAGE_SIZE,
-                      filtered.length,
-                    )} / ${filtered.length} giao dịch`}
-              </p>
+            <div className="flex items-center justify-end px-6 py-3 border-t border-slate-100 bg-slate-50">
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="w-7 h-7 flex items-center justify-center rounded border border-slate-200 text-slate-500 hover:border-[#009689] hover:text-[#009689] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                </button>
 
-              {totalPages > 1 && (
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                    disabled={currentPage === 1}
-                    className="w-7 h-7 flex items-center justify-center rounded border border-slate-200 text-slate-500 hover:border-[#009689] hover:text-[#009689] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                  >
-                    <ChevronLeft className="w-3.5 h-3.5" />
-                  </button>
+                {getPageNumbers(currentPage, totalPages).map((p, i) =>
+                  p === "..." ? (
+                    <span
+                      key={`e-${i}`}
+                      className="w-7 h-7 flex items-center justify-center text-xs text-slate-400"
+                    >
+                      …
+                    </span>
+                  ) : (
+                    <button
+                      key={p}
+                      onClick={() => setCurrentPage(p as number)}
+                      className={`w-7 h-7 flex items-center justify-center rounded text-xs font-medium border transition-colors ${
+                        currentPage === p
+                          ? "bg-[#009689] text-white border-[#009689]"
+                          : "border-slate-200 text-slate-500 hover:border-[#009689] hover:text-[#009689]"
+                      }`}
+                    >
+                      {p}
+                    </button>
+                  ),
+                )}
 
-                  {getPageNumbers(currentPage, totalPages).map((p, i) =>
-                    p === "..." ? (
-                      <span
-                        key={`e-${i}`}
-                        className="w-7 h-7 flex items-center justify-center text-xs text-slate-400"
-                      >
-                        …
-                      </span>
-                    ) : (
-                      <button
-                        key={p}
-                        onClick={() => setCurrentPage(p as number)}
-                        className={`w-7 h-7 flex items-center justify-center rounded text-xs font-medium border transition-colors ${
-                          currentPage === p
-                            ? "bg-[#009689] text-white border-[#009689]"
-                            : "border-slate-200 text-slate-500 hover:border-[#009689] hover:text-[#009689]"
-                        }`}
-                      >
-                        {p}
-                      </button>
-                    ),
-                  )}
-
-                  <button
-                    onClick={() =>
-                      setCurrentPage((p) => Math.min(totalPages, p + 1))
-                    }
-                    disabled={currentPage === totalPages}
-                    className="w-7 h-7 flex items-center justify-center rounded border border-slate-200 text-slate-500 hover:border-[#009689] hover:text-[#009689] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                  >
-                    <ChevronRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              )}
+                <button
+                  onClick={() =>
+                    setCurrentPage((p) => Math.min(totalPages, p + 1))
+                  }
+                  disabled={currentPage === totalPages}
+                  className="w-7 h-7 flex items-center justify-center rounded border border-slate-200 text-slate-500 hover:border-[#009689] hover:text-[#009689] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                >
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
           )}
         </div>

@@ -165,6 +165,16 @@ export function SpecialistDashboardPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
+              {pending.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={7}
+                    className="text-center py-12 text-sm text-slate-400"
+                  >
+                    Không có yêu cầu nào đang chờ xử lý.
+                  </td>
+                </tr>
+              )}
               {pending.map((req) => (
                 <tr
                   key={req.id}
