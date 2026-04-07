@@ -355,7 +355,8 @@ function mapApiSeasonToUi(
     farmId: s.farmId ?? "",
     startDate: s.seasonStartDate ?? "",
     endDate: s.seasonEndDate ?? "",
-    description: s.description ?? s.seasonNotes ?? "",
+    description: s.description ?? "",
+    seasonNotes: s.seasonNotes ?? "",
     status: normalizeSeasonStatus(s.status),
     plots,
   };
@@ -534,6 +535,7 @@ export function SeasonsPage() {
           seasonStartDate: seasonData.startDate,
           seasonEndDate: seasonData.endDate,
           description: seasonData.description,
+          seasonNotes: (seasonData as any).seasonNotes ?? "",
           status: toApiStatus(seasonData.status),
         });
         // Tạo season details (beds) sau khi có seasonId
@@ -601,6 +603,7 @@ export function SeasonsPage() {
           seasonStartDate: updatedSeason.startDate,
           seasonEndDate: updatedSeason.endDate,
           description: updatedSeason.description,
+          seasonNotes: (updatedSeason as any).seasonNotes ?? "",
           status: toApiStatus(updatedSeason.status),
         });
         // Handle detail CRUD
@@ -1232,6 +1235,7 @@ function CreateSeasonView({
     startDate: "",
     endDate: "",
     description: "",
+    seasonNotes: "",
     status: "Sắp diễn ra" as SeasonStatus,
     plots: [] as PlotAssignment[],
   });
@@ -1453,6 +1457,20 @@ function CreateSeasonView({
                 rows={3}
                 className="w-full px-3 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] resize-none"
                 placeholder="Mô tả mùa vụ..."
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-[#115e59] mb-2">
+                Ghi chú
+              </label>
+              <textarea
+                value={formData.seasonNotes}
+                onChange={(e) =>
+                  setFormData((p) => ({ ...p, seasonNotes: e.target.value }))
+                }
+                rows={2}
+                className="w-full px-3 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] resize-none"
+                placeholder="Ghi chú thêm về mùa vụ..."
               />
             </div>
           </div>
@@ -1691,6 +1709,7 @@ function EditSeasonView({
     endDate: season.endDate,
     status: season.status,
     description: season.description,
+    seasonNotes: (season as any).seasonNotes ?? "",
   });
   const [plots, setPlots] = useState<PlotAssignmentV2[]>(
     season.plots.map(toV2),
@@ -1728,6 +1747,7 @@ function EditSeasonView({
       endDate: season.endDate,
       status: season.status,
       description: season.description,
+      seasonNotes: (season as any).seasonNotes ?? "",
     });
     setPlots(season.plots.map(toV2));
     setFormErrors({});
@@ -2103,6 +2123,18 @@ function EditSeasonView({
                 onChange={(e) => updateField("description", e.target.value)}
                 rows={3}
                 className="w-full px-3 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] resize-none"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-[#115e59] mb-2">
+                Ghi chú
+              </label>
+              <textarea
+                value={formData.seasonNotes}
+                onChange={(e) => updateField("seasonNotes", e.target.value)}
+                rows={2}
+                className="w-full px-3 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] resize-none"
+                placeholder="Ghi chú thêm về mùa vụ..."
               />
             </div>
           </div>
