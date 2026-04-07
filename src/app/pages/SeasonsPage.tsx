@@ -487,8 +487,6 @@ export function SeasonsPage() {
     setCurrentPage(1);
   }, [searchQuery, filterStatus]);
 
-  const selectedSeason = seasons.find((s) => s.id === seasonId);
-
   // ── CRUD handlers ──────────────────────────────────────────────────────────
   const handleDelete = (season: Season) => {
     setSeasonToDelete(season);
@@ -639,6 +637,30 @@ export function SeasonsPage() {
   };
 
   // ── Route to sub-views ─────────────────────────────────────────────────────
+  const [selectedSeason, setSelectedSeason] = useState<Season | null>(null);
+  const [selectedSeasonLoading, setSelectedSeasonLoading] = useState(false);
+
+  useEffect(() => {
+    if (!seasonId || view === "list" || view === "create") {
+      setSelectedSeason(null);
+      return;
+    }
+    if (isUsingMock) {
+      setSelectedSeason(seasons.find((s) => s.id === seasonId) ?? null);
+      return;
+    }
+    setSelectedSeasonLoading(true);
+    Promise.all([api.getSeason(seasonId), api.getSeasonsDetails()])
+      .then(([apiSeason, apiDetails]) => {
+        const safeDetails = Array.isArray(apiDetails) ? apiDetails : [];
+        setSelectedSeason(mapApiSeasonToUi(apiSeason, farms, safeDetails));
+      })
+      .catch(() => {
+        setSelectedSeason(seasons.find((s) => s.id === seasonId) ?? null);
+      })
+      .finally(() => setSelectedSeasonLoading(false));
+  }, [seasonId, view, isUsingMock, farms, seasons]);
+
   if (view === "create")
     return (
       <CreateSeasonView
@@ -649,6 +671,19 @@ export function SeasonsPage() {
         onCreate={handleCreate}
       />
     );
+
+  const subViewLoading =
+    selectedSeasonLoading ||
+    (!!seasonId && view !== "list" && view !== "create" && !selectedSeason);
+
+  if ((view === "detail" || view === "edit") && subViewLoading)
+    return (
+      <div className="flex items-center justify-center py-32 text-[#62748e]">
+        <div className="w-6 h-6 border-2 border-[#009689] border-t-transparent rounded-full animate-spin mr-3" />
+        Đang tải mùa vụ...
+      </div>
+    );
+
   if (view === "detail" && selectedSeason)
     return <DetailSeasonView season={selectedSeason} />;
   if (view === "edit" && selectedSeason)
