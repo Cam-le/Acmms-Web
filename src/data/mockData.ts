@@ -355,20 +355,20 @@ export interface PlotAssignment {
 
 export interface Season {
   id: string;
-  code: string;
   name: string;
   farm: string;
+  farmId?: string;
   startDate: string;
   endDate: string;
   status: SeasonStatus;
   description: string;
+  seasonNotes?: string;
   plots: PlotAssignment[];
 }
 
 export const mockSeasons: Season[] = [
   {
     id: "1",
-    code: "MV001",
     name: "Vụ Xuân 2026",
     farm: "Trang trại Thung lũng Xanh",
     startDate: "2026-02-01",
@@ -416,7 +416,6 @@ export const mockSeasons: Season[] = [
   },
   {
     id: "2",
-    code: "MV002",
     name: "Vụ bắp cải xoăn Q1/2026",
     farm: "Trang trại Nắng Hạ",
     startDate: "2026-01-10",
@@ -452,7 +451,6 @@ export const mockSeasons: Season[] = [
   },
   {
     id: "3",
-    code: "MV003",
     name: "Vụ Đông 2025",
     farm: "Trang trại Thung lũng Xanh",
     startDate: "2025-10-01",

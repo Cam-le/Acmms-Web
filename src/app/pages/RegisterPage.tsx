@@ -24,7 +24,7 @@ export function RegisterPage() {
 
   const set =
     (field: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => {
-      setForm((prev) => ({ ...prev, [field]: e.target.value }));
+      setForm((prev) => ({ ...prev, [field]: e.target.value.trim() }));
     };
 
   const validate = (): string => {
@@ -64,7 +64,7 @@ export function RegisterPage() {
       password: form.password,
       fullname: form.fullname,
       phoneNumber: form.phoneNumber,
-      roleName: "Người làm nông",
+      roleName: "Owner",
     });
 
     localStorage.setItem("isAuthenticated", "true");

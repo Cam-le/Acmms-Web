@@ -39,6 +39,7 @@ import {
   SeasonResponse,
   SeasonDetailResponse,
   FarmResponse,
+  PlotResponse,
   BedResponse,
   CropResponse,
 } from "../../api/client";
@@ -93,6 +94,22 @@ export function derivePlotPrefix(areaLabel: string): string {
 
 export function formatPlotName(prefix: string, sequence: number): string {
   return `${prefix}-${String(sequence).padStart(2, "0")}`;
+}
+
+/** Extract trailing numeric part after the last '_' or '-' for natural sort.
+ *  e.g. "A2_03" -> 3, "west_01" -> 1, "A-05" -> 5, "plotX" -> Infinity */
+function bedSortKey(name: string): number {
+  const m = name.match(/[_\-](\d+)$/);
+  return m ? parseInt(m[1], 10) : Infinity;
+}
+
+/** Sort bed items: primary by area (alphabetical), secondary by numeric suffix of bed name. */
+function sortBeds<T extends { name: string; area: string }>(beds: T[]): T[] {
+  return [...beds].sort((a, b) => {
+    const areaCmp = a.area.localeCompare(b.area, "vi");
+    if (areaCmp !== 0) return areaCmp;
+    return bedSortKey(a.name) - bedSortKey(b.name);
+  });
 }
 
 function parseDate(dateStr: string): Date | null {
@@ -285,7 +302,7 @@ function FarmSelect({
     >
       <option value="">{placeholder ?? "Chọn trang trại"}</option>
       {farms.map((f) => (
-        <option key={f.farmId} value={f.farmName}>
+        <option key={f.farmId} value={f.farmId}>
           {f.farmName}
         </option>
       ))}
@@ -345,16 +362,15 @@ function mapApiSeasonToUi(
       }) as any as PlotAssignment,
   );
 
-  const shortId = s.seasonId?.slice(0, 8).toUpperCase() ?? "——";
-
   return {
     id: s.seasonId ?? "",
-    code: `MV-${shortId}`,
     name: s.seasonName ?? "(Không có tên)",
     farm: farm?.farmName ?? s.farmId ?? "—",
+    farmId: s.farmId ?? "",
     startDate: s.seasonStartDate ?? "",
     endDate: s.seasonEndDate ?? "",
-    description: s.description ?? s.seasonNotes ?? "",
+    description: s.description ?? "",
+    seasonNotes: s.seasonNotes ?? "",
     status: normalizeSeasonStatus(s.status),
     plots,
   };
@@ -389,6 +405,7 @@ export function SeasonsPage() {
   const [seasons, setSeasons] = useState<Season[]>(mockSeasons);
   const [farms, setFarms] = useState<FarmResponse[]>([]);
   const [allDetails, setAllDetails] = useState<SeasonDetailResponse[]>([]);
+  const [allPlots, setAllPlots] = useState<PlotResponse[]>([]);
   const [beds, setBeds] = useState<BedResponse[]>([]);
   const [crops, setCrops] = useState<CropResponse[]>([]);
   const [isUsingMock, setIsUsingMock] = useState(false);
@@ -404,27 +421,36 @@ export function SeasonsPage() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [apiSeasons, apiDetails, apiFarms, apiBeds, apiCrops] =
+      const [apiSeasons, apiDetails, apiFarms, apiBeds, apiCrops, apiPlots] =
         await Promise.all([
           api.getSeasons(),
           api.getSeasonsDetails(),
           api.getFarms(),
           api.getBeds(),
           api.getCrops(),
+          api.getPlots(),
         ]);
       const safeSeasons = Array.isArray(apiSeasons) ? apiSeasons : [];
       const safeDetails = Array.isArray(apiDetails) ? apiDetails : [];
       const safeFarms = Array.isArray(apiFarms) ? apiFarms : [];
       const safeBeds = Array.isArray(apiBeds) ? apiBeds : [];
+      const safePlots = Array.isArray(apiPlots) ? apiPlots : [];
+      const INACTIVE_STATUSES = [
+        "inactive",
+        "khong hoat dong",
+        "ngưng sử dụng",
+      ];
       const safeCrops = Array.isArray(apiCrops)
         ? apiCrops.filter(
-            (c) => (c.cropStatus ?? "Active").toLowerCase() === "active",
+            (c) =>
+              !INACTIVE_STATUSES.includes((c.cropStatus ?? "").toLowerCase()),
           )
         : [];
 
       setFarms(safeFarms);
       setAllDetails(safeDetails);
       setBeds(safeBeds);
+      setAllPlots(safePlots);
       setCrops(safeCrops.length > 0 ? safeCrops : mockCropsForFallback);
       setSeasons(
         safeSeasons.map((s) => mapApiSeasonToUi(s, safeFarms, safeDetails)),
@@ -460,7 +486,6 @@ export function SeasonsPage() {
     const q = searchQuery.toLowerCase();
     const matchSearch =
       (s.name ?? "").toLowerCase().includes(q) ||
-      (s.code ?? "").toLowerCase().includes(q) ||
       (s.farm ?? "").toLowerCase().includes(q);
     const matchStatus = filterStatus === "all" || s.status === filterStatus;
     return matchSearch && matchStatus;
@@ -478,8 +503,6 @@ export function SeasonsPage() {
   useEffect(() => {
     setCurrentPage(1);
   }, [searchQuery, filterStatus]);
-
-  const selectedSeason = seasons.find((s) => s.id === seasonId);
 
   // ── CRUD handlers ──────────────────────────────────────────────────────────
   const handleDelete = (season: Season) => {
@@ -505,7 +528,7 @@ export function SeasonsPage() {
   };
 
   const handleCreate = async (
-    seasonData: Omit<Season, "id" | "code">,
+    seasonData: Omit<Season, "id">,
     detailsToCreate: Array<{
       bedId: string;
       cropId: string;
@@ -518,13 +541,16 @@ export function SeasonsPage() {
     if (!isUsingMock) {
       try {
         const farmId =
-          farms.find((f) => f.farmName === seasonData.farm)?.farmId ?? "";
+          (seasonData as any).farmId ||
+          farms.find((f) => f.farmName === seasonData.farm)?.farmId ||
+          "";
         const created = await api.createSeason({
           farmId,
           seasonName: seasonData.name,
           seasonStartDate: seasonData.startDate,
           seasonEndDate: seasonData.endDate,
           description: seasonData.description,
+          seasonNotes: (seasonData as any).seasonNotes ?? "",
           status: toApiStatus(seasonData.status),
         });
         // Tạo season details (beds) sau khi có seasonId
@@ -550,7 +576,6 @@ export function SeasonsPage() {
         const newSeason: Season = {
           ...seasonData,
           id: Date.now().toString(),
-          code: `MV-${String(seasons.length + 1).padStart(3, "0")}`,
         };
         setSeasons((prev) => [newSeason, ...prev]);
       }
@@ -558,7 +583,6 @@ export function SeasonsPage() {
       const newSeason: Season = {
         ...seasonData,
         id: Date.now().toString(),
-        code: `MV-${String(seasons.length + 1).padStart(3, "0")}`,
       };
       setSeasons((prev) => [newSeason, ...prev]);
     }
@@ -576,14 +600,24 @@ export function SeasonsPage() {
         endDate: string;
         harvestDate: string;
       }>;
-      toDelete: string[]; // seasonDetailIds
+      toDelete: string[];
+      toUpdate: Array<{
+        seasonDetailId: string;
+        bedId: string;
+        cropId: string;
+        cropQuantity: number;
+        startDate: string;
+        endDate: string;
+        harvestDate: string;
+      }>;
     },
   ) => {
     if (!isUsingMock) {
       try {
         const farmId =
-          farms.find((f) => f.farmName === updatedSeason.farm)?.farmId ??
-          farms[0]?.farmId ??
+          (updatedSeason as any).farmId ||
+          farms.find((f) => f.farmName === updatedSeason.farm)?.farmId ||
+          farms[0]?.farmId ||
           "";
         await api.updateSeason(updatedSeason.id, {
           farmId,
@@ -591,6 +625,7 @@ export function SeasonsPage() {
           seasonStartDate: updatedSeason.startDate,
           seasonEndDate: updatedSeason.endDate,
           description: updatedSeason.description,
+          seasonNotes: (updatedSeason as any).seasonNotes ?? "",
           status: toApiStatus(updatedSeason.status),
         });
         // Handle detail CRUD
@@ -599,6 +634,18 @@ export function SeasonsPage() {
             ...detailOps.toDelete.map((id) => api.deleteSeasonDetail(id)),
             ...detailOps.toAdd.map((d) =>
               api.createSeasonDetail({
+                seasonId: updatedSeason.id,
+                bedId: d.bedId,
+                cropId: d.cropId,
+                cropQuantity: d.cropQuantity,
+                startDate: d.startDate,
+                endDate: d.endDate,
+                seasonExpectedHarvestDate: d.harvestDate,
+                totalHarvestYield: 0,
+              }),
+            ),
+            ...(detailOps.toUpdate ?? []).map((d) =>
+              api.updateSeasonDetail(d.seasonDetailId, {
                 seasonId: updatedSeason.id,
                 bedId: d.bedId,
                 cropId: d.cropId,
@@ -626,16 +673,54 @@ export function SeasonsPage() {
   };
 
   // ── Route to sub-views ─────────────────────────────────────────────────────
+  const [selectedSeason, setSelectedSeason] = useState<Season | null>(null);
+  const [selectedSeasonLoading, setSelectedSeasonLoading] = useState(false);
+
+  useEffect(() => {
+    if (!seasonId || view === "list" || view === "create") {
+      setSelectedSeason(null);
+      return;
+    }
+    if (isUsingMock) {
+      setSelectedSeason(seasons.find((s) => s.id === seasonId) ?? null);
+      return;
+    }
+    setSelectedSeasonLoading(true);
+    Promise.all([api.getSeason(seasonId), api.getSeasonsDetails()])
+      .then(([apiSeason, apiDetails]) => {
+        const safeDetails = Array.isArray(apiDetails) ? apiDetails : [];
+        setSelectedSeason(mapApiSeasonToUi(apiSeason, farms, safeDetails));
+      })
+      .catch(() => {
+        setSelectedSeason(seasons.find((s) => s.id === seasonId) ?? null);
+      })
+      .finally(() => setSelectedSeasonLoading(false));
+  }, [seasonId, view, isUsingMock, farms, seasons]);
+
   if (view === "create")
     return (
       <CreateSeasonView
         farms={farms}
         beds={beds}
+        plots={allPlots}
         crops={crops}
         isUsingMock={isUsingMock}
         onCreate={handleCreate}
       />
     );
+
+  const subViewLoading =
+    selectedSeasonLoading ||
+    (!!seasonId && view !== "list" && view !== "create" && !selectedSeason);
+
+  if ((view === "detail" || view === "edit") && subViewLoading)
+    return (
+      <div className="flex items-center justify-center py-32 text-[#62748e]">
+        <div className="w-6 h-6 border-2 border-[#009689] border-t-transparent rounded-full animate-spin mr-3" />
+        Đang tải mùa vụ...
+      </div>
+    );
+
   if (view === "detail" && selectedSeason)
     return <DetailSeasonView season={selectedSeason} />;
   if (view === "edit" && selectedSeason)
@@ -645,6 +730,7 @@ export function SeasonsPage() {
         season={selectedSeason}
         farms={farms}
         beds={beds}
+        plots={allPlots}
         crops={crops}
         isUsingMock={isUsingMock}
         onUpdate={handleUpdate}
@@ -718,7 +804,6 @@ export function SeasonsPage() {
             <thead className="bg-[#f8fafc] border-b border-[#e2e8f0]">
               <tr>
                 {[
-                  "Mã",
                   "Tên mùa vụ",
                   "Trang trại",
                   "Thời gian",
@@ -741,9 +826,6 @@ export function SeasonsPage() {
                   key={season.id}
                   className="hover:bg-[#f8fafc] transition-colors"
                 >
-                  <td className="px-6 py-4 text-sm text-[#115e59] font-medium">
-                    {season.code}
-                  </td>
                   <td className="px-6 py-4 text-sm font-medium text-[#115e59]">
                     {season.name}
                   </td>
@@ -896,8 +978,6 @@ function DetailSeasonView({ season }: { season: Season }) {
               {season.name}
             </h1>
             <div className="flex items-center gap-2 mt-1">
-              <span className="text-sm text-[#62748e]">{season.code}</span>
-              <span className="text-[#62748e]">•</span>
               <span
                 className={`px-2 py-0.5 rounded text-xs font-medium ${seasonStatusConfig[season.status]}`}
               >
@@ -1195,15 +1275,17 @@ function CreateSeasonView({
   farms,
   beds,
   crops,
+  plots,
   isUsingMock,
   onCreate,
 }: {
   farms: FarmResponse[];
   beds: BedResponse[];
+  plots: PlotResponse[];
   crops: CropResponse[];
   isUsingMock: boolean;
   onCreate: (
-    season: Omit<Season, "id" | "code">,
+    season: Omit<Season, "id">,
     detailsToCreate: Array<{
       bedId: string;
       cropId: string;
@@ -1218,9 +1300,11 @@ function CreateSeasonView({
   const [formData, setFormData] = useState({
     name: "",
     farm: "",
+    farmId: "",
     startDate: "",
     endDate: "",
     description: "",
+    seasonNotes: "",
     status: "Sắp diễn ra" as SeasonStatus,
     plots: [] as PlotAssignment[],
   });
@@ -1238,16 +1322,27 @@ function CreateSeasonView({
     >
   >({});
 
+  // Filter beds theo farm đang chọn (qua plotId → farmId)
+  const bedsForFarm = formData.farmId
+    ? beds.filter((b) => {
+        const plot = plots.find((p) => p.plotId === b.plotId);
+        return plot?.farmId === formData.farmId;
+      })
+    : beds;
+
   // Beds từ API hoặc fallback mock
-  const availableBeds =
-    beds.length > 0
-      ? beds.map((b) => ({
+  const availableBeds = sortBeds(
+    bedsForFarm.length > 0
+      ? bedsForFarm.map((b) => ({
           id: b.bedId,
           name: b.bedName,
           area: b.plotName ?? "Không rõ khu",
           size: b.bedArea ? `${b.bedArea} m²` : "—",
         }))
-      : mockBedsForFallback;
+      : beds.length > 0
+        ? [] // farm đã chọn nhưng không có bed nào
+        : mockBedsForFallback,
+  );
 
   // Dùng crops từ API; mỗi option có cropId thực
   const firstCropId = crops[0]?.cropId ?? "";
@@ -1370,8 +1465,18 @@ function CreateSeasonView({
                   Trang trại
                 </label>
                 <FarmSelect
-                  value={formData.farm}
-                  onChange={(v) => setFormData((p) => ({ ...p, farm: v }))}
+                  value={formData.farmId}
+                  onChange={(id) => {
+                    const f = farms.find((x) => x.farmId === id);
+                    setFormData((p) => ({
+                      ...p,
+                      farmId: id,
+                      farm: f?.farmName ?? id,
+                    }));
+                    // Reset bed selection khi đổi farm
+                    setSelectedPlots([]);
+                    setPlotDetails({});
+                  }}
                   farms={farms}
                 />
               </div>
@@ -1435,6 +1540,20 @@ function CreateSeasonView({
                 rows={3}
                 className="w-full px-3 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] resize-none"
                 placeholder="Mô tả mùa vụ..."
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-[#115e59] mb-2">
+                Ghi chú
+              </label>
+              <textarea
+                value={formData.seasonNotes}
+                onChange={(e) =>
+                  setFormData((p) => ({ ...p, seasonNotes: e.target.value }))
+                }
+                rows={2}
+                className="w-full px-3 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] resize-none"
+                placeholder="Ghi chú thêm về mùa vụ..."
               />
             </div>
           </div>
@@ -1621,6 +1740,7 @@ function EditSeasonView({
   season,
   farms,
   beds,
+  plots: allPlots,
   crops,
   isUsingMock,
   onUpdate,
@@ -1628,6 +1748,7 @@ function EditSeasonView({
   season: Season;
   farms: FarmResponse[];
   beds: BedResponse[];
+  plots: PlotResponse[];
   crops: CropResponse[];
   isUsingMock: boolean;
   onUpdate: (
@@ -1642,36 +1763,75 @@ function EditSeasonView({
         harvestDate: string;
       }>;
       toDelete: string[];
+      toUpdate: Array<{
+        seasonDetailId: string;
+        bedId: string;
+        cropId: string;
+        cropQuantity: number;
+        startDate: string;
+        endDate: string;
+        harvestDate: string;
+      }>;
     },
   ) => void;
 }) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  // Use API beds or fallback mock
-  const availablePlotsForFarm =
-    beds.length > 0
-      ? beds.map((b) => ({
+  const seasonFarmId = (season as any).farmId ?? "";
+
+  // Filter beds theo farmId của season (qua plotId → farmId)
+  const bedsForFarm = seasonFarmId
+    ? beds.filter((b) => {
+        const plot = allPlots.find((p) => p.plotId === b.plotId);
+        return plot?.farmId === seasonFarmId;
+      })
+    : beds;
+
+  // Use filtered beds or fallback mock
+  const availablePlotsForFarm = sortBeds(
+    bedsForFarm.length > 0
+      ? bedsForFarm.map((b) => ({
           id: b.bedId,
           name: b.bedName,
           area: b.plotName ?? "Không rõ khu",
           size: b.bedArea ? `${b.bedArea} m²` : "—",
         }))
-      : [
-          { id: "A-03", name: "A-03", area: "Khu A (Phía Bắc)", size: "50 m²" },
-          { id: "A-04", name: "A-04", area: "Khu A (Phía Bắc)", size: "45 m²" },
-          { id: "B-02", name: "B-02", area: "Khu B (Phía Nam)", size: "60 m²" },
-          { id: "C-02", name: "C-02", area: "Khu C", size: "55 m²" },
-          { id: "D-01", name: "D-01", area: "Khu D", size: "70 m²" },
-        ];
+      : beds.length > 0
+        ? []
+        : [
+            {
+              id: "A-03",
+              name: "A-03",
+              area: "Khu A (Phía Bắc)",
+              size: "50 m²",
+            },
+            {
+              id: "A-04",
+              name: "A-04",
+              area: "Khu A (Phía Bắc)",
+              size: "45 m²",
+            },
+            {
+              id: "B-02",
+              name: "B-02",
+              area: "Khu B (Phía Nam)",
+              size: "60 m²",
+            },
+            { id: "C-02", name: "C-02", area: "Khu C", size: "55 m²" },
+            { id: "D-01", name: "D-01", area: "Khu D", size: "70 m²" },
+          ],
+  );
 
   const [formData, setFormData] = useState({
     name: season.name,
     farm: season.farm,
+    farmId: seasonFarmId,
     startDate: season.startDate,
     endDate: season.endDate,
     status: season.status,
     description: season.description,
+    seasonNotes: (season as any).seasonNotes ?? "",
   });
   const [plots, setPlots] = useState<PlotAssignmentV2[]>(
     season.plots.map(toV2),
@@ -1704,10 +1864,12 @@ function EditSeasonView({
     setFormData({
       name: season.name,
       farm: season.farm,
+      farmId: (season as any).farmId ?? "",
       startDate: season.startDate,
       endDate: season.endDate,
       status: season.status,
       description: season.description,
+      seasonNotes: (season as any).seasonNotes ?? "",
     });
     setPlots(season.plots.map(toV2));
     setFormErrors({});
@@ -1785,19 +1947,43 @@ function EditSeasonView({
     setPlotErrors(pErrors);
     if (Object.keys(errors).length === 0 && Object.keys(pErrors).length === 0) {
       // Tính toán detail ops cho API
-      const originalDetailIds = new Set(
-        season.plots.map((p) => (p as any)._seasonDetailId).filter(Boolean),
+      const originalPlotMap = new Map(
+        season.plots
+          .filter((p) => (p as any)._seasonDetailId)
+          .map((p) => [(p as any)._seasonDetailId as string, p]),
       );
       const currentDetailIds = new Set(
         plots.map((p) => (p as any)._seasonDetailId).filter(Boolean),
       );
-      const toDelete = [...originalDetailIds].filter(
+      const toDelete = [...originalPlotMap.keys()].filter(
         (id) => !currentDetailIds.has(id),
-      ) as string[];
+      );
       // Plots mới là những plot chưa có _seasonDetailId
       const toAdd = plots
         .filter((p) => !(p as any)._seasonDetailId)
         .map((p) => ({
+          bedId: (p as any)._bedId ?? p.plotId,
+          cropId: (p as any)._cropId ?? "",
+          cropQuantity: p.plannedQuantity ?? 0,
+          startDate: p.sowingDate || formData.startDate,
+          endDate: formData.endDate,
+          harvestDate: p.harvestDate,
+        }));
+      const toUpdate = plots
+        .filter((p) => {
+          const detailId = (p as any)._seasonDetailId as string | undefined;
+          if (!detailId) return false;
+          const orig = originalPlotMap.get(detailId);
+          if (!orig) return false;
+          return (
+            p.sowingDate !== orig.sowingDate ||
+            p.harvestDate !== orig.harvestDate ||
+            p.plannedQuantity !== orig.plannedQuantity ||
+            (p as any)._cropId !== (orig as any)._cropId
+          );
+        })
+        .map((p) => ({
+          seasonDetailId: (p as any)._seasonDetailId as string,
           bedId: (p as any)._bedId ?? p.plotId,
           cropId: (p as any)._cropId ?? "",
           cropQuantity: p.plannedQuantity ?? 0,
@@ -1812,7 +1998,7 @@ function EditSeasonView({
           ...formData,
           plots: plots as unknown as PlotAssignment[],
         },
-        { toAdd, toDelete },
+        { toAdd, toDelete, toUpdate },
       );
     }
   };
@@ -1935,7 +2121,6 @@ function EditSeasonView({
             <h1 className="text-[#115e59] text-2xl font-semibold">
               Chỉnh sửa mùa vụ
             </h1>
-            <p className="text-sm text-[#62748e] mt-1">{season.code}</p>
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -2012,7 +2197,7 @@ function EditSeasonView({
                 </span>
               </label>
               <FarmSelect
-                value={formData.farm}
+                value={formData.farmId}
                 onChange={() => {}}
                 farms={farms}
                 className="bg-[#f8fafc] text-[#90a1b9] cursor-not-allowed pointer-events-none opacity-75"
@@ -2083,6 +2268,18 @@ function EditSeasonView({
                 onChange={(e) => updateField("description", e.target.value)}
                 rows={3}
                 className="w-full px-3 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] resize-none"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-[#115e59] mb-2">
+                Ghi chú
+              </label>
+              <textarea
+                value={formData.seasonNotes}
+                onChange={(e) => updateField("seasonNotes", e.target.value)}
+                rows={2}
+                className="w-full px-3 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] resize-none"
+                placeholder="Ghi chú thêm về mùa vụ..."
               />
             </div>
           </div>
