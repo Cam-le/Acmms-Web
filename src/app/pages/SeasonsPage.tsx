@@ -39,6 +39,7 @@ import {
   SeasonResponse,
   SeasonDetailResponse,
   FarmResponse,
+  PlotResponse,
   BedResponse,
   CropResponse,
 } from "../../api/client";
@@ -361,11 +362,8 @@ function mapApiSeasonToUi(
       }) as any as PlotAssignment,
   );
 
-  const shortId = s.seasonId?.slice(0, 8).toUpperCase() ?? "——";
-
   return {
     id: s.seasonId ?? "",
-    code: `MV-${shortId}`,
     name: s.seasonName ?? "(Không có tên)",
     farm: farm?.farmName ?? s.farmId ?? "—",
     farmId: s.farmId ?? "",
@@ -407,6 +405,7 @@ export function SeasonsPage() {
   const [seasons, setSeasons] = useState<Season[]>(mockSeasons);
   const [farms, setFarms] = useState<FarmResponse[]>([]);
   const [allDetails, setAllDetails] = useState<SeasonDetailResponse[]>([]);
+  const [allPlots, setAllPlots] = useState<PlotResponse[]>([]);
   const [beds, setBeds] = useState<BedResponse[]>([]);
   const [crops, setCrops] = useState<CropResponse[]>([]);
   const [isUsingMock, setIsUsingMock] = useState(false);
@@ -422,18 +421,20 @@ export function SeasonsPage() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [apiSeasons, apiDetails, apiFarms, apiBeds, apiCrops] =
+      const [apiSeasons, apiDetails, apiFarms, apiBeds, apiCrops, apiPlots] =
         await Promise.all([
           api.getSeasons(),
           api.getSeasonsDetails(),
           api.getFarms(),
           api.getBeds(),
           api.getCrops(),
+          api.getPlots(),
         ]);
       const safeSeasons = Array.isArray(apiSeasons) ? apiSeasons : [];
       const safeDetails = Array.isArray(apiDetails) ? apiDetails : [];
       const safeFarms = Array.isArray(apiFarms) ? apiFarms : [];
       const safeBeds = Array.isArray(apiBeds) ? apiBeds : [];
+      const safePlots = Array.isArray(apiPlots) ? apiPlots : [];
       const INACTIVE_STATUSES = [
         "inactive",
         "khong hoat dong",
@@ -449,6 +450,7 @@ export function SeasonsPage() {
       setFarms(safeFarms);
       setAllDetails(safeDetails);
       setBeds(safeBeds);
+      setAllPlots(safePlots);
       setCrops(safeCrops.length > 0 ? safeCrops : mockCropsForFallback);
       setSeasons(
         safeSeasons.map((s) => mapApiSeasonToUi(s, safeFarms, safeDetails)),
@@ -484,7 +486,6 @@ export function SeasonsPage() {
     const q = searchQuery.toLowerCase();
     const matchSearch =
       (s.name ?? "").toLowerCase().includes(q) ||
-      (s.code ?? "").toLowerCase().includes(q) ||
       (s.farm ?? "").toLowerCase().includes(q);
     const matchStatus = filterStatus === "all" || s.status === filterStatus;
     return matchSearch && matchStatus;
@@ -527,7 +528,7 @@ export function SeasonsPage() {
   };
 
   const handleCreate = async (
-    seasonData: Omit<Season, "id" | "code">,
+    seasonData: Omit<Season, "id">,
     detailsToCreate: Array<{
       bedId: string;
       cropId: string;
@@ -575,7 +576,6 @@ export function SeasonsPage() {
         const newSeason: Season = {
           ...seasonData,
           id: Date.now().toString(),
-          code: `MV-${String(seasons.length + 1).padStart(3, "0")}`,
         };
         setSeasons((prev) => [newSeason, ...prev]);
       }
@@ -583,7 +583,6 @@ export function SeasonsPage() {
       const newSeason: Season = {
         ...seasonData,
         id: Date.now().toString(),
-        code: `MV-${String(seasons.length + 1).padStart(3, "0")}`,
       };
       setSeasons((prev) => [newSeason, ...prev]);
     }
@@ -703,6 +702,7 @@ export function SeasonsPage() {
       <CreateSeasonView
         farms={farms}
         beds={beds}
+        plots={allPlots}
         crops={crops}
         isUsingMock={isUsingMock}
         onCreate={handleCreate}
@@ -730,6 +730,7 @@ export function SeasonsPage() {
         season={selectedSeason}
         farms={farms}
         beds={beds}
+        plots={allPlots}
         crops={crops}
         isUsingMock={isUsingMock}
         onUpdate={handleUpdate}
@@ -803,7 +804,6 @@ export function SeasonsPage() {
             <thead className="bg-[#f8fafc] border-b border-[#e2e8f0]">
               <tr>
                 {[
-                  "Mã",
                   "Tên mùa vụ",
                   "Trang trại",
                   "Thời gian",
@@ -826,9 +826,6 @@ export function SeasonsPage() {
                   key={season.id}
                   className="hover:bg-[#f8fafc] transition-colors"
                 >
-                  <td className="px-6 py-4 text-sm text-[#115e59] font-medium">
-                    {season.code}
-                  </td>
                   <td className="px-6 py-4 text-sm font-medium text-[#115e59]">
                     {season.name}
                   </td>
@@ -981,8 +978,6 @@ function DetailSeasonView({ season }: { season: Season }) {
               {season.name}
             </h1>
             <div className="flex items-center gap-2 mt-1">
-              <span className="text-sm text-[#62748e]">{season.code}</span>
-              <span className="text-[#62748e]">•</span>
               <span
                 className={`px-2 py-0.5 rounded text-xs font-medium ${seasonStatusConfig[season.status]}`}
               >
@@ -1280,15 +1275,17 @@ function CreateSeasonView({
   farms,
   beds,
   crops,
+  plots,
   isUsingMock,
   onCreate,
 }: {
   farms: FarmResponse[];
   beds: BedResponse[];
+  plots: PlotResponse[];
   crops: CropResponse[];
   isUsingMock: boolean;
   onCreate: (
-    season: Omit<Season, "id" | "code">,
+    season: Omit<Season, "id">,
     detailsToCreate: Array<{
       bedId: string;
       cropId: string;
@@ -1325,16 +1322,26 @@ function CreateSeasonView({
     >
   >({});
 
+  // Filter beds theo farm đang chọn (qua plotId → farmId)
+  const bedsForFarm = formData.farmId
+    ? beds.filter((b) => {
+        const plot = plots.find((p) => p.plotId === b.plotId);
+        return plot?.farmId === formData.farmId;
+      })
+    : beds;
+
   // Beds từ API hoặc fallback mock
   const availableBeds = sortBeds(
-    beds.length > 0
-      ? beds.map((b) => ({
+    bedsForFarm.length > 0
+      ? bedsForFarm.map((b) => ({
           id: b.bedId,
           name: b.bedName,
           area: b.plotName ?? "Không rõ khu",
           size: b.bedArea ? `${b.bedArea} m²` : "—",
         }))
-      : mockBedsForFallback,
+      : beds.length > 0
+        ? [] // farm đã chọn nhưng không có bed nào
+        : mockBedsForFallback,
   );
 
   // Dùng crops từ API; mỗi option có cropId thực
@@ -1466,6 +1473,9 @@ function CreateSeasonView({
                       farmId: id,
                       farm: f?.farmName ?? id,
                     }));
+                    // Reset bed selection khi đổi farm
+                    setSelectedPlots([]);
+                    setPlotDetails({});
                   }}
                   farms={farms}
                 />
@@ -1730,6 +1740,7 @@ function EditSeasonView({
   season,
   farms,
   beds,
+  plots: allPlots,
   crops,
   isUsingMock,
   onUpdate,
@@ -1737,6 +1748,7 @@ function EditSeasonView({
   season: Season;
   farms: FarmResponse[];
   beds: BedResponse[];
+  plots: PlotResponse[];
   crops: CropResponse[];
   isUsingMock: boolean;
   onUpdate: (
@@ -1766,28 +1778,55 @@ function EditSeasonView({
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  // Use API beds or fallback mock
+  const seasonFarmId = (season as any).farmId ?? "";
+
+  // Filter beds theo farmId của season (qua plotId → farmId)
+  const bedsForFarm = seasonFarmId
+    ? beds.filter((b) => {
+        const plot = allPlots.find((p) => p.plotId === b.plotId);
+        return plot?.farmId === seasonFarmId;
+      })
+    : beds;
+
+  // Use filtered beds or fallback mock
   const availablePlotsForFarm = sortBeds(
-    beds.length > 0
-      ? beds.map((b) => ({
+    bedsForFarm.length > 0
+      ? bedsForFarm.map((b) => ({
           id: b.bedId,
           name: b.bedName,
           area: b.plotName ?? "Không rõ khu",
           size: b.bedArea ? `${b.bedArea} m²` : "—",
         }))
-      : [
-          { id: "A-03", name: "A-03", area: "Khu A (Phía Bắc)", size: "50 m²" },
-          { id: "A-04", name: "A-04", area: "Khu A (Phía Bắc)", size: "45 m²" },
-          { id: "B-02", name: "B-02", area: "Khu B (Phía Nam)", size: "60 m²" },
-          { id: "C-02", name: "C-02", area: "Khu C", size: "55 m²" },
-          { id: "D-01", name: "D-01", area: "Khu D", size: "70 m²" },
-        ],
+      : beds.length > 0
+        ? []
+        : [
+            {
+              id: "A-03",
+              name: "A-03",
+              area: "Khu A (Phía Bắc)",
+              size: "50 m²",
+            },
+            {
+              id: "A-04",
+              name: "A-04",
+              area: "Khu A (Phía Bắc)",
+              size: "45 m²",
+            },
+            {
+              id: "B-02",
+              name: "B-02",
+              area: "Khu B (Phía Nam)",
+              size: "60 m²",
+            },
+            { id: "C-02", name: "C-02", area: "Khu C", size: "55 m²" },
+            { id: "D-01", name: "D-01", area: "Khu D", size: "70 m²" },
+          ],
   );
 
   const [formData, setFormData] = useState({
     name: season.name,
     farm: season.farm,
-    farmId: (season as any).farmId ?? "",
+    farmId: seasonFarmId,
     startDate: season.startDate,
     endDate: season.endDate,
     status: season.status,
@@ -2082,7 +2121,6 @@ function EditSeasonView({
             <h1 className="text-[#115e59] text-2xl font-semibold">
               Chỉnh sửa mùa vụ
             </h1>
-            <p className="text-sm text-[#62748e] mt-1">{season.code}</p>
           </div>
         </div>
         <div className="flex items-center gap-3">
