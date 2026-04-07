@@ -95,6 +95,22 @@ export function formatPlotName(prefix: string, sequence: number): string {
   return `${prefix}-${String(sequence).padStart(2, "0")}`;
 }
 
+/** Extract trailing numeric part after the last '_' or '-' for natural sort.
+ *  e.g. "A2_03" -> 3, "west_01" -> 1, "A-05" -> 5, "plotX" -> Infinity */
+function bedSortKey(name: string): number {
+  const m = name.match(/[_\-](\d+)$/);
+  return m ? parseInt(m[1], 10) : Infinity;
+}
+
+/** Sort bed items: primary by area (alphabetical), secondary by numeric suffix of bed name. */
+function sortBeds<T extends { name: string; area: string }>(beds: T[]): T[] {
+  return [...beds].sort((a, b) => {
+    const areaCmp = a.area.localeCompare(b.area, "vi");
+    if (areaCmp !== 0) return areaCmp;
+    return bedSortKey(a.name) - bedSortKey(b.name);
+  });
+}
+
 function parseDate(dateStr: string): Date | null {
   if (!dateStr) return null;
   const dmy = dateStr.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
@@ -1310,7 +1326,7 @@ function CreateSeasonView({
   >({});
 
   // Beds từ API hoặc fallback mock
-  const availableBeds =
+  const availableBeds = sortBeds(
     beds.length > 0
       ? beds.map((b) => ({
           id: b.bedId,
@@ -1318,7 +1334,8 @@ function CreateSeasonView({
           area: b.plotName ?? "Không rõ khu",
           size: b.bedArea ? `${b.bedArea} m²` : "—",
         }))
-      : mockBedsForFallback;
+      : mockBedsForFallback,
+  );
 
   // Dùng crops từ API; mỗi option có cropId thực
   const firstCropId = crops[0]?.cropId ?? "";
@@ -1750,7 +1767,7 @@ function EditSeasonView({
   today.setHours(0, 0, 0, 0);
 
   // Use API beds or fallback mock
-  const availablePlotsForFarm =
+  const availablePlotsForFarm = sortBeds(
     beds.length > 0
       ? beds.map((b) => ({
           id: b.bedId,
@@ -1764,7 +1781,8 @@ function EditSeasonView({
           { id: "B-02", name: "B-02", area: "Khu B (Phía Nam)", size: "60 m²" },
           { id: "C-02", name: "C-02", area: "Khu C", size: "55 m²" },
           { id: "D-01", name: "D-01", area: "Khu D", size: "70 m²" },
-        ];
+        ],
+  );
 
   const [formData, setFormData] = useState({
     name: season.name,
