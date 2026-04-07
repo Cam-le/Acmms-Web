@@ -585,7 +585,16 @@ export function SeasonsPage() {
         endDate: string;
         harvestDate: string;
       }>;
-      toDelete: string[]; // seasonDetailIds
+      toDelete: string[];
+      toUpdate: Array<{
+        seasonDetailId: string;
+        bedId: string;
+        cropId: string;
+        cropQuantity: number;
+        startDate: string;
+        endDate: string;
+        harvestDate: string;
+      }>;
     },
   ) => {
     if (!isUsingMock) {
@@ -610,6 +619,18 @@ export function SeasonsPage() {
             ...detailOps.toDelete.map((id) => api.deleteSeasonDetail(id)),
             ...detailOps.toAdd.map((d) =>
               api.createSeasonDetail({
+                seasonId: updatedSeason.id,
+                bedId: d.bedId,
+                cropId: d.cropId,
+                cropQuantity: d.cropQuantity,
+                startDate: d.startDate,
+                endDate: d.endDate,
+                seasonExpectedHarvestDate: d.harvestDate,
+                totalHarvestYield: 0,
+              }),
+            ),
+            ...(detailOps.toUpdate ?? []).map((d) =>
+              api.updateSeasonDetail(d.seasonDetailId, {
                 seasonId: updatedSeason.id,
                 bedId: d.bedId,
                 cropId: d.cropId,
@@ -1713,6 +1734,15 @@ function EditSeasonView({
         harvestDate: string;
       }>;
       toDelete: string[];
+      toUpdate: Array<{
+        seasonDetailId: string;
+        bedId: string;
+        cropId: string;
+        cropQuantity: number;
+        startDate: string;
+        endDate: string;
+        harvestDate: string;
+      }>;
     },
   ) => void;
 }) {
@@ -1860,19 +1890,43 @@ function EditSeasonView({
     setPlotErrors(pErrors);
     if (Object.keys(errors).length === 0 && Object.keys(pErrors).length === 0) {
       // Tính toán detail ops cho API
-      const originalDetailIds = new Set(
-        season.plots.map((p) => (p as any)._seasonDetailId).filter(Boolean),
+      const originalPlotMap = new Map(
+        season.plots
+          .filter((p) => (p as any)._seasonDetailId)
+          .map((p) => [(p as any)._seasonDetailId as string, p]),
       );
       const currentDetailIds = new Set(
         plots.map((p) => (p as any)._seasonDetailId).filter(Boolean),
       );
-      const toDelete = [...originalDetailIds].filter(
+      const toDelete = [...originalPlotMap.keys()].filter(
         (id) => !currentDetailIds.has(id),
-      ) as string[];
+      );
       // Plots mới là những plot chưa có _seasonDetailId
       const toAdd = plots
         .filter((p) => !(p as any)._seasonDetailId)
         .map((p) => ({
+          bedId: (p as any)._bedId ?? p.plotId,
+          cropId: (p as any)._cropId ?? "",
+          cropQuantity: p.plannedQuantity ?? 0,
+          startDate: p.sowingDate || formData.startDate,
+          endDate: formData.endDate,
+          harvestDate: p.harvestDate,
+        }));
+      const toUpdate = plots
+        .filter((p) => {
+          const detailId = (p as any)._seasonDetailId as string | undefined;
+          if (!detailId) return false;
+          const orig = originalPlotMap.get(detailId);
+          if (!orig) return false;
+          return (
+            p.sowingDate !== orig.sowingDate ||
+            p.harvestDate !== orig.harvestDate ||
+            p.plannedQuantity !== orig.plannedQuantity ||
+            (p as any)._cropId !== (orig as any)._cropId
+          );
+        })
+        .map((p) => ({
+          seasonDetailId: (p as any)._seasonDetailId as string,
           bedId: (p as any)._bedId ?? p.plotId,
           cropId: (p as any)._cropId ?? "",
           cropQuantity: p.plannedQuantity ?? 0,
@@ -1887,7 +1941,7 @@ function EditSeasonView({
           ...formData,
           plots: plots as unknown as PlotAssignment[],
         },
-        { toAdd, toDelete },
+        { toAdd, toDelete, toUpdate },
       );
     }
   };
