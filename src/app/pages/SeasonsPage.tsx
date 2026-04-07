@@ -285,7 +285,7 @@ function FarmSelect({
     >
       <option value="">{placeholder ?? "Chọn trang trại"}</option>
       {farms.map((f) => (
-        <option key={f.farmId} value={f.farmName}>
+        <option key={f.farmId} value={f.farmId}>
           {f.farmName}
         </option>
       ))}
@@ -352,6 +352,7 @@ function mapApiSeasonToUi(
     code: `MV-${shortId}`,
     name: s.seasonName ?? "(Không có tên)",
     farm: farm?.farmName ?? s.farmId ?? "—",
+    farmId: s.farmId ?? "",
     startDate: s.seasonStartDate ?? "",
     endDate: s.seasonEndDate ?? "",
     description: s.description ?? s.seasonNotes ?? "",
@@ -524,7 +525,9 @@ export function SeasonsPage() {
     if (!isUsingMock) {
       try {
         const farmId =
-          farms.find((f) => f.farmName === seasonData.farm)?.farmId ?? "";
+          (seasonData as any).farmId ||
+          farms.find((f) => f.farmName === seasonData.farm)?.farmId ||
+          "";
         const created = await api.createSeason({
           farmId,
           seasonName: seasonData.name,
@@ -588,8 +591,9 @@ export function SeasonsPage() {
     if (!isUsingMock) {
       try {
         const farmId =
-          farms.find((f) => f.farmName === updatedSeason.farm)?.farmId ??
-          farms[0]?.farmId ??
+          (updatedSeason as any).farmId ||
+          farms.find((f) => f.farmName === updatedSeason.farm)?.farmId ||
+          farms[0]?.farmId ||
           "";
         await api.updateSeason(updatedSeason.id, {
           farmId,
@@ -1224,6 +1228,7 @@ function CreateSeasonView({
   const [formData, setFormData] = useState({
     name: "",
     farm: "",
+    farmId: "",
     startDate: "",
     endDate: "",
     description: "",
@@ -1376,8 +1381,15 @@ function CreateSeasonView({
                   Trang trại
                 </label>
                 <FarmSelect
-                  value={formData.farm}
-                  onChange={(v) => setFormData((p) => ({ ...p, farm: v }))}
+                  value={formData.farmId}
+                  onChange={(id) => {
+                    const f = farms.find((x) => x.farmId === id);
+                    setFormData((p) => ({
+                      ...p,
+                      farmId: id,
+                      farm: f?.farmName ?? id,
+                    }));
+                  }}
                   farms={farms}
                 />
               </div>
@@ -1674,6 +1686,7 @@ function EditSeasonView({
   const [formData, setFormData] = useState({
     name: season.name,
     farm: season.farm,
+    farmId: (season as any).farmId ?? "",
     startDate: season.startDate,
     endDate: season.endDate,
     status: season.status,
@@ -1710,6 +1723,7 @@ function EditSeasonView({
     setFormData({
       name: season.name,
       farm: season.farm,
+      farmId: (season as any).farmId ?? "",
       startDate: season.startDate,
       endDate: season.endDate,
       status: season.status,
@@ -2018,7 +2032,7 @@ function EditSeasonView({
                 </span>
               </label>
               <FarmSelect
-                value={formData.farm}
+                value={formData.farmId}
                 onChange={() => {}}
                 farms={farms}
                 className="bg-[#f8fafc] text-[#90a1b9] cursor-not-allowed pointer-events-none opacity-75"

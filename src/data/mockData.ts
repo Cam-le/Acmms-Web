@@ -358,10 +358,12 @@ export interface Season {
   code: string;
   name: string;
   farm: string;
+  farmId?: string;
   startDate: string;
   endDate: string;
   status: SeasonStatus;
   description: string;
+  seasonNotes?: string;
   plots: PlotAssignment[];
 }
 
