@@ -416,9 +416,15 @@ export function SeasonsPage() {
       const safeDetails = Array.isArray(apiDetails) ? apiDetails : [];
       const safeFarms = Array.isArray(apiFarms) ? apiFarms : [];
       const safeBeds = Array.isArray(apiBeds) ? apiBeds : [];
+      const INACTIVE_STATUSES = [
+        "inactive",
+        "khong hoat dong",
+        "ngưng sử dụng",
+      ];
       const safeCrops = Array.isArray(apiCrops)
         ? apiCrops.filter(
-            (c) => (c.cropStatus ?? "Active").toLowerCase() === "active",
+            (c) =>
+              !INACTIVE_STATUSES.includes((c.cropStatus ?? "").toLowerCase()),
           )
         : [];
 
