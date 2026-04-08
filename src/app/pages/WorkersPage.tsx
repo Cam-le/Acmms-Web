@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Search,
   Plus,
@@ -14,39 +14,113 @@ import {
   ChevronLeft,
   ChevronRight,
   ArrowUpDown,
+  AlertCircle,
 } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
-import { Worker, mockWorkers, roles } from "../../data/mockData";
-import { api, UserResponse } from "../../api/client";
+import { mockWorkers, roles as mockRoles } from "../../data/mockData";
+import { api, UserResponse, RoleResponse } from "../../api/client";
 
-// Map API UserResponse → local Worker shape
-function mapUser(u: UserResponse): Worker {
+// Local row type — status matches API values directly ("Active" | "Inactive")
+type WorkerStatus = "Active" | "Inactive";
+
+interface WorkerRow {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  role: string;
+  status: WorkerStatus;
+  dateJoined: string;
+}
+
+// Map API UserResponse → local WorkerRow shape
+function mapUser(u: UserResponse): WorkerRow {
+  const s =
+    u.status?.charAt(0).toUpperCase() +
+    (u.status?.slice(1).toLowerCase() ?? "");
   return {
     id: u.userId,
     name: u.fullname ?? u.email,
     email: u.email,
     phone: u.phoneNumber ?? "",
-    role: u.roleName ?? "Công Nhân",
-    status: u.status?.toLowerCase() === "active" ? "active" : "inactive",
+    role: u.roleName ?? "Worker",
+    status: s === "Active" ? "Active" : "Inactive",
     dateJoined: u.createdAt
       ? new Date(u.createdAt).toLocaleDateString("vi-VN")
       : "",
   };
 }
 
-const getStatusBadgeColor = (status: "active" | "inactive") =>
-  status === "active"
+// Map legacy mockWorkers (status: "active"/"inactive") → WorkerRow
+function mapMockWorker(w: {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  role: string;
+  status: string;
+  dateJoined: string;
+}): WorkerRow {
+  return {
+    ...w,
+    status: w.status?.toLowerCase() === "active" ? "Active" : "Inactive",
+  };
+}
+
+const getStatusBadgeColor = (status: WorkerStatus) =>
+  status === "Active"
     ? "bg-[#dcfce7] text-[#008236]"
     : "bg-[#fee2e2] text-[#991b1b]";
 
-const getStatusLabel = (status: "active" | "inactive") =>
-  status === "active" ? "Đang làm việc" : "Ngừng làm việc";
-
 const PAGE_SIZE = 8;
 
+// ── Form validation helpers ──────────────────────────────────────────────────
+interface FormErrors {
+  name?: string;
+  email?: string;
+  phone?: string;
+  role?: string;
+}
+
+function validateForm(
+  formData: { name: string; email: string; phone: string; role: string },
+  availableRoles: RoleResponse[],
+  usingMock: boolean,
+): FormErrors {
+  const errors: FormErrors = {};
+
+  if (!formData.name.trim()) {
+    errors.name = "Vui lòng nhập họ và tên";
+  }
+
+  if (!formData.email.trim()) {
+    errors.email = "Vui lòng nhập email";
+  } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim())) {
+    errors.email = "Email không hợp lệ";
+  }
+
+  if (!formData.phone.trim()) {
+    errors.phone = "Vui lòng nhập số điện thoại";
+  } else if (!/^0\d{9}$/.test(formData.phone.trim())) {
+    errors.phone = "Số điện thoại phải gồm 10 chữ số, bắt đầu bằng 0";
+  }
+
+  if (!formData.role) {
+    errors.role = "Vui lòng chọn vai trò";
+  } else if (
+    !usingMock &&
+    availableRoles.length > 0 &&
+    !availableRoles.find((r) => r.roleName === formData.role)
+  ) {
+    errors.role = "Vai trò không hợp lệ";
+  }
+
+  return errors;
+}
+
 export function WorkersPage() {
-  const [workers, setWorkers] = useState<Worker[]>([]);
+  const [workers, setWorkers] = useState<WorkerRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [usingMock, setUsingMock] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -60,34 +134,68 @@ export function WorkersPage() {
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [selectedWorker, setSelectedWorker] = useState<Worker | null>(null);
-  const [workerToDelete, setWorkerToDelete] = useState<Worker | null>(null);
+  const [selectedWorker, setSelectedWorker] = useState<WorkerRow | null>(null);
+  const [workerToDelete, setWorkerToDelete] = useState<WorkerRow | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [formErrors, setFormErrors] = useState<FormErrors>({});
+  const [apiError, setApiError] = useState<string | null>(null);
+
+  // Roles fetched from API (non-Owner only)
+  const [apiRoles, setApiRoles] = useState<RoleResponse[]>([]);
+  const [rolesLoaded, setRolesLoaded] = useState(false);
+
   const [formData, setFormData] = useState({
     name: "",
     email: "",
     phone: "",
-    role: "Công Nhân",
-    password: "123456",
-    confirmPassword: "123456",
+    role: "",
+    status: "Active" as WorkerStatus,
   });
 
-  useEffect(() => {
-    loadWorkers();
+  // Derive display role names for filter & form (non-Owner)
+  const availableRoleNames: string[] = usingMock
+    ? mockRoles.filter((r) => r !== "Chủ trang trại")
+    : apiRoles.map((r) => r.roleName);
+
+  // ── Load roles ──
+  const loadRoles = useCallback(async () => {
+    try {
+      const data = await api.getRoles();
+      // Filter out Owner role — this page only manages non-owner accounts
+      const nonOwner = (data ?? []).filter(
+        (r) => r.roleName.toLowerCase() !== "owner",
+      );
+      setApiRoles(nonOwner);
+    } catch {
+      // If roles API fails, we'll rely on mock roles as fallback for display
+    } finally {
+      setRolesLoaded(true);
+    }
   }, []);
 
-  const loadWorkers = async () => {
+  // ── Load workers ──
+  const loadWorkers = useCallback(async () => {
     setLoading(true);
     try {
       const data = await api.getWorkers();
-      setWorkers(data.map(mapUser));
+      setWorkers((data ?? []).filter(Boolean).map(mapUser));
       setUsingMock(false);
     } catch {
-      setWorkers([...mockWorkers]);
+      setWorkers(mockWorkers.map(mapMockWorker));
       setUsingMock(true);
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  useEffect(() => {
+    loadRoles();
+    loadWorkers();
+  }, [loadRoles, loadWorkers]);
+
+  // ── Helpers ──
+  const getRoleId = (roleName: string): string | undefined => {
+    return apiRoles.find((r) => r.roleName === roleName)?.roleId;
   };
 
   const handleSort = (field: "dateJoined" | "status") => {
@@ -102,30 +210,34 @@ export function WorkersPage() {
 
   const filteredWorkers = workers
     .filter((w) => {
+      const term = searchTerm.toLowerCase();
       const matchSearch =
-        w.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        w.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        w.name.toLowerCase().includes(term) ||
+        w.email.toLowerCase().includes(term) ||
         w.phone.includes(searchTerm) ||
-        w.role.toLowerCase().includes(searchTerm.toLowerCase());
+        w.role.toLowerCase().includes(term);
       const matchRole = filterRole === "all" || w.role === filterRole;
       return matchSearch && matchRole;
     })
     .sort((a, b) => {
-      if (!sortField) return 0;
-      if (sortField === "dateJoined") {
-        const da = a.dateJoined
-          ? new Date(a.dateJoined.split("/").reverse().join("-")).getTime()
-          : 0;
-        const db = b.dateJoined
-          ? new Date(b.dateJoined.split("/").reverse().join("-")).getTime()
-          : 0;
-        return sortDirection === "asc" ? da - db : db - da;
+      // Parse dd/MM/yyyy → timestamp
+      const parseDate = (d: string) =>
+        d ? new Date(d.split("/").reverse().join("-")).getTime() : 0;
+
+      // When user explicitly sorts by status
+      if (sortField === "status") {
+        const order: Record<WorkerStatus, number> = { Active: 1, Inactive: 2 };
+        return sortDirection === "asc"
+          ? order[a.status] - order[b.status]
+          : order[b.status] - order[a.status];
       }
-      // status: active before inactive
-      const order = { active: 1, inactive: 2 };
-      return sortDirection === "asc"
-        ? order[a.status] - order[b.status]
-        : order[b.status] - order[a.status];
+
+      // Default (no explicit sort) or explicit dateJoined sort:
+      // newest at bottom = ascending by date
+      const da = parseDate(a.dateJoined);
+      const db = parseDate(b.dateJoined);
+      const dir = sortField === "dateJoined" ? sortDirection : "asc";
+      return dir === "asc" ? da - db : db - da;
     });
 
   const totalPages = Math.max(1, Math.ceil(filteredWorkers.length / PAGE_SIZE));
@@ -135,52 +247,63 @@ export function WorkersPage() {
     currentPage * PAGE_SIZE,
   );
 
-  const resetForm = () =>
+  const defaultRole = availableRoleNames[0] ?? "";
+
+  const resetForm = () => {
     setFormData({
       name: "",
       email: "",
       phone: "",
-      role: "Công Nhân",
-      password: "123456",
-      confirmPassword: "123456",
+      role: defaultRole,
+      status: "Active",
     });
+    setFormErrors({});
+    setApiError(null);
+  };
 
   // --- ADD ---
   const handleAddWorker = async () => {
-    if (formData.password !== formData.confirmPassword) {
-      alert("Mật khẩu không khớp!");
-      return;
-    }
+    setApiError(null);
+    const errors = validateForm(formData, apiRoles, usingMock);
+    setFormErrors(errors);
+    if (Object.keys(errors).length > 0) return;
+
     setSubmitting(true);
     try {
       if (usingMock) {
-        const newWorker: Worker = {
+        const newWorker: WorkerRow = {
           id: Date.now().toString(),
-          name: formData.name,
-          email: formData.email,
-          phone: formData.phone,
+          name: formData.name.trim(),
+          email: formData.email.trim(),
+          phone: formData.phone.trim(),
           role: formData.role,
-          status: "active",
+          status: "Active",
           dateJoined: new Date().toLocaleDateString("vi-VN"),
         };
         setWorkers((prev) => [...prev, newWorker]);
       } else {
+        const roleId = getRoleId(formData.role);
+        if (!roleId) {
+          setApiError("Không tìm thấy ID vai trò. Vui lòng thử tải lại trang.");
+          setSubmitting(false);
+          return;
+        }
         await api.createWorker({
-          email: formData.email,
-          password: formData.password,
-          fullname: formData.name,
-          phoneNumber: formData.phone,
+          email: formData.email.trim(),
+          password: "123456",
+          fullname: formData.name.trim(),
+          phoneNumber: formData.phone.trim(),
           status: "Active",
+          roleId,
         });
         await loadWorkers();
       }
       setIsAddModalOpen(false);
       resetForm();
     } catch (err) {
-      alert(
-        "Không thể tạo nhân viên: " +
-          (err instanceof Error ? err.message : "Lỗi"),
-      );
+      const msg =
+        err instanceof Error ? err.message : "Đã xảy ra lỗi không xác định";
+      setApiError("Không thể tạo nhân viên: " + msg);
     } finally {
       setSubmitting(false);
     }
@@ -189,6 +312,11 @@ export function WorkersPage() {
   // --- EDIT ---
   const handleEditWorker = async () => {
     if (!selectedWorker) return;
+    setApiError(null);
+    const errors = validateForm(formData, apiRoles, usingMock);
+    setFormErrors(errors);
+    if (Object.keys(errors).length > 0) return;
+
     setSubmitting(true);
     try {
       if (usingMock) {
@@ -197,28 +325,64 @@ export function WorkersPage() {
             w.id === selectedWorker.id
               ? {
                   ...w,
-                  name: formData.name,
-                  email: formData.email,
-                  phone: formData.phone,
+                  name: formData.name.trim(),
+                  email: formData.email.trim(),
+                  phone: formData.phone.trim(),
                   role: formData.role,
+                  status: formData.status,
                 }
               : w,
           ),
         );
       } else {
-        await api.updateWorker(selectedWorker.id, {
-          email: formData.email,
-          fullname: formData.name,
-          phoneNumber: formData.phone,
-        });
+        // Detect which fields changed compared to selectedWorker (snapshot at modal open)
+        const statusChanged = formData.status !== selectedWorker.status;
+        const infoChanged =
+          formData.name.trim() !== selectedWorker.name ||
+          formData.email.trim() !== selectedWorker.email ||
+          formData.phone.trim() !== selectedWorker.phone ||
+          formData.role !== selectedWorker.role;
+
+        if (!statusChanged && !infoChanged) {
+          // Nothing changed — just close
+          setIsEditModalOpen(false);
+          resetForm();
+          setSubmitting(false);
+          return;
+        }
+
+        // If info fields changed → PUT
+        if (infoChanged) {
+          const roleId = getRoleId(formData.role);
+          if (!roleId) {
+            setApiError(
+              "Không tìm thấy ID vai trò. Vui lòng thử tải lại trang.",
+            );
+            setSubmitting(false);
+            return;
+          }
+          await api.updateWorker(selectedWorker.id, {
+            email: formData.email.trim(),
+            fullname: formData.name.trim(),
+            phoneNumber: formData.phone.trim(),
+            status: formData.status,
+            roleId,
+          });
+        }
+
+        // If status changed → PATCH
+        if (statusChanged) {
+          await api.changeWorkerStatus(selectedWorker.id, formData.status);
+        }
+
         await loadWorkers();
       }
       setIsEditModalOpen(false);
       resetForm();
     } catch (err) {
-      alert(
-        "Không thể cập nhật: " + (err instanceof Error ? err.message : "Lỗi"),
-      );
+      const msg =
+        err instanceof Error ? err.message : "Đã xảy ra lỗi không xác định";
+      setApiError("Không thể cập nhật: " + msg);
     } finally {
       setSubmitting(false);
     }
@@ -234,29 +398,33 @@ export function WorkersPage() {
       setIsDeleteDialogOpen(false);
       setWorkerToDelete(null);
     } catch (err) {
-      alert("Không thể xóa: " + (err instanceof Error ? err.message : "Lỗi"));
+      alert(
+        "Không thể xóa: " +
+          (err instanceof Error ? err.message : "Đã xảy ra lỗi"),
+      );
     } finally {
       setSubmitting(false);
     }
   };
 
-  const openViewModal = (w: Worker) => {
+  const openViewModal = (w: WorkerRow) => {
     setSelectedWorker(w);
     setIsViewModalOpen(true);
   };
-  const openEditModal = (w: Worker) => {
+  const openEditModal = (w: WorkerRow) => {
     setSelectedWorker(w);
     setFormData({
       name: w.name,
       email: w.email,
       phone: w.phone,
       role: w.role,
-      password: "",
-      confirmPassword: "",
+      status: w.status,
     });
+    setFormErrors({});
+    setApiError(null);
     setIsEditModalOpen(true);
   };
-  const openDeleteDialog = (w: Worker) => {
+  const openDeleteDialog = (w: WorkerRow) => {
     setWorkerToDelete(w);
     setIsDeleteDialogOpen(true);
   };
@@ -294,7 +462,7 @@ export function WorkersPage() {
         </button>
       </div>
 
-      {/* Table + Filters — wrapped so the role select can clip to the table's right edge */}
+      {/* Table + Filters */}
       <div className="flex flex-col gap-0">
         <div className="flex items-center gap-3 mb-3">
           <div className="relative flex-1">
@@ -318,7 +486,7 @@ export function WorkersPage() {
             className="px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] bg-white text-[#334155] shrink-0"
           >
             <option value="all">Tất cả vai trò</option>
-            {roles.map((r) => (
+            {availableRoleNames.map((r) => (
               <option key={r} value={r}>
                 {r}
               </option>
@@ -415,7 +583,7 @@ export function WorkersPage() {
                       <span
                         className={`px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap ${getStatusBadgeColor(worker.status)}`}
                       >
-                        {getStatusLabel(worker.status)}
+                        {worker.status}
                       </span>
                     </td>
                     <td className="px-6 py-4">
@@ -508,7 +676,7 @@ export function WorkersPage() {
                     <span
                       className={`px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${getStatusBadgeColor(selectedWorker.status)}`}
                     >
-                      {getStatusLabel(selectedWorker.status)}
+                      {selectedWorker.status}
                     </span>
                   </div>
                 </div>
@@ -556,11 +724,31 @@ export function WorkersPage() {
             <Dialog.Description className="sr-only">
               Form thêm nhân viên mới
             </Dialog.Description>
+
+            {apiError && (
+              <div className="flex items-start gap-2 p-3 mb-4 bg-red-50 border border-red-200 rounded-lg">
+                <AlertCircle className="w-4 h-4 text-red-500 mt-0.5 shrink-0" />
+                <p className="text-sm text-red-600">{apiError}</p>
+              </div>
+            )}
+
             <WorkerForm
               formData={formData}
-              setFormData={setFormData}
-              showPassword
+              setFormData={(updater) => {
+                setFormData(updater);
+                setFormErrors({});
+                setApiError(null);
+              }}
+              errors={formErrors}
+              roleOptions={availableRoleNames}
+              rolesLoading={!rolesLoaded}
             />
+
+            <p className="mt-3 text-xs text-[#94a3b8]">
+              Mật khẩu mặc định: <span className="font-mono">123456</span> —
+              nhân viên sẽ tự đổi sau khi đăng nhập.
+            </p>
+
             <div className="flex justify-end gap-3 mt-6">
               <Dialog.Close className="px-4 py-2 text-sm text-[#62748e] hover:text-[#334155] transition-colors">
                 Hủy
@@ -600,11 +788,27 @@ export function WorkersPage() {
             <Dialog.Description className="sr-only">
               Form chỉnh sửa thông tin nhân viên
             </Dialog.Description>
+
+            {apiError && (
+              <div className="flex items-start gap-2 p-3 mb-4 bg-red-50 border border-red-200 rounded-lg">
+                <AlertCircle className="w-4 h-4 text-red-500 mt-0.5 shrink-0" />
+                <p className="text-sm text-red-600">{apiError}</p>
+              </div>
+            )}
+
             <WorkerForm
               formData={formData}
-              setFormData={setFormData}
-              showPassword={false}
+              setFormData={(updater) => {
+                setFormData(updater);
+                setFormErrors({});
+                setApiError(null);
+              }}
+              errors={formErrors}
+              roleOptions={availableRoleNames}
+              rolesLoading={!rolesLoaded}
+              showStatus
             />
+
             <div className="flex justify-end gap-3 mt-6">
               <Dialog.Close className="px-4 py-2 text-sm text-[#62748e] hover:text-[#334155] transition-colors">
                 Hủy
@@ -656,25 +860,30 @@ export function WorkersPage() {
   );
 }
 
-// Shared form component
+// ── Shared form component ────────────────────────────────────────────────────
 function WorkerForm({
   formData,
   setFormData,
-  showPassword,
+  errors,
+  roleOptions,
+  rolesLoading,
+  showStatus = false,
 }: {
   formData: {
     name: string;
     email: string;
     phone: string;
     role: string;
-    password: string;
-    confirmPassword: string;
+    status: WorkerStatus;
   };
   setFormData: React.Dispatch<React.SetStateAction<typeof formData>>;
-  showPassword: boolean;
+  errors: FormErrors;
+  roleOptions: string[];
+  rolesLoading: boolean;
+  showStatus?: boolean;
 }) {
   const fields: {
-    key: keyof typeof formData;
+    key: "name" | "email" | "phone";
     label: string;
     type?: string;
     placeholder?: string;
@@ -694,7 +903,7 @@ function WorkerForm({
       {fields.map(({ key, label, type = "text", placeholder }) => (
         <div key={key}>
           <label className="block text-sm font-medium text-[#45556c] mb-1">
-            {label}
+            {label} <span className="text-red-400">*</span>
           </label>
           <input
             type={type}
@@ -703,55 +912,74 @@ function WorkerForm({
               setFormData((p) => ({ ...p, [key]: e.target.value }))
             }
             placeholder={placeholder}
-            className="w-full px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155]"
+            className={`w-full px-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155] ${
+              errors[key as keyof FormErrors]
+                ? "border-red-300 bg-red-50"
+                : "border-[#e2e8f0]"
+            }`}
           />
+          {errors[key as keyof FormErrors] && (
+            <p className="mt-1 text-xs text-red-500">
+              {errors[key as keyof FormErrors]}
+            </p>
+          )}
         </div>
       ))}
       <div>
         <label className="block text-sm font-medium text-[#45556c] mb-1">
-          Vai trò
+          Vai trò <span className="text-red-400">*</span>
         </label>
-        <select
-          value={formData.role}
-          onChange={(e) => setFormData((p) => ({ ...p, role: e.target.value }))}
-          className="w-full px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] bg-white text-[#334155]"
-        >
-          {roles.map((r) => (
-            <option key={r} value={r}>
-              {r}
-            </option>
-          ))}
-        </select>
+        {rolesLoading ? (
+          <div className="flex items-center gap-2 px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm text-[#94a3b8]">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            Đang tải vai trò...
+          </div>
+        ) : roleOptions.length === 0 ? (
+          <div className="flex items-center gap-2 px-3 py-2.5 border border-amber-200 bg-amber-50 rounded-lg text-sm text-amber-600">
+            <AlertCircle className="w-4 h-4" />
+            Không tải được danh sách vai trò
+          </div>
+        ) : (
+          <select
+            value={formData.role}
+            onChange={(e) =>
+              setFormData((p) => ({ ...p, role: e.target.value }))
+            }
+            className={`w-full px-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] bg-white text-[#334155] ${
+              errors.role ? "border-red-300 bg-red-50" : "border-[#e2e8f0]"
+            }`}
+          >
+            <option value="">— Chọn vai trò —</option>
+            {roleOptions.map((r) => (
+              <option key={r} value={r}>
+                {r}
+              </option>
+            ))}
+          </select>
+        )}
+        {errors.role && (
+          <p className="mt-1 text-xs text-red-500">{errors.role}</p>
+        )}
       </div>
-      {showPassword && (
-        <>
-          <div>
-            <label className="block text-sm font-medium text-[#45556c] mb-1">
-              Mật khẩu
-            </label>
-            <input
-              type="password"
-              value={formData.password}
-              onChange={(e) =>
-                setFormData((p) => ({ ...p, password: e.target.value }))
-              }
-              className="w-full px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689]"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-[#45556c] mb-1">
-              Xác nhận mật khẩu
-            </label>
-            <input
-              type="password"
-              value={formData.confirmPassword}
-              onChange={(e) =>
-                setFormData((p) => ({ ...p, confirmPassword: e.target.value }))
-              }
-              className="w-full px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689]"
-            />
-          </div>
-        </>
+      {showStatus && (
+        <div>
+          <label className="block text-sm font-medium text-[#45556c] mb-1">
+            Trạng thái
+          </label>
+          <select
+            value={formData.status}
+            onChange={(e) =>
+              setFormData((p) => ({
+                ...p,
+                status: e.target.value as WorkerStatus,
+              }))
+            }
+            className="w-full px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] bg-white text-[#334155]"
+          >
+            <option value="Active">Active</option>
+            <option value="Inactive">Inactive</option>
+          </select>
+        </div>
       )}
     </div>
   );
