@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import {
   Plus,
   Eye,
@@ -12,9 +12,6 @@ import {
   Loader2,
   WifiOff,
   Globe,
-  Upload,
-  X,
-  Image as ImageIcon,
   Clock,
 } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
@@ -105,89 +102,6 @@ const plotStatusColor = (status: FarmStatus) =>
   status === "Hoạt động"
     ? "bg-[#dcfce7] text-[#008236]"
     : "bg-[#fee2e2] text-[#991b1b]";
-
-// ===================== IMAGE UPLOADER =====================
-function ImageUploader({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (base64: string) => void;
-}) {
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  const handleFile = (file: File) => {
-    if (!file.type.startsWith("image/")) return;
-    const reader = new FileReader();
-    reader.onload = (e) => onChange((e.target?.result as string) ?? "");
-    reader.readAsDataURL(file);
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    const file = e.dataTransfer.files[0];
-    if (file) handleFile(file);
-  };
-
-  return (
-    <div className="space-y-2">
-      <label className="block text-sm font-medium text-[#45556c]">
-        Hình ảnh trang trại
-      </label>
-      {value ? (
-        <div className="relative rounded-lg overflow-hidden border border-[#e2e8f0] group">
-          <img
-            src={value}
-            alt="Ảnh trang trại"
-            className="w-full h-40 object-cover"
-          />
-          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
-            <button
-              type="button"
-              onClick={() => onChange("")}
-              className="p-1.5 bg-white rounded-full text-red-500 hover:bg-red-50 mr-2"
-            >
-              <X className="w-4 h-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => inputRef.current?.click()}
-              className="p-1.5 bg-white rounded-full text-[#009689] hover:bg-[#f0fdf9]"
-            >
-              <Upload className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      ) : (
-        <div
-          onDrop={handleDrop}
-          onDragOver={(e) => e.preventDefault()}
-          onClick={() => inputRef.current?.click()}
-          className="w-full h-36 border-2 border-dashed border-[#cad5e2] rounded-lg flex flex-col items-center justify-center gap-2 cursor-pointer hover:border-[#009689] hover:bg-[#f0fdf9] transition-colors"
-        >
-          <ImageIcon className="w-8 h-8 text-[#94a3b8]" />
-          <span className="text-sm text-[#62748e]">
-            Nhấp hoặc kéo thả ảnh vào đây
-          </span>
-          <span className="text-xs text-[#94a3b8]">
-            PNG, JPG, WEBP (tối đa 5MB)
-          </span>
-        </div>
-      )}
-      <input
-        ref={inputRef}
-        type="file"
-        accept="image/*"
-        className="hidden"
-        onChange={(e) => {
-          const file = e.target.files?.[0];
-          if (file) handleFile(file);
-          e.target.value = "";
-        }}
-      />
-    </div>
-  );
-}
 
 export function FarmPage() {
   const [farms, setFarms] = useState<Farm[]>([]);
@@ -474,17 +388,9 @@ function FarmCard({
       <div className="bg-white rounded-xl border border-[#e2e8f0] shadow-sm overflow-hidden">
         <div className="p-5 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            {farm.image ? (
-              <img
-                src={farm.image}
-                alt={farm.name}
-                className="w-12 h-12 rounded-xl object-cover shrink-0"
-              />
-            ) : (
-              <div className="w-12 h-12 bg-[#f0fdf9] rounded-xl flex items-center justify-center shrink-0">
-                <Home className="w-6 h-6 text-[#009689]" />
-              </div>
-            )}
+            <div className="w-12 h-12 bg-[#f0fdf9] rounded-xl flex items-center justify-center shrink-0">
+              <Home className="w-6 h-6 text-[#009689]" />
+            </div>
             <div>
               <h3 className="font-semibold text-[#115e59]">{farm.name}</h3>
               <div className="flex items-center gap-1 text-sm text-[#62748e] mt-0.5">
@@ -534,9 +440,6 @@ function FarmCard({
 
         <Collapsible.Content>
           <div className="border-t border-[#f1f5f9] p-5">
-            {farm.description && (
-              <p className="text-sm text-[#62748e] mb-4">{farm.description}</p>
-            )}
             <div className="grid grid-cols-3 gap-4 text-sm">
               <div>
                 <div className="text-xs text-[#94a3b8] uppercase mb-1">
@@ -580,8 +483,6 @@ function FarmFormFields({
     location: string;
     status: FarmStatus;
     area: string;
-    description: string;
-    image: string;
   };
   setFormData: React.Dispatch<React.SetStateAction<typeof formData>>;
 }) {
@@ -589,12 +490,6 @@ function FarmFormFields({
 
   return (
     <div className="space-y-4">
-      {/* Image uploader */}
-      <ImageUploader
-        value={formData.image}
-        onChange={(img) => setFormData((p) => ({ ...p, image: img }))}
-      />
-
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium text-[#45556c] mb-1">
@@ -669,21 +564,6 @@ function FarmFormFields({
         </div>
       </div>
 
-      <div>
-        <label className="block text-sm font-medium text-[#45556c] mb-1">
-          Mô tả
-        </label>
-        <textarea
-          value={formData.description}
-          onChange={(e) =>
-            setFormData((p) => ({ ...p, description: e.target.value }))
-          }
-          rows={3}
-          className="w-full px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155] resize-none"
-          placeholder="Mô tả trang trại..."
-        />
-      </div>
-
       {/* Map Picker Modal — rendered outside the form z-stack */}
       <MapPickerModal
         open={mapOpen}
@@ -724,17 +604,6 @@ function ViewFarmModal({
           <Dialog.Description className="sr-only">
             Chi tiết trang trại
           </Dialog.Description>
-
-          {/* Farm image */}
-          {farm.image && (
-            <div className="mb-4 rounded-lg overflow-hidden">
-              <img
-                src={farm.image}
-                alt={farm.name}
-                className="w-full h-44 object-cover"
-              />
-            </div>
-          )}
 
           <div className="space-y-2">
             {[
@@ -794,13 +663,6 @@ function ViewFarmModal({
                 </div>
               )}
             </div>
-
-            {farm.description && (
-              <div className="pt-2">
-                <div className="text-xs text-[#62748e] mb-1">Mô tả</div>
-                <p className="text-sm text-[#334155]">{farm.description}</p>
-              </div>
-            )}
           </div>
 
           <div className="mt-5 flex justify-end">
@@ -831,8 +693,6 @@ function CreateFarmModal({
     location: "",
     status: "Hoạt động" as FarmStatus,
     area: "",
-    description: "",
-    image: "",
   });
 
   // Reset form when modal closes
@@ -843,15 +703,18 @@ function CreateFarmModal({
         location: "",
         status: "Hoạt động",
         area: "",
-        description: "",
-        image: "",
       });
     }
   }, [open]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onCreate({ ...formData, area: parseInt(formData.area) || 0 });
+    onCreate({
+      ...formData,
+      area: parseInt(formData.area) || 0,
+      image: "",
+      description: "",
+    });
   };
 
   return (
@@ -911,8 +774,6 @@ function EditFarmModal({
     location: farm.location,
     status: farm.status,
     area: farm.area.toString(),
-    description: farm.description,
-    image: farm.image,
   });
 
   // Sync when farm changes (e.g. different farm opened)
@@ -922,8 +783,6 @@ function EditFarmModal({
       location: farm.location,
       status: farm.status,
       area: farm.area.toString(),
-      description: farm.description,
-      image: farm.image,
     });
   }, [farm]);
 
