@@ -1297,6 +1297,9 @@ function CreateSeasonView({
   ) => void;
 }) {
   const [step, setStep] = useState(1);
+  const [seasonFormErrors, setSeasonFormErrors] = useState<
+    Record<string, string>
+  >({});
   const [formData, setFormData] = useState({
     name: "",
     farm: "",
@@ -1449,20 +1452,26 @@ function CreateSeasonView({
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Tên mùa vụ *
+                  Tên mùa vụ <span className="text-red-400">*</span>
                 </label>
                 <input
                   value={formData.name}
-                  onChange={(e) =>
-                    setFormData((p) => ({ ...p, name: e.target.value }))
-                  }
-                  className="w-full px-3 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                  onChange={(e) => {
+                    setFormData((p) => ({ ...p, name: e.target.value }));
+                    setSeasonFormErrors((p) => ({ ...p, name: "" }));
+                  }}
+                  className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] ${seasonFormErrors.name ? "border-red-300 bg-red-50" : "border-[#cad5e2]"}`}
                   placeholder="Mùa Hè 2025"
                 />
+                {seasonFormErrors.name && (
+                  <p className="mt-1 text-xs text-red-500">
+                    {seasonFormErrors.name}
+                  </p>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Trang trại
+                  Trang trại <span className="text-red-400">*</span>
                 </label>
                 <FarmSelect
                   value={formData.farmId}
@@ -1473,40 +1482,62 @@ function CreateSeasonView({
                       farmId: id,
                       farm: f?.farmName ?? id,
                     }));
+                    setSeasonFormErrors((p) => ({ ...p, farmId: "" }));
                     // Reset bed selection khi đổi farm
                     setSelectedPlots([]);
                     setPlotDetails({});
                   }}
                   farms={farms}
                 />
+                {seasonFormErrors.farmId && (
+                  <p className="mt-1 text-xs text-red-500">
+                    {seasonFormErrors.farmId}
+                  </p>
+                )}
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Ngày bắt đầu
+                  Ngày bắt đầu <span className="text-red-400">*</span>
                 </label>
                 <input
                   type="date"
                   value={formData.startDate}
-                  onChange={(e) =>
-                    setFormData((p) => ({ ...p, startDate: e.target.value }))
-                  }
-                  className="w-full px-3 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                  onChange={(e) => {
+                    setFormData((p) => ({ ...p, startDate: e.target.value }));
+                    setSeasonFormErrors((p) => ({
+                      ...p,
+                      startDate: "",
+                      endDate: "",
+                    }));
+                  }}
+                  className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] ${seasonFormErrors.startDate ? "border-red-300 bg-red-50" : "border-[#cad5e2]"}`}
                 />
+                {seasonFormErrors.startDate && (
+                  <p className="mt-1 text-xs text-red-500">
+                    {seasonFormErrors.startDate}
+                  </p>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Ngày kết thúc
+                  Ngày kết thúc <span className="text-red-400">*</span>
                 </label>
                 <input
                   type="date"
                   value={formData.endDate}
-                  onChange={(e) =>
-                    setFormData((p) => ({ ...p, endDate: e.target.value }))
-                  }
-                  className="w-full px-3 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                  onChange={(e) => {
+                    setFormData((p) => ({ ...p, endDate: e.target.value }));
+                    setSeasonFormErrors((p) => ({ ...p, endDate: "" }));
+                  }}
+                  className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] ${seasonFormErrors.endDate ? "border-red-300 bg-red-50" : "border-[#cad5e2]"}`}
                 />
+                {seasonFormErrors.endDate && (
+                  <p className="mt-1 text-xs text-red-500">
+                    {seasonFormErrors.endDate}
+                  </p>
+                )}
               </div>
             </div>
             <div>
@@ -1559,9 +1590,32 @@ function CreateSeasonView({
           </div>
           <div className="mt-6 flex justify-end">
             <button
-              onClick={() => setStep(2)}
-              disabled={!formData.name}
-              className="px-6 py-2 bg-[#009689] text-white rounded-lg hover:bg-[#007f75] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              onClick={() => {
+                const errors: Record<string, string> = {};
+                if (!formData.name.trim())
+                  errors.name = "Vui lòng nhập tên mùa vụ";
+                else if (formData.name.trim().length < 2)
+                  errors.name = "Tên mùa vụ phải có ít nhất 2 ký tự";
+                else if (formData.name.trim().length > 200)
+                  errors.name = "Tên mùa vụ không được quá 200 ký tự";
+                if (!formData.farmId)
+                  errors.farmId = "Vui lòng chọn trang trại";
+                if (!formData.startDate)
+                  errors.startDate = "Vui lòng chọn ngày bắt đầu";
+                if (!formData.endDate)
+                  errors.endDate = "Vui lòng chọn ngày kết thúc";
+                if (
+                  formData.startDate &&
+                  formData.endDate &&
+                  formData.endDate <= formData.startDate
+                ) {
+                  errors.endDate = "Ngày kết thúc phải sau ngày bắt đầu";
+                }
+                setSeasonFormErrors(errors);
+                if (Object.keys(errors).length > 0) return;
+                setStep(2);
+              }}
+              className="px-6 py-2 bg-[#009689] text-white rounded-lg hover:bg-[#007f75] transition-colors"
             >
               Tiếp theo
             </button>
@@ -1713,20 +1767,27 @@ function CreateSeasonView({
               );
             })}
           </div>
-          <div className="mt-6 flex justify-between">
+          <div className="mt-6 flex justify-between items-center">
             <button
               onClick={() => setStep(1)}
               className="px-6 py-2 bg-[#f1f5f9] text-[#314158] rounded-lg hover:bg-[#e2e8f0] transition-colors flex items-center gap-2"
             >
               <ArrowLeft className="w-4 h-4" /> Quay lại
             </button>
-            <button
-              onClick={handleStep2Submit}
-              disabled={selectedPlots.length === 0}
-              className="px-6 py-2 bg-[#009689] text-white rounded-lg hover:bg-[#007f75] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-            >
-              <CheckCircle className="w-4 h-4" /> Tạo mùa vụ
-            </button>
+            <div className="flex items-center gap-3">
+              {selectedPlots.length === 0 && (
+                <span className="text-xs text-amber-600">
+                  Vui lòng chọn ít nhất 1 luống
+                </span>
+              )}
+              <button
+                onClick={handleStep2Submit}
+                disabled={selectedPlots.length === 0}
+                className="px-6 py-2 bg-[#009689] text-white rounded-lg hover:bg-[#007f75] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                <CheckCircle className="w-4 h-4" /> Tạo mùa vụ
+              </button>
+            </div>
           </div>
         </div>
       )}
