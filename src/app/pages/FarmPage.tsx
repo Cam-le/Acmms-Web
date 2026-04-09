@@ -473,10 +473,49 @@ function FarmCard({
   );
 }
 
+// ===================== FARM FORM VALIDATION =====================
+interface FarmFormErrors {
+  name?: string;
+  location?: string;
+  area?: string;
+}
+
+function validateFarmForm(formData: {
+  name: string;
+  location: string;
+  area: string;
+}): FarmFormErrors {
+  const errors: FarmFormErrors = {};
+  if (!formData.name.trim()) {
+    errors.name = "Vui lòng nhập tên trang trại";
+  } else if (formData.name.trim().length < 2) {
+    errors.name = "Tên trang trại phải có ít nhất 2 ký tự";
+  } else if (formData.name.trim().length > 255) {
+    errors.name = "Tên trang trại không được quá 255 ký tự";
+  }
+  if (!formData.location.trim()) {
+    errors.location = "Vui lòng nhập vị trí trang trại";
+  } else if (formData.location.trim().length > 500) {
+    errors.location = "Vị trí không được quá 500 ký tự";
+  }
+  if (!formData.area.trim()) {
+    errors.area = "Vui lòng nhập diện tích";
+  } else {
+    const a = parseFloat(formData.area);
+    if (isNaN(a) || a <= 0) {
+      errors.area = "Diện tích phải là số dương";
+    } else if (a > 10_000_000) {
+      errors.area = "Diện tích vượt quá giới hạn cho phép";
+    }
+  }
+  return errors;
+}
+
 // ===================== FARM FORM FIELDS =====================
 function FarmFormFields({
   formData,
   setFormData,
+  errors = {},
 }: {
   formData: {
     name: string;
@@ -485,6 +524,7 @@ function FarmFormFields({
     area: string;
   };
   setFormData: React.Dispatch<React.SetStateAction<typeof formData>>;
+  errors?: FarmFormErrors;
 }) {
   const [mapOpen, setMapOpen] = useState(false);
 
@@ -493,20 +533,23 @@ function FarmFormFields({
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium text-[#45556c] mb-1">
-            Tên trang trại
+            Tên trang trại <span className="text-red-400">*</span>
           </label>
           <input
             value={formData.name}
             onChange={(e) =>
               setFormData((p) => ({ ...p, name: e.target.value }))
             }
-            className="w-full px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155]"
+            className={`w-full px-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155] ${errors.name ? "border-red-300 bg-red-50" : "border-[#e2e8f0]"}`}
             placeholder="Trang trại Thung lũng Xanh"
           />
+          {errors.name && (
+            <p className="mt-1 text-xs text-red-500">{errors.name}</p>
+          )}
         </div>
         <div>
           <label className="block text-sm font-medium text-[#45556c] mb-1">
-            Vị trí
+            Vị trí <span className="text-red-400">*</span>
           </label>
           <div className="flex gap-2">
             <input
@@ -514,7 +557,7 @@ function FarmFormFields({
               onChange={(e) =>
                 setFormData((p) => ({ ...p, location: e.target.value }))
               }
-              className="flex-1 min-w-0 px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155]"
+              className={`flex-1 min-w-0 px-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155] ${errors.location ? "border-red-300 bg-red-50" : "border-[#e2e8f0]"}`}
               placeholder="Hà Nội, Việt Nam"
             />
             <button
@@ -526,13 +569,16 @@ function FarmFormFields({
               <Globe className="w-4 h-4" />
             </button>
           </div>
+          {errors.location && (
+            <p className="mt-1 text-xs text-red-500">{errors.location}</p>
+          )}
         </div>
       </div>
 
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium text-[#45556c] mb-1">
-            Diện tích (m²)
+            Diện tích (m²) <span className="text-red-400">*</span>
           </label>
           <input
             type="number"
@@ -540,9 +586,12 @@ function FarmFormFields({
             onChange={(e) =>
               setFormData((p) => ({ ...p, area: e.target.value }))
             }
-            className="w-full px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155]"
+            className={`w-full px-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155] ${errors.area ? "border-red-300 bg-red-50" : "border-[#e2e8f0]"}`}
             placeholder="5000"
           />
+          {errors.area && (
+            <p className="mt-1 text-xs text-red-500">{errors.area}</p>
+          )}
         </div>
         <div>
           <label className="block text-sm font-medium text-[#45556c] mb-1">
@@ -694,6 +743,7 @@ function CreateFarmModal({
     status: "Hoạt động" as FarmStatus,
     area: "",
   });
+  const [formErrors, setFormErrors] = useState<FarmFormErrors>({});
 
   // Reset form when modal closes
   useEffect(() => {
@@ -704,13 +754,19 @@ function CreateFarmModal({
         status: "Hoạt động",
         area: "",
       });
+      setFormErrors({});
     }
   }, [open]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const errors = validateFarmForm(formData);
+    setFormErrors(errors);
+    if (Object.keys(errors).length > 0) return;
     onCreate({
       ...formData,
+      name: formData.name.trim(),
+      location: formData.location.trim(),
       area: parseInt(formData.area) || 0,
       image: "",
       description: "",
@@ -734,7 +790,14 @@ function CreateFarmModal({
             <Dialog.Description className="sr-only">
               Form thêm trang trại mới
             </Dialog.Description>
-            <FarmFormFields formData={formData} setFormData={setFormData} />
+            <FarmFormFields
+              formData={formData}
+              setFormData={(updater) => {
+                setFormData(updater);
+                setFormErrors({});
+              }}
+              errors={formErrors}
+            />
             <div className="flex justify-end gap-3 mt-6">
               <Dialog.Close className="px-4 py-2 text-sm text-[#62748e] hover:text-[#334155]">
                 Hủy
@@ -775,6 +838,7 @@ function EditFarmModal({
     status: farm.status,
     area: farm.area.toString(),
   });
+  const [formErrors, setFormErrors] = useState<FarmFormErrors>({});
 
   // Sync when farm changes (e.g. different farm opened)
   useEffect(() => {
@@ -784,11 +848,21 @@ function EditFarmModal({
       status: farm.status,
       area: farm.area.toString(),
     });
+    setFormErrors({});
   }, [farm]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onUpdate({ ...farm, ...formData, area: parseInt(formData.area) || 0 });
+    const errors = validateFarmForm(formData);
+    setFormErrors(errors);
+    if (Object.keys(errors).length > 0) return;
+    onUpdate({
+      ...farm,
+      ...formData,
+      name: formData.name.trim(),
+      location: formData.location.trim(),
+      area: parseInt(formData.area) || 0,
+    });
   };
 
   return (
@@ -808,7 +882,14 @@ function EditFarmModal({
             <Dialog.Description className="sr-only">
               Form chỉnh sửa thông tin trang trại
             </Dialog.Description>
-            <FarmFormFields formData={formData} setFormData={setFormData} />
+            <FarmFormFields
+              formData={formData}
+              setFormData={(updater) => {
+                setFormData(updater);
+                setFormErrors({});
+              }}
+              errors={formErrors}
+            />
             <div className="flex justify-end gap-3 mt-6">
               <Dialog.Close className="px-4 py-2 text-sm text-[#62748e] hover:text-[#334155]">
                 Hủy

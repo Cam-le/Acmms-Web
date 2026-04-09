@@ -147,7 +147,7 @@ export function LoginPage() {
         </div>
 
         {/* Demo accounts hint */}
-        <div className="mb-5 p-3 bg-[#f0fdf9] border border-[#99f6e4] rounded-xl text-xs text-[#0f766e]">
+        {/* <div className="mb-5 p-3 bg-[#f0fdf9] border border-[#99f6e4] rounded-xl text-xs text-[#0f766e]">
           <p className="font-semibold mb-1.5">Tài khoản demo:</p>
           <p className="mb-0.5">
             <span className="font-medium">Chủ nông trại:</span> owner@gmail.com
@@ -157,7 +157,7 @@ export function LoginPage() {
             <span className="font-medium">Chuyên gia:</span>{" "}
             specialist@gmail.com / 123456
           </p>
-        </div>
+        </div> */}
 
         <form onSubmit={handleMockLogin} className="space-y-4">
           <div>

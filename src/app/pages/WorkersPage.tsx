@@ -92,12 +92,16 @@ function validateForm(
 
   if (!formData.name.trim()) {
     errors.name = "Vui lòng nhập họ và tên";
+  } else if (formData.name.trim().length > 255) {
+    errors.name = "Họ và tên không được quá 255 ký tự";
   }
 
   if (!formData.email.trim()) {
     errors.email = "Vui lòng nhập email";
   } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim())) {
     errors.email = "Email không hợp lệ";
+  } else if (formData.email.trim().length > 255) {
+    errors.email = "Email không được quá 255 ký tự";
   }
 
   if (!formData.phone.trim()) {
