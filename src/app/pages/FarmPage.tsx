@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import {
   Plus,
   Eye,
@@ -12,9 +12,6 @@ import {
   Loader2,
   WifiOff,
   Globe,
-  Upload,
-  X,
-  Image as ImageIcon,
   Clock,
 } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
@@ -105,89 +102,6 @@ const plotStatusColor = (status: FarmStatus) =>
   status === "Hoạt động"
     ? "bg-[#dcfce7] text-[#008236]"
     : "bg-[#fee2e2] text-[#991b1b]";
-
-// ===================== IMAGE UPLOADER =====================
-function ImageUploader({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (base64: string) => void;
-}) {
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  const handleFile = (file: File) => {
-    if (!file.type.startsWith("image/")) return;
-    const reader = new FileReader();
-    reader.onload = (e) => onChange((e.target?.result as string) ?? "");
-    reader.readAsDataURL(file);
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    const file = e.dataTransfer.files[0];
-    if (file) handleFile(file);
-  };
-
-  return (
-    <div className="space-y-2">
-      <label className="block text-sm font-medium text-[#45556c]">
-        Hình ảnh trang trại
-      </label>
-      {value ? (
-        <div className="relative rounded-lg overflow-hidden border border-[#e2e8f0] group">
-          <img
-            src={value}
-            alt="Ảnh trang trại"
-            className="w-full h-40 object-cover"
-          />
-          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
-            <button
-              type="button"
-              onClick={() => onChange("")}
-              className="p-1.5 bg-white rounded-full text-red-500 hover:bg-red-50 mr-2"
-            >
-              <X className="w-4 h-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => inputRef.current?.click()}
-              className="p-1.5 bg-white rounded-full text-[#009689] hover:bg-[#f0fdf9]"
-            >
-              <Upload className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      ) : (
-        <div
-          onDrop={handleDrop}
-          onDragOver={(e) => e.preventDefault()}
-          onClick={() => inputRef.current?.click()}
-          className="w-full h-36 border-2 border-dashed border-[#cad5e2] rounded-lg flex flex-col items-center justify-center gap-2 cursor-pointer hover:border-[#009689] hover:bg-[#f0fdf9] transition-colors"
-        >
-          <ImageIcon className="w-8 h-8 text-[#94a3b8]" />
-          <span className="text-sm text-[#62748e]">
-            Nhấp hoặc kéo thả ảnh vào đây
-          </span>
-          <span className="text-xs text-[#94a3b8]">
-            PNG, JPG, WEBP (tối đa 5MB)
-          </span>
-        </div>
-      )}
-      <input
-        ref={inputRef}
-        type="file"
-        accept="image/*"
-        className="hidden"
-        onChange={(e) => {
-          const file = e.target.files?.[0];
-          if (file) handleFile(file);
-          e.target.value = "";
-        }}
-      />
-    </div>
-  );
-}
 
 export function FarmPage() {
   const [farms, setFarms] = useState<Farm[]>([]);
@@ -474,17 +388,9 @@ function FarmCard({
       <div className="bg-white rounded-xl border border-[#e2e8f0] shadow-sm overflow-hidden">
         <div className="p-5 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            {farm.image ? (
-              <img
-                src={farm.image}
-                alt={farm.name}
-                className="w-12 h-12 rounded-xl object-cover shrink-0"
-              />
-            ) : (
-              <div className="w-12 h-12 bg-[#f0fdf9] rounded-xl flex items-center justify-center shrink-0">
-                <Home className="w-6 h-6 text-[#009689]" />
-              </div>
-            )}
+            <div className="w-12 h-12 bg-[#f0fdf9] rounded-xl flex items-center justify-center shrink-0">
+              <Home className="w-6 h-6 text-[#009689]" />
+            </div>
             <div>
               <h3 className="font-semibold text-[#115e59]">{farm.name}</h3>
               <div className="flex items-center gap-1 text-sm text-[#62748e] mt-0.5">
@@ -534,9 +440,6 @@ function FarmCard({
 
         <Collapsible.Content>
           <div className="border-t border-[#f1f5f9] p-5">
-            {farm.description && (
-              <p className="text-sm text-[#62748e] mb-4">{farm.description}</p>
-            )}
             <div className="grid grid-cols-3 gap-4 text-sm">
               <div>
                 <div className="text-xs text-[#94a3b8] uppercase mb-1">
@@ -570,48 +473,83 @@ function FarmCard({
   );
 }
 
+// ===================== FARM FORM VALIDATION =====================
+interface FarmFormErrors {
+  name?: string;
+  location?: string;
+  area?: string;
+}
+
+function validateFarmForm(formData: {
+  name: string;
+  location: string;
+  area: string;
+}): FarmFormErrors {
+  const errors: FarmFormErrors = {};
+  if (!formData.name.trim()) {
+    errors.name = "Vui lòng nhập tên trang trại";
+  } else if (formData.name.trim().length < 2) {
+    errors.name = "Tên trang trại phải có ít nhất 2 ký tự";
+  } else if (formData.name.trim().length > 255) {
+    errors.name = "Tên trang trại không được quá 255 ký tự";
+  }
+  if (!formData.location.trim()) {
+    errors.location = "Vui lòng nhập vị trí trang trại";
+  } else if (formData.location.trim().length > 500) {
+    errors.location = "Vị trí không được quá 500 ký tự";
+  }
+  if (!formData.area.trim()) {
+    errors.area = "Vui lòng nhập diện tích";
+  } else {
+    const a = parseFloat(formData.area);
+    if (isNaN(a) || a <= 0) {
+      errors.area = "Diện tích phải là số dương";
+    } else if (a > 10_000_000) {
+      errors.area = "Diện tích vượt quá giới hạn cho phép";
+    }
+  }
+  return errors;
+}
+
 // ===================== FARM FORM FIELDS =====================
 function FarmFormFields({
   formData,
   setFormData,
+  errors = {},
 }: {
   formData: {
     name: string;
     location: string;
     status: FarmStatus;
     area: string;
-    description: string;
-    image: string;
   };
   setFormData: React.Dispatch<React.SetStateAction<typeof formData>>;
+  errors?: FarmFormErrors;
 }) {
   const [mapOpen, setMapOpen] = useState(false);
 
   return (
     <div className="space-y-4">
-      {/* Image uploader */}
-      <ImageUploader
-        value={formData.image}
-        onChange={(img) => setFormData((p) => ({ ...p, image: img }))}
-      />
-
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium text-[#45556c] mb-1">
-            Tên trang trại
+            Tên trang trại <span className="text-red-400">*</span>
           </label>
           <input
             value={formData.name}
             onChange={(e) =>
               setFormData((p) => ({ ...p, name: e.target.value }))
             }
-            className="w-full px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155]"
+            className={`w-full px-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155] ${errors.name ? "border-red-300 bg-red-50" : "border-[#e2e8f0]"}`}
             placeholder="Trang trại Thung lũng Xanh"
           />
+          {errors.name && (
+            <p className="mt-1 text-xs text-red-500">{errors.name}</p>
+          )}
         </div>
         <div>
           <label className="block text-sm font-medium text-[#45556c] mb-1">
-            Vị trí
+            Vị trí <span className="text-red-400">*</span>
           </label>
           <div className="flex gap-2">
             <input
@@ -619,7 +557,7 @@ function FarmFormFields({
               onChange={(e) =>
                 setFormData((p) => ({ ...p, location: e.target.value }))
               }
-              className="flex-1 min-w-0 px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155]"
+              className={`flex-1 min-w-0 px-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155] ${errors.location ? "border-red-300 bg-red-50" : "border-[#e2e8f0]"}`}
               placeholder="Hà Nội, Việt Nam"
             />
             <button
@@ -631,13 +569,16 @@ function FarmFormFields({
               <Globe className="w-4 h-4" />
             </button>
           </div>
+          {errors.location && (
+            <p className="mt-1 text-xs text-red-500">{errors.location}</p>
+          )}
         </div>
       </div>
 
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium text-[#45556c] mb-1">
-            Diện tích (m²)
+            Diện tích (m²) <span className="text-red-400">*</span>
           </label>
           <input
             type="number"
@@ -645,9 +586,12 @@ function FarmFormFields({
             onChange={(e) =>
               setFormData((p) => ({ ...p, area: e.target.value }))
             }
-            className="w-full px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155]"
+            className={`w-full px-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155] ${errors.area ? "border-red-300 bg-red-50" : "border-[#e2e8f0]"}`}
             placeholder="5000"
           />
+          {errors.area && (
+            <p className="mt-1 text-xs text-red-500">{errors.area}</p>
+          )}
         </div>
         <div>
           <label className="block text-sm font-medium text-[#45556c] mb-1">
@@ -667,21 +611,6 @@ function FarmFormFields({
             <option value="Không hoạt động">Không hoạt động</option>
           </select>
         </div>
-      </div>
-
-      <div>
-        <label className="block text-sm font-medium text-[#45556c] mb-1">
-          Mô tả
-        </label>
-        <textarea
-          value={formData.description}
-          onChange={(e) =>
-            setFormData((p) => ({ ...p, description: e.target.value }))
-          }
-          rows={3}
-          className="w-full px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155] resize-none"
-          placeholder="Mô tả trang trại..."
-        />
       </div>
 
       {/* Map Picker Modal — rendered outside the form z-stack */}
@@ -724,17 +653,6 @@ function ViewFarmModal({
           <Dialog.Description className="sr-only">
             Chi tiết trang trại
           </Dialog.Description>
-
-          {/* Farm image */}
-          {farm.image && (
-            <div className="mb-4 rounded-lg overflow-hidden">
-              <img
-                src={farm.image}
-                alt={farm.name}
-                className="w-full h-44 object-cover"
-              />
-            </div>
-          )}
 
           <div className="space-y-2">
             {[
@@ -794,13 +712,6 @@ function ViewFarmModal({
                 </div>
               )}
             </div>
-
-            {farm.description && (
-              <div className="pt-2">
-                <div className="text-xs text-[#62748e] mb-1">Mô tả</div>
-                <p className="text-sm text-[#334155]">{farm.description}</p>
-              </div>
-            )}
           </div>
 
           <div className="mt-5 flex justify-end">
@@ -831,9 +742,8 @@ function CreateFarmModal({
     location: "",
     status: "Hoạt động" as FarmStatus,
     area: "",
-    description: "",
-    image: "",
   });
+  const [formErrors, setFormErrors] = useState<FarmFormErrors>({});
 
   // Reset form when modal closes
   useEffect(() => {
@@ -843,15 +753,24 @@ function CreateFarmModal({
         location: "",
         status: "Hoạt động",
         area: "",
-        description: "",
-        image: "",
       });
+      setFormErrors({});
     }
   }, [open]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onCreate({ ...formData, area: parseInt(formData.area) || 0 });
+    const errors = validateFarmForm(formData);
+    setFormErrors(errors);
+    if (Object.keys(errors).length > 0) return;
+    onCreate({
+      ...formData,
+      name: formData.name.trim(),
+      location: formData.location.trim(),
+      area: parseInt(formData.area) || 0,
+      image: "",
+      description: "",
+    });
   };
 
   return (
@@ -871,7 +790,14 @@ function CreateFarmModal({
             <Dialog.Description className="sr-only">
               Form thêm trang trại mới
             </Dialog.Description>
-            <FarmFormFields formData={formData} setFormData={setFormData} />
+            <FarmFormFields
+              formData={formData}
+              setFormData={(updater) => {
+                setFormData(updater);
+                setFormErrors({});
+              }}
+              errors={formErrors}
+            />
             <div className="flex justify-end gap-3 mt-6">
               <Dialog.Close className="px-4 py-2 text-sm text-[#62748e] hover:text-[#334155]">
                 Hủy
@@ -911,9 +837,8 @@ function EditFarmModal({
     location: farm.location,
     status: farm.status,
     area: farm.area.toString(),
-    description: farm.description,
-    image: farm.image,
   });
+  const [formErrors, setFormErrors] = useState<FarmFormErrors>({});
 
   // Sync when farm changes (e.g. different farm opened)
   useEffect(() => {
@@ -922,14 +847,22 @@ function EditFarmModal({
       location: farm.location,
       status: farm.status,
       area: farm.area.toString(),
-      description: farm.description,
-      image: farm.image,
     });
+    setFormErrors({});
   }, [farm]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onUpdate({ ...farm, ...formData, area: parseInt(formData.area) || 0 });
+    const errors = validateFarmForm(formData);
+    setFormErrors(errors);
+    if (Object.keys(errors).length > 0) return;
+    onUpdate({
+      ...farm,
+      ...formData,
+      name: formData.name.trim(),
+      location: formData.location.trim(),
+      area: parseInt(formData.area) || 0,
+    });
   };
 
   return (
@@ -949,7 +882,14 @@ function EditFarmModal({
             <Dialog.Description className="sr-only">
               Form chỉnh sửa thông tin trang trại
             </Dialog.Description>
-            <FarmFormFields formData={formData} setFormData={setFormData} />
+            <FarmFormFields
+              formData={formData}
+              setFormData={(updater) => {
+                setFormData(updater);
+                setFormErrors({});
+              }}
+              errors={formErrors}
+            />
             <div className="flex justify-end gap-3 mt-6">
               <Dialog.Close className="px-4 py-2 text-sm text-[#62748e] hover:text-[#334155]">
                 Hủy

@@ -1729,9 +1729,54 @@ function TaskFormModal({
   );
 }
 
+// ── Crop form validation ─────────────────────────────────────────────────────
+interface CropFormErrors {
+  name?: string;
+  scientificName?: string;
+  growthPeriod?: string;
+  plantSpacing?: string;
+}
+
+function validateCropForm(formData: {
+  name: string;
+  scientificName: string;
+  growthPeriod: string;
+  plantSpacing: string;
+}): CropFormErrors {
+  const errors: CropFormErrors = {};
+  if (!formData.name.trim()) {
+    errors.name = "Vui lòng nhập tên cây trồng";
+  } else if (formData.name.trim().length < 2) {
+    errors.name = "Tên cây trồng phải có ít nhất 2 ký tự";
+  } else if (formData.name.trim().length > 200) {
+    errors.name = "Tên cây trồng không được quá 200 ký tự";
+  }
+  if (formData.scientificName.trim().length > 500) {
+    errors.scientificName = "Tên khoa học không được quá 500 ký tự";
+  }
+  if (formData.growthPeriod.trim()) {
+    const gp = parseInt(formData.growthPeriod);
+    if (isNaN(gp) || gp < 1) {
+      errors.growthPeriod = "Chu kỳ sinh trưởng phải là số dương";
+    } else if (gp > 365) {
+      errors.growthPeriod = "Chu kỳ sinh trưởng không nên quá 365 ngày";
+    }
+  }
+  if (formData.plantSpacing.trim()) {
+    const ps = parseFloat(formData.plantSpacing);
+    if (isNaN(ps) || ps < 0) {
+      errors.plantSpacing = "Khoảng cách trồng phải là số không âm";
+    } else if (ps > 500) {
+      errors.plantSpacing = "Khoảng cách trồng không nên quá 500 cm";
+    }
+  }
+  return errors;
+}
+
 function CropFormFields({
   formData,
   setFormData,
+  errors = {},
 }: {
   formData: {
     name: string;
@@ -1743,23 +1788,26 @@ function CropFormFields({
     plantSpacing: string;
   };
   setFormData: React.Dispatch<React.SetStateAction<typeof formData>>;
+  errors?: CropFormErrors;
 }) {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium text-[#45556c] mb-1">
-            Tên cây trồng <span className="text-red-500">*</span>
+            Tên cây trồng <span className="text-red-400">*</span>
           </label>
           <input
-            required
             value={formData.name}
             onChange={(e) =>
               setFormData((p) => ({ ...p, name: e.target.value }))
             }
-            className="w-full px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155]"
+            className={`w-full px-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155] ${errors.name ? "border-red-300 bg-red-50" : "border-[#e2e8f0]"}`}
             placeholder="Bắp Cải Trắng"
           />
+          {errors.name && (
+            <p className="mt-1 text-xs text-red-500">{errors.name}</p>
+          )}
         </div>
         <div>
           <label className="block text-sm font-medium text-[#45556c] mb-1">
@@ -1770,9 +1818,12 @@ function CropFormFields({
             onChange={(e) =>
               setFormData((p) => ({ ...p, scientificName: e.target.value }))
             }
-            className="w-full px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155] italic"
+            className={`w-full px-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155] italic ${errors.scientificName ? "border-red-300 bg-red-50" : "border-[#e2e8f0]"}`}
             placeholder="Brassica oleracea"
           />
+          {errors.scientificName && (
+            <p className="mt-1 text-xs text-red-500">{errors.scientificName}</p>
+          )}
         </div>
       </div>
       <div className="grid grid-cols-2 gap-4">
@@ -1786,9 +1837,12 @@ function CropFormFields({
             onChange={(e) =>
               setFormData((p) => ({ ...p, growthPeriod: e.target.value }))
             }
-            className="w-full px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155]"
+            className={`w-full px-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155] ${errors.growthPeriod ? "border-red-300 bg-red-50" : "border-[#e2e8f0]"}`}
             placeholder="90"
           />
+          {errors.growthPeriod && (
+            <p className="mt-1 text-xs text-red-500">{errors.growthPeriod}</p>
+          )}
         </div>
         <div>
           <label className="block text-sm font-medium text-[#45556c] mb-1">
@@ -1800,9 +1854,12 @@ function CropFormFields({
             onChange={(e) =>
               setFormData((p) => ({ ...p, plantSpacing: e.target.value }))
             }
-            className="w-full px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155]"
+            className={`w-full px-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155] ${errors.plantSpacing ? "border-red-300 bg-red-50" : "border-[#e2e8f0]"}`}
             placeholder="50"
           />
+          {errors.plantSpacing && (
+            <p className="mt-1 text-xs text-red-500">{errors.plantSpacing}</p>
+          )}
         </div>
       </div>
       <div>
@@ -1860,16 +1917,20 @@ function CreateCropModal({
   submitting: boolean;
 }) {
   const [formData, setFormData] = useState(defaultFormData);
+  const [formErrors, setFormErrors] = useState<CropFormErrors>({});
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const errors = validateCropForm(formData);
+    setFormErrors(errors);
+    if (Object.keys(errors).length > 0) return;
     onCreate({
-      name: formData.name,
-      scientificName: formData.scientificName,
+      name: formData.name.trim(),
+      scientificName: formData.scientificName.trim(),
       growthPeriod: parseInt(formData.growthPeriod) || 0,
       soilType: "" as Crop["soilType"],
       status: formData.status,
       image: formData.image,
-      description: formData.description,
+      description: formData.description.trim(),
       plantDistance: {
         row: parseInt(formData.plantSpacing) || 0,
         column: parseInt(formData.plantSpacing) || 0,
@@ -1878,6 +1939,7 @@ function CreateCropModal({
       compatibleSoils: [],
     });
     setFormData(defaultFormData);
+    setFormErrors({});
   };
   return (
     <Dialog.Root open={open} onOpenChange={onClose}>
@@ -1899,7 +1961,14 @@ function CreateCropModal({
             <Dialog.Description className="sr-only">
               Form thêm giống cây mới
             </Dialog.Description>
-            <CropFormFields formData={formData} setFormData={setFormData} />
+            <CropFormFields
+              formData={formData}
+              setFormData={(updater) => {
+                setFormData(updater);
+                setFormErrors({});
+              }}
+              errors={formErrors}
+            />
             <div className="flex justify-end gap-3 mt-6">
               <Dialog.Close className="px-4 py-2 text-sm text-[#62748e] hover:text-[#334155]">
                 Hủy
@@ -1950,16 +2019,20 @@ function EditCropModal({
     description: crop.description,
     plantSpacing: (crop.plantSpacing ?? crop.plantDistance.row ?? 0).toString(),
   });
+  const [formErrors, setFormErrors] = useState<CropFormErrors>({});
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const errors = validateCropForm(formData);
+    setFormErrors(errors);
+    if (Object.keys(errors).length > 0) return;
     onUpdate({
       ...crop,
-      name: formData.name,
-      scientificName: formData.scientificName,
+      name: formData.name.trim(),
+      scientificName: formData.scientificName.trim(),
       growthPeriod: parseInt(formData.growthPeriod) || 0,
       status: formData.status,
       image: formData.image,
-      description: formData.description,
+      description: formData.description.trim(),
       plantDistance: {
         row: parseInt(formData.plantSpacing) || 0,
         column: parseInt(formData.plantSpacing) || 0,
@@ -1987,7 +2060,14 @@ function EditCropModal({
             <Dialog.Description className="sr-only">
               Form chỉnh sửa cây trồng {crop.name}
             </Dialog.Description>
-            <CropFormFields formData={formData} setFormData={setFormData} />
+            <CropFormFields
+              formData={formData}
+              setFormData={(updater) => {
+                setFormData(updater);
+                setFormErrors({});
+              }}
+              errors={formErrors}
+            />
             <div className="flex justify-end gap-3 mt-6">
               <Dialog.Close className="px-4 py-2 text-sm text-[#62748e] hover:text-[#334155]">
                 Hủy

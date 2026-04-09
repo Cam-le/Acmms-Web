@@ -175,8 +175,12 @@ export function SoilsPage() {
   function validate(): boolean {
     const e: Partial<FormState> = {};
     if (!form.name.trim()) e.name = "Tên loại đất không được để trống";
+    else if (form.name.trim().length > 200)
+      e.name = "Tên loại đất không được quá 200 ký tự";
     if (!form.scienceName.trim())
       e.scienceName = "Tên khoa học không được để trống";
+    else if (form.scienceName.trim().length > 500)
+      e.scienceName = "Tên khoa học không được quá 500 ký tự";
     setErrors(e);
     return Object.keys(e).length === 0;
   }

@@ -189,6 +189,11 @@ export interface CropRequest {
   cropStatus?: string;
 }
 
+export interface RoleResponse {
+  roleId: string;
+  roleName: string;
+}
+
 export interface WorkerRequest {
   email: string;
   password?: string;
@@ -236,6 +241,7 @@ export const api = {
   // Auth
   login: (body: LoginRequest) =>
     request<unknown>("POST", "/api/auth/login", body),
+  getRoles: () => request<RoleResponse[]>("GET", "/api/Auth/roles"),
 
   // Crops (raw response)
   getCrops: () => request<CropResponse[]>("GET", "/api/crops"),

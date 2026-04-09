@@ -942,6 +942,84 @@ export function PlotsPage() {
   );
 }
 
+// ==================== Validation ====================
+
+interface PlotFormErrors {
+  plotName?: string;
+  plotArea?: string;
+  farmId?: string;
+  soilId?: string;
+}
+
+function validatePlotForm(
+  data: PlotRequest,
+  farms: FarmResponse[],
+  soils: SoilResponse[],
+): PlotFormErrors {
+  const errors: PlotFormErrors = {};
+  if (!data.plotName.trim()) {
+    errors.plotName = "Vui lòng nhập tên vuông đất";
+  } else if (data.plotName.trim().length < 2) {
+    errors.plotName = "Tên vuông đất phải có ít nhất 2 ký tự";
+  }
+  if (!data.plotArea || data.plotArea <= 0) {
+    errors.plotArea = "Diện tích phải là số dương";
+  } else if (data.plotArea > 1_000_000) {
+    errors.plotArea = "Diện tích vượt quá giới hạn cho phép";
+  }
+  if (!data.farmId) {
+    errors.farmId = "Vui lòng chọn trang trại";
+  }
+  if (!data.soilId) {
+    errors.soilId = "Vui lòng chọn loại đất";
+  }
+  return errors;
+}
+
+interface BedFormErrors {
+  bedName?: string;
+  bedArea?: string;
+}
+
+function validateBedForm(data: BedRequest): BedFormErrors {
+  const errors: BedFormErrors = {};
+  if (!data.bedName.trim()) {
+    errors.bedName = "Vui lòng nhập tên luống";
+  } else if (data.bedName.trim().length < 2) {
+    errors.bedName = "Tên luống phải có ít nhất 2 ký tự";
+  } else if (data.bedName.trim().length > 200) {
+    errors.bedName = "Tên luống không được quá 200 ký tự";
+  }
+  if (!data.bedArea || data.bedArea <= 0) {
+    errors.bedArea = "Diện tích phải là số dương";
+  }
+  return errors;
+}
+
+interface AutoBedFormErrors {
+  prefix?: string;
+  bedSize?: string;
+}
+
+function validateAutoBedForm(
+  prefix: string,
+  bedSize: number,
+  remainingArea: number,
+): AutoBedFormErrors {
+  const errors: AutoBedFormErrors = {};
+  if (!prefix.trim()) {
+    errors.prefix = "Vui lòng nhập prefix tên luống";
+  } else if (/\s/.test(prefix.trim())) {
+    errors.prefix = "Prefix không được chứa khoảng trắng";
+  }
+  if (bedSize <= 0) {
+    errors.bedSize = "Diện tích mỗi luống phải là số dương";
+  } else if (bedSize > remainingArea) {
+    errors.bedSize = "Diện tích mỗi luống vượt quá diện tích còn lại";
+  }
+  return errors;
+}
+
 // ==================== Plot Modals ====================
 
 function CreatePlotModal({
@@ -964,9 +1042,10 @@ function CreatePlotModal({
     plotArea: 0,
     plotStatus: "Active",
   });
+  const [formErrors, setFormErrors] = useState<PlotFormErrors>({});
 
   useEffect(() => {
-    if (open)
+    if (open) {
       setFormData({
         farmId: farms[0]?.farmId ?? "",
         soilId: soils[0]?.soilId ?? "",
@@ -974,6 +1053,8 @@ function CreatePlotModal({
         plotArea: 0,
         plotStatus: "Active",
       });
+      setFormErrors({});
+    }
   }, [open, farms, soils]);
 
   return (
@@ -994,7 +1075,10 @@ function CreatePlotModal({
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              onCreate(formData);
+              const errors = validatePlotForm(formData, farms, soils);
+              setFormErrors(errors);
+              if (Object.keys(errors).length > 0) return;
+              onCreate({ ...formData, plotName: formData.plotName.trim() });
             }}
             className="space-y-4"
           >
@@ -1004,14 +1088,19 @@ function CreatePlotModal({
               </label>
               <input
                 type="text"
-                required
                 placeholder="Ví dụ: Plot A1"
                 value={formData.plotName}
-                onChange={(e) =>
-                  setFormData({ ...formData, plotName: e.target.value })
-                }
-                className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                onChange={(e) => {
+                  setFormData({ ...formData, plotName: e.target.value });
+                  setFormErrors((p) => ({ ...p, plotName: undefined }));
+                }}
+                className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] ${formErrors.plotName ? "border-red-300 bg-red-50" : "border-[#cad5e2]"}`}
               />
+              {formErrors.plotName && (
+                <p className="mt-1 text-xs text-red-500">
+                  {formErrors.plotName}
+                </p>
+              )}
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -1060,17 +1149,22 @@ function CreatePlotModal({
                 </label>
                 <input
                   type="number"
-                  required
                   min={1}
                   value={formData.plotArea || ""}
-                  onChange={(e) =>
+                  onChange={(e) => {
                     setFormData({
                       ...formData,
                       plotArea: parseFloat(e.target.value) || 0,
-                    })
-                  }
-                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                    });
+                    setFormErrors((p) => ({ ...p, plotArea: undefined }));
+                  }}
+                  className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] ${formErrors.plotArea ? "border-red-300 bg-red-50" : "border-[#cad5e2]"}`}
                 />
+                {formErrors.plotArea && (
+                  <p className="mt-1 text-xs text-red-500">
+                    {formErrors.plotArea}
+                  </p>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-[#115e59] mb-2">
@@ -1822,9 +1916,10 @@ function CreateBedModal({
     bedStatus: "Active",
     cropQuantities: 0,
   });
+  const [formErrors, setFormErrors] = useState<BedFormErrors>({});
 
   useEffect(() => {
-    if (open)
+    if (open) {
       setFormData({
         plotId: plot.plotId,
         bedName: "",
@@ -1832,6 +1927,8 @@ function CreateBedModal({
         bedStatus: "Active",
         cropQuantities: 0,
       });
+      setFormErrors({});
+    }
   }, [open, plot]);
 
   return (
@@ -1856,7 +1953,10 @@ function CreateBedModal({
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              onCreate(formData);
+              const errors = validateBedForm(formData);
+              setFormErrors(errors);
+              if (Object.keys(errors).length > 0) return;
+              onCreate({ ...formData, bedName: formData.bedName.trim() });
             }}
             className="space-y-4"
           >
@@ -1866,14 +1966,19 @@ function CreateBedModal({
               </label>
               <input
                 type="text"
-                required
                 placeholder="Ví dụ: west_01"
                 value={formData.bedName}
-                onChange={(e) =>
-                  setFormData({ ...formData, bedName: e.target.value })
-                }
-                className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                onChange={(e) => {
+                  setFormData({ ...formData, bedName: e.target.value });
+                  setFormErrors((p) => ({ ...p, bedName: undefined }));
+                }}
+                className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] ${formErrors.bedName ? "border-red-300 bg-red-50" : "border-[#cad5e2]"}`}
               />
+              {formErrors.bedName && (
+                <p className="mt-1 text-xs text-red-500">
+                  {formErrors.bedName}
+                </p>
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-[#115e59] mb-2">
@@ -1881,18 +1986,23 @@ function CreateBedModal({
               </label>
               <input
                 type="number"
-                required
                 min={0.1}
                 step={0.1}
                 value={formData.bedArea || ""}
-                onChange={(e) =>
+                onChange={(e) => {
                   setFormData({
                     ...formData,
                     bedArea: parseFloat(e.target.value) || 0,
-                  })
-                }
-                className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                  });
+                  setFormErrors((p) => ({ ...p, bedArea: undefined }));
+                }}
+                className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] ${formErrors.bedArea ? "border-red-300 bg-red-50" : "border-[#cad5e2]"}`}
               />
+              {formErrors.bedArea && (
+                <p className="mt-1 text-xs text-red-500">
+                  {formErrors.bedArea}
+                </p>
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-[#115e59] mb-2">
@@ -2052,9 +2162,10 @@ function EditBedModal({
     bedStatus: bed.bedStatus,
     cropQuantities: bed.cropQuantities,
   });
+  const [formErrors, setFormErrors] = useState<BedFormErrors>({});
 
   useEffect(() => {
-    if (open)
+    if (open) {
       setFormData({
         plotId: bed.plotId,
         bedName: bed.bedName,
@@ -2062,6 +2173,8 @@ function EditBedModal({
         bedStatus: bed.bedStatus,
         cropQuantities: bed.cropQuantities,
       });
+      setFormErrors({});
+    }
   }, [open, bed]);
 
   return (
@@ -2082,7 +2195,13 @@ function EditBedModal({
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              onUpdate(bed.bedId, formData);
+              const errors = validateBedForm(formData);
+              setFormErrors(errors);
+              if (Object.keys(errors).length > 0) return;
+              onUpdate(bed.bedId, {
+                ...formData,
+                bedName: formData.bedName.trim(),
+              });
             }}
             className="space-y-4"
           >
@@ -2092,13 +2211,18 @@ function EditBedModal({
               </label>
               <input
                 type="text"
-                required
                 value={formData.bedName}
-                onChange={(e) =>
-                  setFormData({ ...formData, bedName: e.target.value })
-                }
-                className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                onChange={(e) => {
+                  setFormData({ ...formData, bedName: e.target.value });
+                  setFormErrors((p) => ({ ...p, bedName: undefined }));
+                }}
+                className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] ${formErrors.bedName ? "border-red-300 bg-red-50" : "border-[#cad5e2]"}`}
               />
+              {formErrors.bedName && (
+                <p className="mt-1 text-xs text-red-500">
+                  {formErrors.bedName}
+                </p>
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-[#115e59] mb-2">
@@ -2106,18 +2230,23 @@ function EditBedModal({
               </label>
               <input
                 type="number"
-                required
                 min={0.1}
                 step={0.1}
                 value={formData.bedArea}
-                onChange={(e) =>
+                onChange={(e) => {
                   setFormData({
                     ...formData,
                     bedArea: parseFloat(e.target.value) || 0,
-                  })
-                }
-                className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                  });
+                  setFormErrors((p) => ({ ...p, bedArea: undefined }));
+                }}
+                className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] ${formErrors.bedArea ? "border-red-300 bg-red-50" : "border-[#cad5e2]"}`}
               />
+              {formErrors.bedArea && (
+                <p className="mt-1 text-xs text-red-500">
+                  {formErrors.bedArea}
+                </p>
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-[#115e59] mb-2">
@@ -2194,6 +2323,7 @@ function AutoBedModal({
   const [bedSize, setBedSize] = useState(50);
   const [cropQuantities, setCropQuantities] = useState(10);
   const [prefix, setPrefix] = useState("bed");
+  const [autoErrors, setAutoErrors] = useState<AutoBedFormErrors>({});
   const count = Math.floor(remainingArea / bedSize);
 
   return (
@@ -2222,7 +2352,14 @@ function AutoBedModal({
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              onCreate(plot.plotId, bedSize, cropQuantities, prefix);
+              const errors = validateAutoBedForm(
+                prefix,
+                bedSize,
+                remainingArea,
+              );
+              setAutoErrors(errors);
+              if (Object.keys(errors).length > 0) return;
+              onCreate(plot.plotId, bedSize, cropQuantities, prefix.trim());
             }}
             className="space-y-4"
           >
@@ -2232,12 +2369,17 @@ function AutoBedModal({
               </label>
               <input
                 type="text"
-                required
                 value={prefix}
-                onChange={(e) => setPrefix(e.target.value)}
+                onChange={(e) => {
+                  setPrefix(e.target.value);
+                  setAutoErrors((p) => ({ ...p, prefix: undefined }));
+                }}
                 placeholder="Ví dụ: west, north"
-                className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] ${autoErrors.prefix ? "border-red-300 bg-red-50" : "border-[#cad5e2]"}`}
               />
+              {autoErrors.prefix && (
+                <p className="mt-1 text-xs text-red-500">{autoErrors.prefix}</p>
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-[#115e59] mb-2">
@@ -2245,12 +2387,19 @@ function AutoBedModal({
               </label>
               <input
                 type="number"
-                required
                 min={1}
                 value={bedSize}
-                onChange={(e) => setBedSize(parseFloat(e.target.value) || 0)}
-                className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                onChange={(e) => {
+                  setBedSize(parseFloat(e.target.value) || 0);
+                  setAutoErrors((p) => ({ ...p, bedSize: undefined }));
+                }}
+                className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] ${autoErrors.bedSize ? "border-red-300 bg-red-50" : "border-[#cad5e2]"}`}
               />
+              {autoErrors.bedSize && (
+                <p className="mt-1 text-xs text-red-500">
+                  {autoErrors.bedSize}
+                </p>
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-[#115e59] mb-2">
