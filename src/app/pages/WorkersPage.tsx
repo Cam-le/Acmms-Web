@@ -8,7 +8,6 @@ import {
   X,
   Loader2,
   Users,
-  WifiOff,
   ChevronUp,
   ChevronDown,
   ChevronLeft,
@@ -18,7 +17,6 @@ import {
 } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
-import { mockWorkers, roles as mockRoles } from "../../data/mockData";
 import { api, UserResponse, RoleResponse } from "../../api/client";
 
 // Local row type — status matches API values directly ("Active" | "Inactive")
@@ -52,22 +50,6 @@ function mapUser(u: UserResponse): WorkerRow {
   };
 }
 
-// Map legacy mockWorkers (status: "active"/"inactive") → WorkerRow
-function mapMockWorker(w: {
-  id: string;
-  name: string;
-  email: string;
-  phone: string;
-  role: string;
-  status: string;
-  dateJoined: string;
-}): WorkerRow {
-  return {
-    ...w,
-    status: w.status?.toLowerCase() === "active" ? "Active" : "Inactive",
-  };
-}
-
 const getStatusBadgeColor = (status: WorkerStatus) =>
   status === "Active"
     ? "bg-[#dcfce7] text-[#008236]"
@@ -86,7 +68,6 @@ interface FormErrors {
 function validateForm(
   formData: { name: string; email: string; phone: string; role: string },
   availableRoles: RoleResponse[],
-  usingMock: boolean,
 ): FormErrors {
   const errors: FormErrors = {};
 
@@ -113,7 +94,6 @@ function validateForm(
   if (!formData.role) {
     errors.role = "Vui lòng chọn vai trò";
   } else if (
-    !usingMock &&
     availableRoles.length > 0 &&
     !availableRoles.find((r) => r.roleName === formData.role)
   ) {
@@ -126,7 +106,6 @@ function validateForm(
 export function WorkersPage() {
   const [workers, setWorkers] = useState<WorkerRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [usingMock, setUsingMock] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterRole, setFilterRole] = useState<string>("all");
   const [sortField, setSortField] = useState<"dateJoined" | "status" | null>(
@@ -144,7 +123,6 @@ export function WorkersPage() {
   const [formErrors, setFormErrors] = useState<FormErrors>({});
   const [apiError, setApiError] = useState<string | null>(null);
 
-  // Roles fetched from API (non-Owner only)
   const [apiRoles, setApiRoles] = useState<RoleResponse[]>([]);
   const [rolesLoaded, setRolesLoaded] = useState(false);
 
@@ -156,22 +134,18 @@ export function WorkersPage() {
     status: "Active" as WorkerStatus,
   });
 
-  // Derive display role names for filter & form (non-Owner)
-  const availableRoleNames: string[] = usingMock
-    ? mockRoles.filter((r) => r !== "Chủ trang trại")
-    : apiRoles.map((r) => r.roleName);
+  const availableRoleNames: string[] = apiRoles.map((r) => r.roleName);
 
   // ── Load roles ──
   const loadRoles = useCallback(async () => {
     try {
       const data = await api.getRoles();
-      // Filter out Owner role — this page only manages non-owner accounts
       const nonOwner = (data ?? []).filter(
         (r) => r.roleName.toLowerCase() !== "owner",
       );
       setApiRoles(nonOwner);
     } catch {
-      // If roles API fails, we'll rely on mock roles as fallback for display
+      // roles stay empty; form will show warning
     } finally {
       setRolesLoaded(true);
     }
@@ -181,12 +155,8 @@ export function WorkersPage() {
   const loadWorkers = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await api.getWorkers();
+      const data = await api.getStaffs();
       setWorkers((data ?? []).filter(Boolean).map(mapUser));
-      setUsingMock(false);
-    } catch {
-      setWorkers(mockWorkers.map(mapMockWorker));
-      setUsingMock(true);
     } finally {
       setLoading(false);
     }
@@ -265,43 +235,29 @@ export function WorkersPage() {
     setApiError(null);
   };
 
-  // --- ADD ---
   const handleAddWorker = async () => {
     setApiError(null);
-    const errors = validateForm(formData, apiRoles, usingMock);
+    const errors = validateForm(formData, apiRoles);
     setFormErrors(errors);
     if (Object.keys(errors).length > 0) return;
 
     setSubmitting(true);
     try {
-      if (usingMock) {
-        const newWorker: WorkerRow = {
-          id: Date.now().toString(),
-          name: formData.name.trim(),
-          email: formData.email.trim(),
-          phone: formData.phone.trim(),
-          role: formData.role,
-          status: "Active",
-          dateJoined: new Date().toLocaleDateString("vi-VN"),
-        };
-        setWorkers((prev) => [...prev, newWorker]);
-      } else {
-        const roleId = getRoleId(formData.role);
-        if (!roleId) {
-          setApiError("Không tìm thấy ID vai trò. Vui lòng thử tải lại trang.");
-          setSubmitting(false);
-          return;
-        }
-        await api.createWorker({
-          email: formData.email.trim(),
-          password: "123456",
-          fullname: formData.name.trim(),
-          phoneNumber: formData.phone.trim(),
-          status: "Active",
-          roleId,
-        });
-        await loadWorkers();
+      const roleId = getRoleId(formData.role);
+      if (!roleId) {
+        setApiError("Không tìm thấy ID vai trò. Vui lòng thử tải lại trang.");
+        setSubmitting(false);
+        return;
       }
+      await api.createStaff({
+        email: formData.email.trim(),
+        password: "123456",
+        fullname: formData.name.trim(),
+        phoneNumber: formData.phone.trim(),
+        status: "Active",
+        roleId,
+      });
+      await loadWorkers();
       setIsAddModalOpen(false);
       resetForm();
     } catch (err) {
@@ -313,74 +269,42 @@ export function WorkersPage() {
     }
   };
 
-  // --- EDIT ---
   const handleEditWorker = async () => {
     if (!selectedWorker) return;
     setApiError(null);
-    const errors = validateForm(formData, apiRoles, usingMock);
+    const errors = validateForm(formData, apiRoles);
     setFormErrors(errors);
     if (Object.keys(errors).length > 0) return;
 
+    const roleChanged = formData.role !== selectedWorker.role;
+    const infoChanged =
+      formData.name.trim() !== selectedWorker.name ||
+      formData.email.trim() !== selectedWorker.email ||
+      formData.phone.trim() !== selectedWorker.phone ||
+      formData.status !== selectedWorker.status;
+
+    if (!roleChanged && !infoChanged) {
+      setIsEditModalOpen(false);
+      resetForm();
+      return;
+    }
+
     setSubmitting(true);
     try {
-      if (usingMock) {
-        setWorkers((prev) =>
-          prev.map((w) =>
-            w.id === selectedWorker.id
-              ? {
-                  ...w,
-                  name: formData.name.trim(),
-                  email: formData.email.trim(),
-                  phone: formData.phone.trim(),
-                  role: formData.role,
-                  status: formData.status,
-                }
-              : w,
-          ),
-        );
-      } else {
-        // Detect which fields changed compared to selectedWorker (snapshot at modal open)
-        const statusChanged = formData.status !== selectedWorker.status;
-        const infoChanged =
-          formData.name.trim() !== selectedWorker.name ||
-          formData.email.trim() !== selectedWorker.email ||
-          formData.phone.trim() !== selectedWorker.phone ||
-          formData.role !== selectedWorker.role;
-
-        if (!statusChanged && !infoChanged) {
-          // Nothing changed — just close
-          setIsEditModalOpen(false);
-          resetForm();
-          setSubmitting(false);
-          return;
-        }
-
-        // If info fields changed → PUT
-        if (infoChanged) {
-          const roleId = getRoleId(formData.role);
-          if (!roleId) {
-            setApiError(
-              "Không tìm thấy ID vai trò. Vui lòng thử tải lại trang.",
-            );
-            setSubmitting(false);
-            return;
-          }
-          await api.updateWorker(selectedWorker.id, {
-            email: formData.email.trim(),
-            fullname: formData.name.trim(),
-            phoneNumber: formData.phone.trim(),
-            status: formData.status,
-            roleId,
-          });
-        }
-
-        // If status changed → PATCH
-        if (statusChanged) {
-          await api.changeWorkerStatus(selectedWorker.id, formData.status);
-        }
-
-        await loadWorkers();
+      if (infoChanged) {
+        await api.updateStaff(selectedWorker.id, {
+          email: formData.email.trim(),
+          fullname: formData.name.trim(),
+          phoneNumber: formData.phone.trim(),
+          status: formData.status,
+        });
       }
+
+      if (roleChanged) {
+        await api.assignStaffRole(selectedWorker.id, formData.role);
+      }
+
+      await loadWorkers();
       setIsEditModalOpen(false);
       resetForm();
     } catch (err) {
@@ -392,12 +316,11 @@ export function WorkersPage() {
     }
   };
 
-  // --- DELETE ---
   const handleDeleteWorker = async () => {
     if (!workerToDelete) return;
     setSubmitting(true);
     try {
-      if (!usingMock) await api.deleteWorker(workerToDelete.id);
+      await api.deleteStaff(workerToDelete.id);
       setWorkers((prev) => prev.filter((w) => w.id !== workerToDelete.id));
       setIsDeleteDialogOpen(false);
       setWorkerToDelete(null);
@@ -448,12 +371,6 @@ export function WorkersPage() {
               Quản lý danh sách nhân viên
             </p>
           </div>
-          {usingMock && (
-            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-50 border border-amber-200 rounded-full">
-              <WifiOff className="w-3 h-3 text-amber-500" />
-              <span className="text-xs text-amber-600">Dữ liệu mẫu</span>
-            </div>
-          )}
         </div>
         <button
           onClick={() => {
@@ -709,7 +626,7 @@ export function WorkersPage() {
       {/* ===== ADD MODAL ===== */}
       <Dialog.Root
         open={isAddModalOpen}
-        onOpenChange={(o) => {
+        onOpenChange={(o: boolean) => {
           setIsAddModalOpen(o);
           if (!o) resetForm();
         }}
@@ -773,7 +690,7 @@ export function WorkersPage() {
       {/* ===== EDIT MODAL ===== */}
       <Dialog.Root
         open={isEditModalOpen}
-        onOpenChange={(o) => {
+        onOpenChange={(o: boolean) => {
           setIsEditModalOpen(o);
           if (!o) resetForm();
         }}

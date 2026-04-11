@@ -1,12 +1,3 @@
-/**
- * CMMS API Client
- * Based on: CMMS_API_Integration_Guide.md
- *
- * Two response shapes:
- *  - ApiResponse<T> wrapper: Auth, Farms, Seasons, Workers
- *  - Raw DTO: Tasks, Crops
- */
-
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:7093";
 
 async function request<T>(
@@ -311,15 +302,17 @@ export const api = {
   deleteSeasonDetail: (id: string) =>
     request<unknown>("DELETE", `/api/seasons-details/${id}`),
 
-  // Workers
-  getWorkers: () => request<UserResponse[]>("GET", "/api/workers"),
-  getWorker: (id: string) => request<UserResponse>("GET", `/api/workers/${id}`),
-  createWorker: (body: WorkerRequest) =>
-    request<UserResponse>("POST", "/api/workers", body),
-  updateWorker: (id: string, body: WorkerRequest) =>
-    request<UserResponse>("PUT", `/api/workers/${id}`, body),
-  changeWorkerStatus: (id: string, status: string) =>
-    request<unknown>("PATCH", `/api/workers/${id}/status?status=${status}`),
-  deleteWorker: (id: string) =>
-    request<unknown>("DELETE", `/api/workers/${id}`),
+  // Staffs
+  getStaffs: () => request<UserResponse[]>("GET", "/api/Staffs"),
+  getStaff: (id: string) => request<UserResponse>("GET", `/api/Staffs/${id}`),
+  createStaff: (body: WorkerRequest) =>
+    request<UserResponse>("POST", "/api/Staffs", body),
+  updateStaff: (id: string, body: Omit<WorkerRequest, "roleId">) =>
+    request<UserResponse>("PUT", `/api/Staffs/${id}`, body),
+  assignStaffRole: (id: string, roleName: string) =>
+    request<unknown>(
+      "PATCH",
+      `/api/Staffs/${id}/assign-role?roleName=${encodeURIComponent(roleName)}`,
+    ),
+  deleteStaff: (id: string) => request<unknown>("DELETE", `/api/Staffs/${id}`),
 };
