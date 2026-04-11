@@ -536,6 +536,9 @@ export function TasksPage() {
     plotIds: [],
   });
 
+  // Selected plot inside the assign modal (controls which beds are shown)
+  const [selectedPlotId, setSelectedPlotId] = useState("");
+
   // ── Data loading ──────────────────────────────────────────────────────────
 
   const loadAllData = useCallback(async () => {
@@ -1196,6 +1199,7 @@ export function TasksPage() {
             setPrefillSource(null);
             setShowInlineNewTask(false);
             setInlineNewTask({ name: "", type: "", description: "" });
+            setSelectedPlotId("");
           }
         }}
       >
@@ -1376,6 +1380,7 @@ export function TasksPage() {
                       bedIds: [],
                       plotIds: [],
                     }));
+                    setSelectedPlotId("");
                   }}
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#009689]"
                 >
@@ -1491,135 +1496,171 @@ export function TasksPage() {
                 </div>
               </section>
 
-              {/* ── 4. Farm, Plot, Beds & Worker ── */}
+              {/* ── 4. Vuông, Luống & Nhân viên ── */}
               <section>
                 <h3 className="text-xs font-bold text-[#009689] uppercase tracking-widest mb-3 flex items-center gap-1.5">
                   <span className="w-5 h-5 rounded-full bg-[#009689] text-white text-[10px] flex items-center justify-center font-bold">
                     4
                   </span>
-                  Trang trại, Vuông, Luống &amp; Nhân viên
+                  Vuông, Luống &amp; Nhân viên
                 </h3>
 
                 <div className="space-y-4">
-                  {/* Beds — from season's seasonsDetails, all selectable */}
-                  {newAssignment.seasonId && (
-                    <div>
-                      {seasonPlotsForAssign.length === 0 ? (
-                        <div className="px-3 py-2 bg-[#f8fafc] border border-dashed border-[#e2e8f0] rounded-lg text-xs text-[#94a3b8] italic">
-                          Mùa vụ này chưa có luống nào
-                        </div>
-                      ) : (
-                        seasonPlotsForAssign.map((plot) => {
-                          const plotBeds = seasonBedsForAssign
-                            .filter((b) => b.plotId === plot.plotId)
-                            .sort((a, b) => a.bedName.localeCompare(b.bedName));
-                          const selectedCount = plotBeds.filter((b) =>
-                            assignmentTarget.bedIds.includes(b.bedId),
-                          ).length;
-                          const allSelected =
-                            plotBeds.length > 0 &&
-                            plotBeds.every((b) =>
-                              assignmentTarget.bedIds.includes(b.bedId),
-                            );
-                          return (
-                            <div key={plot.plotId} className="mb-3">
-                              <div className="flex items-center justify-between mb-1.5">
-                                <label className="text-xs font-medium text-slate-500">
-                                  {plot.plotName}{" "}
-                                  <span className="text-red-500">*</span>
-                                </label>
-                                <div className="flex items-center gap-2">
-                                  {selectedCount > 0 && (
-                                    <span className="text-[11px] font-semibold text-[#009689]">
-                                      {selectedCount} đã chọn
-                                    </span>
-                                  )}
-                                  <button
-                                    onClick={() => {
-                                      const ids = plotBeds.map((b) => b.bedId);
-                                      setAssignmentTarget((p) => ({
-                                        ...p,
-                                        bedIds: allSelected
-                                          ? p.bedIds.filter(
-                                              (id) => !ids.includes(id),
-                                            )
-                                          : [...new Set([...p.bedIds, ...ids])],
-                                      }));
-                                    }}
-                                    className="text-[11px] font-medium text-[#009689] hover:underline"
-                                  >
-                                    {allSelected
-                                      ? "Bỏ chọn tất cả"
-                                      : `Chọn tất cả (${plotBeds.length})`}
-                                  </button>
-                                </div>
-                              </div>
-                              <div className="flex flex-wrap gap-1.5">
-                                {plotBeds.map((bed) => {
-                                  const bedStatus = toBedStatus(bed.bedStatus);
-                                  const cfg = BED_STATUS_CONFIG[bedStatus];
-                                  const isSel =
-                                    assignmentTarget.bedIds.includes(bed.bedId);
-                                  return (
-                                    <button
-                                      key={bed.bedId}
-                                      onClick={() =>
-                                        setAssignmentTarget((p) => ({
-                                          ...p,
-                                          bedIds: isSel
-                                            ? p.bedIds.filter(
-                                                (id) => id !== bed.bedId,
-                                              )
-                                            : [...p.bedIds, bed.bedId],
-                                        }))
-                                      }
-                                      title={`${bed.bedName} — ${cfg.label}`}
-                                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all"
-                                      style={
-                                        isSel
-                                          ? {
-                                              background: "#009689",
-                                              color: "#fff",
-                                              borderColor: "#009689",
-                                            }
-                                          : {
-                                              background: cfg.chipBg,
-                                              color: cfg.chipText,
-                                              borderColor: cfg.chipBorder,
-                                            }
-                                      }
-                                    >
-                                      <span
-                                        className="w-1.5 h-1.5 rounded-full shrink-0"
-                                        style={{
-                                          background: isSel
-                                            ? "rgba(255,255,255,0.7)"
-                                            : cfg.dot,
-                                        }}
-                                      />
-                                      {bed.bedName}
-                                      {isSel && (
-                                        <CheckCircle2 className="w-3 h-3 shrink-0" />
-                                      )}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          );
-                        })
-                      )}
-                    </div>
-                  )}
-                  {!newAssignment.seasonId && (
-                    <div className="px-3 py-2 bg-[#f8fafc] border border-dashed border-[#e2e8f0] rounded-lg text-xs text-[#94a3b8] italic">
-                      Chọn mùa vụ để xem danh sách luống
-                    </div>
-                  )}
-
-                  {/* Worker — single selection, from API staff */}
+                  {/* Vuông selector */}
                   <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1.5">
+                    <label className="block text-xs font-semibold text-[#475569] uppercase tracking-wide mb-1.5">
+                      Vuông <span className="text-red-500">*</span>
+                    </label>
+                    {!newAssignment.seasonId ? (
+                      <select
+                        disabled
+                        className="w-full px-3 py-2 border border-[#e2e8f0] rounded-lg text-sm bg-[#f8fafc] text-[#cbd5e1] cursor-not-allowed"
+                      >
+                        <option>-- Chọn mùa vụ trước --</option>
+                      </select>
+                    ) : seasonPlotsForAssign.length === 0 ? (
+                      <div className="px-3 py-2 bg-[#f8fafc] border border-dashed border-[#e2e8f0] rounded-lg text-xs text-[#94a3b8] italic">
+                        Mùa vụ này chưa có vuông nào
+                      </div>
+                    ) : (
+                      <select
+                        value={selectedPlotId}
+                        onChange={(e) => {
+                          setSelectedPlotId(e.target.value);
+                          // Clear beds that don't belong to the new plot
+                          const newPlotId = e.target.value;
+                          const bedsInNewPlot = new Set(
+                            seasonBedsForAssign
+                              .filter((b) => b.plotId === newPlotId)
+                              .map((b) => b.bedId),
+                          );
+                          setAssignmentTarget((p) => ({
+                            ...p,
+                            bedIds: p.bedIds.filter((id) =>
+                              bedsInNewPlot.has(id),
+                            ),
+                          }));
+                        }}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                      >
+                        <option value="">-- Chọn vuông --</option>
+                        {seasonPlotsForAssign.map((p) => (
+                          <option key={p.plotId} value={p.plotId}>
+                            {p.plotName}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+
+                  {/* Luống — only shown after a plot is selected */}
+                  {selectedPlotId &&
+                    (() => {
+                      const plotBeds = seasonBedsForAssign
+                        .filter((b) => b.plotId === selectedPlotId)
+                        .sort((a, b) => a.bedName.localeCompare(b.bedName));
+                      const selectedCount = plotBeds.filter((b) =>
+                        assignmentTarget.bedIds.includes(b.bedId),
+                      ).length;
+                      const allSelected =
+                        plotBeds.length > 0 &&
+                        plotBeds.every((b) =>
+                          assignmentTarget.bedIds.includes(b.bedId),
+                        );
+                      return (
+                        <div>
+                          <div className="flex items-center justify-between mb-1.5">
+                            <label className="text-xs font-semibold text-[#475569] uppercase tracking-wide">
+                              Luống <span className="text-red-500">*</span>
+                              {selectedCount > 0 && (
+                                <span className="ml-2 normal-case font-semibold text-[#009689]">
+                                  ({selectedCount} đã chọn)
+                                </span>
+                              )}
+                            </label>
+                            <button
+                              onClick={() => {
+                                const ids = plotBeds.map((b) => b.bedId);
+                                setAssignmentTarget((p) => ({
+                                  ...p,
+                                  bedIds: allSelected
+                                    ? p.bedIds.filter((id) => !ids.includes(id))
+                                    : [...new Set([...p.bedIds, ...ids])],
+                                }));
+                              }}
+                              className="text-[11px] font-medium text-[#009689] hover:underline"
+                            >
+                              {allSelected
+                                ? "Bỏ chọn tất cả"
+                                : `Chọn tất cả (${plotBeds.length})`}
+                            </button>
+                          </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {plotBeds.map((bed) => {
+                              const bedStatus = toBedStatus(bed.bedStatus);
+                              const cfg = BED_STATUS_CONFIG[bedStatus];
+                              const isSel = assignmentTarget.bedIds.includes(
+                                bed.bedId,
+                              );
+                              return (
+                                <button
+                                  key={bed.bedId}
+                                  onClick={() =>
+                                    setAssignmentTarget((p) => ({
+                                      ...p,
+                                      bedIds: isSel
+                                        ? p.bedIds.filter(
+                                            (id) => id !== bed.bedId,
+                                          )
+                                        : [...p.bedIds, bed.bedId],
+                                    }))
+                                  }
+                                  title={`${bed.bedName} — ${cfg.label}`}
+                                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all"
+                                  style={
+                                    isSel
+                                      ? {
+                                          background: "#009689",
+                                          color: "#fff",
+                                          borderColor: "#009689",
+                                        }
+                                      : {
+                                          background: cfg.chipBg,
+                                          color: cfg.chipText,
+                                          borderColor: cfg.chipBorder,
+                                        }
+                                  }
+                                >
+                                  <span
+                                    className="w-1.5 h-1.5 rounded-full shrink-0"
+                                    style={{
+                                      background: isSel
+                                        ? "rgba(255,255,255,0.7)"
+                                        : cfg.dot,
+                                    }}
+                                  />
+                                  {bed.bedName}
+                                  {isSel && (
+                                    <CheckCircle2 className="w-3 h-3 shrink-0" />
+                                  )}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  {newAssignment.seasonId &&
+                    !selectedPlotId &&
+                    seasonPlotsForAssign.length > 0 && (
+                      <div className="px-3 py-2 bg-[#f8fafc] border border-dashed border-[#e2e8f0] rounded-lg text-xs text-[#94a3b8] italic">
+                        Chọn vuông để xem danh sách luống
+                      </div>
+                    )}
+
+                  {/* Nhân viên */}
+                  <div>
+                    <label className="block text-xs font-semibold text-[#475569] uppercase tracking-wide mb-1.5">
                       Nhân viên phụ trách{" "}
                       <span className="text-red-500">*</span>
                     </label>
@@ -1732,6 +1773,7 @@ export function TasksPage() {
                     plotIds: [],
                   });
                   setPrefillSource(null);
+                  setSelectedPlotId("");
                 }}
                 className="flex-1 px-4 py-2 rounded-lg text-sm font-medium text-slate-700 border border-[#e2e8f0] hover:bg-slate-50 transition-colors"
               >
@@ -1771,11 +1813,26 @@ export function TasksPage() {
               <Dialog.Title className="text-lg font-bold text-[#1e293b]">
                 Chi tiết lịch trình
               </Dialog.Title>
-              <Dialog.Close asChild>
-                <button className="p-1 text-slate-400 hover:text-slate-600 rounded">
-                  <X className="w-5 h-5" />
-                </button>
-              </Dialog.Close>
+              <div className="flex items-center gap-1">
+                {selectedDetail && (
+                  <button
+                    onClick={() => {
+                      setIsViewOpen(false);
+                      setDetailToDelete(selectedDetail);
+                      setIsDeleteOpen(true);
+                    }}
+                    title="Xoá lịch trình này"
+                    className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
+                <Dialog.Close asChild>
+                  <button className="p-1 text-slate-400 hover:text-slate-600 rounded">
+                    <X className="w-5 h-5" />
+                  </button>
+                </Dialog.Close>
+              </div>
             </div>
             <Dialog.Description className="sr-only">
               Thông tin chi tiết của công việc được giao
@@ -1875,18 +1932,8 @@ export function TasksPage() {
 
                     <div className="flex gap-3">
                       <button
-                        onClick={() => {
-                          setIsViewOpen(false);
-                          setDetailToDelete(selectedDetail);
-                          setIsDeleteOpen(true);
-                        }}
-                        className="flex-1 px-4 py-2 rounded-lg text-sm font-medium text-red-600 border border-red-200 hover:bg-red-50 transition-colors flex items-center justify-center gap-1.5"
-                      >
-                        <Trash2 className="w-4 h-4" /> Xoá
-                      </button>
-                      <button
                         onClick={() => setIsViewOpen(false)}
-                        className="flex-1 px-4 py-2 rounded-lg text-sm font-medium bg-[#009689] text-white hover:bg-[#007f73] transition-colors"
+                        className="w-full px-4 py-2 rounded-lg text-sm font-medium bg-[#009689] text-white hover:bg-[#007f73] transition-colors"
                       >
                         Đóng
                       </button>
