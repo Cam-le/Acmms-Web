@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useLocation } from "react-router";
 import {
   Plus,
   X,
@@ -11,7 +10,6 @@ import {
   Clock,
   User,
   CheckCircle2,
-  Info,
   Eye,
   Pencil,
   Trash2,
@@ -29,7 +27,6 @@ import type {
   PlotResponse,
   UserResponse,
 } from "../../api/client";
-import type { TaskPrefill } from "../pages/AdvisoryPage";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -459,7 +456,6 @@ function CalendarDayCard({
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function TasksPage() {
-  const location = useLocation();
   const [activeTab, setActiveTab] = useState("schedule");
 
   // ── API data ─────────────────────────────────────────────────────────────
@@ -484,7 +480,6 @@ export function TasksPage() {
     useState<TaskDetailResponse | null>(null);
   const [detailToDelete, setDetailToDelete] =
     useState<TaskDetailResponse | null>(null);
-  const [prefillSource, setPrefillSource] = useState<TaskPrefill | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
   // ── Handlers ──────────────────────────────────────────────────────────────
@@ -586,31 +581,6 @@ export function TasksPage() {
   useEffect(() => {
     loadAllData();
   }, [loadAllData]);
-
-  // ── Advisory prefill ──────────────────────────────────────────────────────
-  useEffect(() => {
-    const prefill = (location.state as { taskPrefill?: TaskPrefill } | null)
-      ?.taskPrefill;
-    if (!prefill) return;
-
-    setPrefillSource(prefill);
-    // Try to find a matching task by type
-    const matchedTask = tasks.find((t) =>
-      t.taskTitle
-        .toLowerCase()
-        .includes(prefill.suggestedTaskType?.toLowerCase() ?? ""),
-    );
-
-    setNewAssignment((p) => ({
-      ...p,
-      taskId: matchedTask?.taskId ?? "",
-      notes: prefill.notes,
-    }));
-
-    setIsAssignOpen(true);
-    window.history.replaceState({}, "");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tasks]);
 
   // ── Calendar ──────────────────────────────────────────────────────────────
   const weekDays = (() => {
@@ -1196,7 +1166,6 @@ export function TasksPage() {
           setIsAssignOpen(open);
           if (!open) {
             setAssignmentTarget({ workerId: "", bedIds: [], plotIds: [] });
-            setPrefillSource(null);
             setShowInlineNewTask(false);
             setInlineNewTask({ name: "", type: "", description: "" });
             setSelectedPlotId("");
@@ -1223,23 +1192,6 @@ export function TasksPage() {
 
             {/* Scrollable body */}
             <div className="overflow-y-auto flex-1 px-6 py-5 space-y-6">
-              {/* Advisory prefill banner */}
-              {prefillSource && (
-                <div className="flex items-start gap-2.5 bg-[#f0fdfa] border border-[#009689]/30 rounded-lg px-3 py-2.5 text-xs text-[#115e59]">
-                  <Info className="w-3.5 h-3.5 mt-0.5 shrink-0 text-[#009689]" />
-                  <div>
-                    <span className="font-semibold">
-                      Được tạo từ tư vấn {prefillSource.sourceAdvisoryId}
-                    </span>
-                    <span className="text-[#62748e]">
-                      {" "}
-                      · Thông tin đã được điền sẵn. Bạn có thể điều chỉnh trước
-                      khi giao.
-                    </span>
-                  </div>
-                </div>
-              )}
-
               {/* ── 1. Task ── */}
               <section>
                 <h3 className="text-xs font-bold text-[#009689] uppercase tracking-widest mb-3 flex items-center gap-1.5">
@@ -1772,7 +1724,6 @@ export function TasksPage() {
                     bedIds: [],
                     plotIds: [],
                   });
-                  setPrefillSource(null);
                   setSelectedPlotId("");
                 }}
                 className="flex-1 px-4 py-2 rounded-lg text-sm font-medium text-slate-700 border border-[#e2e8f0] hover:bg-slate-50 transition-colors"
