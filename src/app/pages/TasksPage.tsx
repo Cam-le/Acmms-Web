@@ -469,7 +469,6 @@ export function TasksPage() {
   const [allBeds, setAllBeds] = useState<BedResponse[]>([]);
   const [allPlots, setAllPlots] = useState<PlotResponse[]>([]);
   const [staffList, setStaffList] = useState<UserResponse[]>([]);
-  const [isMockData, setIsMockData] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   // UI
@@ -555,17 +554,16 @@ export function TasksPage() {
       setAllBeds(bedsRes ?? []);
       setAllPlots(plotsRes ?? []);
       setStaffList(staffRes ?? []);
-      setIsMockData(false);
 
-      // Load task details for all seasons so the calendar is populated
       if (seasonsRes && seasonsRes.length > 0) {
         const detailArrays = await Promise.all(
           seasonsRes.map((s) =>
-            api.getTaskDetailsBySeason(s.seasonId).catch(() => []),
+            api
+              .getTaskDetailsBySeason(s.seasonId)
+              .catch(() => [] as TaskDetailResponse[]),
           ),
         );
         const allDetails = detailArrays.flat();
-        // Deduplicate by taskDetailId
         const seen = new Set<string>();
         setTaskDetails(
           allDetails.filter((d) => {
@@ -575,14 +573,8 @@ export function TasksPage() {
           }),
         );
       }
-    } catch {
-      setIsMockData(true);
-      setTasks([]);
-      setTaskDetails([]);
-      setSeasons([]);
-      setAllBeds([]);
-      setAllPlots([]);
-      setStaffList([]);
+    } catch (err) {
+      console.error("Failed to load task data:", err);
     } finally {
       setIsLoading(false);
     }
@@ -655,27 +647,12 @@ export function TasksPage() {
         taskNotes: newTemplate.description,
       });
       await loadAllData();
-    } catch {
-      if (isMockData) {
-        // mock-mode local mutation
-        setTasks((prev) => [
-          ...prev,
-          {
-            taskId: `mock-${Date.now()}`,
-            taskTitle: newTemplate.name,
-            taskStatus: "Active",
-            taskNotes: newTemplate.description,
-            taskCreatedAt: new Date().toISOString(),
-            taskDetailsCount: 0,
-          },
-        ]);
-      }
+    } catch (err) {
+      console.error("Failed to create task:", err);
     } finally {
       setIsSaving(false);
     }
     setNewTemplate({ name: "", type: "", description: "" });
-    setShowNewTypeInput(false);
-    setNewTypeInput("");
     setIsCreateTemplateOpen(false);
   };
 
@@ -685,9 +662,8 @@ export function TasksPage() {
     try {
       await api.deleteTask(tplToDelete.taskId);
       await loadAllData();
-    } catch {
-      if (isMockData)
-        setTasks((prev) => prev.filter((t) => t.taskId !== tplToDelete.taskId));
+    } catch (err) {
+      console.error("Failed to delete task:", err);
     } finally {
       setIsSaving(false);
     }
@@ -706,11 +682,8 @@ export function TasksPage() {
         taskNotes: editTpl.taskNotes,
       });
       await loadAllData();
-    } catch {
-      if (isMockData)
-        setTasks((prev) =>
-          prev.map((t) => (t.taskId === editTpl.taskId ? editTpl : t)),
-        );
+    } catch (err) {
+      console.error("Failed to update task:", err);
     } finally {
       setIsSaving(false);
     }
@@ -728,31 +701,12 @@ export function TasksPage() {
         taskNotes: inlineNewTask.description,
       });
       await loadAllData();
-      // After reload, try to find the newly created task by title to pre-select it
-      const created = tasks.find((t) => t.taskTitle === inlineNewTask.name);
-      if (created) setNewAssignment((p) => ({ ...p, taskId: created.taskId }));
-    } catch {
-      if (isMockData) {
-        const newId = `mock-${Date.now()}`;
-        setTasks((prev) => [
-          ...prev,
-          {
-            taskId: newId,
-            taskTitle: inlineNewTask.name,
-            taskStatus: "Active",
-            taskNotes: inlineNewTask.description,
-            taskCreatedAt: new Date().toISOString(),
-            taskDetailsCount: 0,
-          },
-        ]);
-        setNewAssignment((p) => ({ ...p, taskId: newId }));
-      }
+    } catch (err) {
+      console.error("Failed to create task:", err);
     } finally {
       setIsSaving(false);
     }
     setInlineNewTask({ name: "", type: "", description: "" });
-    setInlineShowNewTypeInput(false);
-    setInlineNewTypeInput("");
     setShowInlineNewTask(false);
   };
 
@@ -792,26 +746,8 @@ export function TasksPage() {
         notes: newAssignment.notes,
       });
       await loadAllData();
-    } catch {
-      if (isMockData) {
-        setTaskDetails((prev) => [
-          ...prev,
-          {
-            taskDetailId: `mock-${Date.now()}`,
-            taskId: newAssignment.taskId,
-            taskTitle:
-              tasks.find((t) => t.taskId === newAssignment.taskId)?.taskTitle ??
-              "",
-            seasonId: newAssignment.seasonId,
-            assignedToWorkerIds: [assignmentTarget.workerId],
-            bedIds: assignmentTarget.bedIds,
-            plotIds,
-            startDate: startISO,
-            endDate: endISO,
-            notes: newAssignment.notes,
-          },
-        ]);
-      }
+    } catch (err) {
+      console.error("Failed to create task detail:", err);
     } finally {
       setIsSaving(false);
     }
@@ -836,11 +772,8 @@ export function TasksPage() {
     try {
       await api.deleteTaskDetail(detailToDelete.taskDetailId);
       await loadAllData();
-    } catch {
-      if (isMockData)
-        setTaskDetails((prev) =>
-          prev.filter((d) => d.taskDetailId !== detailToDelete.taskDetailId),
-        );
+    } catch (err) {
+      console.error("Failed to delete task detail:", err);
     } finally {
       setIsSaving(false);
     }
@@ -881,9 +814,9 @@ export function TasksPage() {
             Quản lý và phân công công việc tại trang trại
           </p>
         </div>
-        {isMockData && (
-          <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-700 border border-amber-200">
-            Dữ liệu mẫu
+        {isLoading && (
+          <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-500">
+            Đang tải...
           </span>
         )}
       </div>
