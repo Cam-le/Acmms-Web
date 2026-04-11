@@ -11,121 +11,47 @@ import {
   Clock,
   User,
   CheckCircle2,
-  ChevronDown,
-  ChevronUp,
   Info,
   Eye,
   Pencil,
   Trash2,
-  Droplets,
-  Sprout,
-  Shield,
-  Wheat,
-  ScanSearch,
-  Leaf,
   ClipboardList,
 } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import * as Tabs from "@radix-ui/react-tabs";
-import {
-  Staff,
-  TaskTemplate,
-  TaskAssignment,
-  Season,
-  mockTaskTemplates,
-  mockTaskAssignments,
-  mockSeasons,
-} from "../../data/mockData";
-import { fetchStaff } from "../../api/mockApi";
+import { api } from "../../api/client";
+import type {
+  TaskResponse,
+  TaskDetailResponse,
+  SeasonResponse,
+  BedResponse,
+  PlotResponse,
+  UserResponse,
+} from "../../api/client";
 import type { TaskPrefill } from "../pages/AdvisoryPage";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const TASK_TYPES = [
-  "Chăm sóc",
-  "Bón phân",
-  "Tưới nước",
-  "Bảo vệ thực vật",
-  "Thu hoạch",
-  "Kiểm tra",
-  "Khác",
-];
-// Mock farms and plots for the new single-worker assignment model
-interface MockFarm {
-  id: string;
-  name: string;
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Normalise API taskStatus to lowercase consistent key */
+function normaliseTaskStatus(s: string): "active" | "inactive" {
+  return s?.toLowerCase() === "inactive" ? "inactive" : "active";
 }
-interface MockPlot {
-  id: string;
-  farmId: string;
-  name: string;
+
+/** Map BedResponse.bedStatus to BedStatus display key */
+function toBedStatus(s: string): BedStatus {
+  const l = s?.toLowerCase();
+  if (l === "in-use" || l === "inuse" || l === "active") return "in-use";
+  if (l === "resting" || l === "inactive") return "resting";
+  return "available";
 }
+
+// ─── Bed status config ────────────────────────────────────────────────────────
 
 type BedStatus = "available" | "in-use" | "resting";
 
-interface MockBed {
-  id: string;
-  plotId: string;
-  name: string; // e.g. "A1_01"
-  status: BedStatus;
-}
-
-const MOCK_FARMS: MockFarm[] = [
-  { id: "farm-a", name: "Trang trại A" },
-  { id: "farm-b", name: "Trang trại B" },
-  { id: "farm-c", name: "Trang trại C" },
-];
-
-const MOCK_PLOTS: MockPlot[] = [
-  { id: "plot-a1", farmId: "farm-a", name: "Khu A – Vuông 01" },
-  { id: "plot-a2", farmId: "farm-a", name: "Khu A – Vuông 02" },
-  { id: "plot-a3", farmId: "farm-a", name: "Khu A – Vuông 03" },
-  { id: "plot-b1", farmId: "farm-b", name: "Khu B – Vuông 01" },
-  { id: "plot-b2", farmId: "farm-b", name: "Khu B – Vuông 02" },
-  { id: "plot-c1", farmId: "farm-c", name: "Khu C – Vuông 01" },
-  { id: "plot-c2", farmId: "farm-c", name: "Khu C – Vuông 02" },
-];
-
-// Beds are named <PlotCode>_<nn> and sorted ascending within each plot.
-// Status "available" → selectable; "in-use" / "resting" → greyed out.
-const MOCK_BEDS: MockBed[] = [
-  // plot-a1 (A1)
-  { id: "bed-a1-01", plotId: "plot-a1", name: "A1_01", status: "available" },
-  { id: "bed-a1-02", plotId: "plot-a1", name: "A1_02", status: "available" },
-  { id: "bed-a1-03", plotId: "plot-a1", name: "A1_03", status: "in-use" },
-  { id: "bed-a1-04", plotId: "plot-a1", name: "A1_04", status: "available" },
-  { id: "bed-a1-05", plotId: "plot-a1", name: "A1_05", status: "resting" },
-  { id: "bed-a1-06", plotId: "plot-a1", name: "A1_06", status: "available" },
-  // plot-a2 (A2)
-  { id: "bed-a2-01", plotId: "plot-a2", name: "A2_01", status: "available" },
-  { id: "bed-a2-02", plotId: "plot-a2", name: "A2_02", status: "in-use" },
-  { id: "bed-a2-03", plotId: "plot-a2", name: "A2_03", status: "available" },
-  { id: "bed-a2-04", plotId: "plot-a2", name: "A2_04", status: "resting" },
-  // plot-a3 (A3)
-  { id: "bed-a3-01", plotId: "plot-a3", name: "A3_01", status: "available" },
-  { id: "bed-a3-02", plotId: "plot-a3", name: "A3_02", status: "available" },
-  { id: "bed-a3-03", plotId: "plot-a3", name: "A3_03", status: "in-use" },
-  // plot-b1 (B1)
-  { id: "bed-b1-01", plotId: "plot-b1", name: "B1_01", status: "available" },
-  { id: "bed-b1-02", plotId: "plot-b1", name: "B1_02", status: "available" },
-  { id: "bed-b1-03", plotId: "plot-b1", name: "B1_03", status: "resting" },
-  { id: "bed-b1-04", plotId: "plot-b1", name: "B1_04", status: "available" },
-  { id: "bed-b1-05", plotId: "plot-b1", name: "B1_05", status: "in-use" },
-  // plot-b2 (B2)
-  { id: "bed-b2-01", plotId: "plot-b2", name: "B2_01", status: "available" },
-  { id: "bed-b2-02", plotId: "plot-b2", name: "B2_02", status: "available" },
-  { id: "bed-b2-03", plotId: "plot-b2", name: "B2_03", status: "in-use" },
-  // plot-c1 (C1)
-  { id: "bed-c1-01", plotId: "plot-c1", name: "C1_01", status: "available" },
-  { id: "bed-c1-02", plotId: "plot-c1", name: "C1_02", status: "resting" },
-  { id: "bed-c1-03", plotId: "plot-c1", name: "C1_03", status: "available" },
-  // plot-c2 (C2)
-  { id: "bed-c2-01", plotId: "plot-c2", name: "C2_01", status: "available" },
-  { id: "bed-c2-02", plotId: "plot-c2", name: "C2_02", status: "in-use" },
-];
-
-// Labels and colours for each bed status
 const BED_STATUS_CONFIG: Record<
   BedStatus,
   {
@@ -159,95 +85,11 @@ const BED_STATUS_CONFIG: Record<
   },
 };
 
-// Maps each season (by index in mockSeasons) to a farm + the plot IDs active in it.
-// Built at module level so it reacts to whatever mockSeasons provides at runtime.
-// Index 0 → farm-a (plots a1, a2), Index 1 → farm-b (plots b1, b2), rest → farm-c.
-const SEASON_FARM_MAP: Record<string, { farmId: string; plotIds: string[] }> =
-  Object.fromEntries(
-    mockSeasons.map((s, i) => {
-      if (i % 3 === 0)
-        return [s.id, { farmId: "farm-a", plotIds: ["plot-a1", "plot-a2"] }];
-      if (i % 3 === 1)
-        return [s.id, { farmId: "farm-b", plotIds: ["plot-b1", "plot-b2"] }];
-      return [s.id, { farmId: "farm-c", plotIds: ["plot-c1", "plot-c2"] }];
-    }),
-  );
-
-// Worker status config — mirrors BED_STATUS_CONFIG pattern.
-// "active" → fully selectable; "busy" → selectable but flagged; "off" → disabled/greyed.
-type WorkerStatus = "active" | "busy" | "off";
-const WORKER_STATUS_CONFIG: Record<
-  WorkerStatus,
-  { label: string; dot: string; disabled: boolean }
-> = {
-  active: { label: "Sẵn sàng", dot: "#10b981", disabled: false },
-  busy: { label: "Đang bận", dot: "#f59e0b", disabled: false },
-  off: { label: "Không hoạt động", dot: "#94a3b8", disabled: true },
-};
-
 const DAY_LABELS = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"];
 const HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0"));
 const MINUTES = Array.from({ length: 12 }, (_, i) =>
   String(i * 5).padStart(2, "0"),
 );
-
-const STATUS_CONFIG = {
-  pending: {
-    label: "Chưa xử lý",
-    color: "bg-[#FEE2E2] text-[#991B1B]",
-    border: "#ef4444",
-    dot: "#ef4444",
-  },
-  "in-progress": {
-    label: "Đang xử lý",
-    color: "bg-[#FEF3C7] text-[#92400E]",
-    border: "#f59e0b",
-    dot: "#f59e0b",
-  },
-  completed: {
-    label: "Hoàn tất",
-    color: "bg-[#D1FAE5] text-[#065F46]",
-    border: "#10b981",
-    dot: "#10b981",
-  },
-};
-
-const ICON_MAP: Record<string, React.ElementType> = {
-  "Tưới nước": Droplets,
-  "Bón phân": Sprout,
-  "Bảo vệ thực vật": Shield,
-  "Thu hoạch": Wheat,
-  "Kiểm tra": ScanSearch,
-  "Chăm sóc": Leaf,
-  Khác: ClipboardList,
-};
-
-/** Renders the Lucide icon for a task type, with a fallback to ClipboardList. */
-function TaskIcon({
-  type,
-  className = "w-4 h-4",
-}: {
-  type: string;
-  className?: string;
-}) {
-  const Icon = ICON_MAP[type] ?? ClipboardList;
-  return <Icon className={className} />;
-}
-const BG_MAP: Record<string, string> = {
-  "Tưới nước": "#dbeafe",
-  "Bón phân": "#dcfce7",
-  "Bảo vệ thực vật": "#fef9c3",
-  "Thu hoạch": "#f0fdf4",
-  "Kiểm tra": "#f3e8ff",
-  "Chăm sóc": "#ecfdf5",
-  Khác: "#f1f5f9",
-};
-
-const isoToDisplay = (iso: string) => {
-  if (!iso) return "";
-  const [y, m, d] = iso.split("-");
-  return `${d}/${m}/${y}`;
-};
 
 // ─── Drum Picker ──────────────────────────────────────────────────────────────
 
@@ -478,23 +320,6 @@ function TimePickerSheet({
   );
 }
 
-// ─── Assignment Target (new simplified model) ────────────────────────────────
-
-interface AssignmentTarget {
-  farmId: string;
-  plotId: string;
-  bedIds: string[]; // explicit list of selected bed IDs
-  workerId: string;
-}
-
-// Details snapshot stored per-assignment for display in view modal
-interface AssignmentDetail {
-  farmName: string;
-  plotName: string;
-  bedNames: string[];
-  workerName: string;
-}
-
 // ─── Calendar Day Cell ────────────────────────────────────────────────────────
 
 function CalendarDayCard({
@@ -507,8 +332,8 @@ function CalendarDayCard({
   day: Date;
   dayLabel: string;
   isToday: boolean;
-  assignments: TaskAssignment[];
-  onTaskClick: (a: TaskAssignment) => void;
+  assignments: TaskDetailResponse[];
+  onTaskClick: (a: TaskDetailResponse) => void;
 }) {
   const [showAll, setShowAll] = useState(false);
   const MAX_VISIBLE = 3;
@@ -528,7 +353,6 @@ function CalendarDayCard({
         >
           {dayLabel}
         </span>
-        {/* Date + Month on one line */}
         <div
           className={`mt-1 flex items-baseline gap-0.5 px-2 py-0.5 rounded-lg ${isToday ? "bg-[#009689]" : ""}`}
         >
@@ -543,14 +367,12 @@ function CalendarDayCard({
             /{day.getMonth() + 1}
           </span>
         </div>
-        {/* Status dots */}
         {assignments.length > 0 && (
           <div className="flex gap-0.5 mt-1.5">
             {assignments.slice(0, 3).map((a) => (
               <span
-                key={a.id}
-                className="w-1.5 h-1.5 rounded-full"
-                style={{ background: STATUS_CONFIG[a.status].dot }}
+                key={a.taskDetailId}
+                className="w-1.5 h-1.5 rounded-full bg-[#009689]"
               />
             ))}
             {assignments.length > 3 && (
@@ -564,48 +386,52 @@ function CalendarDayCard({
 
       {/* Task cards */}
       <div className="flex-1 p-1.5 space-y-1.5 overflow-y-auto">
-        {visible.map((a) => (
-          <button
-            key={a.id}
-            onClick={() => onTaskClick(a)}
-            className="w-full text-left rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-all"
-            style={{
-              borderLeft: `3px solid ${STATUS_CONFIG[a.status].border}`,
-            }}
-          >
-            <div className="bg-white px-2 py-1.5">
-              <div className="flex items-start gap-1.5">
-                <p className="text-[11px] font-semibold text-[#1e293b] line-clamp-2 leading-tight flex-1">
-                  {a.taskName}
+        {visible.map((a) => {
+          const timeStr = a.startDate
+            ? new Date(a.startDate).toLocaleTimeString("vi-VN", {
+                hour: "2-digit",
+                minute: "2-digit",
+              })
+            : "";
+          return (
+            <button
+              key={a.taskDetailId}
+              onClick={() => onTaskClick(a)}
+              className="w-full text-left rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-all"
+              style={{ borderLeft: "3px solid #009689" }}
+            >
+              <div className="bg-white px-2 py-1.5">
+                <p className="text-[11px] font-semibold text-[#1e293b] line-clamp-2 leading-tight">
+                  {a.taskTitle}
                 </p>
+                {timeStr && (
+                  <div className="flex items-center gap-1 mt-1">
+                    <Clock className="w-2.5 h-2.5 text-[#94a3b8] shrink-0" />
+                    <span className="text-[10px] text-[#64748b]">
+                      {timeStr}
+                    </span>
+                  </div>
+                )}
+                {a.bedIds.length > 0 && (
+                  <div className="flex items-center gap-1 mt-0.5">
+                    <MapPin className="w-2.5 h-2.5 text-[#94a3b8] shrink-0" />
+                    <span className="text-[10px] text-[#64748b] truncate">
+                      {a.bedIds.length} luống
+                    </span>
+                  </div>
+                )}
+                {a.assignedToWorkerIds.length > 0 && (
+                  <div className="flex items-center gap-1 mt-0.5">
+                    <User className="w-2.5 h-2.5 text-[#94a3b8] shrink-0" />
+                    <span className="text-[10px] text-[#64748b] truncate">
+                      1 nhân viên
+                    </span>
+                  </div>
+                )}
               </div>
-              {a.time && (
-                <div className="flex items-center gap-1 mt-1">
-                  <Clock className="w-2.5 h-2.5 text-[#94a3b8] shrink-0" />
-                  <span className="text-[10px] text-[#64748b]">{a.time}</span>
-                </div>
-              )}
-              <div className="flex items-center gap-1 mt-0.5">
-                <MapPin className="w-2.5 h-2.5 text-[#94a3b8] shrink-0" />
-                <span className="text-[10px] text-[#64748b] truncate">
-                  {a.area}
-                  {a.plot ? ` · ${a.plot.split("|")[0].trim()}` : ""}
-                </span>
-              </div>
-              {a.workerNames.length > 0 && (
-                <div className="flex items-center gap-1 mt-0.5">
-                  <User className="w-2.5 h-2.5 text-[#94a3b8] shrink-0" />
-                  <span className="text-[10px] text-[#64748b] truncate">
-                    {a.workerNames[0]}
-                    {a.workerNames.length > 1
-                      ? ` +${a.workerNames.length - 1}`
-                      : ""}
-                  </span>
-                </div>
-              )}
-            </div>
-          </button>
-        ))}
+            </button>
+          );
+        })}
         {!showAll && overflow > 0 && (
           <button
             onClick={() => setShowAll(true)}
@@ -634,15 +460,19 @@ function CalendarDayCard({
 
 export function TasksPage() {
   const location = useLocation();
-  const [staffList, setStaffList] = useState<Staff[]>([]);
   const [activeTab, setActiveTab] = useState("schedule");
 
-  const [templates, setTemplates] = useState<TaskTemplate[]>(mockTaskTemplates);
-  const [assignments, setAssignments] =
-    useState<TaskAssignment[]>(mockTaskAssignments);
+  // ── API data ─────────────────────────────────────────────────────────────
+  const [tasks, setTasks] = useState<TaskResponse[]>([]);
+  const [taskDetails, setTaskDetails] = useState<TaskDetailResponse[]>([]);
+  const [seasons, setSeasons] = useState<SeasonResponse[]>([]);
+  const [allBeds, setAllBeds] = useState<BedResponse[]>([]);
+  const [allPlots, setAllPlots] = useState<PlotResponse[]>([]);
+  const [staffList, setStaffList] = useState<UserResponse[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   // UI
-  const [currentDate, setCurrentDate] = useState(new Date(2023, 11, 20));
+  const [currentDate, setCurrentDate] = useState(new Date());
 
   // Modals
   const [isCreateTemplateOpen, setIsCreateTemplateOpen] = useState(false);
@@ -650,28 +480,26 @@ export function TasksPage() {
   const [isViewOpen, setIsViewOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [isTimePickerOpen, setIsTimePickerOpen] = useState(false);
-  const [selectedAssignment, setSelectedAssignment] =
-    useState<TaskAssignment | null>(null);
-  const [assignmentToDelete, setAssignmentToDelete] =
-    useState<TaskAssignment | null>(null);
+  const [selectedDetail, setSelectedDetail] =
+    useState<TaskDetailResponse | null>(null);
+  const [detailToDelete, setDetailToDelete] =
+    useState<TaskDetailResponse | null>(null);
   const [prefillSource, setPrefillSource] = useState<TaskPrefill | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
-  // Custom task types created on the fly
-  const [customTaskTypes, setCustomTaskTypes] = useState<string[]>([]);
-  const [newTypeInput, setNewTypeInput] = useState("");
-  const [showNewTypeInput, setShowNewTypeInput] = useState(false);
+  // ── Handlers ──────────────────────────────────────────────────────────────
 
   // Template table state
   const [tplPage, setTplPage] = useState(1);
   const [viewTplOpen, setViewTplOpen] = useState(false);
-  const [selectedTpl, setSelectedTpl] = useState<TaskTemplate | null>(null);
+  const [selectedTpl, setSelectedTpl] = useState<TaskResponse | null>(null);
   const [deleteTplOpen, setDeleteTplOpen] = useState(false);
-  const [tplToDelete, setTplToDelete] = useState<TaskTemplate | null>(null);
+  const [tplToDelete, setTplToDelete] = useState<TaskResponse | null>(null);
   const [editTplOpen, setEditTplOpen] = useState(false);
-  const [editTpl, setEditTpl] = useState<TaskTemplate | null>(null);
+  const [editTpl, setEditTpl] = useState<TaskResponse | null>(null);
   const TPL_PER_PAGE = 8;
 
-  // New template form — matches task_title + task_notes from ERD
+  // New template form
   const [newTemplate, setNewTemplate] = useState({
     name: "",
     type: "",
@@ -680,7 +508,7 @@ export function TasksPage() {
 
   // New assignment form
   const [newAssignment, setNewAssignment] = useState({
-    templateId: "",
+    taskId: "",
     seasonId: "",
     date: "",
     startHour: "07",
@@ -697,33 +525,67 @@ export function TasksPage() {
     type: "",
     description: "",
   });
-  const [inlineShowNewTypeInput, setInlineShowNewTypeInput] = useState(false);
-  const [inlineNewTypeInput, setInlineNewTypeInput] = useState("");
-
-  // Assignment target: single farm → plot → specific beds → single worker
-  const [assignmentTarget, setAssignmentTarget] = useState<AssignmentTarget>({
-    farmId: "",
-    plotId: "",
-    bedIds: [],
+  // Assignment target: single worker, multiple beds + plots from season
+  const [assignmentTarget, setAssignmentTarget] = useState<{
+    workerId: string;
+    bedIds: string[];
+    plotIds: string[];
+  }>({
     workerId: "",
+    bedIds: [],
+    plotIds: [],
   });
 
-  // Stores per-assignment detail snapshot for view modal
-  const [assignmentDetails, setAssignmentDetails] = useState<
-    Record<string, AssignmentDetail>
-  >({
-    // Demo data for existing mock assignments
-    "asgn-4": {
-      farmName: "Trang trại A",
-      plotName: "Khu A – Vuông 02",
-      bedNames: ["A2_01", "A2_03"],
-      workerName: "Trần Văn Hằng",
-    },
-  });
+  // Selected plot inside the assign modal (controls which beds are shown)
+  const [selectedPlotId, setSelectedPlotId] = useState("");
+
+  // ── Data loading ──────────────────────────────────────────────────────────
+
+  const loadAllData = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const [tasksRes, seasonsRes, bedsRes, plotsRes, staffRes] =
+        await Promise.all([
+          api.getTasks(),
+          api.getSeasons(),
+          api.getBeds(),
+          api.getPlots(),
+          api.getStaffs(),
+        ]);
+      setTasks(tasksRes ?? []);
+      setSeasons(seasonsRes ?? []);
+      setAllBeds(bedsRes ?? []);
+      setAllPlots(plotsRes ?? []);
+      setStaffList(staffRes ?? []);
+
+      if (seasonsRes && seasonsRes.length > 0) {
+        const detailArrays = await Promise.all(
+          seasonsRes.map((s) =>
+            api
+              .getTaskDetailsBySeason(s.seasonId)
+              .catch(() => [] as TaskDetailResponse[]),
+          ),
+        );
+        const allDetails = detailArrays.flat();
+        const seen = new Set<string>();
+        setTaskDetails(
+          allDetails.filter((d) => {
+            if (seen.has(d.taskDetailId)) return false;
+            seen.add(d.taskDetailId);
+            return true;
+          }),
+        );
+      }
+    } catch (err) {
+      console.error("Failed to load task data:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    fetchStaff().then(setStaffList);
-  }, []);
+    loadAllData();
+  }, [loadAllData]);
 
   // ── Advisory prefill ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -732,20 +594,23 @@ export function TasksPage() {
     if (!prefill) return;
 
     setPrefillSource(prefill);
-    const matchedTemplate = templates.find(
-      (t) => t.type === prefill.suggestedTaskType,
+    // Try to find a matching task by type
+    const matchedTask = tasks.find((t) =>
+      t.taskTitle
+        .toLowerCase()
+        .includes(prefill.suggestedTaskType?.toLowerCase() ?? ""),
     );
 
     setNewAssignment((p) => ({
       ...p,
-      templateId: matchedTemplate?.id ?? "",
+      taskId: matchedTask?.taskId ?? "",
       notes: prefill.notes,
     }));
 
     setIsAssignOpen(true);
     window.history.replaceState({}, "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [tasks]);
 
   // ── Calendar ──────────────────────────────────────────────────────────────
   const weekDays = (() => {
@@ -763,152 +628,135 @@ export function TasksPage() {
   })();
 
   const getAssignmentsForDay = (date: Date) =>
-    assignments.filter((a) => {
-      if (!a.date) return false;
-      const d = new Date(a.date);
+    taskDetails.filter((d) => {
+      if (!d.startDate) return false;
+      const dt = new Date(d.startDate);
       return (
-        d.getDate() === date.getDate() &&
-        d.getMonth() === date.getMonth() &&
-        d.getFullYear() === date.getFullYear()
+        dt.getDate() === date.getDate() &&
+        dt.getMonth() === date.getMonth() &&
+        dt.getFullYear() === date.getFullYear()
       );
     });
 
   // ── Handlers ──────────────────────────────────────────────────────────────
-  const handleCreateTemplate = () => {
-    if (!newTemplate.name || !newTemplate.type) return;
-    setTemplates((prev) => [
-      ...prev,
-      {
-        id: `tpl-${Date.now()}`,
-        name: newTemplate.name,
-        type: newTemplate.type,
-        description: newTemplate.description,
-        crop: "",
-        icon: ICON_MAP[newTemplate.type] ? newTemplate.type : "Khác",
-        iconBg: BG_MAP[newTemplate.type] ?? "#f1f5f9",
-      },
-    ]);
+
+  const handleCreateTemplate = async () => {
+    if (!newTemplate.name) return;
+    setIsSaving(true);
+    try {
+      await api.createTask({
+        taskTitle: newTemplate.name,
+        taskStatus: "Active",
+        taskNotes: newTemplate.description,
+      });
+      await loadAllData();
+    } catch (err) {
+      console.error("Failed to create task:", err);
+    } finally {
+      setIsSaving(false);
+    }
     setNewTemplate({ name: "", type: "", description: "" });
-    setShowNewTypeInput(false);
-    setNewTypeInput("");
     setIsCreateTemplateOpen(false);
   };
 
-  const handleDeleteTemplate = () => {
+  const handleDeleteTemplate = async () => {
     if (!tplToDelete) return;
-    setTemplates((prev) => prev.filter((t) => t.id !== tplToDelete.id));
+    setIsSaving(true);
+    try {
+      await api.deleteTask(tplToDelete.taskId);
+      await loadAllData();
+    } catch (err) {
+      console.error("Failed to delete task:", err);
+    } finally {
+      setIsSaving(false);
+    }
     setDeleteTplOpen(false);
     setTplToDelete(null);
-    // clamp page if needed
     setTplPage((p) => Math.max(1, p));
   };
 
-  const handleSaveEdit = () => {
+  const handleSaveEdit = async () => {
     if (!editTpl) return;
-    setTemplates((prev) =>
-      prev.map((t) =>
-        t.id === editTpl.id
-          ? {
-              ...editTpl,
-              icon: ICON_MAP[editTpl.type]
-                ? editTpl.type
-                : (editTpl.icon ?? "Khác"),
-              iconBg: BG_MAP[editTpl.type] ?? editTpl.iconBg,
-            }
-          : t,
-      ),
-    );
+    setIsSaving(true);
+    try {
+      await api.updateTask(editTpl.taskId, {
+        taskTitle: editTpl.taskTitle,
+        taskStatus: editTpl.taskStatus,
+        taskNotes: editTpl.taskNotes,
+      });
+      await loadAllData();
+    } catch (err) {
+      console.error("Failed to update task:", err);
+    } finally {
+      setIsSaving(false);
+    }
     setEditTplOpen(false);
     setEditTpl(null);
   };
 
-  const handleAddCustomType = () => {
-    const t = newTypeInput.trim();
-    if (!t || customTaskTypes.includes(t) || TASK_TYPES.includes(t)) return;
-    setCustomTaskTypes((p) => [...p, t]);
-    setNewTemplate((p) => ({ ...p, type: t }));
-    setShowNewTypeInput(false);
-    setNewTypeInput("");
-  };
-
-  const handleInlineAddCustomType = () => {
-    const t = inlineNewTypeInput.trim();
-    if (!t || customTaskTypes.includes(t) || TASK_TYPES.includes(t)) return;
-    setCustomTaskTypes((p) => [...p, t]);
-    setInlineNewTask((p) => ({ ...p, type: t }));
-    setInlineShowNewTypeInput(false);
-    setInlineNewTypeInput("");
-  };
-
-  const handleInlineCreateTask = () => {
-    if (!inlineNewTask.name || !inlineNewTask.type) return;
-    const newTpl: TaskTemplate = {
-      id: `tpl-${Date.now()}`,
-      name: inlineNewTask.name,
-      type: inlineNewTask.type,
-      description: inlineNewTask.description,
-      crop: "",
-      icon: ICON_MAP[inlineNewTask.type] ? inlineNewTask.type : "Khác",
-      iconBg: BG_MAP[inlineNewTask.type] ?? "#f1f5f9",
-    };
-    setTemplates((prev) => [...prev, newTpl]);
-    setNewAssignment((p) => ({ ...p, templateId: newTpl.id }));
+  const handleInlineCreateTask = async () => {
+    if (!inlineNewTask.name) return;
+    setIsSaving(true);
+    try {
+      await api.createTask({
+        taskTitle: inlineNewTask.name,
+        taskStatus: "Active",
+        taskNotes: inlineNewTask.description,
+      });
+      await loadAllData();
+    } catch (err) {
+      console.error("Failed to create task:", err);
+    } finally {
+      setIsSaving(false);
+    }
     setInlineNewTask({ name: "", type: "", description: "" });
-    setInlineShowNewTypeInput(false);
-    setInlineNewTypeInput("");
     setShowInlineNewTask(false);
   };
 
-  const handleCreateAssignment = () => {
-    const tpl = templates.find((t) => t.id === newAssignment.templateId);
+  const handleCreateAssignment = async () => {
     if (
-      !tpl ||
-      !assignmentTarget.farmId ||
-      !assignmentTarget.plotId ||
-      !newAssignment.date
+      !newAssignment.taskId ||
+      !newAssignment.seasonId ||
+      !newAssignment.date ||
+      !assignmentTarget.workerId ||
+      assignmentTarget.bedIds.length === 0
     )
       return;
 
-    const timeStr = `${newAssignment.startHour}:${newAssignment.startMinute} - ${newAssignment.endHour}:${newAssignment.endMinute}`;
+    // Build ISO datetimes from date + time pickers
+    const startISO = `${newAssignment.date}T${newAssignment.startHour}:${newAssignment.startMinute}:00.000Z`;
+    const endISO = `${newAssignment.date}T${newAssignment.endHour}:${newAssignment.endMinute}:00.000Z`;
 
-    const farm = MOCK_FARMS.find((f) => f.id === assignmentTarget.farmId);
-    const plot = MOCK_PLOTS.find((p) => p.id === assignmentTarget.plotId);
-    const worker = staffList.find((s) => s.id === assignmentTarget.workerId);
-    const selectedBeds = MOCK_BEDS.filter((b) =>
-      assignmentTarget.bedIds.includes(b.id),
-    ).sort((a, b) => a.name.localeCompare(b.name));
+    // Derive plotIds from selected beds
+    const plotIds = Array.from(
+      new Set(
+        assignmentTarget.bedIds
+          .map((bid) => allBeds.find((b) => b.bedId === bid)?.plotId)
+          .filter(Boolean) as string[],
+      ),
+    );
 
-    const id = `asgn-${Date.now()}`;
+    setIsSaving(true);
+    try {
+      await api.createTaskDetail({
+        taskId: newAssignment.taskId,
+        seasonId: newAssignment.seasonId,
+        assignedToWorkerIds: [assignmentTarget.workerId],
+        bedIds: assignmentTarget.bedIds,
+        plotIds,
+        startDate: startISO,
+        endDate: endISO,
+        notes: newAssignment.notes,
+      });
+      await loadAllData();
+    } catch (err) {
+      console.error("Failed to create task detail:", err);
+    } finally {
+      setIsSaving(false);
+    }
 
-    const detail: AssignmentDetail = {
-      farmName: farm?.name ?? "",
-      plotName: plot?.name ?? "",
-      bedNames: selectedBeds.map((b) => b.name),
-      workerName: worker?.name ?? "",
-    };
-
-    const newItem: TaskAssignment = {
-      id,
-      templateId: tpl.id,
-      taskName: tpl.name,
-      taskIcon: tpl.type,
-      taskIconBg: tpl.iconBg,
-      area: plot?.name ?? assignmentTarget.plotId,
-      plot: selectedBeds.map((b) => b.name).join(", "),
-      date: newAssignment.date,
-      displayDate: isoToDisplay(newAssignment.date),
-      time: timeStr,
-      workerIds: worker ? [worker.id] : [],
-      workerNames: worker ? [worker.name] : [],
-      status: "pending" as const,
-      notes: newAssignment.notes,
-      seasonId: newAssignment.seasonId || undefined,
-    };
-
-    setAssignments((prev) => [...prev, newItem]);
-    setAssignmentDetails((prev) => ({ ...prev, [id]: detail }));
     setNewAssignment({
-      templateId: "",
+      taskId: "",
       seasonId: "",
       date: "",
       startHour: "07",
@@ -917,26 +765,46 @@ export function TasksPage() {
       endMinute: "00",
       notes: "",
     });
-    setAssignmentTarget({ farmId: "", plotId: "", bedIds: [], workerId: "" });
+    setAssignmentTarget({ workerId: "", bedIds: [], plotIds: [] });
     setIsAssignOpen(false);
   };
 
-  const handleDeleteAssignment = () => {
-    if (!assignmentToDelete) return;
-    setAssignments((prev) =>
-      prev.filter((a) => a.id !== assignmentToDelete.id),
-    );
+  const handleDeleteAssignment = async () => {
+    if (!detailToDelete) return;
+    setIsSaving(true);
+    try {
+      await api.deleteTaskDetail(detailToDelete.taskDetailId);
+      await loadAllData();
+    } catch (err) {
+      console.error("Failed to delete task detail:", err);
+    } finally {
+      setIsSaving(false);
+    }
     setIsDeleteOpen(false);
-    setAssignmentToDelete(null);
+    setDetailToDelete(null);
   };
 
-  const selectedTemplate = templates.find(
-    (t) => t.id === newAssignment.templateId,
-  );
+  // Derived helpers
+  const selectedTask = tasks.find((t) => t.taskId === newAssignment.taskId);
 
   const timeDisplay = newAssignment.startHour
     ? `${newAssignment.startHour}:${newAssignment.startMinute} – ${newAssignment.endHour}:${newAssignment.endMinute}`
     : "";
+
+  // Beds available for the selected season (from seasonsDetails)
+  const seasonBedsForAssign = (() => {
+    if (!newAssignment.seasonId) return [];
+    const season = seasons.find((s) => s.seasonId === newAssignment.seasonId);
+    if (!season) return [];
+    const bedIds = new Set(season.seasonsDetails.map((sd) => sd.bedId));
+    return allBeds.filter((b) => bedIds.has(b.bedId));
+  })();
+
+  // Plots that contain those beds
+  const seasonPlotsForAssign = (() => {
+    const plotIds = new Set(seasonBedsForAssign.map((b) => b.plotId));
+    return allPlots.filter((p) => plotIds.has(p.plotId));
+  })();
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -949,6 +817,11 @@ export function TasksPage() {
             Quản lý và phân công công việc tại trang trại
           </p>
         </div>
+        {isLoading && (
+          <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-500">
+            Đang tải...
+          </span>
+        )}
       </div>
 
       {/* Tabs */}
@@ -1013,20 +886,10 @@ export function TasksPage() {
             </div>
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-4 text-xs text-[#64748b]">
-                {(
-                  Object.entries(STATUS_CONFIG) as [
-                    keyof typeof STATUS_CONFIG,
-                    (typeof STATUS_CONFIG)[keyof typeof STATUS_CONFIG],
-                  ][]
-                ).map(([, cfg]) => (
-                  <span key={cfg.label} className="flex items-center gap-1.5">
-                    <span
-                      className="w-2 h-2 rounded-full inline-block"
-                      style={{ background: cfg.dot }}
-                    />
-                    {cfg.label}
-                  </span>
-                ))}
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full inline-block bg-[#009689]" />
+                  Đã giao
+                </span>
               </div>
               <button
                 onClick={() => setIsAssignOpen(true)}
@@ -1054,7 +917,7 @@ export function TasksPage() {
                     isToday={isToday}
                     assignments={getAssignmentsForDay(day)}
                     onTaskClick={(a) => {
-                      setSelectedAssignment(a);
+                      setSelectedDetail(a);
                       setIsViewOpen(true);
                     }}
                   />
@@ -1085,7 +948,7 @@ export function TasksPage() {
               <table className="w-full">
                 <thead className="bg-[#f8fafc] border-b border-[#e2e8f0]">
                   <tr>
-                    {["Công việc", "Loại", "Hành động"].map((h, i) => (
+                    {["Công việc", "Trạng thái", "Hành động"].map((h, i) => (
                       <th
                         key={h}
                         className={`px-6 py-3 text-xs font-semibold text-[#62748e] uppercase tracking-wide ${i === 2 ? "text-center" : "text-left"}`}
@@ -1096,60 +959,89 @@ export function TasksPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#f1f5f9]">
-                  {templates
-                    .slice((tplPage - 1) * TPL_PER_PAGE, tplPage * TPL_PER_PAGE)
-                    .map((tpl) => (
-                      <tr
-                        key={tpl.id}
-                        className="hover:bg-[#f8fafc] transition-colors group"
+                  {isLoading ? (
+                    <tr>
+                      <td
+                        colSpan={3}
+                        className="px-6 py-16 text-center text-[#94a3b8] text-sm"
                       >
-                        <td className="px-6 py-3.5">
-                          <span className="text-sm font-medium text-[#1e293b]">
-                            {tpl.name}
-                          </span>
-                        </td>
-                        <td className="px-6 py-3.5">
-                          <span className="inline-block px-2 py-0.5 rounded-full text-[11px] font-medium bg-[#f1f5f9] text-[#64748b]">
-                            {tpl.type}
-                          </span>
-                        </td>
-                        <td className="px-6 py-3.5">
-                          <div className="flex items-center justify-center gap-1">
-                            <button
-                              onClick={() => {
-                                setSelectedTpl(tpl);
-                                setViewTplOpen(true);
-                              }}
-                              className="p-1.5 text-[#009689] hover:bg-[#f0fdfa] rounded-lg transition-colors"
-                              title="Xem mô tả"
+                        Đang tải...
+                      </td>
+                    </tr>
+                  ) : (
+                    tasks
+                      .slice(
+                        (tplPage - 1) * TPL_PER_PAGE,
+                        tplPage * TPL_PER_PAGE,
+                      )
+                      .map((tpl) => (
+                        <tr
+                          key={tpl.taskId}
+                          className="hover:bg-[#f8fafc] transition-colors group"
+                        >
+                          <td className="px-6 py-3.5">
+                            <div>
+                              <span className="text-sm font-medium text-[#1e293b]">
+                                {tpl.taskTitle}
+                              </span>
+                              {tpl.taskNotes && (
+                                <p className="text-xs text-[#94a3b8] mt-0.5 line-clamp-1">
+                                  {tpl.taskNotes}
+                                </p>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-6 py-3.5">
+                            <span
+                              className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-medium ${
+                                normaliseTaskStatus(tpl.taskStatus) === "active"
+                                  ? "bg-[#d1fae5] text-[#065f46]"
+                                  : "bg-[#f1f5f9] text-[#64748b]"
+                              }`}
                             >
-                              <Eye className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => {
-                                setEditTpl({ ...tpl });
-                                setEditTplOpen(true);
-                              }}
-                              className="p-1.5 text-[#64748b] hover:bg-[#f1f5f9] rounded-lg transition-colors"
-                              title="Chỉnh sửa"
-                            >
-                              <Pencil className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => {
-                                setTplToDelete(tpl);
-                                setDeleteTplOpen(true);
-                              }}
-                              className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg transition-colors"
-                              title="Xoá"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  {templates.length === 0 && (
+                              {normaliseTaskStatus(tpl.taskStatus) === "active"
+                                ? "Đang hoạt động"
+                                : "Không hoạt động"}
+                            </span>
+                          </td>
+                          <td className="px-6 py-3.5">
+                            <div className="flex items-center justify-center gap-1">
+                              <button
+                                onClick={() => {
+                                  setSelectedTpl(tpl);
+                                  setViewTplOpen(true);
+                                }}
+                                className="p-1.5 text-[#009689] hover:bg-[#f0fdfa] rounded-lg transition-colors"
+                                title="Xem mô tả"
+                              >
+                                <Eye className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setEditTpl({ ...tpl });
+                                  setEditTplOpen(true);
+                                }}
+                                className="p-1.5 text-[#64748b] hover:bg-[#f1f5f9] rounded-lg transition-colors"
+                                title="Chỉnh sửa"
+                              >
+                                <Pencil className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setTplToDelete(tpl);
+                                  setDeleteTplOpen(true);
+                                }}
+                                className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg transition-colors"
+                                title="Xoá"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                  )}
+                  {!isLoading && tasks.length === 0 && (
                     <tr>
                       <td
                         colSpan={3}
@@ -1163,12 +1055,12 @@ export function TasksPage() {
               </table>
             </div>
 
-            {/* Pagination — always visible */}
+            {/* Pagination */}
             <div className="px-6 py-3 border-t border-[#e2e8f0] flex items-center justify-between">
               <p className="text-xs text-[#64748b]">
-                {templates.length === 0
+                {tasks.length === 0
                   ? "Chưa có công việc nào"
-                  : `${(tplPage - 1) * TPL_PER_PAGE + 1}–${Math.min(tplPage * TPL_PER_PAGE, templates.length)} / ${templates.length} công việc`}
+                  : `${(tplPage - 1) * TPL_PER_PAGE + 1}–${Math.min(tplPage * TPL_PER_PAGE, tasks.length)} / ${tasks.length} công việc`}
               </p>
               <div className="flex items-center gap-1">
                 <button
@@ -1180,10 +1072,7 @@ export function TasksPage() {
                 </button>
                 {Array.from(
                   {
-                    length: Math.max(
-                      1,
-                      Math.ceil(templates.length / TPL_PER_PAGE),
-                    ),
+                    length: Math.max(1, Math.ceil(tasks.length / TPL_PER_PAGE)),
                   },
                   (_, i) => (
                     <button
@@ -1199,14 +1088,14 @@ export function TasksPage() {
                   onClick={() =>
                     setTplPage((p) =>
                       Math.min(
-                        Math.max(1, Math.ceil(templates.length / TPL_PER_PAGE)),
+                        Math.max(1, Math.ceil(tasks.length / TPL_PER_PAGE)),
                         p + 1,
                       ),
                     )
                   }
                   disabled={
                     tplPage ===
-                    Math.max(1, Math.ceil(templates.length / TPL_PER_PAGE))
+                    Math.max(1, Math.ceil(tasks.length / TPL_PER_PAGE))
                   }
                   className="p-1.5 border border-[#e2e8f0] rounded-lg hover:bg-[#f8fafc] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                 >
@@ -1257,65 +1146,7 @@ export function TasksPage() {
                 />
               </div>
 
-              {/* Loại công việc — maps to task_title prefix / categorisation */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                  Loại công việc <span className="text-red-500">*</span>
-                </label>
-                <select
-                  value={newTemplate.type}
-                  onChange={(e) => {
-                    if (e.target.value === "__new__") {
-                      setShowNewTypeInput(true);
-                    } else {
-                      setNewTemplate((p) => ({ ...p, type: e.target.value }));
-                      setShowNewTypeInput(false);
-                    }
-                  }}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                >
-                  <option value="">Chọn loại</option>
-                  {[...TASK_TYPES, ...customTaskTypes].map((t) => (
-                    <option key={t} value={t}>
-                      {t}
-                    </option>
-                  ))}
-                  <option value="__new__">+ Tạo loại mới...</option>
-                </select>
-                {showNewTypeInput && (
-                  <div className="flex gap-2 mt-2">
-                    <input
-                      type="text"
-                      placeholder="Tên loại công việc mới"
-                      value={newTypeInput}
-                      onChange={(e) => setNewTypeInput(e.target.value)}
-                      onKeyDown={(e) =>
-                        e.key === "Enter" && handleAddCustomType()
-                      }
-                      autoFocus
-                      className="flex-1 px-3 py-2 border border-[#009689] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                    />
-                    <button
-                      onClick={handleAddCustomType}
-                      disabled={!newTypeInput.trim()}
-                      className="px-3 py-2 bg-[#009689] text-white rounded-lg text-sm font-medium hover:bg-[#007f73] disabled:opacity-40 transition-colors"
-                    >
-                      Thêm
-                    </button>
-                    <button
-                      onClick={() => {
-                        setShowNewTypeInput(false);
-                        setNewTypeInput("");
-                      }}
-                      className="px-3 py-2 text-[#64748b] border border-[#e2e8f0] rounded-lg text-sm hover:bg-[#f8fafc] transition-colors"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {/* Mô tả — task_notes, free-text for anything (fertilizer, crop, etc.) */}
+              {/* Ghi chú — task_notes */}
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1.5">
                   Ghi chú / Mô tả
@@ -1347,10 +1178,11 @@ export function TasksPage() {
               </button>
               <button
                 onClick={handleCreateTemplate}
-                disabled={!newTemplate.name || !newTemplate.type}
+                disabled={!newTemplate.name || isSaving}
                 className="flex-1 px-4 py-2 rounded-lg text-sm font-medium bg-[#009689] text-white hover:bg-[#007f73] disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
               >
-                <CheckCircle2 className="w-4 h-4" /> Lưu công việc
+                <CheckCircle2 className="w-4 h-4" />
+                {isSaving ? "Đang lưu..." : "Lưu công việc"}
               </button>
             </div>
           </Dialog.Content>
@@ -1363,17 +1195,11 @@ export function TasksPage() {
         onOpenChange={(open) => {
           setIsAssignOpen(open);
           if (!open) {
-            setAssignmentTarget({
-              farmId: "",
-              plotId: "",
-              bedIds: [],
-              workerId: "",
-            });
+            setAssignmentTarget({ workerId: "", bedIds: [], plotIds: [] });
             setPrefillSource(null);
             setShowInlineNewTask(false);
             setInlineNewTask({ name: "", type: "", description: "" });
-            setInlineShowNewTypeInput(false);
-            setInlineNewTypeInput("");
+            setSelectedPlotId("");
           }
         }}
       >
@@ -1424,20 +1250,20 @@ export function TasksPage() {
                 </h3>
                 <div className="flex gap-2">
                   <select
-                    value={newAssignment.templateId}
+                    value={newAssignment.taskId}
                     onChange={(e) => {
                       setNewAssignment((p) => ({
                         ...p,
-                        templateId: e.target.value,
+                        taskId: e.target.value,
                       }));
                       if (showInlineNewTask) setShowInlineNewTask(false);
                     }}
                     className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#009689]"
                   >
                     <option value="">-- Chọn công việc --</option>
-                    {templates.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.name} ({t.type})
+                    {tasks.map((t) => (
+                      <option key={t.taskId} value={t.taskId}>
+                        {t.taskTitle}
                       </option>
                     ))}
                   </select>
@@ -1445,7 +1271,7 @@ export function TasksPage() {
                     onClick={() => {
                       setShowInlineNewTask((p) => !p);
                       if (!showInlineNewTask) {
-                        setNewAssignment((p) => ({ ...p, templateId: "" }));
+                        setNewAssignment((p) => ({ ...p, taskId: "" }));
                       }
                     }}
                     title="Tạo công việc mới"
@@ -1469,8 +1295,6 @@ export function TasksPage() {
                     <p className="text-xs font-semibold text-[#009689] flex items-center gap-1.5">
                       <Plus className="w-3.5 h-3.5" /> Tạo công việc mới
                     </p>
-
-                    {/* Name */}
                     <div>
                       <label className="block text-xs font-medium text-slate-600 mb-1">
                         Tên công việc <span className="text-red-500">*</span>
@@ -1488,82 +1312,9 @@ export function TasksPage() {
                         className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#009689]"
                       />
                     </div>
-
-                    {/* Type */}
                     <div>
                       <label className="block text-xs font-medium text-slate-600 mb-1">
-                        Loại <span className="text-red-500">*</span>
-                      </label>
-                      {!inlineShowNewTypeInput ? (
-                        <div className="flex gap-2">
-                          <select
-                            value={inlineNewTask.type}
-                            onChange={(e) =>
-                              setInlineNewTask((p) => ({
-                                ...p,
-                                type: e.target.value,
-                              }))
-                            }
-                            className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                          >
-                            <option value="">-- Chọn loại --</option>
-                            {[...TASK_TYPES, ...customTaskTypes].map((t) => (
-                              <option key={t} value={t}>
-                                {t}
-                              </option>
-                            ))}
-                          </select>
-                          <button
-                            onClick={() => setInlineShowNewTypeInput(true)}
-                            className="shrink-0 px-2.5 py-1.5 rounded-lg border border-dashed border-[#009689]/50 text-xs text-[#009689] hover:bg-white transition-colors"
-                          >
-                            + Loại mới
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="flex gap-2">
-                          <input
-                            type="text"
-                            placeholder="Tên loại mới..."
-                            value={inlineNewTypeInput}
-                            onChange={(e) =>
-                              setInlineNewTypeInput(e.target.value)
-                            }
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter")
-                                handleInlineAddCustomType();
-                              if (e.key === "Escape") {
-                                setInlineShowNewTypeInput(false);
-                                setInlineNewTypeInput("");
-                              }
-                            }}
-                            className="flex-1 px-3 py-2 border border-[#009689] rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                            autoFocus
-                          />
-                          <button
-                            onClick={handleInlineAddCustomType}
-                            disabled={!inlineNewTypeInput.trim()}
-                            className="shrink-0 px-3 py-1.5 rounded-lg bg-[#009689] text-white text-xs font-medium disabled:opacity-40 transition-colors"
-                          >
-                            Thêm
-                          </button>
-                          <button
-                            onClick={() => {
-                              setInlineShowNewTypeInput(false);
-                              setInlineNewTypeInput("");
-                            }}
-                            className="shrink-0 px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs text-slate-600 hover:bg-white transition-colors"
-                          >
-                            Hủy
-                          </button>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Description */}
-                    <div>
-                      <label className="block text-xs font-medium text-slate-600 mb-1">
-                        Mô tả
+                        Ghi chú
                       </label>
                       <textarea
                         rows={2}
@@ -1578,7 +1329,6 @@ export function TasksPage() {
                         className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#009689] resize-none"
                       />
                     </div>
-
                     <div className="flex gap-2 pt-1">
                       <button
                         onClick={() => {
@@ -1588,8 +1338,6 @@ export function TasksPage() {
                             type: "",
                             description: "",
                           });
-                          setInlineShowNewTypeInput(false);
-                          setInlineNewTypeInput("");
                         }}
                         className="flex-1 px-3 py-2 rounded-lg text-xs font-medium text-slate-600 border border-slate-300 hover:bg-white transition-colors"
                       >
@@ -1597,18 +1345,19 @@ export function TasksPage() {
                       </button>
                       <button
                         onClick={handleInlineCreateTask}
-                        disabled={!inlineNewTask.name || !inlineNewTask.type}
+                        disabled={!inlineNewTask.name || isSaving}
                         className="flex-1 px-3 py-2 rounded-lg text-xs font-medium bg-[#009689] text-white hover:bg-[#007f73] disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-1.5"
                       >
-                        <CheckCircle2 className="w-3.5 h-3.5" /> Tạo &amp; chọn
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        {isSaving ? "Đang lưu..." : "Tạo & chọn"}
                       </button>
                     </div>
                   </div>
                 )}
 
-                {selectedTemplate && !showInlineNewTask && (
+                {selectedTask && !showInlineNewTask && (
                   <p className="mt-2 text-xs text-[#64748b] bg-[#f8fafc] rounded-lg px-3 py-2 border border-[#e2e8f0]">
-                    {selectedTemplate.description || "Không có mô tả"}
+                    {selectedTask.taskNotes || "Không có ghi chú"}
                   </p>
                 )}
               </section>
@@ -1625,24 +1374,23 @@ export function TasksPage() {
                   value={newAssignment.seasonId}
                   onChange={(e) => {
                     const sid = e.target.value;
-                    const mapped = SEASON_FARM_MAP[sid];
                     setNewAssignment((p) => ({ ...p, seasonId: sid }));
                     setAssignmentTarget((p) => ({
                       ...p,
-                      farmId: mapped?.farmId ?? "",
-                      plotId: "",
                       bedIds: [],
+                      plotIds: [],
                     }));
+                    setSelectedPlotId("");
                   }}
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#009689]"
                 >
                   <option value="">-- Chọn mùa vụ --</option>
-                  {mockSeasons.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                      {s.status === "Đang hoạt động"
+                  {seasons.map((s) => (
+                    <option key={s.seasonId} value={s.seasonId}>
+                      {s.seasonName}
+                      {s.status === "Active"
                         ? " (Đang hoạt động)"
-                        : s.status === "Đã kết thúc"
+                        : s.status === "Completed"
                           ? " (Đã kết thúc)"
                           : " (Sắp diễn ra)"}
                     </option>
@@ -1650,26 +1398,34 @@ export function TasksPage() {
                 </select>
                 {newAssignment.seasonId &&
                   (() => {
-                    const season = mockSeasons.find(
-                      (s) => s.id === newAssignment.seasonId,
+                    const season = seasons.find(
+                      (s) => s.seasonId === newAssignment.seasonId,
                     );
                     if (!season) return null;
                     return (
                       <div className="mt-2 flex items-center justify-between px-3 py-2 bg-[#f8fafc] rounded-lg border border-[#e2e8f0] text-xs">
                         <span className="text-[#64748b]">
-                          {season.startDate.split("-").reverse().join("/")} –{" "}
-                          {season.endDate.split("-").reverse().join("/")}
+                          {season.seasonStartDate
+                            .split("-")
+                            .reverse()
+                            .join("/")}{" "}
+                          –{" "}
+                          {season.seasonEndDate.split("-").reverse().join("/")}
                         </span>
                         <span
                           className={`font-medium px-2 py-0.5 rounded-full ${
-                            season.status === "Đang hoạt động"
+                            season.status === "Active"
                               ? "bg-[#d1fae5] text-[#065f46]"
-                              : season.status === "Đã kết thúc"
+                              : season.status === "Completed"
                                 ? "bg-[#f1f5f9] text-[#64748b]"
                                 : "bg-[#fef3c7] text-[#92400e]"
                           }`}
                         >
-                          {season.status}
+                          {season.status === "Active"
+                            ? "Đang hoạt động"
+                            : season.status === "Completed"
+                              ? "Đã kết thúc"
+                              : "Sắp diễn ra"}
                         </span>
                       </div>
                     );
@@ -1740,178 +1496,126 @@ export function TasksPage() {
                 </div>
               </section>
 
-              {/* ── 4. Farm, Plot, Beds & Worker ── */}
+              {/* ── 4. Vuông, Luống & Nhân viên ── */}
               <section>
                 <h3 className="text-xs font-bold text-[#009689] uppercase tracking-widest mb-3 flex items-center gap-1.5">
                   <span className="w-5 h-5 rounded-full bg-[#009689] text-white text-[10px] flex items-center justify-center font-bold">
                     4
                   </span>
-                  Trang trại, Vuông, Luống &amp; Nhân viên
+                  Vuông, Luống &amp; Nhân viên
                 </h3>
 
                 <div className="space-y-4">
-                  {/* Farm — read-only, derived from season */}
+                  {/* Vuông selector */}
                   <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1.5">
-                      Trang trại
-                    </label>
-                    {assignmentTarget.farmId ? (
-                      <div className="flex items-center gap-2 px-3 py-2 bg-[#f1f5f9] border border-[#e2e8f0] rounded-lg">
-                        <MapPin className="w-3.5 h-3.5 text-[#94a3b8] shrink-0" />
-                        <span className="text-sm font-medium text-[#64748b]">
-                          {MOCK_FARMS.find(
-                            (f) => f.id === assignmentTarget.farmId,
-                          )?.name ?? "—"}
-                        </span>
-                        <span className="ml-auto text-[10px] text-[#94a3b8] italic">
-                          Từ mùa vụ
-                        </span>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-2 px-3 py-2 bg-[#f8fafc] border border-dashed border-[#e2e8f0] rounded-lg">
-                        <MapPin className="w-3.5 h-3.5 text-[#cbd5e1] shrink-0" />
-                        <span className="text-sm text-[#cbd5e1] italic">
-                          Chọn mùa vụ để xem trang trại
-                        </span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Plot — only available plots for the season's farm */}
-                  <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1.5">
+                    <label className="block text-xs font-semibold text-[#475569] uppercase tracking-wide mb-1.5">
                       Vuông <span className="text-red-500">*</span>
                     </label>
-                    {!assignmentTarget.farmId ? (
+                    {!newAssignment.seasonId ? (
                       <select
                         disabled
                         className="w-full px-3 py-2 border border-[#e2e8f0] rounded-lg text-sm bg-[#f8fafc] text-[#cbd5e1] cursor-not-allowed"
                       >
                         <option>-- Chọn mùa vụ trước --</option>
                       </select>
+                    ) : seasonPlotsForAssign.length === 0 ? (
+                      <div className="px-3 py-2 bg-[#f8fafc] border border-dashed border-[#e2e8f0] rounded-lg text-xs text-[#94a3b8] italic">
+                        Mùa vụ này chưa có vuông nào
+                      </div>
                     ) : (
                       <select
-                        value={assignmentTarget.plotId}
-                        onChange={(e) =>
+                        value={selectedPlotId}
+                        onChange={(e) => {
+                          setSelectedPlotId(e.target.value);
+                          // Clear beds that don't belong to the new plot
+                          const newPlotId = e.target.value;
+                          const bedsInNewPlot = new Set(
+                            seasonBedsForAssign
+                              .filter((b) => b.plotId === newPlotId)
+                              .map((b) => b.bedId),
+                          );
                           setAssignmentTarget((p) => ({
                             ...p,
-                            plotId: e.target.value,
-                            bedIds: [],
-                          }))
-                        }
+                            bedIds: p.bedIds.filter((id) =>
+                              bedsInNewPlot.has(id),
+                            ),
+                          }));
+                        }}
                         className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#009689]"
                       >
                         <option value="">-- Chọn vuông --</option>
-                        {(() => {
-                          const mapped =
-                            SEASON_FARM_MAP[newAssignment.seasonId];
-                          const allowedIds = mapped?.plotIds ?? [];
-                          return MOCK_PLOTS.filter(
-                            (p) =>
-                              p.farmId === assignmentTarget.farmId &&
-                              (allowedIds.length === 0 ||
-                                allowedIds.includes(p.id)),
-                          ).map((p) => (
-                            <option key={p.id} value={p.id}>
-                              {p.name}
-                            </option>
-                          ));
-                        })()}
+                        {seasonPlotsForAssign.map((p) => (
+                          <option key={p.plotId} value={p.plotId}>
+                            {p.plotName}
+                          </option>
+                        ))}
                       </select>
                     )}
                   </div>
 
-                  {/* Beds — chip picker, sorted, with status indicators */}
-                  {assignmentTarget.plotId &&
+                  {/* Luống — only shown after a plot is selected */}
+                  {selectedPlotId &&
                     (() => {
-                      const plotBeds = MOCK_BEDS.filter(
-                        (b) => b.plotId === assignmentTarget.plotId,
-                      ).sort((a, b) => a.name.localeCompare(b.name));
-                      const selectedCount = assignmentTarget.bedIds.length;
-                      const availableCount = plotBeds.filter(
-                        (b) => b.status === "available",
+                      const plotBeds = seasonBedsForAssign
+                        .filter((b) => b.plotId === selectedPlotId)
+                        .sort((a, b) => a.bedName.localeCompare(b.bedName));
+                      const selectedCount = plotBeds.filter((b) =>
+                        assignmentTarget.bedIds.includes(b.bedId),
                       ).length;
-                      const allAvailableSelected =
-                        availableCount > 0 &&
-                        plotBeds
-                          .filter((b) => b.status === "available")
-                          .every((b) => assignmentTarget.bedIds.includes(b.id));
+                      const allSelected =
+                        plotBeds.length > 0 &&
+                        plotBeds.every((b) =>
+                          assignmentTarget.bedIds.includes(b.bedId),
+                        );
                       return (
                         <div>
                           <div className="flex items-center justify-between mb-1.5">
-                            <label className="text-xs font-medium text-slate-500">
-                              Luống phân công{" "}
-                              <span className="text-red-500">*</span>
-                            </label>
-                            <div className="flex items-center gap-2">
+                            <label className="text-xs font-semibold text-[#475569] uppercase tracking-wide">
+                              Luống <span className="text-red-500">*</span>
                               {selectedCount > 0 && (
-                                <span className="text-[11px] font-semibold text-[#009689]">
-                                  {selectedCount} đã chọn
+                                <span className="ml-2 normal-case font-semibold text-[#009689]">
+                                  ({selectedCount} đã chọn)
                                 </span>
                               )}
-                              <button
-                                onClick={() => {
-                                  const allAvailable = plotBeds
-                                    .filter((b) => b.status === "available")
-                                    .map((b) => b.id);
-                                  setAssignmentTarget((p) => ({
-                                    ...p,
-                                    bedIds: allAvailableSelected
-                                      ? []
-                                      : allAvailable,
-                                  }));
-                                }}
-                                className="text-[11px] font-medium text-[#009689] hover:underline disabled:opacity-40"
-                                disabled={availableCount === 0}
-                              >
-                                {allAvailableSelected
-                                  ? "Bỏ chọn tất cả"
-                                  : `Chọn tất cả (${availableCount})`}
-                              </button>
-                            </div>
+                            </label>
+                            <button
+                              onClick={() => {
+                                const ids = plotBeds.map((b) => b.bedId);
+                                setAssignmentTarget((p) => ({
+                                  ...p,
+                                  bedIds: allSelected
+                                    ? p.bedIds.filter((id) => !ids.includes(id))
+                                    : [...new Set([...p.bedIds, ...ids])],
+                                }));
+                              }}
+                              className="text-[11px] font-medium text-[#009689] hover:underline"
+                            >
+                              {allSelected
+                                ? "Bỏ chọn tất cả"
+                                : `Chọn tất cả (${plotBeds.length})`}
+                            </button>
                           </div>
-
-                          {/* Legend */}
-                          <div className="flex items-center gap-3 mb-2">
-                            {(
-                              Object.entries(BED_STATUS_CONFIG) as [
-                                BedStatus,
-                                (typeof BED_STATUS_CONFIG)[BedStatus],
-                              ][]
-                            ).map(([, cfg]) => (
-                              <span
-                                key={cfg.label}
-                                className="flex items-center gap-1 text-[10px] text-[#64748b]"
-                              >
-                                <span
-                                  className="w-1.5 h-1.5 rounded-full inline-block"
-                                  style={{ background: cfg.dot }}
-                                />
-                                {cfg.label}
-                              </span>
-                            ))}
-                          </div>
-
                           <div className="flex flex-wrap gap-1.5">
                             {plotBeds.map((bed) => {
-                              const cfg = BED_STATUS_CONFIG[bed.status];
-                              const isAvailable = bed.status === "available";
+                              const bedStatus = toBedStatus(bed.bedStatus);
+                              const cfg = BED_STATUS_CONFIG[bedStatus];
                               const isSel = assignmentTarget.bedIds.includes(
-                                bed.id,
+                                bed.bedId,
                               );
                               return (
                                 <button
-                                  key={bed.id}
-                                  disabled={!isAvailable}
+                                  key={bed.bedId}
                                   onClick={() =>
                                     setAssignmentTarget((p) => ({
                                       ...p,
                                       bedIds: isSel
-                                        ? p.bedIds.filter((id) => id !== bed.id)
-                                        : [...p.bedIds, bed.id],
+                                        ? p.bedIds.filter(
+                                            (id) => id !== bed.bedId,
+                                          )
+                                        : [...p.bedIds, bed.bedId],
                                     }))
                                   }
-                                  title={`${bed.name} — ${cfg.label}`}
+                                  title={`${bed.bedName} — ${cfg.label}`}
                                   className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all"
                                   style={
                                     isSel
@@ -1920,19 +1624,11 @@ export function TasksPage() {
                                           color: "#fff",
                                           borderColor: "#009689",
                                         }
-                                      : !isAvailable
-                                        ? {
-                                            background: cfg.chipBg,
-                                            color: cfg.chipText,
-                                            borderColor: cfg.chipBorder,
-                                            opacity: 0.5,
-                                            cursor: "not-allowed",
-                                          }
-                                        : {
-                                            background: cfg.chipBg,
-                                            color: cfg.chipText,
-                                            borderColor: cfg.chipBorder,
-                                          }
+                                      : {
+                                          background: cfg.chipBg,
+                                          color: cfg.chipText,
+                                          borderColor: cfg.chipBorder,
+                                        }
                                   }
                                 >
                                   <span
@@ -1943,7 +1639,7 @@ export function TasksPage() {
                                         : cfg.dot,
                                     }}
                                   />
-                                  {bed.name}
+                                  {bed.bedName}
                                   {isSel && (
                                     <CheckCircle2 className="w-3 h-3 shrink-0" />
                                   )}
@@ -1954,54 +1650,41 @@ export function TasksPage() {
                         </div>
                       );
                     })()}
+                  {newAssignment.seasonId &&
+                    !selectedPlotId &&
+                    seasonPlotsForAssign.length > 0 && (
+                      <div className="px-3 py-2 bg-[#f8fafc] border border-dashed border-[#e2e8f0] rounded-lg text-xs text-[#94a3b8] italic">
+                        Chọn vuông để xem danh sách luống
+                      </div>
+                    )}
 
-                  {/* Worker — all workers shown; "off" is disabled+greyed, "busy" flagged */}
+                  {/* Nhân viên */}
                   <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1.5">
+                    <label className="block text-xs font-semibold text-[#475569] uppercase tracking-wide mb-1.5">
                       Nhân viên phụ trách{" "}
                       <span className="text-red-500">*</span>
                     </label>
-
-                    {/* Worker status legend */}
-                    <div className="flex items-center gap-3 mb-2">
-                      {(
-                        Object.entries(WORKER_STATUS_CONFIG) as [
-                          WorkerStatus,
-                          (typeof WORKER_STATUS_CONFIG)[WorkerStatus],
-                        ][]
-                      ).map(([, cfg]) => (
-                        <span
-                          key={cfg.label}
-                          className="flex items-center gap-1 text-[10px] text-[#64748b]"
-                        >
-                          <span
-                            className="w-1.5 h-1.5 rounded-full inline-block"
-                            style={{ background: cfg.dot }}
-                          />
-                          {cfg.label}
-                        </span>
-                      ))}
-                    </div>
-
                     <div className="flex flex-wrap gap-1.5">
                       {staffList.map((s) => {
-                        const rawStatus = s.status as WorkerStatus;
-                        const wCfg =
-                          WORKER_STATUS_CONFIG[rawStatus] ??
-                          WORKER_STATUS_CONFIG.active;
-                        const isDisabled = wCfg.disabled;
-                        const sel = assignmentTarget.workerId === s.id;
+                        const rawStatus = (s.status ?? "").toLowerCase();
+                        const isDisabled = rawStatus === "inactive";
+                        const sel = assignmentTarget.workerId === s.userId;
+                        const dotColor = isDisabled
+                          ? "#94a3b8"
+                          : rawStatus === "busy"
+                            ? "#f59e0b"
+                            : "#10b981";
                         return (
                           <button
-                            key={s.id}
+                            key={s.userId}
                             disabled={isDisabled}
                             onClick={() =>
                               setAssignmentTarget((p) => ({
                                 ...p,
-                                workerId: sel ? "" : s.id,
+                                workerId: sel ? "" : s.userId,
                               }))
                             }
-                            title={`${s.name} — ${wCfg.label}`}
+                            title={s.fullname}
                             className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border transition-all"
                             style={
                               sel
@@ -2025,27 +1708,22 @@ export function TasksPage() {
                                     }
                             }
                           >
-                            {/* Avatar */}
                             <span
                               className="w-5 h-5 rounded-full text-[10px] flex items-center justify-center font-bold shrink-0"
                               style={{
                                 background: sel
                                   ? "rgba(255,255,255,0.25)"
-                                  : isDisabled
-                                    ? "#e2e8f0"
-                                    : s.color,
-                                color: isDisabled ? "#94a3b8" : "#fff",
+                                  : "#009689",
+                                color: "#fff",
                               }}
                             >
-                              {s.initials[0]}
+                              {s.fullname.charAt(0).toUpperCase()}
                             </span>
-                            {s.name}
-                            {/* Status dot — only show when not selected */}
+                            {s.fullname}
                             {!sel && (
                               <span
                                 className="w-1.5 h-1.5 rounded-full shrink-0"
-                                style={{ background: wCfg.dot }}
-                                title={wCfg.label}
+                                style={{ background: dotColor }}
                               />
                             )}
                             {sel && (
@@ -2090,12 +1768,12 @@ export function TasksPage() {
                 onClick={() => {
                   setIsAssignOpen(false);
                   setAssignmentTarget({
-                    farmId: "",
-                    plotId: "",
-                    bedIds: [],
                     workerId: "",
+                    bedIds: [],
+                    plotIds: [],
                   });
                   setPrefillSource(null);
+                  setSelectedPlotId("");
                 }}
                 className="flex-1 px-4 py-2 rounded-lg text-sm font-medium text-slate-700 border border-[#e2e8f0] hover:bg-slate-50 transition-colors"
               >
@@ -2104,16 +1782,17 @@ export function TasksPage() {
               <button
                 onClick={handleCreateAssignment}
                 disabled={
-                  !newAssignment.templateId ||
-                  !assignmentTarget.farmId ||
-                  !assignmentTarget.plotId ||
+                  !newAssignment.taskId ||
+                  !newAssignment.seasonId ||
                   assignmentTarget.bedIds.length === 0 ||
                   !assignmentTarget.workerId ||
-                  !newAssignment.date
+                  !newAssignment.date ||
+                  isSaving
                 }
                 className="flex-1 px-4 py-2 rounded-lg text-sm font-medium bg-[#009689] text-white hover:bg-[#007f73] disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
               >
-                <CheckCircle2 className="w-4 h-4" /> Giao việc
+                <CheckCircle2 className="w-4 h-4" />
+                {isSaving ? "Đang lưu..." : "Giao việc"}
                 {assignmentTarget.bedIds.length > 0 && (
                   <span className="bg-white/20 text-white text-xs px-1.5 py-0.5 rounded-md">
                     {assignmentTarget.bedIds.length} luống
@@ -2132,43 +1811,65 @@ export function TasksPage() {
           <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-md bg-white rounded-xl shadow-2xl p-6">
             <div className="flex items-center justify-between mb-5">
               <Dialog.Title className="text-lg font-bold text-[#1e293b]">
-                Chi tiết
+                Chi tiết lịch trình
               </Dialog.Title>
-              <Dialog.Close asChild>
-                <button className="p-1 text-slate-400 hover:text-slate-600 rounded">
-                  <X className="w-5 h-5" />
-                </button>
-              </Dialog.Close>
+              <div className="flex items-center gap-1">
+                {selectedDetail && (
+                  <button
+                    onClick={() => {
+                      setIsViewOpen(false);
+                      setDetailToDelete(selectedDetail);
+                      setIsDeleteOpen(true);
+                    }}
+                    title="Xoá lịch trình này"
+                    className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
+                <Dialog.Close asChild>
+                  <button className="p-1 text-slate-400 hover:text-slate-600 rounded">
+                    <X className="w-5 h-5" />
+                  </button>
+                </Dialog.Close>
+              </div>
             </div>
             <Dialog.Description className="sr-only">
               Thông tin chi tiết của công việc được giao
             </Dialog.Description>
-            {selectedAssignment &&
+            {selectedDetail &&
               (() => {
-                const detail = assignmentDetails[selectedAssignment.id];
+                const task = tasks.find(
+                  (t) => t.taskId === selectedDetail.taskId,
+                );
+                const season = seasons.find(
+                  (s) => s.seasonId === selectedDetail.seasonId,
+                );
+                const worker = staffList.find(
+                  (s) => s.userId === selectedDetail.assignedToWorkerIds[0],
+                );
+                const beds = selectedDetail.bedIds
+                  .map(
+                    (id) => allBeds.find((b) => b.bedId === id)?.bedName ?? id,
+                  )
+                  .join(", ");
+                const startDt = new Date(selectedDetail.startDate);
+                const endDt = new Date(selectedDetail.endDate);
+                const displayDate = startDt.toLocaleDateString("vi-VN");
+                const timeStr = `${startDt.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })} – ${endDt.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}`;
                 return (
                   <div className="space-y-4">
                     {/* Task header */}
                     <div className="flex items-center gap-3">
-                      <div
-                        className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0"
-                        style={{
-                          backgroundColor: selectedAssignment.taskIconBg,
-                        }}
-                      >
-                        <TaskIcon
-                          type={selectedAssignment.taskIcon}
-                          className="w-6 h-6 text-[#475569]"
-                        />
+                      <div className="w-12 h-12 rounded-xl bg-[#f0fdfa] flex items-center justify-center shrink-0">
+                        <ClipboardList className="w-6 h-6 text-[#009689]" />
                       </div>
                       <div>
                         <p className="font-semibold text-[#1e293b]">
-                          {selectedAssignment.taskName}
+                          {task?.taskTitle ?? selectedDetail.taskTitle ?? "—"}
                         </p>
-                        <span
-                          className={`inline-block px-2.5 py-0.5 rounded text-xs font-medium ${STATUS_CONFIG[selectedAssignment.status].color}`}
-                        >
-                          {STATUS_CONFIG[selectedAssignment.status].label}
+                        <span className="inline-block px-2.5 py-0.5 rounded text-xs font-medium bg-[#d1fae5] text-[#065f46]">
+                          Đã giao
                         </span>
                       </div>
                     </div>
@@ -2176,11 +1877,9 @@ export function TasksPage() {
                     {/* Meta grid */}
                     <div className="grid grid-cols-2 gap-3 p-3 bg-[#f8fafc] rounded-lg text-sm">
                       <div>
-                        <p className="text-xs text-[#64748b] mb-0.5">
-                          Trang trại
-                        </p>
+                        <p className="text-xs text-[#64748b] mb-0.5">Mùa vụ</p>
                         <p className="font-medium text-[#1e293b]">
-                          {detail?.farmName || selectedAssignment.area || "—"}
+                          {season?.seasonName ?? "—"}
                         </p>
                       </div>
                       <div>
@@ -2188,42 +1887,20 @@ export function TasksPage() {
                           Ngày thực hiện
                         </p>
                         <p className="font-medium text-[#1e293b]">
-                          {selectedAssignment.displayDate}
+                          {displayDate}
                         </p>
                       </div>
                       <div>
-                        <p className="text-xs text-[#64748b] mb-0.5">Vuông</p>
+                        <p className="text-xs text-[#64748b] mb-0.5">Luống</p>
                         <p className="font-medium text-[#1e293b]">
-                          {detail?.plotName || selectedAssignment.area || "—"}
+                          {beds || "—"}
                         </p>
                       </div>
                       <div>
                         <p className="text-xs text-[#64748b] mb-0.5">
                           Khung giờ
                         </p>
-                        <p className="font-medium text-[#1e293b]">
-                          {selectedAssignment.time || "—"}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-[#64748b] mb-0.5">Luống</p>
-                        <p className="font-medium text-[#1e293b]">
-                          {detail?.bedNames?.length
-                            ? detail.bedNames.join(", ")
-                            : selectedAssignment.plot || "—"}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-[#64748b] mb-0.5">Mùa vụ</p>
-                        {selectedAssignment.seasonId ? (
-                          <p className="font-medium text-[#1e293b]">
-                            {mockSeasons.find(
-                              (s) => s.id === selectedAssignment.seasonId,
-                            )?.name ?? "—"}
-                          </p>
-                        ) : (
-                          <p className="font-medium text-[#94a3b8]">—</p>
-                        )}
+                        <p className="font-medium text-[#1e293b]">{timeStr}</p>
                       </div>
                     </div>
 
@@ -2232,20 +1909,13 @@ export function TasksPage() {
                       <p className="text-xs font-semibold text-[#64748b] uppercase tracking-wide mb-2 flex items-center gap-1.5">
                         <User className="w-3.5 h-3.5" /> Nhân viên phụ trách
                       </p>
-                      {detail?.workerName ||
-                      selectedAssignment.workerNames[0] ? (
+                      {worker ? (
                         <div className="flex items-center gap-2">
                           <div className="w-8 h-8 rounded-full bg-[#009689] flex items-center justify-center text-white text-xs font-bold shrink-0">
-                            {(
-                              detail?.workerName ||
-                              selectedAssignment.workerNames[0]
-                            )
-                              .charAt(0)
-                              .toUpperCase()}
+                            {worker.fullname.charAt(0).toUpperCase()}
                           </div>
                           <span className="text-sm font-semibold text-[#1e293b]">
-                            {detail?.workerName ||
-                              selectedAssignment.workerNames[0]}
+                            {worker.fullname}
                           </span>
                         </div>
                       ) : (
@@ -2254,26 +1924,16 @@ export function TasksPage() {
                     </div>
 
                     {/* Notes */}
-                    {selectedAssignment.notes && (
+                    {selectedDetail.notes && (
                       <div className="p-3 bg-[#f8fafc] rounded-lg text-sm text-[#475569] border-l-4 border-[#009689]">
-                        {selectedAssignment.notes}
+                        {selectedDetail.notes}
                       </div>
                     )}
 
                     <div className="flex gap-3">
                       <button
-                        onClick={() => {
-                          setIsViewOpen(false);
-                          setAssignmentToDelete(selectedAssignment);
-                          setIsDeleteOpen(true);
-                        }}
-                        className="flex-1 px-4 py-2 rounded-lg text-sm font-medium text-red-600 border border-red-200 hover:bg-red-50 transition-colors flex items-center justify-center gap-1.5"
-                      >
-                        <Trash2 className="w-4 h-4" /> Xoá
-                      </button>
-                      <button
                         onClick={() => setIsViewOpen(false)}
-                        className="flex-1 px-4 py-2 rounded-lg text-sm font-medium bg-[#009689] text-white hover:bg-[#007f73] transition-colors"
+                        className="w-full px-4 py-2 rounded-lg text-sm font-medium bg-[#009689] text-white hover:bg-[#007f73] transition-colors"
                       >
                         Đóng
                       </button>
@@ -2291,18 +1951,17 @@ export function TasksPage() {
           <AlertDialog.Overlay className="fixed inset-0 bg-black/50 z-40" />
           <AlertDialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-md bg-white rounded-xl shadow-2xl p-6">
             <AlertDialog.Title className="text-base font-semibold text-slate-900 mb-2">
-              Xác nhận xoá công việc
+              Xác nhận xoá lịch trình
             </AlertDialog.Title>
             <AlertDialog.Description className="text-sm text-slate-600 mb-6">
-              Xoá công việc{" "}
+              Xoá lịch trình công việc{" "}
               <span className="font-semibold">
-                "{assignmentToDelete?.taskName}"
-              </span>{" "}
-              tại{" "}
-              <span className="font-semibold">{assignmentToDelete?.area}</span>{" "}
-              ngày{" "}
-              <span className="font-semibold">
-                {assignmentToDelete?.displayDate}
+                "
+                {detailToDelete?.taskTitle ??
+                  tasks.find((t) => t.taskId === detailToDelete?.taskId)
+                    ?.taskTitle ??
+                  ""}
+                "
               </span>
               ? Hành động này không thể hoàn tác.
             </AlertDialog.Description>
@@ -2346,29 +2005,31 @@ export function TasksPage() {
             {selectedTpl && (
               <div className="space-y-3">
                 <div className="flex items-center gap-3">
-                  <div
-                    className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
-                    style={{ backgroundColor: selectedTpl.iconBg }}
-                  >
-                    <TaskIcon
-                      type={selectedTpl.type}
-                      className="w-5 h-5 text-[#475569]"
-                    />
+                  <div className="w-10 h-10 rounded-xl bg-[#f0fdfa] flex items-center justify-center shrink-0">
+                    <ClipboardList className="w-5 h-5 text-[#009689]" />
                   </div>
                   <div>
                     <p className="font-semibold text-[#1e293b] text-sm">
-                      {selectedTpl.name}
+                      {selectedTpl.taskTitle}
                     </p>
-                    <span className="inline-block px-2 py-0.5 rounded-full text-[11px] font-medium bg-[#f1f5f9] text-[#64748b]">
-                      {selectedTpl.type}
+                    <span
+                      className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-medium ${
+                        normaliseTaskStatus(selectedTpl.taskStatus) === "active"
+                          ? "bg-[#d1fae5] text-[#065f46]"
+                          : "bg-[#f1f5f9] text-[#64748b]"
+                      }`}
+                    >
+                      {normaliseTaskStatus(selectedTpl.taskStatus) === "active"
+                        ? "Đang hoạt động"
+                        : "Không hoạt động"}
                     </span>
                   </div>
                 </div>
                 <div className="p-3 bg-[#f8fafc] rounded-lg border border-[#e2e8f0] min-h-[60px]">
                   <p className="text-sm text-[#475569] leading-relaxed whitespace-pre-wrap">
-                    {selectedTpl.description || (
+                    {selectedTpl.taskNotes || (
                       <span className="text-[#94a3b8] italic">
-                        Không có mô tả
+                        Không có ghi chú
                       </span>
                     )}
                   </p>
@@ -2417,10 +2078,10 @@ export function TasksPage() {
                   </label>
                   <input
                     type="text"
-                    value={editTpl.name}
+                    value={editTpl.taskTitle}
                     onChange={(e) =>
                       setEditTpl((p) =>
-                        p ? { ...p, name: e.target.value } : p,
+                        p ? { ...p, taskTitle: e.target.value } : p,
                       )
                     }
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689]"
@@ -2428,22 +2089,19 @@ export function TasksPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                    Loại công việc <span className="text-red-500">*</span>
+                    Trạng thái
                   </label>
                   <select
-                    value={editTpl.type}
+                    value={editTpl.taskStatus}
                     onChange={(e) =>
                       setEditTpl((p) =>
-                        p ? { ...p, type: e.target.value } : p,
+                        p ? { ...p, taskStatus: e.target.value } : p,
                       )
                     }
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#009689]"
                   >
-                    {[...TASK_TYPES, ...customTaskTypes].map((t) => (
-                      <option key={t} value={t}>
-                        {t}
-                      </option>
-                    ))}
+                    <option value="Active">Đang hoạt động</option>
+                    <option value="Inactive">Không hoạt động</option>
                   </select>
                 </div>
                 <div>
@@ -2452,10 +2110,10 @@ export function TasksPage() {
                   </label>
                   <textarea
                     rows={3}
-                    value={editTpl.description}
+                    value={editTpl.taskNotes}
                     onChange={(e) =>
                       setEditTpl((p) =>
-                        p ? { ...p, description: e.target.value } : p,
+                        p ? { ...p, taskNotes: e.target.value } : p,
                       )
                     }
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] resize-none"
@@ -2473,10 +2131,11 @@ export function TasksPage() {
                   </button>
                   <button
                     onClick={handleSaveEdit}
-                    disabled={!editTpl.name || !editTpl.type}
+                    disabled={!editTpl.taskTitle || isSaving}
                     className="flex-1 px-4 py-2 rounded-lg text-sm font-medium bg-[#009689] text-white hover:bg-[#007f73] disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
                   >
-                    <CheckCircle2 className="w-4 h-4" /> Lưu
+                    <CheckCircle2 className="w-4 h-4" />
+                    {isSaving ? "Đang lưu..." : "Lưu"}
                   </button>
                 </div>
               </div>
@@ -2495,8 +2154,8 @@ export function TasksPage() {
             </AlertDialog.Title>
             <AlertDialog.Description className="text-sm text-slate-600 mb-6">
               Xoá công việc{" "}
-              <span className="font-semibold">"{tplToDelete?.name}"</span>? Hành
-              động này không thể hoàn tác.
+              <span className="font-semibold">"{tplToDelete?.taskTitle}"</span>?
+              Hành động này không thể hoàn tác.
             </AlertDialog.Description>
             <div className="flex gap-3 justify-end">
               <AlertDialog.Cancel asChild>
