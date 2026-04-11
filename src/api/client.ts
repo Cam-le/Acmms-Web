@@ -280,6 +280,49 @@ export interface CropGrowthTaskRequest {
   notes?: string;
 }
 
+// ── Tasks ────────────────────────────────────────────────────────────────────
+
+export interface TaskResponse {
+  taskId: string;
+  taskTitle: string;
+  taskStatus: string; // "Active" | "active" | "Inactive" — normalise before use
+  taskNotes: string;
+  taskCreatedAt: string;
+  taskDetailsCount: number;
+}
+
+export interface TaskRequest {
+  taskTitle: string;
+  taskStatus: string;
+  taskNotes?: string;
+}
+
+// ── Task Details ─────────────────────────────────────────────────────────────
+
+export interface TaskDetailResponse {
+  taskDetailId: string;
+  taskId: string;
+  taskTitle: string;
+  seasonId: string;
+  assignedToWorkerIds: string[];
+  bedIds: string[];
+  plotIds: string[];
+  startDate: string; // ISO datetime
+  endDate: string; // ISO datetime
+  notes: string;
+}
+
+export interface TaskDetailRequest {
+  taskId: string;
+  seasonId: string;
+  assignedToWorkerIds: string[]; // always 1 element
+  bedIds: string[];
+  plotIds: string[];
+  startDate: string; // ISO datetime
+  endDate: string;
+  notes?: string;
+}
+
 // ==================== API Methods ====================
 
 export const api = {
@@ -381,6 +424,31 @@ export const api = {
     request<unknown>("PUT", `/api/CropGrowthStages/${id}`, body),
   deleteCropGrowthStage: (id: string) =>
     request<unknown>("DELETE", `/api/CropGrowthStages/${id}`),
+
+  // Tasks
+  getTasks: () => request<TaskResponse[]>("GET", "/api/Tasks"),
+  getTask: (id: string) => request<TaskResponse>("GET", `/api/Tasks/${id}`),
+  createTask: (body: TaskRequest) =>
+    request<unknown>("POST", "/api/Tasks", body),
+  updateTask: (id: string, body: TaskRequest) =>
+    request<unknown>("PUT", `/api/Tasks/${id}`, body),
+  deleteTask: (id: string) => request<unknown>("DELETE", `/api/Tasks/${id}`),
+
+  // Task Details
+  getTaskDetails: () =>
+    request<TaskDetailResponse[]>("GET", "/api/TaskDetails"),
+  getTaskDetail: (id: string) =>
+    request<TaskDetailResponse>("GET", `/api/TaskDetails/${id}`),
+  getTaskDetailsBySeason: (seasonId: string) =>
+    request<TaskDetailResponse[]>("GET", `/api/TaskDetails/season/${seasonId}`),
+  getTaskDetailsByWorker: (workerId: string) =>
+    request<TaskDetailResponse[]>("GET", `/api/TaskDetails/worker/${workerId}`),
+  createTaskDetail: (body: TaskDetailRequest) =>
+    request<unknown>("POST", "/api/TaskDetails", body),
+  updateTaskDetail: (id: string, body: TaskDetailRequest) =>
+    request<unknown>("PUT", `/api/TaskDetails/${id}`, body),
+  deleteTaskDetail: (id: string) =>
+    request<unknown>("DELETE", `/api/TaskDetails/${id}`),
 
   // Crop Growth Tasks
   getCropGrowthTasksByStage: (stageId: string) =>
