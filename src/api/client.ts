@@ -152,6 +152,26 @@ export interface UserResponse {
   roleName: string;
 }
 
+export interface ReportResponse {
+  reportId: string;
+  reportNo: string;
+  createdBy: string;
+  creatorName: string;
+  ownerId: string;
+  ownerName: string;
+  title: string;
+  description: string;
+  reportType: string;
+  plotId: string;
+  bedId: string;
+  seasonId: string;
+  aiResultsJson?: string;
+  status: string;
+  createdAt: string;
+  submitDate: string;
+  updatedAt?: string;
+}
+
 // ==================== Request Types ====================
 
 export interface FarmRequest {
@@ -323,6 +343,13 @@ export interface TaskDetailRequest {
   notes?: string;
 }
 
+// ── Reports ───────────────────────────────────────────────────────────────────
+
+export interface ReportAssignRequest {
+  assignedTo: string; // specialist userId
+  note?: string;
+}
+
 // ==================== API Methods ====================
 
 export const api = {
@@ -464,4 +491,13 @@ export const api = {
     request<unknown>("PUT", `/api/CropGrowthTask/${id}`, body),
   deleteCropGrowthTask: (id: string) =>
     request<unknown>("DELETE", `/api/CropGrowthTask/${id}`),
+
+  // Reports
+  getReports: () => request<ReportResponse[]>("GET", "/api/Reports"),
+  getReport: (id: string) =>
+    request<ReportResponse>("GET", `/api/Reports/${id}`),
+  deleteReport: (id: string) =>
+    request<unknown>("DELETE", `/api/Reports/${id}`),
+  assignReport: (reportId: string, body: ReportAssignRequest) =>
+    request<unknown>("POST", `/api/Reports/${reportId}/assign`, body),
 };
