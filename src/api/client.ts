@@ -350,6 +350,19 @@ export interface ReportAssignRequest {
   note?: string;
 }
 
+export interface DiagnosisResponse {
+  id: string;
+  reportId: string;
+  diagnosedBy: string;
+  diagnoserName: string;
+  diseaseName: string;
+  conclusion: string;
+  recommendedAction: string;
+  severityLevel: string; // "LOW" | "MEDIUM" | "HIGH" | "CRITICAL"
+  status: string;
+  createdAt: string;
+}
+
 // ==================== API Methods ====================
 
 export const api = {
@@ -500,4 +513,6 @@ export const api = {
     request<unknown>("DELETE", `/api/Reports/${id}`),
   assignReport: (reportId: string, body: ReportAssignRequest) =>
     request<unknown>("POST", `/api/Reports/${reportId}/assign`, body),
+  getReportDiagnosis: (reportId: string) =>
+    request<DiagnosisResponse[]>("GET", `/api/Reports/${reportId}/diagnosis`),
 };
