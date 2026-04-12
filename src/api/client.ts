@@ -363,6 +363,23 @@ export interface DiagnosisResponse {
   createdAt: string;
 }
 
+export interface DiagnosisRequest {
+  diseaseName: string;
+  conclusion: string;
+  recommendedAction: string;
+  severityLevel: string; // "LOW" | "MEDIUM" | "HIGH" | "CRITICAL"
+}
+
+// Parsed shape of aiResultsJson
+export interface AiResultParsed {
+  diseaseName?: string;
+  description?: string;
+  confidence?: number;
+  symptoms?: string[];
+  treatment?: string[];
+  isHealthy?: boolean;
+}
+
 // ==================== API Methods ====================
 
 export const api = {
@@ -515,4 +532,10 @@ export const api = {
     request<unknown>("POST", `/api/Reports/${reportId}/assign`, body),
   getReportDiagnosis: (reportId: string) =>
     request<DiagnosisResponse[]>("GET", `/api/Reports/${reportId}/diagnosis`),
+  createDiagnosis: (reportId: string, body: DiagnosisRequest) =>
+    request<DiagnosisResponse>(
+      "POST",
+      `/api/Reports/${reportId}/diagnosis`,
+      body,
+    ),
 };
