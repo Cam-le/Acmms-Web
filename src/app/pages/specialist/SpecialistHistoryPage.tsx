@@ -1,31 +1,117 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router";
 import {
-  FileDown,
   Search,
   ChevronLeft,
   ChevronRight,
-  Pencil,
   X,
-  CheckCircle2,
-  Loader2,
-  ChevronDown,
-  Receipt,
   ClipboardList,
   Wallet,
+  RefreshCw,
+  AlertCircle,
   BadgeCheck,
+  Receipt,
+  ExternalLink,
 } from "lucide-react";
+import { api, type DiagnosisResponse } from "../../../api/client";
 import {
   mockConsultationHistory,
-  mockConsultationRequests,
   mockPaymentHistory,
-  type ConsultationHistoryRow,
   type PaymentRecord,
-  type Severity,
 } from "../../../data/mockSpecialistData";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PAYMENT DETAIL MODAL
+// HELPERS
+// ─────────────────────────────────────────────────────────────────────────────
+const PAGE_SIZE = 8;
+
+function getPageNumbers(current: number, total: number): (number | "...")[] {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  const pages: (number | "...")[] = [1];
+  if (current > 3) pages.push("...");
+  for (
+    let i = Math.max(2, current - 1);
+    i <= Math.min(total - 1, current + 1);
+    i++
+  ) {
+    pages.push(i);
+  }
+  if (current < total - 2) pages.push("...");
+  pages.push(total);
+  return pages;
+}
+
+function severityLabel(s: string) {
+  if (s === "CRITICAL") return "Nghiêm trọng";
+  if (s === "HIGH") return "Cao";
+  if (s === "MEDIUM") return "Trung bình";
+  if (s === "LOW") return "Thấp";
+  return s;
+}
+
+function severityBadgeCss(s: string) {
+  if (s === "CRITICAL") return "bg-red-50 text-red-700 border border-red-200";
+  if (s === "HIGH")
+    return "bg-orange-50 text-orange-700 border border-orange-200";
+  if (s === "MEDIUM")
+    return "bg-yellow-50 text-yellow-700 border border-yellow-200";
+  return "bg-green-50 text-green-700 border border-green-200";
+}
+
+function PaginationBar({
+  currentPage,
+  totalPages,
+  onPage,
+}: {
+  currentPage: number;
+  totalPages: number;
+  onPage: (p: number) => void;
+}) {
+  if (totalPages <= 1) return null;
+  return (
+    <div className="flex items-center gap-1">
+      <button
+        onClick={() => onPage(Math.max(1, currentPage - 1))}
+        disabled={currentPage === 1}
+        className="w-7 h-7 flex items-center justify-center rounded border border-slate-200 text-slate-500 hover:border-[#009689] hover:text-[#009689] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+      >
+        <ChevronLeft className="w-3.5 h-3.5" />
+      </button>
+      {getPageNumbers(currentPage, totalPages).map((p, i) =>
+        p === "..." ? (
+          <span
+            key={`e-${i}`}
+            className="w-7 h-7 flex items-center justify-center text-xs text-slate-400"
+          >
+            …
+          </span>
+        ) : (
+          <button
+            key={p}
+            onClick={() => onPage(p as number)}
+            className={`w-7 h-7 flex items-center justify-center rounded text-xs font-medium border transition-colors ${
+              currentPage === p
+                ? "bg-[#009689] text-white border-[#009689]"
+                : "border-slate-200 text-slate-500 hover:border-[#009689] hover:text-[#009689]"
+            }`}
+          >
+            {p}
+          </button>
+        ),
+      )}
+      <button
+        onClick={() => onPage(Math.min(totalPages, currentPage + 1))}
+        disabled={currentPage === totalPages}
+        className="w-7 h-7 flex items-center justify-center rounded border border-slate-200 text-slate-500 hover:border-[#009689] hover:text-[#009689] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+      >
+        <ChevronRight className="w-3.5 h-3.5" />
+      </button>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PAYMENT DETAIL MODAL (mock only — unchanged logic)
 // ─────────────────────────────────────────────────────────────────────────────
 function PaymentDetailModal({
   record,
@@ -37,7 +123,6 @@ function PaymentDetailModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
-        {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-[#009689]/5 to-transparent">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-[#009689]/10 flex items-center justify-center">
@@ -57,10 +142,7 @@ function PaymentDetailModal({
             <X className="w-4 h-4" />
           </button>
         </div>
-
-        {/* Body */}
         <div className="px-6 py-5 space-y-4">
-          {/* Amount — hero */}
           <div className="bg-[#f0fdfa] border border-[#009689]/20 rounded-xl p-4 text-center">
             <p className="text-xs text-slate-400 mb-1">Số tiền nhận được</p>
             <p className="text-3xl font-bold text-[#009689]">
@@ -82,8 +164,6 @@ function PaymentDetailModal({
               {record.status}
             </span>
           </div>
-
-          {/* Detail rows */}
           {[
             { label: "Mã phản hồi", value: record.responseCode, mono: true },
             { label: "Mã yêu cầu gốc", value: record.requestCode, mono: true },
@@ -114,7 +194,6 @@ function PaymentDetailModal({
             </div>
           ))}
         </div>
-
         <div className="px-6 pb-5">
           <button
             onClick={onClose}
@@ -129,281 +208,91 @@ function PaymentDetailModal({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// EDIT RESPONSE MODAL (unchanged from original)
-// ─────────────────────────────────────────────────────────────────────────────
-function EditResponseModal({
-  row,
-  onClose,
-  onSaved,
-}: {
-  row: ConsultationHistoryRow;
-  onClose: () => void;
-  onSaved: (updated: Partial<ConsultationHistoryRow>) => void;
-}) {
-  const [title, setTitle] = useState(row.title);
-  const [content, setContent] = useState(row.content);
-  const [priority, setPriority] = useState<Severity>(row.priority);
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [error, setError] = useState("");
-
-  const handleSave = async () => {
-    if (!title.trim() || !content.trim()) return;
-    setSaving(true);
-    setError("");
-
-    const severityMap: Record<Severity, string> = {
-      Thấp: "Low",
-      "Trung bình": "Medium",
-      Cao: "High",
-      "Nghiêm trọng": "Critical",
-    };
-
-    try {
-      const res = await fetch(
-        `${import.meta.env.VITE_API_BASE_URL || "http://localhost:8080"}/api/Recommendations/${row.recommendationId}`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            title,
-            content,
-            pestSeverity: severityMap[priority],
-          }),
-        },
-      );
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    } catch (err) {
-      const isNetworkError =
-        err instanceof TypeError && err.message.includes("fetch");
-      if (!isNetworkError) {
-        setSaving(false);
-        setError(
-          err instanceof Error
-            ? `Lỗi lưu phản hồi: ${err.message}`
-            : "Có lỗi xảy ra, vui lòng thử lại.",
-        );
-        return;
-      }
-      // Network unreachable → apply local update silently (mock mode)
-    }
-
-    onSaved({ content, priority });
-    setSaving(false);
-    setSaved(true);
-  };
-
-  if (saved) {
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-        <div className="bg-white rounded-2xl shadow-2xl p-8 flex flex-col items-center gap-4 max-w-sm w-full text-center">
-          <div className="w-14 h-14 bg-green-100 rounded-full flex items-center justify-center">
-            <CheckCircle2 className="w-7 h-7 text-green-600" />
-          </div>
-          <h3 className="text-lg font-bold text-slate-800">Đã lưu thay đổi!</h3>
-          <p className="text-sm text-slate-500">
-            Phản hồi đã được cập nhật thành công.
-          </p>
-          <button
-            onClick={onClose}
-            className="px-6 py-2.5 bg-[#009689] text-white rounded-xl text-sm font-semibold hover:bg-[#007f73] transition-colors"
-          >
-            Đóng
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl overflow-hidden">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-          <div>
-            <h3 className="font-semibold text-slate-800">Chỉnh sửa phản hồi</h3>
-            <p className="text-xs text-slate-400 mt-0.5">
-              {row.responseCode} · {row.requestCode}
-            </p>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 transition-colors"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        <div className="px-6 py-5 space-y-4 max-h-[60vh] overflow-y-auto">
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">
-              Tiêu đề
-            </label>
-            <input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#009689]/30"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">
-              Nội dung điều trị <span className="text-red-500">*</span>
-            </label>
-            <textarea
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              rows={6}
-              className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#009689]/30 resize-none"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">
-              Mức độ ưu tiên
-            </label>
-            <div className="relative">
-              <select
-                value={priority}
-                onChange={(e) => setPriority(e.target.value as Severity)}
-                className="w-full appearance-none border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#009689]/30 bg-white text-slate-700"
-              >
-                <option value="Thấp">Thấp</option>
-                <option value="Trung bình">Trung bình</option>
-                <option value="Cao">Cao</option>
-                <option value="Nghiêm trọng">Nghiêm trọng</option>
-              </select>
-              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-            </div>
-          </div>
-
-          {error && (
-            <p className="text-sm text-red-600 bg-red-50 rounded-xl px-4 py-2.5">
-              {error}
-            </p>
-          )}
-        </div>
-
-        <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-100 bg-slate-50">
-          <button
-            onClick={onClose}
-            className="px-5 py-2.5 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100 transition-colors"
-          >
-            Hủy
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={saving || !title.trim() || !content.trim()}
-            className="px-6 py-2.5 rounded-xl text-sm font-semibold bg-[#009689] text-white hover:bg-[#007f73] transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
-          >
-            {saving ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Đang lưu...
-              </>
-            ) : (
-              <>
-                <Pencil className="w-4 h-4" />
-                Lưu thay đổi
-              </>
-            )}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// SHARED HELPERS
-// ─────────────────────────────────────────────────────────────────────────────
-const PAGE_SIZE = 8;
-
-function getPageNumbers(current: number, total: number): (number | "...")[] {
-  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
-  const pages: (number | "...")[] = [1];
-  if (current > 3) pages.push("...");
-  for (
-    let i = Math.max(2, current - 1);
-    i <= Math.min(total - 1, current + 1);
-    i++
-  ) {
-    pages.push(i);
-  }
-  if (current < total - 2) pages.push("...");
-  pages.push(total);
-  return pages;
-}
-
-function priorityDot(p: Severity) {
-  if (p === "Cao" || p === "Nghiêm trọng") return "bg-red-500";
-  if (p === "Trung bình") return "bg-orange-400";
-  return "bg-green-500";
-}
-
-function priorityText(p: Severity) {
-  if (p === "Cao" || p === "Nghiêm trọng") return "text-red-600 font-semibold";
-  if (p === "Trung bình") return "text-orange-500 font-semibold";
-  return "text-green-600 font-semibold";
-}
-
-function diseaseBadgeColor(name: string) {
-  const map: Record<string, string> = {
-    "Sâu tơ": "bg-orange-100 text-orange-700",
-    "Sương mai": "bg-blue-100 text-blue-700",
-    "Đạo ôn lá": "bg-yellow-100 text-yellow-700",
-    "Sâu keo mùa thu": "bg-rose-100 text-rose-700",
-    "Mốc sương": "bg-purple-100 text-purple-700",
-    "Đốm vòng": "bg-amber-100 text-amber-700",
-  };
-  return map[name] ?? "bg-gray-100 text-gray-700";
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// TAB: CONSULTATION HISTORY (extracted from original SpecialistHistoryPage)
+// TAB: CONSULTATION HISTORY — real API, filtered by current user
 // ─────────────────────────────────────────────────────────────────────────────
 function ConsultationHistoryTab() {
   const navigate = useNavigate();
+  const [diagnoses, setDiagnoses] = useState<DiagnosisResponse[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isMockData, setIsMockData] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
-  const [editingRow, setEditingRow] = useState<ConsultationHistoryRow | null>(
-    null,
-  );
-  const [localEdits, setLocalEdits] = useState<
-    Record<string, Partial<ConsultationHistoryRow>>
-  >({});
 
-  // Set of responseCode values that have a matching payment record
-  // Used to show payment status badge — lets specialist cross-check with invoices
-  const paidResponseCodes = new Set(
-    mockPaymentHistory.map((p) => p.responseCode),
-  );
+  // Get current user ID from localStorage (set at login time)
+  const currentUserId = localStorage.getItem("userId") ?? "";
 
-  const handleSaved = (
-    id: string,
-    updated: Partial<ConsultationHistoryRow>,
-  ) => {
-    setLocalEdits((prev) => ({ ...prev, [id]: { ...prev[id], ...updated } }));
-    setEditingRow(null);
-  };
+  async function loadDiagnoses() {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      // GET /api/Reports/diagnosis returns all diagnoses across all reports
+      const all = await api.getAllDiagnoses();
+      // Filter to only this specialist's own diagnoses
+      const mine = currentUserId
+        ? all.filter((d) => d.diagnosedBy === currentUserId)
+        : all;
+      // Sort newest first
+      mine.sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      );
+      setDiagnoses(mine);
+      setIsMockData(false);
+    } catch {
+      // Mock fallback: convert ConsultationHistoryRow shape to DiagnosisResponse shape
+      const mockFallback: DiagnosisResponse[] = mockConsultationHistory.map(
+        (row) =>
+          ({
+            id: row.id,
+            reportId: row.requestCode, // only code available in mock
+            diagnosedBy: currentUserId,
+            diagnoserName: "Chuyên gia (mẫu)",
+            diseaseName: row.issue,
+            conclusion: row.content,
+            recommendedAction: row.content,
+            severityLevel: (() => {
+              if (row.priority === "Nghiêm trọng") return "CRITICAL";
+              if (row.priority === "Cao") return "HIGH";
+              if (row.priority === "Trung bình") return "MEDIUM";
+              return "LOW";
+            })(),
+            status: "FINAL",
+            createdAt: row.respondedAt,
+            // Extra fields not in DiagnosisResponse but useful for display — stored separately
+            reportNo: row.responseCode,
+            reportTitle: row.crop,
+          }) as DiagnosisResponse & { reportNo?: string; reportTitle?: string },
+      );
+      setDiagnoses(mockFallback);
+      setIsMockData(true);
+    } finally {
+      setLoading(false);
+    }
+  }
 
-  const history = mockConsultationHistory.map((row) =>
-    localEdits[row.id] ? { ...row, ...localEdits[row.id] } : row,
-  );
-
-  const filtered = history.filter((row) => {
-    const q = search.toLowerCase();
-    return (
-      !q ||
-      row.responseCode.toLowerCase().includes(q) ||
-      row.requestCode.toLowerCase().includes(q) ||
-      row.crop.toLowerCase().includes(q) ||
-      row.issue.toLowerCase().includes(q)
-    );
-  });
-
+  useEffect(() => {
+    loadDiagnoses();
+  }, []);
   useEffect(() => {
     setCurrentPage(1);
   }, [search]);
+
+  const filtered = diagnoses.filter((d) => {
+    const q = search.toLowerCase();
+    const ext = d as DiagnosisResponse & {
+      reportNo?: string;
+      reportTitle?: string;
+    };
+    return (
+      !q ||
+      d.diseaseName.toLowerCase().includes(q) ||
+      d.diagnoserName.toLowerCase().includes(q) ||
+      d.reportId.toLowerCase().includes(q) ||
+      (ext.reportNo ?? "").toLowerCase().includes(q) ||
+      (ext.reportTitle ?? "").toLowerCase().includes(q)
+    );
+  });
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paginated = filtered.slice(
@@ -412,230 +301,185 @@ function ConsultationHistoryTab() {
   );
 
   return (
-    <>
-      {editingRow && (
-        <EditResponseModal
-          row={editingRow}
-          onClose={() => setEditingRow(null)}
-          onSaved={(updated) => handleSaved(editingRow.id, updated)}
-        />
+    <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 gap-4">
+        <div>
+          <h2 className="font-semibold text-slate-800">Nhật ký chẩn đoán</h2>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Các chẩn đoán bạn đã cung cấp.
+          </p>
+        </div>
+        <div className="flex items-center gap-3 shrink-0">
+          {isMockData && (
+            <span className="text-xs font-semibold px-3 py-1.5 rounded-full bg-amber-50 text-amber-600 border border-amber-200">
+              Dữ liệu mẫu
+            </span>
+          )}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Tìm tên bệnh, mã báo cáo..."
+              className="pl-8 pr-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]/30 bg-white w-48"
+            />
+          </div>
+          <button
+            onClick={loadDiagnoses}
+            disabled={loading}
+            title="Tải lại"
+            className="p-2 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40 transition-colors"
+          >
+            <RefreshCw
+              className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`}
+            />
+          </button>
+        </div>
+      </div>
+
+      {loadError && (
+        <div className="flex items-center gap-2 mx-6 mt-4 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl px-4 py-3">
+          <AlertCircle className="w-4 h-4 shrink-0" />
+          {loadError}
+        </div>
       )}
 
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-        {/* Card header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 gap-4">
-          <div>
-            <h2 className="font-semibold text-slate-800">Nhật ký phản hồi</h2>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Lịch sử tất cả các phản hồi chính thức được chuyên gia cung cấp.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-3 shrink-0">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Tìm mã, cây, bệnh..."
-                className="pl-8 pr-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]/30 bg-white w-44"
-              />
-            </div>
-
-            <button className="flex items-center gap-2 px-4 py-2 bg-rose-50 text-rose-600 text-sm font-semibold rounded-xl hover:bg-rose-100 transition-colors border border-rose-100">
-              <FileDown className="w-4 h-4" />
-              Xuất PDF
-            </button>
-          </div>
-        </div>
-
-        {/* Table */}
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[800px]">
-            <thead>
-              <tr className="border-b border-slate-100 bg-slate-50">
-                <th className="text-left px-6 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">
-                  Mã phản hồi
-                </th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">
-                  Mã yêu cầu gốc
-                </th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">
-                  Loại cây
-                </th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">
-                  Tên bệnh
-                </th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">
-                  Độ ưu tiên
-                </th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">
-                  Thanh toán
-                </th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">
-                  Ngày phản hồi
-                </th>
-                <th className="text-right px-6 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">
-                  Hành động
-                </th>
+      {/* Table */}
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[900px]">
+          <thead>
+            <tr className="border-b border-slate-100 bg-slate-50">
+              <th className="text-left px-6 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">
+                Mã báo cáo
+              </th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">
+                Tiêu đề báo cáo
+              </th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">
+                Tên bệnh
+              </th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">
+                Kết luận
+              </th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">
+                Mức độ
+              </th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">
+                Ngày chẩn đoán
+              </th>
+              <th className="text-right px-6 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">
+                Hành động
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-50">
+            {loading && (
+              <tr>
+                <td colSpan={7} className="text-center py-12">
+                  <RefreshCw className="w-5 h-5 animate-spin text-slate-300 mx-auto" />
+                </td>
               </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {paginated.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={8}
-                    className="text-center py-12 text-sm text-slate-400"
-                  >
-                    Không tìm thấy kết quả phù hợp.
-                  </td>
-                </tr>
-              ) : (
-                paginated.map((res) => (
+            )}
+            {!loading && paginated.length === 0 && (
+              <tr>
+                <td
+                  colSpan={7}
+                  className="text-center py-12 text-sm text-slate-400"
+                >
+                  Không tìm thấy kết quả phù hợp.
+                </td>
+              </tr>
+            )}
+            {!loading &&
+              paginated.map((d) => {
+                const ext = d as DiagnosisResponse & {
+                  reportNo?: string;
+                  reportTitle?: string;
+                };
+                return (
                   <tr
-                    key={res.id}
+                    key={d.id}
                     className="hover:bg-slate-50 transition-colors"
                   >
-                    <td className="px-6 py-4 text-sm font-semibold text-slate-700">
-                      {res.responseCode}
-                    </td>
-                    <td className="px-4 py-4 text-sm text-slate-500">
-                      {res.requestCode}
-                    </td>
-                    <td className="px-4 py-4 text-sm text-slate-600">
-                      <span className="flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full bg-green-500 shrink-0" />
-                        {res.crop}
+                    <td className="px-6 py-4">
+                      <span className="font-mono text-xs font-semibold text-slate-700 bg-slate-100 px-2 py-1 rounded-lg">
+                        {ext.reportNo ?? d.reportId.slice(0, 8) + "…"}
                       </span>
+                    </td>
+                    <td className="px-4 py-4 text-sm text-slate-600 max-w-[180px] truncate">
+                      {ext.reportTitle ?? "—"}
+                    </td>
+                    <td className="px-4 py-4">
+                      <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-orange-50 text-orange-700">
+                        {d.diseaseName}
+                      </span>
+                    </td>
+                    <td
+                      className="px-4 py-4 text-sm text-slate-500 max-w-[220px] truncate"
+                      title={d.conclusion}
+                    >
+                      {d.conclusion}
                     </td>
                     <td className="px-4 py-4">
                       <span
-                        className={`text-xs font-medium px-2.5 py-1 rounded-full ${diseaseBadgeColor(res.issue)}`}
+                        className={`text-xs font-semibold px-2.5 py-1 rounded-full ${severityBadgeCss(d.severityLevel)}`}
                       >
-                        {res.issue}
+                        {severityLabel(d.severityLevel)}
                       </span>
-                    </td>
-                    <td className="px-4 py-4">
-                      <span
-                        className={`flex items-center gap-1.5 text-sm ${priorityText(res.priority)}`}
-                      >
-                        <span
-                          className={`w-2 h-2 rounded-full ${priorityDot(res.priority)}`}
-                        />
-                        {res.priority}
-                      </span>
-                    </td>
-                    <td className="px-4 py-4">
-                      {paidResponseCodes.has(res.responseCode) ? (
-                        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-green-700 bg-green-100 px-2.5 py-1 rounded-full">
-                          <BadgeCheck className="w-3.5 h-3.5" />
-                          Đã thanh toán
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-full">
-                          Chưa thanh toán
-                        </span>
-                      )}
                     </td>
                     <td className="px-4 py-4 text-sm text-slate-500 whitespace-nowrap">
-                      {new Date(res.respondedAt).toLocaleDateString("vi-VN")}{" "}
-                      {new Date(res.respondedAt).toLocaleTimeString("vi-VN", {
+                      {new Date(d.createdAt).toLocaleDateString("vi-VN")}{" "}
+                      {new Date(d.createdAt).toLocaleTimeString("vi-VN", {
                         hour: "2-digit",
                         minute: "2-digit",
                       })}
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <div className="flex items-center justify-end gap-3">
-                        <button
-                          onClick={() => {
-                            const match = mockConsultationRequests.find(
-                              (r) => r.requestCode === res.requestCode,
-                            );
-                            if (match) {
-                              navigate(`/specialist/consultations/${match.id}`);
-                            }
-                          }}
-                          className="text-sm text-[#009689] font-semibold hover:underline"
-                        >
-                          Xem chi tiết
-                        </button>
-                        <button
-                          onClick={() => setEditingRow(res)}
-                          className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700 font-medium border border-slate-200 rounded-lg px-2.5 py-1 hover:bg-slate-50 transition-colors"
-                        >
-                          <Pencil className="w-3.5 h-3.5" />
-                          Sửa
-                        </button>
-                      </div>
+                      <button
+                        onClick={() =>
+                          navigate(`/specialist/consultations/${d.reportId}`)
+                        }
+                        className="inline-flex items-center gap-1.5 text-sm text-[#009689] font-semibold hover:underline"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        Xem báo cáo
+                      </button>
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Pagination footer */}
-        {filtered.length > 0 && (
-          <div className="flex items-center justify-end px-6 py-3 border-t border-slate-100 bg-slate-50">
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-                className="w-7 h-7 flex items-center justify-center rounded border border-slate-200 text-slate-500 hover:border-[#009689] hover:text-[#009689] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              >
-                <ChevronLeft className="w-3.5 h-3.5" />
-              </button>
-
-              {getPageNumbers(currentPage, totalPages).map((p, i) =>
-                p === "..." ? (
-                  <span
-                    key={`e-${i}`}
-                    className="w-7 h-7 flex items-center justify-center text-xs text-slate-400"
-                  >
-                    …
-                  </span>
-                ) : (
-                  <button
-                    key={p}
-                    onClick={() => setCurrentPage(p as number)}
-                    className={`w-7 h-7 flex items-center justify-center rounded text-xs font-medium border transition-colors ${
-                      currentPage === p
-                        ? "bg-[#009689] text-white border-[#009689]"
-                        : "border-slate-200 text-slate-500 hover:border-[#009689] hover:text-[#009689]"
-                    }`}
-                  >
-                    {p}
-                  </button>
-                ),
-              )}
-
-              <button
-                onClick={() =>
-                  setCurrentPage((p) => Math.min(totalPages, p + 1))
-                }
-                disabled={currentPage === totalPages}
-                className="w-7 h-7 flex items-center justify-center rounded border border-slate-200 text-slate-500 hover:border-[#009689] hover:text-[#009689] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              >
-                <ChevronRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </div>
-        )}
+                );
+              })}
+          </tbody>
+        </table>
       </div>
-    </>
+
+      {/* Pagination */}
+      {!loading && filtered.length > PAGE_SIZE && (
+        <div className="flex items-center justify-between px-6 py-3 border-t border-slate-100 bg-slate-50">
+          <p className="text-xs text-slate-500">
+            {(currentPage - 1) * PAGE_SIZE + 1}–
+            {Math.min(currentPage * PAGE_SIZE, filtered.length)} /{" "}
+            {filtered.length} mục
+          </p>
+          <PaginationBar
+            currentPage={currentPage}
+            totalPages={totalPages}
+            onPage={setCurrentPage}
+          />
+        </div>
+      )}
+    </div>
   );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// TAB: PAYMENT HISTORY
+// TAB: PAYMENT HISTORY — mock only per spec
 // ─────────────────────────────────────────────────────────────────────────────
 function PaymentHistoryTab() {
   const [search, setSearch] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [detailRecord, setDetailRecord] = useState<PaymentRecord | null>(null);
 
-  // ── filter + sort by most recent first ────────────────────────────────────
   const filtered = mockPaymentHistory
     .filter((r) => {
       const q = search.toLowerCase();
@@ -671,187 +515,126 @@ function PaymentHistoryTab() {
         />
       )}
 
-      <div className="space-y-4">
-        {/* Table card */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-          {/* Card header + search */}
-          <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 gap-4">
-            <div>
-              <h2 className="font-semibold text-slate-800">
-                Lịch sử thanh toán
-              </h2>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Các khoản thanh toán owner đã thực hiện để xem phản hồi của bạn.
-              </p>
-            </div>
-
-            <div className="flex items-center gap-3 shrink-0">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
-                <input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Tìm mã giao dịch, nông trại..."
-                  className="pl-8 pr-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]/30 bg-white w-52"
-                />
-              </div>
-              {/* TODO: wire up real PDF export — GET /api/payments/specialist/export */}
-              <button className="flex items-center gap-2 px-4 py-2 bg-rose-50 text-rose-600 text-sm font-semibold rounded-xl hover:bg-rose-100 transition-colors border border-rose-100 shrink-0">
-                <FileDown className="w-4 h-4" />
-                Xuất PDF
-              </button>
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 gap-4">
+          <div>
+            <h2 className="font-semibold text-slate-800">Lịch sử thanh toán</h2>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Các khoản thanh toán owner đã thực hiện để xem phản hồi của bạn.
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-xs font-semibold px-3 py-1.5 rounded-full bg-amber-50 text-amber-600 border border-amber-200">
+              Dữ liệu mẫu
+            </span>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Tìm mã giao dịch, nông trại..."
+                className="pl-8 pr-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]/30 bg-white w-52"
+              />
             </div>
           </div>
+        </div>
 
-          {/* Table */}
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px]">
-              <thead>
-                <tr className="border-b border-slate-100 bg-slate-50">
-                  <th className="text-left px-6 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">
-                    Mã giao dịch
-                  </th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">
-                    Liên kết đơn
-                  </th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">
-                    Nông trại
-                  </th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">
-                    Số tiền
-                  </th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">
-                    Thời gian
-                  </th>
-                  <th className="text-right px-6 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">
-                    Hành động
-                  </th>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px]">
+            <thead>
+              <tr className="border-b border-slate-100 bg-slate-50">
+                <th className="text-left px-6 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">
+                  Mã giao dịch
+                </th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">
+                  Liên kết đơn
+                </th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">
+                  Nông trại
+                </th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">
+                  Số tiền
+                </th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">
+                  Thời gian
+                </th>
+                <th className="text-right px-6 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">
+                  Hành động
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {paginated.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={6}
+                    className="text-center py-12 text-sm text-slate-400"
+                  >
+                    Không tìm thấy giao dịch phù hợp.
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {paginated.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={6}
-                      className="text-center py-12 text-sm text-slate-400"
-                    >
-                      Không tìm thấy giao dịch phù hợp.
+              ) : (
+                paginated.map((rec) => (
+                  <tr
+                    key={rec.id}
+                    className="hover:bg-slate-50 transition-colors"
+                  >
+                    <td className="px-6 py-4">
+                      <span className="font-mono text-xs font-semibold text-slate-700 bg-slate-100 px-2 py-1 rounded-lg">
+                        {rec.transactionId}
+                      </span>
+                    </td>
+                    <td className="px-4 py-4">
+                      <div className="flex flex-col gap-0.5">
+                        <span className="text-xs text-slate-500 font-mono">
+                          {rec.responseCode}
+                        </span>
+                        <span className="text-xs text-slate-400 font-mono">
+                          {rec.requestCode}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-4 text-sm text-slate-700 font-medium">
+                      {rec.farmName}
+                    </td>
+                    <td className="px-4 py-4">
+                      <span className="text-sm font-bold text-[#009689]">
+                        {rec.amount.toLocaleString("vi-VN")}đ
+                      </span>
+                    </td>
+                    <td className="px-4 py-4 text-sm text-slate-500 whitespace-nowrap">
+                      {new Date(rec.paidAt).toLocaleDateString("vi-VN")}{" "}
+                      <span className="text-slate-400 text-xs">
+                        {new Date(rec.paidAt).toLocaleTimeString("vi-VN", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <button
+                        onClick={() => setDetailRecord(rec)}
+                        className="text-sm text-[#009689] font-semibold hover:underline"
+                      >
+                        Xem chi tiết
+                      </button>
                     </td>
                   </tr>
-                ) : (
-                  paginated.map((rec) => (
-                    <tr
-                      key={rec.id}
-                      className="hover:bg-slate-50 transition-colors"
-                    >
-                      {/* Transaction ID */}
-                      <td className="px-6 py-4">
-                        <span className="font-mono text-xs font-semibold text-slate-700 bg-slate-100 px-2 py-1 rounded-lg">
-                          {rec.transactionId}
-                        </span>
-                      </td>
-
-                      {/* Linked codes */}
-                      <td className="px-4 py-4">
-                        <div className="flex flex-col gap-0.5">
-                          <span className="text-xs text-slate-500 font-mono">
-                            {rec.responseCode}
-                          </span>
-                          <span className="text-xs text-slate-400 font-mono">
-                            {rec.requestCode}
-                          </span>
-                        </div>
-                      </td>
-
-                      {/* Farm — name only */}
-                      <td className="px-4 py-4">
-                        <p className="text-sm text-slate-700 font-medium">
-                          {rec.farmName}
-                        </p>
-                      </td>
-
-                      {/* Amount */}
-                      <td className="px-4 py-4">
-                        <span className="text-sm font-bold text-[#009689]">
-                          {rec.amount.toLocaleString("vi-VN")}đ
-                        </span>
-                      </td>
-
-                      {/* Paid at */}
-                      <td className="px-4 py-4 text-sm text-slate-500 whitespace-nowrap">
-                        {new Date(rec.paidAt).toLocaleDateString("vi-VN")}{" "}
-                        <span className="text-slate-400 text-xs">
-                          {new Date(rec.paidAt).toLocaleTimeString("vi-VN", {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                        </span>
-                      </td>
-
-                      {/* Action */}
-                      <td className="px-6 py-4 text-right">
-                        <button
-                          onClick={() => setDetailRecord(rec)}
-                          className="text-sm text-[#009689] font-semibold hover:underline"
-                        >
-                          Xem chi tiết
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Pagination footer */}
-          {filtered.length > 0 && (
-            <div className="flex items-center justify-end px-6 py-3 border-t border-slate-100 bg-slate-50">
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                  disabled={currentPage === 1}
-                  className="w-7 h-7 flex items-center justify-center rounded border border-slate-200 text-slate-500 hover:border-[#009689] hover:text-[#009689] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                >
-                  <ChevronLeft className="w-3.5 h-3.5" />
-                </button>
-
-                {getPageNumbers(currentPage, totalPages).map((p, i) =>
-                  p === "..." ? (
-                    <span
-                      key={`e-${i}`}
-                      className="w-7 h-7 flex items-center justify-center text-xs text-slate-400"
-                    >
-                      …
-                    </span>
-                  ) : (
-                    <button
-                      key={p}
-                      onClick={() => setCurrentPage(p as number)}
-                      className={`w-7 h-7 flex items-center justify-center rounded text-xs font-medium border transition-colors ${
-                        currentPage === p
-                          ? "bg-[#009689] text-white border-[#009689]"
-                          : "border-slate-200 text-slate-500 hover:border-[#009689] hover:text-[#009689]"
-                      }`}
-                    >
-                      {p}
-                    </button>
-                  ),
-                )}
-
-                <button
-                  onClick={() =>
-                    setCurrentPage((p) => Math.min(totalPages, p + 1))
-                  }
-                  disabled={currentPage === totalPages}
-                  className="w-7 h-7 flex items-center justify-center rounded border border-slate-200 text-slate-500 hover:border-[#009689] hover:text-[#009689] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                >
-                  <ChevronRight className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
-          )}
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
+
+        {filtered.length > PAGE_SIZE && (
+          <div className="flex items-center justify-end px-6 py-3 border-t border-slate-100 bg-slate-50">
+            <PaginationBar
+              currentPage={currentPage}
+              totalPages={totalPages}
+              onPage={setCurrentPage}
+            />
+          </div>
+        )}
       </div>
     </>
   );
@@ -863,7 +646,7 @@ function PaymentHistoryTab() {
 type TabId = "consultations" | "payments";
 
 const TABS: { id: TabId; label: string; icon: typeof ClipboardList }[] = [
-  { id: "consultations", label: "Nhật ký phản hồi", icon: ClipboardList },
+  { id: "consultations", label: "Nhật ký chẩn đoán", icon: ClipboardList },
   { id: "payments", label: "Lịch sử thanh toán", icon: Wallet },
 ];
 
@@ -883,7 +666,6 @@ export function SpecialistHistoryPage() {
 
   return (
     <div className="space-y-6">
-      {/* Page header */}
       <div>
         <h1 className="text-2xl font-bold text-slate-800">Lịch sử</h1>
         <p className="text-sm text-slate-500 mt-1 flex items-center gap-1.5">
@@ -892,7 +674,6 @@ export function SpecialistHistoryPage() {
         </p>
       </div>
 
-      {/* Tab bar */}
       <div className="flex gap-1 bg-slate-100 p-1 rounded-xl w-fit">
         {TABS.map(({ id, label, icon: Icon }) => (
           <button
@@ -910,7 +691,6 @@ export function SpecialistHistoryPage() {
         ))}
       </div>
 
-      {/* Tab content */}
       {activeTab === "consultations" ? (
         <ConsultationHistoryTab />
       ) : (

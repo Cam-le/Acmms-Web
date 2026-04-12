@@ -353,6 +353,9 @@ export interface ReportAssignRequest {
 export interface DiagnosisResponse {
   id: string;
   reportId: string;
+  // Present on GET /api/Reports/diagnosis (all) but not on GET /api/Reports/{id}/diagnosis
+  reportNo?: string;
+  reportTitle?: string;
   diagnosedBy: string;
   diagnoserName: string;
   diseaseName: string;
@@ -370,7 +373,7 @@ export interface DiagnosisRequest {
   severityLevel: string; // "LOW" | "MEDIUM" | "HIGH" | "CRITICAL"
 }
 
-// Parsed shape of aiResultsJson
+// Parsed shape of ReportResponse.aiResultsJson
 export interface AiResultParsed {
   diseaseName?: string;
   description?: string;
@@ -532,6 +535,8 @@ export const api = {
     request<unknown>("POST", `/api/Reports/${reportId}/assign`, body),
   getReportDiagnosis: (reportId: string) =>
     request<DiagnosisResponse[]>("GET", `/api/Reports/${reportId}/diagnosis`),
+  getAllDiagnoses: () =>
+    request<DiagnosisResponse[]>("GET", "/api/Reports/diagnosis"),
   createDiagnosis: (reportId: string, body: DiagnosisRequest) =>
     request<DiagnosisResponse>(
       "POST",
