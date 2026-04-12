@@ -25,15 +25,14 @@ import {
 import * as Dialog from "@radix-ui/react-dialog";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import * as Select from "@radix-ui/react-select";
+import { Crop, CropStatus } from "../../data/mockData";
 import {
-  Crop,
-  CropStatus,
-  mockCrops,
-  CropGrowthStage,
-  CropGrowthTask,
-  mockGrowthStagesByCropId,
-} from "../../data/mockData";
-import { api, CropResponse, CompatibleSoil } from "../../api/client";
+  api,
+  CropResponse,
+  CompatibleSoil,
+  CropGrowthStageResponse,
+  CropGrowthTaskResponse,
+} from "../../api/client";
 
 // Local extended type — adds API-only fields on top of the mockData Crop shape
 type CropEx = Crop & {
@@ -41,14 +40,6 @@ type CropEx = Crop & {
   compatibleSoils?: CompatibleSoil[];
   cropQuantities?: number;
 };
-
-// Mock data shaped to CropEx for fallback
-const mockCropsEx: CropEx[] = (mockCrops as CropEx[]).map((c) => ({
-  ...c,
-  plantSpacing: c.plantDistance?.row ?? 0,
-  compatibleSoils: [],
-  cropQuantities: undefined,
-}));
 
 // ---- Status normalisation (defensive: API returns inconsistent casing/language) ----
 function normaliseStatus(raw?: string): CropStatus {
@@ -108,7 +99,7 @@ export function CropsPage() {
   const [crops, setCrops] = useState<CropEx[]>([]);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
-  const [usingMock, setUsingMock] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [sortField, setSortField] = useState<"growthPeriod" | "status" | null>(
     null,
@@ -128,13 +119,12 @@ export function CropsPage() {
 
   const loadCrops = async () => {
     setLoading(true);
+    setLoadError(false);
     try {
       const data = await api.getCrops();
       setCrops(data.map(mapCrop));
-      setUsingMock(false);
     } catch {
-      setCrops([...mockCropsEx]);
-      setUsingMock(true);
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
@@ -179,25 +169,17 @@ export function CropsPage() {
   const handleCreate = async (cropData: Omit<CropEx, "id">) => {
     setSubmitting(true);
     try {
-      if (usingMock) {
-        setCrops((prev) => [
-          ...prev,
-          { ...cropData, id: Date.now().toString() },
-        ]);
-      } else {
-        await api.createCrop({
-          cropName: cropData.name,
-          cropScientificName: cropData.scientificName || undefined,
-          cropDefaultGrowthDays: cropData.growthPeriod || undefined,
-          plantSpacing:
-            (cropData as CropEx).plantSpacing ||
-            cropData.plantDistance.row ||
-            undefined,
-          cropStatus:
-            cropData.status === "Đang sử dụng" ? "Active" : "Inactive",
-        });
-        await loadCrops();
-      }
+      await api.createCrop({
+        cropName: cropData.name,
+        cropScientificName: cropData.scientificName || undefined,
+        cropDefaultGrowthDays: cropData.growthPeriod || undefined,
+        plantSpacing:
+          (cropData as CropEx).plantSpacing ||
+          cropData.plantDistance.row ||
+          undefined,
+        cropStatus: cropData.status === "Đang sử dụng" ? "Active" : "Inactive",
+      });
+      await loadCrops();
       setCreateModalOpen(false);
     } catch (err) {
       alert(
@@ -212,24 +194,18 @@ export function CropsPage() {
   const handleUpdate = async (updatedCrop: CropEx) => {
     setSubmitting(true);
     try {
-      if (usingMock) {
-        setCrops((prev) =>
-          prev.map((c) => (c.id === updatedCrop.id ? updatedCrop : c)),
-        );
-      } else {
-        await api.updateCrop(updatedCrop.id, {
-          cropName: updatedCrop.name,
-          cropScientificName: updatedCrop.scientificName || undefined,
-          cropDefaultGrowthDays: updatedCrop.growthPeriod || undefined,
-          plantSpacing:
-            updatedCrop.plantSpacing ||
-            updatedCrop.plantDistance.row ||
-            undefined,
-          cropStatus:
-            updatedCrop.status === "Đang sử dụng" ? "Active" : "Inactive",
-        });
-        await loadCrops();
-      }
+      await api.updateCrop(updatedCrop.id, {
+        cropName: updatedCrop.name,
+        cropScientificName: updatedCrop.scientificName || undefined,
+        cropDefaultGrowthDays: updatedCrop.growthPeriod || undefined,
+        plantSpacing:
+          updatedCrop.plantSpacing ||
+          updatedCrop.plantDistance.row ||
+          undefined,
+        cropStatus:
+          updatedCrop.status === "Đang sử dụng" ? "Active" : "Inactive",
+      });
+      await loadCrops();
       setEditModalOpen(false);
       setSelectedCrop(null);
     } catch (err) {
@@ -245,8 +221,8 @@ export function CropsPage() {
     if (!cropToDelete) return;
     setSubmitting(true);
     try {
-      if (!usingMock) await api.deleteCrop(cropToDelete.id);
-      setCrops((prev) => prev.filter((c) => c.id !== cropToDelete.id));
+      await api.deleteCrop(cropToDelete.id);
+      await loadCrops();
       setDeleteDialogOpen(false);
       setCropToDelete(null);
     } catch (err) {
@@ -278,10 +254,12 @@ export function CropsPage() {
             <h1 className="text-xl font-bold text-[#115e59]">Cây Trồng</h1>
             <p className="text-sm text-[#62748e]">Quản lý giống cây trồng</p>
           </div>
-          {usingMock && (
-            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-50 border border-amber-200 rounded-full">
-              <WifiOff className="w-3 h-3 text-amber-500" />
-              <span className="text-xs text-amber-600">Dữ liệu mẫu</span>
+          {loadError && (
+            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-red-50 border border-red-200 rounded-full">
+              <WifiOff className="w-3 h-3 text-red-500" />
+              <span className="text-xs text-red-600">
+                Không thể tải dữ liệu
+              </span>
             </div>
           )}
         </div>
@@ -699,127 +677,226 @@ function GrowthStagesTab({
 }) {
   const [selectedCropId, setSelectedCropId] = useState<string | null>(null);
 
-  // stage state
-  const [stagesMap, setStagesMap] = useState<Record<string, CropGrowthStage[]>>(
-    () => JSON.parse(JSON.stringify(mockGrowthStagesByCropId)),
-  );
+  // API-driven state
+  const [stages, setStages] = useState<CropGrowthStageResponse[]>([]);
+  const [tasksMap, setTasksMap] = useState<
+    Record<string, CropGrowthTaskResponse[]>
+  >({});
+  const [stagesLoading, setStagesLoading] = useState(false);
+  const [stagesError, setStagesError] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  // Stage modal state
   const [createStageOpen, setCreateStageOpen] = useState(false);
   const [editStageOpen, setEditStageOpen] = useState(false);
   const [deleteStageOpen, setDeleteStageOpen] = useState(false);
-  const [selectedStage, setSelectedStage] = useState<CropGrowthStage | null>(
-    null,
-  );
+  const [selectedStage, setSelectedStage] =
+    useState<CropGrowthStageResponse | null>(null);
 
-  // task state
+  // Task modal state
   const [createTaskOpen, setCreateTaskOpen] = useState(false);
   const [editTaskOpen, setEditTaskOpen] = useState(false);
   const [deleteTaskOpen, setDeleteTaskOpen] = useState(false);
   const [taskParentStageId, setTaskParentStageId] = useState<string | null>(
     null,
   );
-  const [selectedTask, setSelectedTask] = useState<CropGrowthTask | null>(null);
+  const [selectedTask, setSelectedTask] =
+    useState<CropGrowthTaskResponse | null>(null);
 
   const selectedCrop = crops.find((c) => c.id === selectedCropId) ?? null;
-  const stages = selectedCropId ? (stagesMap[selectedCropId] ?? []) : [];
+
+  // Load stages + tasks when crop selection changes
+  useEffect(() => {
+    if (!selectedCropId) {
+      setStages([]);
+      setTasksMap({});
+      return;
+    }
+    loadStagesForCrop(selectedCropId);
+  }, [selectedCropId]);
+
+  const loadStagesForCrop = async (cropId: string) => {
+    setStagesLoading(true);
+    setStagesError(false);
+    try {
+      const stageList = await api.getCropGrowthStagesByCrop(cropId);
+      setStages(stageList);
+      // Load tasks for all stages in parallel
+      const entries = await Promise.all(
+        stageList.map(async (s) => {
+          try {
+            const tasks = await api.getCropGrowthTasksByStage(s.stageId);
+            return [s.stageId, tasks] as [string, CropGrowthTaskResponse[]];
+          } catch {
+            return [s.stageId, []] as [string, CropGrowthTaskResponse[]];
+          }
+        }),
+      );
+      setTasksMap(Object.fromEntries(entries));
+    } catch {
+      setStagesError(true);
+      setStages([]);
+      setTasksMap({});
+    } finally {
+      setStagesLoading(false);
+    }
+  };
+
+  const reloadStages = () => {
+    if (selectedCropId) loadStagesForCrop(selectedCropId);
+  };
 
   // ---- Stage CRUD ----
-  const handleCreateStage = (
-    data: Omit<CropGrowthStage, "stageId" | "tasks">,
-  ) => {
+  const handleCreateStage = async (data: StageFormData) => {
     if (!selectedCropId) return;
-    const existing = stagesMap[selectedCropId] ?? [];
-    const newStage: CropGrowthStage = {
-      ...data,
-      stageId: `gs-${selectedCropId}-${Date.now()}`,
-      tasks: [],
-    };
-    setStagesMap((prev) => ({
-      ...prev,
-      [selectedCropId]: [...existing, newStage],
-    }));
-    setCreateStageOpen(false);
+    setSubmitting(true);
+    try {
+      await api.createCropGrowthStage({
+        cropId: selectedCropId,
+        stageName: data.stageName,
+        stageDescription: data.stageDescription || undefined,
+        temperatureMin: data.temperatureMin,
+        humidityMin: data.humidityMin,
+        soilMoistureMin: data.soilMoistureMin,
+        growthIndicators: data.growthIndicators || undefined,
+        commonDiseases: data.commonDiseases || undefined,
+        notes: data.notes || undefined,
+      });
+      setCreateStageOpen(false);
+      reloadStages();
+    } catch (err) {
+      alert(
+        "Không thể tạo giai đoạn: " +
+          (err instanceof Error ? err.message : "Lỗi"),
+      );
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const handleUpdateStage = (updated: CropGrowthStage) => {
-    if (!selectedCropId) return;
-    setStagesMap((prev) => ({
-      ...prev,
-      [selectedCropId]: (prev[selectedCropId] ?? []).map((s) =>
-        s.stageId === updated.stageId ? updated : s,
-      ),
-    }));
-    setEditStageOpen(false);
-    setSelectedStage(null);
+  const handleUpdateStage = async (data: StageFormData) => {
+    if (!selectedStage) return;
+    setSubmitting(true);
+    try {
+      await api.updateCropGrowthStage(selectedStage.stageId, {
+        cropId: selectedStage.cropId,
+        stageName: data.stageName,
+        stageDescription: data.stageDescription || undefined,
+        temperatureMin: data.temperatureMin,
+        humidityMin: data.humidityMin,
+        soilMoistureMin: data.soilMoistureMin,
+        growthIndicators: data.growthIndicators || undefined,
+        commonDiseases: data.commonDiseases || undefined,
+        notes: data.notes || undefined,
+      });
+      setEditStageOpen(false);
+      setSelectedStage(null);
+      reloadStages();
+    } catch (err) {
+      alert(
+        "Không thể cập nhật giai đoạn: " +
+          (err instanceof Error ? err.message : "Lỗi"),
+      );
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const handleDeleteStage = () => {
-    if (!selectedCropId || !selectedStage) return;
-    setStagesMap((prev) => ({
-      ...prev,
-      [selectedCropId]: (prev[selectedCropId] ?? []).filter(
-        (s) => s.stageId !== selectedStage.stageId,
-      ),
-    }));
-    setDeleteStageOpen(false);
-    setSelectedStage(null);
+  const handleDeleteStage = async () => {
+    if (!selectedStage) return;
+    setSubmitting(true);
+    try {
+      await api.deleteCropGrowthStage(selectedStage.stageId);
+      setDeleteStageOpen(false);
+      setSelectedStage(null);
+      reloadStages();
+    } catch (err) {
+      alert(
+        "Không thể xóa giai đoạn: " +
+          (err instanceof Error ? err.message : "Lỗi"),
+      );
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   // ---- Task CRUD ----
-  const handleCreateTask = (
-    stageId: string,
-    data: Omit<CropGrowthTask, "growthTaskId" | "stageId">,
-  ) => {
-    if (!selectedCropId) return;
-    const newTask: CropGrowthTask = {
-      ...data,
-      growthTaskId: `gt-${stageId}-${Date.now()}`,
-      stageId,
-    };
-    setStagesMap((prev) => ({
-      ...prev,
-      [selectedCropId]: (prev[selectedCropId] ?? []).map((s) =>
-        s.stageId === stageId ? { ...s, tasks: [...s.tasks, newTask] } : s,
-      ),
-    }));
-    setCreateTaskOpen(false);
+  const handleCreateTask = async (stageId: string, data: TaskFormData) => {
+    setSubmitting(true);
+    try {
+      await api.createCropGrowthTask({
+        stageId,
+        taskName: data.taskName,
+        taskDescription: data.taskDescription || undefined,
+        frequency: data.frequency || undefined,
+        durationMinutes: data.durationMinutes,
+        requiredTools: data.requiredTools || undefined,
+        requiredMaterials: data.requiredMaterials || undefined,
+        quantityPerUnit: data.quantityPerUnit,
+        quantityUnit: data.quantityUnit || undefined,
+        priority: data.priority,
+        isMandatory: data.isMandatory,
+        notes: data.notes || undefined,
+      });
+      setCreateTaskOpen(false);
+      reloadStages();
+    } catch (err) {
+      alert(
+        "Không thể tạo nhiệm vụ: " +
+          (err instanceof Error ? err.message : "Lỗi"),
+      );
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const handleUpdateTask = (updated: CropGrowthTask) => {
-    if (!selectedCropId) return;
-    setStagesMap((prev) => ({
-      ...prev,
-      [selectedCropId]: (prev[selectedCropId] ?? []).map((s) =>
-        s.stageId === updated.stageId
-          ? {
-              ...s,
-              tasks: s.tasks.map((t) =>
-                t.growthTaskId === updated.growthTaskId ? updated : t,
-              ),
-            }
-          : s,
-      ),
-    }));
-    setEditTaskOpen(false);
-    setSelectedTask(null);
+  const handleUpdateTask = async (data: TaskFormData) => {
+    if (!selectedTask) return;
+    setSubmitting(true);
+    try {
+      await api.updateCropGrowthTask(selectedTask.growthTaskId, {
+        stageId: selectedTask.stageId,
+        taskName: data.taskName,
+        taskDescription: data.taskDescription || undefined,
+        frequency: data.frequency || undefined,
+        durationMinutes: data.durationMinutes,
+        requiredTools: data.requiredTools || undefined,
+        requiredMaterials: data.requiredMaterials || undefined,
+        quantityPerUnit: data.quantityPerUnit,
+        quantityUnit: data.quantityUnit || undefined,
+        priority: data.priority,
+        isMandatory: data.isMandatory,
+        notes: data.notes || undefined,
+      });
+      setEditTaskOpen(false);
+      setSelectedTask(null);
+      reloadStages();
+    } catch (err) {
+      alert(
+        "Không thể cập nhật nhiệm vụ: " +
+          (err instanceof Error ? err.message : "Lỗi"),
+      );
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const handleDeleteTask = () => {
-    if (!selectedCropId || !selectedTask) return;
-    setStagesMap((prev) => ({
-      ...prev,
-      [selectedCropId]: (prev[selectedCropId] ?? []).map((s) =>
-        s.stageId === selectedTask.stageId
-          ? {
-              ...s,
-              tasks: s.tasks.filter(
-                (t) => t.growthTaskId !== selectedTask.growthTaskId,
-              ),
-            }
-          : s,
-      ),
-    }));
-    setDeleteTaskOpen(false);
-    setSelectedTask(null);
+  const handleDeleteTask = async () => {
+    if (!selectedTask) return;
+    setSubmitting(true);
+    try {
+      await api.deleteCropGrowthTask(selectedTask.growthTaskId);
+      setDeleteTaskOpen(false);
+      setSelectedTask(null);
+      reloadStages();
+    } catch (err) {
+      alert(
+        "Không thể xóa nhiệm vụ: " +
+          (err instanceof Error ? err.message : "Lỗi"),
+      );
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   if (loading) {
@@ -841,8 +918,8 @@ function GrowthStagesTab({
         </div>
         <div className="flex-1 overflow-y-auto divide-y divide-[#f1f5f9]">
           {crops.map((crop) => {
-            const stageCount = (stagesMap[crop.id] ?? []).length;
             const isSelected = selectedCropId === crop.id;
+            const stageCount = isSelected ? stages.length : "—";
             return (
               <button
                 key={crop.id}
@@ -867,7 +944,7 @@ function GrowthStagesTab({
                     {crop.name}
                   </p>
                   <p className="text-[10px] text-[#94a3b8]">
-                    {stageCount} giai đoạn
+                    {isSelected ? `${stageCount} giai đoạn` : ""}
                   </p>
                 </div>
                 {isSelected && (
@@ -887,6 +964,21 @@ function GrowthStagesTab({
             <p className="text-sm">
               Chọn cây trồng để xem giai đoạn sinh trưởng
             </p>
+          </div>
+        ) : stagesLoading ? (
+          <div className="bg-white rounded-xl border border-[#e2e8f0] shadow-sm flex items-center justify-center py-24">
+            <Loader2 className="w-6 h-6 animate-spin text-[#009689]" />
+          </div>
+        ) : stagesError ? (
+          <div className="bg-white rounded-xl border border-[#e2e8f0] shadow-sm flex flex-col items-center justify-center py-24 gap-3 text-[#94a3b8]">
+            <WifiOff className="w-8 h-8 opacity-40" />
+            <p className="text-sm">Không thể tải dữ liệu giai đoạn</p>
+            <button
+              onClick={reloadStages}
+              className="px-3 py-1.5 bg-[#f1f5f9] text-[#62748e] rounded-lg text-xs hover:bg-[#e2e8f0]"
+            >
+              Thử lại
+            </button>
           </div>
         ) : (
           <div className="flex flex-col gap-4">
@@ -947,6 +1039,7 @@ function GrowthStagesTab({
                   <StageCard
                     key={stage.stageId}
                     stage={stage}
+                    tasks={tasksMap[stage.stageId] ?? []}
                     onEditStage={() => {
                       setSelectedStage(stage);
                       setEditStageOpen(true);
@@ -980,24 +1073,22 @@ function GrowthStagesTab({
         <StageFormModal
           open={createStageOpen}
           mode="create"
-          cropId={selectedCropId}
-          stageCount={stages.length}
           onClose={() => setCreateStageOpen(false)}
           onSubmit={handleCreateStage}
+          submitting={submitting}
         />
       )}
       {selectedStage && (
         <StageFormModal
           open={editStageOpen}
           mode="edit"
-          cropId={selectedStage.cropId}
-          stageCount={stages.length}
           initial={selectedStage}
           onClose={() => {
             setEditStageOpen(false);
             setSelectedStage(null);
           }}
-          onSubmit={(data) => handleUpdateStage({ ...selectedStage, ...data })}
+          onSubmit={handleUpdateStage}
+          submitting={submitting}
         />
       )}
       <AlertDialog.Root
@@ -1020,8 +1111,10 @@ function GrowthStagesTab({
               </AlertDialog.Cancel>
               <AlertDialog.Action
                 onClick={handleDeleteStage}
-                className="px-4 py-2 bg-red-500 text-white text-sm rounded-lg hover:bg-red-600"
+                disabled={submitting}
+                className="px-4 py-2 bg-red-500 text-white text-sm rounded-lg hover:bg-red-600 flex items-center gap-2 disabled:opacity-50"
               >
+                {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
                 Xóa
               </AlertDialog.Action>
             </div>
@@ -1035,12 +1128,12 @@ function GrowthStagesTab({
           open={createTaskOpen}
           mode="create"
           stageId={taskParentStageId}
-          taskCount={
-            (stages.find((s) => s.stageId === taskParentStageId)?.tasks ?? [])
-              .length
-          }
-          onClose={() => setCreateTaskOpen(false)}
+          onClose={() => {
+            setCreateTaskOpen(false);
+            setTaskParentStageId(null);
+          }}
           onSubmit={(data) => handleCreateTask(taskParentStageId, data)}
+          submitting={submitting}
         />
       )}
       {selectedTask && (
@@ -1048,13 +1141,13 @@ function GrowthStagesTab({
           open={editTaskOpen}
           mode="edit"
           stageId={selectedTask.stageId}
-          taskCount={0}
           initial={selectedTask}
           onClose={() => {
             setEditTaskOpen(false);
             setSelectedTask(null);
           }}
-          onSubmit={(data) => handleUpdateTask({ ...selectedTask, ...data })}
+          onSubmit={handleUpdateTask}
+          submitting={submitting}
         />
       )}
       <AlertDialog.Root open={deleteTaskOpen} onOpenChange={setDeleteTaskOpen}>
@@ -1073,8 +1166,10 @@ function GrowthStagesTab({
               </AlertDialog.Cancel>
               <AlertDialog.Action
                 onClick={handleDeleteTask}
-                className="px-4 py-2 bg-red-500 text-white text-sm rounded-lg hover:bg-red-600"
+                disabled={submitting}
+                className="px-4 py-2 bg-red-500 text-white text-sm rounded-lg hover:bg-red-600 flex items-center gap-2 disabled:opacity-50"
               >
+                {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
                 Xóa
               </AlertDialog.Action>
             </div>
@@ -1088,18 +1183,20 @@ function GrowthStagesTab({
 // ---- StageCard ----
 function StageCard({
   stage,
+  tasks,
   onEditStage,
   onDeleteStage,
   onAddTask,
   onEditTask,
   onDeleteTask,
 }: {
-  stage: CropGrowthStage;
+  stage: CropGrowthStageResponse;
+  tasks: CropGrowthTaskResponse[];
   onEditStage: () => void;
   onDeleteStage: () => void;
   onAddTask: () => void;
-  onEditTask: (t: CropGrowthTask) => void;
-  onDeleteTask: (t: CropGrowthTask) => void;
+  onEditTask: (t: CropGrowthTaskResponse) => void;
+  onDeleteTask: (t: CropGrowthTaskResponse) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   return (
@@ -1114,9 +1211,6 @@ function StageCard({
             <p className="text-sm font-semibold text-[#115e59]">
               {stage.stageName}
             </p>
-            <span className="px-2 py-0.5 bg-[#f0fdf9] text-[#009689] text-[10px] rounded-full font-medium shrink-0">
-              {stage.expectedDurationDays} ngày
-            </span>
           </div>
           <p className="text-xs text-[#62748e] truncate">
             {stage.stageDescription}
@@ -1188,20 +1282,30 @@ function StageCard({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="bg-[#f0fdf9] rounded-lg p-3 border border-[#ccfbf1]">
-              <p className="text-[10px] font-semibold text-[#009689] mb-1">
-                Chỉ số sinh trưởng
-              </p>
-              <p className="text-xs text-[#334155]">{stage.growthIndicators}</p>
+          {(stage.growthIndicators || stage.commonDiseases) && (
+            <div className="grid grid-cols-2 gap-3">
+              {stage.growthIndicators && (
+                <div className="bg-[#f0fdf9] rounded-lg p-3 border border-[#ccfbf1]">
+                  <p className="text-[10px] font-semibold text-[#009689] mb-1">
+                    Chỉ số sinh trưởng
+                  </p>
+                  <p className="text-xs text-[#334155]">
+                    {stage.growthIndicators}
+                  </p>
+                </div>
+              )}
+              {stage.commonDiseases && (
+                <div className="bg-[#fff7ed] rounded-lg p-3 border border-[#fed7aa]">
+                  <p className="text-[10px] font-semibold text-orange-500 mb-1">
+                    Bệnh thường gặp
+                  </p>
+                  <p className="text-xs text-[#334155]">
+                    {stage.commonDiseases}
+                  </p>
+                </div>
+              )}
             </div>
-            <div className="bg-[#fff7ed] rounded-lg p-3 border border-[#fed7aa]">
-              <p className="text-[10px] font-semibold text-orange-500 mb-1">
-                Bệnh thường gặp
-              </p>
-              <p className="text-xs text-[#334155]">{stage.commonDiseases}</p>
-            </div>
-          </div>
+          )}
 
           {stage.notes && (
             <div className="bg-[#f8fafc] rounded-lg px-3 py-2 text-xs text-[#62748e]">
@@ -1214,7 +1318,7 @@ function StageCard({
           <div>
             <div className="flex items-center justify-between mb-2">
               <p className="text-xs font-semibold text-[#62748e] uppercase tracking-wider">
-                Nhiệm vụ gợi ý ({stage.tasks.length})
+                Nhiệm vụ gợi ý ({tasks.length})
               </p>
               <button
                 onClick={onAddTask}
@@ -1223,13 +1327,13 @@ function StageCard({
                 <Plus className="w-3 h-3" /> Thêm nhiệm vụ
               </button>
             </div>
-            {stage.tasks.length === 0 ? (
+            {tasks.length === 0 ? (
               <p className="text-xs text-[#94a3b8] text-center py-4">
                 Chưa có nhiệm vụ nào
               </p>
             ) : (
               <div className="space-y-2">
-                {stage.tasks.map((task) => (
+                {tasks.map((task) => (
                   <div
                     key={task.growthTaskId}
                     className="bg-[#f8fafc] border border-[#e2e8f0] rounded-lg px-4 py-3 flex items-start gap-3"
@@ -1243,6 +1347,31 @@ function StageCard({
                         {task.isMandatory && (
                           <span className="px-1.5 py-0.5 bg-[#fee2e2] text-[#b91c1c] text-[9px] font-medium rounded-full shrink-0">
                             Bắt buộc
+                          </span>
+                        )}
+                        {task.priority === 5 && (
+                          <span className="px-1.5 py-0.5 bg-red-100 text-red-700 text-[9px] font-medium rounded-full shrink-0">
+                            Rất cao
+                          </span>
+                        )}
+                        {task.priority === 4 && (
+                          <span className="px-1.5 py-0.5 bg-orange-100 text-orange-600 text-[9px] font-medium rounded-full shrink-0">
+                            Cao
+                          </span>
+                        )}
+                        {task.priority === 3 && (
+                          <span className="px-1.5 py-0.5 bg-yellow-100 text-yellow-700 text-[9px] font-medium rounded-full shrink-0">
+                            Trung bình
+                          </span>
+                        )}
+                        {task.priority === 2 && (
+                          <span className="px-1.5 py-0.5 bg-slate-100 text-slate-500 text-[9px] font-medium rounded-full shrink-0">
+                            Thấp
+                          </span>
+                        )}
+                        {task.priority === 1 && (
+                          <span className="px-1.5 py-0.5 bg-slate-100 text-slate-400 text-[9px] font-medium rounded-full shrink-0">
+                            Rất thấp
                           </span>
                         )}
                       </div>
@@ -1269,13 +1398,6 @@ function StageCard({
                         {task.requiredMaterials && (
                           <span className="text-purple-600">
                             {task.requiredMaterials}
-                          </span>
-                        )}
-                        {task.priority && task.priority !== "MEDIUM" && (
-                          <span
-                            className={`px-1.5 py-0.5 rounded text-[9px] font-medium ${task.priority === "HIGH" ? "bg-red-100 text-red-600" : "bg-slate-100 text-slate-500"}`}
-                          >
-                            {task.priority === "HIGH" ? "Ưu tiên cao" : "Thấp"}
                           </span>
                         )}
                       </div>
@@ -1309,29 +1431,37 @@ function StageCard({
     </div>
   );
 }
+// ---- StageFormData ----
+interface StageFormData {
+  stageName: string;
+  stageDescription: string;
+  temperatureMin: number;
+  humidityMin: number;
+  soilMoistureMin: number;
+  growthIndicators: string;
+  commonDiseases: string;
+  notes: string;
+}
+
 // ---- StageFormModal ----
 function StageFormModal({
   open,
   mode,
-  cropId,
-  stageCount,
   initial,
   onClose,
   onSubmit,
+  submitting,
 }: {
   open: boolean;
   mode: "create" | "edit";
-  cropId: string;
-  stageCount: number;
-  initial?: CropGrowthStage;
+  initial?: CropGrowthStageResponse;
   onClose: () => void;
-  onSubmit: (data: Omit<CropGrowthStage, "stageId" | "tasks">) => void;
+  onSubmit: (data: StageFormData) => void;
+  submitting: boolean;
 }) {
-  const defaultForm = {
-    cropId,
+  const defaultForm: StageFormData = {
     stageName: "",
     stageDescription: "",
-    expectedDurationDays: 14,
     temperatureMin: 15,
     humidityMin: 60,
     soilMoistureMin: 50,
@@ -1340,22 +1470,48 @@ function StageFormModal({
     notes: "",
   };
 
-  const [form, setForm] = useState(initial ? { ...initial } : defaultForm);
+  const [form, setForm] = useState<StageFormData>(
+    initial
+      ? {
+          stageName: initial.stageName,
+          stageDescription: initial.stageDescription,
+          temperatureMin: initial.temperatureMin,
+          humidityMin: initial.humidityMin,
+          soilMoistureMin: initial.soilMoistureMin,
+          growthIndicators: initial.growthIndicators,
+          commonDiseases: initial.commonDiseases,
+          notes: initial.notes,
+        }
+      : defaultForm,
+  );
 
   useEffect(() => {
-    setForm(initial ? { ...initial } : defaultForm);
+    setForm(
+      initial
+        ? {
+            stageName: initial.stageName,
+            stageDescription: initial.stageDescription,
+            temperatureMin: initial.temperatureMin,
+            humidityMin: initial.humidityMin,
+            soilMoistureMin: initial.soilMoistureMin,
+            growthIndicators: initial.growthIndicators,
+            commonDiseases: initial.commonDiseases,
+            notes: initial.notes,
+          }
+        : defaultForm,
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  const f = (key: string, val: string | number) =>
+  const f = (key: keyof StageFormData, val: string | number) =>
     setForm((p) => ({ ...p, [key]: val }));
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSubmit({ ...form, cropId });
+    onSubmit(form);
   };
 
-  const numField = (label: string, key: string, unit?: string) => (
+  const numField = (label: string, key: keyof StageFormData, unit?: string) => (
     <div>
       <label className="block text-xs font-medium text-[#45556c] mb-1">
         {label}
@@ -1363,7 +1519,7 @@ function StageFormModal({
       </label>
       <input
         type="number"
-        value={(form as Record<string, unknown>)[key] as number}
+        value={form[key] as number}
         onChange={(e) => f(key, parseFloat(e.target.value) || 0)}
         className="w-full px-3 py-2 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155]"
       />
@@ -1419,8 +1575,6 @@ function StageFormModal({
               />
             </div>
 
-            {numField("Thời gian dự kiến", "expectedDurationDays", "ngày")}
-
             <p className="text-xs font-semibold text-[#62748e] uppercase tracking-wider pt-1">
               Môi trường lý tưởng
             </p>
@@ -1471,8 +1625,10 @@ function StageFormModal({
               </Dialog.Close>
               <button
                 type="submit"
-                className="px-4 py-2 bg-[#009689] text-white text-sm rounded-lg hover:bg-[#007f75]"
+                disabled={submitting}
+                className="px-4 py-2 bg-[#009689] text-white text-sm rounded-lg hover:bg-[#007f75] flex items-center gap-2 disabled:opacity-50"
               >
+                {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
                 {mode === "create" ? "Thêm giai đoạn" : "Lưu thay đổi"}
               </button>
             </div>
@@ -1482,25 +1638,40 @@ function StageFormModal({
     </Dialog.Root>
   );
 }
+// ---- TaskFormData ----
+interface TaskFormData {
+  taskName: string;
+  taskDescription: string;
+  frequency: string;
+  durationMinutes: number;
+  requiredTools: string;
+  requiredMaterials: string;
+  quantityPerUnit: number;
+  quantityUnit: string;
+  priority: number; // 1 = High, 2 = Medium, 3 = Low
+  isMandatory: boolean;
+  notes: string;
+}
+
 // ---- TaskFormModal ----
 function TaskFormModal({
   open,
   mode,
   stageId,
-  taskCount,
   initial,
   onClose,
   onSubmit,
+  submitting,
 }: {
   open: boolean;
   mode: "create" | "edit";
   stageId: string;
-  taskCount: number;
-  initial?: CropGrowthTask;
+  initial?: CropGrowthTaskResponse;
   onClose: () => void;
-  onSubmit: (data: Omit<CropGrowthTask, "growthTaskId" | "stageId">) => void;
+  onSubmit: (data: TaskFormData) => void;
+  submitting: boolean;
 }) {
-  const defaultForm = {
+  const defaultForm: TaskFormData = {
     taskName: "",
     taskDescription: "",
     frequency: "Hàng ngày",
@@ -1509,37 +1680,60 @@ function TaskFormModal({
     requiredMaterials: "",
     quantityPerUnit: 0,
     quantityUnit: "",
-    priority: "MEDIUM",
+    priority: 3,
     isMandatory: false,
     notes: "",
   };
 
-  const [form, setForm] = useState(initial ? { ...initial } : defaultForm);
+  const [form, setForm] = useState<TaskFormData>(
+    initial
+      ? {
+          taskName: initial.taskName,
+          taskDescription: initial.taskDescription,
+          frequency: initial.frequency,
+          durationMinutes: initial.durationMinutes,
+          requiredTools: initial.requiredTools,
+          requiredMaterials: initial.requiredMaterials,
+          quantityPerUnit: initial.quantityPerUnit,
+          quantityUnit: initial.quantityUnit,
+          priority: initial.priority,
+          isMandatory: initial.isMandatory,
+          notes: initial.notes,
+        }
+      : defaultForm,
+  );
 
   useEffect(() => {
-    setForm(initial ? { ...initial } : defaultForm);
+    setForm(
+      initial
+        ? {
+            taskName: initial.taskName,
+            taskDescription: initial.taskDescription,
+            frequency: initial.frequency,
+            durationMinutes: initial.durationMinutes,
+            requiredTools: initial.requiredTools,
+            requiredMaterials: initial.requiredMaterials,
+            quantityPerUnit: initial.quantityPerUnit,
+            quantityUnit: initial.quantityUnit,
+            priority: initial.priority,
+            isMandatory: initial.isMandatory,
+            notes: initial.notes,
+          }
+        : defaultForm,
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  const f = (key: string, val: string | number | boolean) =>
+  const f = (key: keyof TaskFormData, val: string | number | boolean) =>
     setForm((p) => ({ ...p, [key]: val }));
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSubmit({
-      taskName: form.taskName,
-      taskDescription: form.taskDescription,
-      frequency: form.frequency,
-      durationMinutes: form.durationMinutes,
-      requiredTools: form.requiredTools,
-      requiredMaterials: form.requiredMaterials,
-      quantityPerUnit: form.quantityPerUnit,
-      quantityUnit: form.quantityUnit,
-      priority: form.priority,
-      isMandatory: form.isMandatory,
-      notes: form.notes,
-    });
+    onSubmit(form);
   };
+
+  // stageId is passed in props but not needed in form state (caller handles it)
+  void stageId;
 
   return (
     <Dialog.Root open={open} onOpenChange={onClose}>
@@ -1612,6 +1806,7 @@ function TaskFormModal({
               >
                 <option>Một lần</option>
                 <option>Hàng ngày</option>
+                <option>Mỗi 2 ngày</option>
                 <option>3 ngày/lần</option>
                 <option>7 ngày/lần</option>
                 <option>Hàng tuần</option>
@@ -1676,12 +1871,14 @@ function TaskFormModal({
               </label>
               <select
                 value={form.priority}
-                onChange={(e) => f("priority", e.target.value)}
+                onChange={(e) => f("priority", parseInt(e.target.value))}
                 className="w-full px-3 py-2 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] bg-white text-[#334155]"
               >
-                <option value="HIGH">Cao</option>
-                <option value="MEDIUM">Trung bình</option>
-                <option value="LOW">Thấp</option>
+                <option value={5}>5 – Rất cao</option>
+                <option value={4}>4 – Cao</option>
+                <option value={3}>3 – Trung bình</option>
+                <option value={2}>2 – Thấp</option>
+                <option value={1}>1 – Rất thấp</option>
               </select>
             </div>
 
@@ -1717,8 +1914,10 @@ function TaskFormModal({
               </Dialog.Close>
               <button
                 type="submit"
-                className="px-4 py-2 bg-[#009689] text-white text-sm rounded-lg hover:bg-[#007f75]"
+                disabled={submitting}
+                className="px-4 py-2 bg-[#009689] text-white text-sm rounded-lg hover:bg-[#007f75] flex items-center gap-2 disabled:opacity-50"
               >
+                {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
                 {mode === "create" ? "Thêm nhiệm vụ" : "Lưu thay đổi"}
               </button>
             </div>
