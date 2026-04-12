@@ -328,10 +328,10 @@ function ListView() {
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-[#115e59] text-2xl font-semibold mb-1">
-            Báo cáo từ hiện trường
+            Danh Sách Yêu Cầu Tư Vấn
           </h1>
           <p className="text-[#45556c] text-sm">
-            Báo cáo từ nhân viên — gửi tới chuyên gia để chẩn đoán khi cần.
+            Hiển thị tất cả yêu cầu tư vấn
           </p>
         </div>
         <button
