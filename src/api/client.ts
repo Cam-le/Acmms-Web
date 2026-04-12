@@ -350,6 +350,39 @@ export interface ReportAssignRequest {
   note?: string;
 }
 
+export interface DiagnosisResponse {
+  id: string;
+  reportId: string;
+  // Present on GET /api/Reports/diagnosis (all) but not on GET /api/Reports/{id}/diagnosis
+  reportNo?: string;
+  reportTitle?: string;
+  diagnosedBy: string;
+  diagnoserName: string;
+  diseaseName: string;
+  conclusion: string;
+  recommendedAction: string;
+  severityLevel: string; // "LOW" | "MEDIUM" | "HIGH" | "CRITICAL"
+  status: string;
+  createdAt: string;
+}
+
+export interface DiagnosisRequest {
+  diseaseName: string;
+  conclusion: string;
+  recommendedAction: string;
+  severityLevel: string; // "LOW" | "MEDIUM" | "HIGH" | "CRITICAL"
+}
+
+// Parsed shape of ReportResponse.aiResultsJson
+export interface AiResultParsed {
+  diseaseName?: string;
+  description?: string;
+  confidence?: number;
+  symptoms?: string[];
+  treatment?: string[];
+  isHealthy?: boolean;
+}
+
 // ==================== API Methods ====================
 
 export const api = {
@@ -500,4 +533,14 @@ export const api = {
     request<unknown>("DELETE", `/api/Reports/${id}`),
   assignReport: (reportId: string, body: ReportAssignRequest) =>
     request<unknown>("POST", `/api/Reports/${reportId}/assign`, body),
+  getReportDiagnosis: (reportId: string) =>
+    request<DiagnosisResponse[]>("GET", `/api/Reports/${reportId}/diagnosis`),
+  getAllDiagnoses: () =>
+    request<DiagnosisResponse[]>("GET", "/api/Reports/diagnosis"),
+  createDiagnosis: (reportId: string, body: DiagnosisRequest) =>
+    request<DiagnosisResponse>(
+      "POST",
+      `/api/Reports/${reportId}/diagnosis`,
+      body,
+    ),
 };

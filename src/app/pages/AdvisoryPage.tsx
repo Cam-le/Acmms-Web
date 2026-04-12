@@ -59,6 +59,19 @@ export interface AiResult {
   treatment?: string[];
 }
 
+export interface DiagnosisResponse {
+  id: string;
+  reportId: string;
+  diagnosedBy: string;
+  diagnoserName: string;
+  diseaseName: string;
+  conclusion: string;
+  recommendedAction: string;
+  severityLevel: string; // "LOW" | "MEDIUM" | "HIGH" | "CRITICAL"
+  status: string;
+  createdAt: string;
+}
+
 // ===================== MAPPINGS =====================
 
 const STATUS_CONFIG: Record<
@@ -150,6 +163,42 @@ function getReportType(type: string) {
       label: type,
       icon: FileText,
       color: "bg-[#f8fafc] text-[#475569]",
+    }
+  );
+}
+
+const SEVERITY_CONFIG: Record<
+  string,
+  { label: string; color: string; barColor: string }
+> = {
+  LOW: {
+    label: "Nhẹ",
+    color: "bg-[#dcfce7] text-[#166534]",
+    barColor: "bg-[#16a34a]",
+  },
+  MEDIUM: {
+    label: "Trung bình",
+    color: "bg-[#fef9c3] text-[#854d0e]",
+    barColor: "bg-[#ca8a04]",
+  },
+  HIGH: {
+    label: "Nặng",
+    color: "bg-[#ffedd5] text-[#9a3412]",
+    barColor: "bg-[#ea580c]",
+  },
+  CRITICAL: {
+    label: "Rất nghiêm trọng",
+    color: "bg-[#fee2e2] text-[#991b1b]",
+    barColor: "bg-[#dc2626]",
+  },
+};
+
+function getSeverityConfig(level: string) {
+  return (
+    SEVERITY_CONFIG[level] ?? {
+      label: level,
+      color: "bg-[#f1f5f9] text-[#475569]",
+      barColor: "bg-[#94a3b8]",
     }
   );
 }
@@ -494,6 +543,10 @@ function DetailView({ reportId }: { reportId: string }) {
   const [selectedSpecialistId, setSelectedSpecialistId] = useState("");
   const [specialistsLoading, setSpecialistsLoading] = useState(false);
 
+  // Diagnoses — fetched when status is DIAGNOSED
+  const [diagnoses, setDiagnoses] = useState<DiagnosisResponse[]>([]);
+  const [diagnosesLoading, setDiagnosesLoading] = useState(false);
+
   useEffect(() => {
     async function fetchReport() {
       setLoading(true);
@@ -532,6 +585,23 @@ function DetailView({ reportId }: { reportId: string }) {
       }
     }
     fetchSpecialists();
+  }, [report?.status]);
+
+  // Fetch diagnoses when status is DIAGNOSED
+  useEffect(() => {
+    if (!report || report.status !== "DIAGNOSED") return;
+    async function fetchDiagnoses() {
+      setDiagnosesLoading(true);
+      try {
+        const data = await api.getReportDiagnosis(report!.reportId);
+        setDiagnoses(data);
+      } catch {
+        // non-critical — page still renders without diagnosis details
+      } finally {
+        setDiagnosesLoading(false);
+      }
+    }
+    fetchDiagnoses();
   }, [report?.status]);
 
   async function handleAssign() {
@@ -737,9 +807,100 @@ function DetailView({ reportId }: { reportId: string }) {
               </>
             )}
           </div>
-        </div>
 
-        {/* Right col — AI results */}
+          {/* Diagnosis results — fetched from API when status is DIAGNOSED */}
+          {report.status === "DIAGNOSED" && (
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold text-[#62748e] flex items-center gap-2">
+                <BadgeCheck className="w-4 h-4 text-[#16a34a]" />
+                Kết quả chẩn đoán từ chuyên gia
+              </h3>
+
+              {diagnosesLoading ? (
+                <div className="flex items-center gap-2 py-4 text-[#62748e] text-sm">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Đang tải kết quả chẩn đoán...
+                </div>
+              ) : diagnoses.length === 0 ? (
+                <div className="bg-[#f0fdf4] rounded-lg border border-[#86efac] p-4 text-sm text-[#166534]">
+                  Chuyên gia đã hoàn thành chẩn đoán nhưng chưa có dữ liệu chi
+                  tiết.
+                </div>
+              ) : (
+                diagnoses.map((dx, idx) => {
+                  const sev = getSeverityConfig(dx.severityLevel);
+                  return (
+                    <div
+                      key={dx.id}
+                      className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm overflow-hidden"
+                    >
+                      {/* Card header */}
+                      <div className="flex items-center justify-between px-4 py-2.5 bg-[#f8fafc] border-b border-[#e2e8f0]">
+                        <div className="flex items-center gap-2">
+                          <div className="w-6 h-6 rounded-full bg-[#009689] flex items-center justify-center text-white text-[10px] font-bold shrink-0">
+                            {dx.diagnoserName.split(" ").pop()?.[0] ?? "?"}
+                          </div>
+                          <span className="text-sm font-semibold text-[#115e59]">
+                            {dx.diagnoserName}
+                          </span>
+                          {diagnoses.length > 1 && (
+                            <span className="text-xs text-[#90a1b9]">
+                              · Chẩn đoán {idx + 1}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`px-2 py-0.5 rounded text-xs font-medium ${sev.color}`}
+                          >
+                            {sev.label}
+                          </span>
+                          <span className="text-xs text-[#90a1b9] whitespace-nowrap">
+                            {formatDate(dx.createdAt)}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Card body */}
+                      <div className="p-4 space-y-3">
+                        {/* Disease name */}
+                        <div>
+                          <div className="text-xs text-[#62748e] mb-0.5">
+                            Tên bệnh
+                          </div>
+                          <div className="text-sm font-semibold text-[#115e59]">
+                            {dx.diseaseName}
+                          </div>
+                        </div>
+
+                        {/* Conclusion */}
+                        <div>
+                          <div className="text-xs text-[#62748e] mb-0.5">
+                            Kết luận
+                          </div>
+                          <p className="text-sm text-[#334155] leading-relaxed">
+                            {dx.conclusion}
+                          </p>
+                        </div>
+
+                        {/* Recommended action */}
+                        <div className="bg-[#f0fdfa] border border-[#009689]/20 rounded-lg p-3">
+                          <div className="text-xs text-[#62748e] mb-1 flex items-center gap-1">
+                            <FlaskConical className="w-3 h-3" /> Khuyến nghị xử
+                            lý
+                          </div>
+                          <p className="text-sm text-[#115e59] leading-relaxed">
+                            {dx.recommendedAction}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          )}
+        </div>
         <div className="lg:col-span-3 space-y-4">
           {ai ? (
             <>
@@ -855,23 +1016,6 @@ function DetailView({ reportId }: { reportId: string }) {
               <p className="text-xs text-[#62748e]">
                 Báo cáo này chưa được phân tích bởi AI hoặc không có hình ảnh
                 đính kèm.
-              </p>
-            </div>
-          )}
-
-          {/* Diagnosis result — shown when status is DIAGNOSED */}
-          {report.status === "DIAGNOSED" && (
-            <div className="bg-[#f0fdf4] rounded-lg border border-[#86efac] p-4">
-              <div className="flex items-center gap-2 mb-2">
-                <BadgeCheck className="w-5 h-5 text-[#16a34a]" />
-                <h3 className="text-sm font-semibold text-[#166534]">
-                  Đã có kết quả chẩn đoán từ chuyên gia
-                </h3>
-              </div>
-              <p className="text-xs text-[#166534]">
-                Chuyên gia đã hoàn thành chẩn đoán cho báo cáo này. Vui lòng
-                kiểm tra lại trên hệ thống chuyên gia hoặc liên hệ trực tiếp để
-                nhận khuyến nghị xử lý chi tiết.
               </p>
             </div>
           )}

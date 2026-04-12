@@ -4,21 +4,17 @@ import {
   Search,
   SlidersHorizontal,
   Bug,
-  Leaf,
-  MapPin,
   Clock,
   ChevronLeft,
   ChevronRight,
+  AlertCircle,
+  RefreshCw,
 } from "lucide-react";
-import {
-  mockConsultationRequests,
-  type Severity,
-  type DetectionStatus,
-} from "../../../data/mockSpecialistData";
+import { api, type ReportResponse } from "../../../api/client";
+import { mockConsultationRequests } from "../../../data/mockSpecialistData";
 
 const PAGE_SIZE = 5;
 
-// ── Pagination helper (matches AdvisoryPage pattern) ─────────────────────────
 function getPageNumbers(current: number, total: number): (number | "...")[] {
   if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
   const pages: (number | "...")[] = [1];
@@ -35,76 +31,145 @@ function getPageNumbers(current: number, total: number): (number | "...")[] {
   return pages;
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
-function severityBadge(s: Severity) {
+function parseSeverityFromReport(r: ReportResponse): string {
+  if (r.aiResultsJson) {
+    try {
+      const ai = JSON.parse(r.aiResultsJson);
+      if (ai.confidence !== undefined) {
+        const c: number = ai.confidence;
+        if (c >= 0.9) return "CRITICAL";
+        if (c >= 0.75) return "HIGH";
+        if (c >= 0.5) return "MEDIUM";
+        return "LOW";
+      }
+    } catch {
+      // ignore
+    }
+  }
+  return "UNKNOWN";
+}
+
+function severityLabel(s: string) {
+  if (s === "CRITICAL") return "Nghiêm trọng";
+  if (s === "HIGH") return "Cao";
+  if (s === "MEDIUM") return "Trung bình";
+  if (s === "LOW") return "Thấp";
+  return "Không xác định";
+}
+
+function severityBadge(s: string) {
   const base =
     "text-xs font-semibold px-2.5 py-1 rounded-full flex items-center gap-1";
-  if (s === "Cao" || s === "Nghiêm trọng")
-    return `${base} bg-red-50 text-red-600`;
-  if (s === "Trung bình") return `${base} bg-orange-50 text-orange-600`;
+  if (s === "CRITICAL") return `${base} bg-red-50 text-red-600`;
+  if (s === "HIGH") return `${base} bg-orange-50 text-orange-600`;
+  if (s === "MEDIUM") return `${base} bg-yellow-50 text-yellow-700`;
   return `${base} bg-green-50 text-green-700`;
 }
 
-function statusBadge(s: DetectionStatus) {
-  if (s === "Chờ phản hồi")
-    return "bg-rose-50 text-rose-600 border border-rose-200";
-  if (s === "Đã phản hồi")
-    return "bg-green-50 text-green-700 border border-green-200";
-  return "bg-blue-50 text-blue-600 border border-blue-200";
-}
-
-function cardIcon(s: Severity) {
-  if (s === "Cao" || s === "Nghiêm trọng")
-    return { bg: "bg-red-100", color: "text-red-500" };
-  if (s === "Trung bình")
-    return { bg: "bg-amber-100", color: "text-amber-600" };
+function cardIconStyle(s: string) {
+  if (s === "CRITICAL") return { bg: "bg-red-100", color: "text-red-500" };
+  if (s === "HIGH") return { bg: "bg-orange-100", color: "text-orange-500" };
+  if (s === "MEDIUM") return { bg: "bg-amber-100", color: "text-amber-600" };
   return { bg: "bg-green-100", color: "text-green-600" };
 }
 
-// ── Component ────────────────────────────────────────────────────────────────
+function reportTypeLabel(t: string) {
+  if (t === "DISEASE" || t === "Diseases") return "Bệnh cây";
+  if (t === "ENVIRONMENT") return "Môi trường";
+  return t;
+}
+
+function mockToReport(m: (typeof mockConsultationRequests)[0]): ReportResponse {
+  return {
+    reportId: m.id,
+    reportNo: m.requestCode,
+    createdBy: "",
+    creatorName: m.farmName,
+    ownerId: "",
+    ownerName: m.farmName,
+    title: `${m.aiDiagnosis} trên ${m.crop}`,
+    description: m.symptomDescription,
+    reportType: "DISEASE",
+    plotId: "",
+    bedId: "",
+    seasonId: "",
+    status: "ASSIGNED_FOR_DIAGNOSIS",
+    createdAt: m.submittedAt,
+    submitDate: m.submittedAt,
+    aiResultsJson: JSON.stringify({
+      diseaseName: m.aiDiagnosis,
+      confidence: m.aiConfidence / 100,
+      symptoms: m.aiSymptoms,
+      treatment: [m.aiRecommendation],
+      isHealthy: false,
+    }),
+  };
+}
+
 export function SpecialistConsultationPage() {
   const navigate = useNavigate();
+  const [reports, setReports] = useState<ReportResponse[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isMockData, setIsMockData] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [filterSeverity, setFilterSeverity] = useState<string>("all");
+  const [filterSeverity, setFilterSeverity] = useState("all");
   const [sortByHighest, setSortByHighest] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
 
   const severityOrder: Record<string, number> = {
-    "Nghiêm trọng": 4,
-    Cao: 3,
-    "Trung bình": 2,
-    Thấp: 1,
+    CRITICAL: 4,
+    HIGH: 3,
+    MEDIUM: 2,
+    LOW: 1,
   };
 
-  // Only show pending items on this page — responded items live in Lịch sử
-  const pendingOnly = mockConsultationRequests.filter(
-    (r) => r.detectionStatus !== "Đã phản hồi",
-  );
+  async function loadReports() {
+    setLoading(true);
+    setError(null);
+    try {
+      const all = await api.getReports();
+      setReports(all.filter((r) => r.status === "ASSIGNED_FOR_DIAGNOSIS"));
+      setIsMockData(false);
+    } catch {
+      setReports(
+        mockConsultationRequests
+          .filter((m) => m.detectionStatus !== "Đã phản hồi")
+          .map(mockToReport),
+      );
+      setIsMockData(true);
+    } finally {
+      setLoading(false);
+    }
+  }
 
-  const filtered = pendingOnly
+  useEffect(() => {
+    loadReports();
+  }, []);
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, filterSeverity, sortByHighest]);
+
+  const filtered = reports
     .filter((r) => {
       const q = search.toLowerCase();
+      const sev = parseSeverityFromReport(r);
       const matchSearch =
         !q ||
-        r.requestCode.toLowerCase().includes(q) ||
-        r.crop.toLowerCase().includes(q) ||
-        r.location.toLowerCase().includes(q) ||
-        r.issue.toLowerCase().includes(q) ||
-        r.farmName.toLowerCase().includes(q);
-      const matchSeverity =
-        filterSeverity === "all" || r.severity === filterSeverity;
+        r.reportNo.toLowerCase().includes(q) ||
+        r.title.toLowerCase().includes(q) ||
+        r.creatorName.toLowerCase().includes(q) ||
+        r.ownerName.toLowerCase().includes(q) ||
+        r.description.toLowerCase().includes(q);
+      const matchSeverity = filterSeverity === "all" || sev === filterSeverity;
       return matchSearch && matchSeverity;
     })
     .sort((a, b) =>
       sortByHighest
-        ? (severityOrder[b.severity] ?? 0) - (severityOrder[a.severity] ?? 0)
+        ? (severityOrder[parseSeverityFromReport(b)] ?? 0) -
+          (severityOrder[parseSeverityFromReport(a)] ?? 0)
         : 0,
     );
-
-  // Reset to page 1 when filters change
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [search, filterSeverity, sortByHighest]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paginated = filtered.slice(
@@ -115,14 +180,38 @@ export function SpecialistConsultationPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-slate-800">
-          Danh sách báo cáo cần tư vấn
-        </h1>
-        <p className="text-sm text-slate-500 mt-1">
-          Tiếp nhận và phản hồi các báo cáo bệnh cây trồng từ trang trại.
-        </p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-800">
+            Danh sách báo cáo cần tư vấn
+          </h1>
+          <p className="text-sm text-slate-500 mt-1">
+            Tiếp nhận và chẩn đoán các báo cáo bệnh cây từ nông trại.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {isMockData && (
+            <span className="text-xs font-semibold px-3 py-1.5 rounded-full bg-amber-50 text-amber-600 border border-amber-200">
+              Dữ liệu mẫu
+            </span>
+          )}
+          <button
+            onClick={loadReports}
+            disabled={loading}
+            title="Tải lại"
+            className="p-2 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40 transition-colors"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+          </button>
+        </div>
       </div>
+
+      {error && (
+        <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3">
+          <AlertCircle className="w-4 h-4 shrink-0" />
+          {error}
+        </div>
+      )}
 
       {/* Filter Bar */}
       <div className="flex flex-wrap gap-3">
@@ -131,7 +220,7 @@ export function SpecialistConsultationPage() {
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Tìm theo tên cây / khu vực / mã yêu cầu"
+            placeholder="Tìm theo mã báo cáo, tiêu đề, người tạo..."
             className="w-full pl-9 pr-4 py-2.5 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#009689]/30 bg-white"
           />
         </div>
@@ -142,10 +231,10 @@ export function SpecialistConsultationPage() {
           className="px-4 py-2.5 text-sm border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-[#009689]/30 text-slate-600"
         >
           <option value="all">Mức độ nghiêm trọng</option>
-          <option value="Nghiêm trọng">Nghiêm trọng</option>
-          <option value="Cao">Cao</option>
-          <option value="Trung bình">Trung bình</option>
-          <option value="Thấp">Thấp</option>
+          <option value="CRITICAL">Nghiêm trọng</option>
+          <option value="HIGH">Cao</option>
+          <option value="MEDIUM">Trung bình</option>
+          <option value="LOW">Thấp</option>
         </select>
 
         <button
@@ -161,181 +250,180 @@ export function SpecialistConsultationPage() {
         </button>
       </div>
 
-      {/* Cards List */}
-      <div className="space-y-4">
-        {filtered.length === 0 && (
-          <div className="bg-white rounded-2xl p-10 text-center text-slate-400 text-sm border border-slate-100">
-            Không tìm thấy yêu cầu phù hợp.
-          </div>
-        )}
+      {/* Loading */}
+      {loading && (
+        <div className="flex items-center justify-center py-20 text-slate-400 gap-2">
+          <RefreshCw className="w-5 h-5 animate-spin" />
+          <span className="text-sm">Đang tải báo cáo...</span>
+        </div>
+      )}
 
-        {paginated.map((req) => {
-          const icon = cardIcon(req.severity);
-          const isPending = req.detectionStatus === "Chờ phản hồi";
+      {/* Cards */}
+      {!loading && (
+        <div className="space-y-4">
+          {filtered.length === 0 && (
+            <div className="bg-white rounded-2xl p-10 text-center text-slate-400 text-sm border border-slate-100">
+              Không có báo cáo nào đang chờ chẩn đoán.
+            </div>
+          )}
 
-          return (
-            <div
-              key={req.id}
-              className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5 hover:shadow-md transition-shadow"
-            >
-              {/* Top row */}
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <div
-                    className={`w-12 h-12 rounded-xl ${icon.bg} flex items-center justify-center shrink-0`}
-                  >
-                    <Bug className={`w-5 h-5 ${icon.color}`} />
+          {paginated.map((report) => {
+            const sev = parseSeverityFromReport(report);
+            const icon = cardIconStyle(sev);
+            let aiDiseaseName = "";
+            let aiConfidence = 0;
+            if (report.aiResultsJson) {
+              try {
+                const ai = JSON.parse(report.aiResultsJson);
+                aiDiseaseName = ai.diseaseName ?? "";
+                aiConfidence = Math.round((ai.confidence ?? 0) * 100);
+              } catch {
+                /* ignore */
+              }
+            }
+
+            return (
+              <div
+                key={report.reportId}
+                className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5 hover:shadow-md transition-shadow"
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div
+                      className={`w-12 h-12 rounded-xl ${icon.bg} flex items-center justify-center shrink-0`}
+                    >
+                      <Bug className={`w-5 h-5 ${icon.color}`} />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-slate-800 text-[15px]">
+                        {report.title}
+                      </h3>
+                      <p className="text-xs text-slate-400 mt-0.5 flex items-center gap-1">
+                        <Clock className="w-3 h-3" />
+                        {new Date(report.submitDate).toLocaleString("vi-VN", {
+                          day: "2-digit",
+                          month: "2-digit",
+                          year: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="font-semibold text-slate-800 text-[15px]">
-                      {req.aiDiagnosis} trên {req.crop} ({req.requestCode})
-                    </h3>
-                    <p className="text-xs text-slate-400 mt-0.5 flex items-center gap-1">
-                      <Clock className="w-3 h-3" />
-                      Gửi lúc:{" "}
-                      {new Date(req.submittedAt).toLocaleDateString(
-                        "vi-VN",
-                      )} –{" "}
-                      {new Date(req.submittedAt).toLocaleTimeString("vi-VN", {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </p>
-                  </div>
-                </div>
-                <span
-                  className={`text-xs font-semibold px-3 py-1.5 rounded-full ${statusBadge(req.detectionStatus)}`}
-                >
-                  {req.detectionStatus}
-                </span>
-              </div>
-
-              {/* Details row */}
-              <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                <div>
-                  <p className="text-xs text-slate-400 uppercase tracking-wide font-medium mb-1">
-                    Cây trồng
-                  </p>
-                  <p className="text-slate-700 font-medium flex items-center gap-1">
-                    <Leaf className="w-3.5 h-3.5 text-green-500" />
-                    {req.crop}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs text-slate-400 uppercase tracking-wide font-medium mb-1">
-                    Nông trại
-                  </p>
-                  <p className="text-slate-700 font-medium flex items-center gap-1">
-                    <MapPin className="w-3.5 h-3.5 text-[#009689]" />
-                    {req.farmName}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs text-slate-400 uppercase tracking-wide font-medium mb-1">
-                    AI chẩn đoán
-                  </p>
-                  <p className="text-slate-700 font-medium">
-                    {req.aiDiagnosis}{" "}
-                    <span className="text-[#009689] font-semibold">
-                      ({req.aiConfidence}%)
-                    </span>
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs text-slate-400 uppercase tracking-wide font-medium mb-1">
-                    Mức độ nghiêm trọng
-                  </p>
-                  <span className={severityBadge(req.severity)}>
-                    {req.severity === "Cao" && "⚠ "}
-                    {req.severity}
+                  <span className="text-xs font-semibold px-3 py-1.5 rounded-full bg-rose-50 text-rose-600 border border-rose-200 shrink-0">
+                    Chờ chẩn đoán
                   </span>
                 </div>
-              </div>
 
-              {/* Action */}
-              <div className="mt-4 flex justify-end">
-                {isPending ? (
+                <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                  <div>
+                    <p className="text-xs text-slate-400 uppercase tracking-wide font-medium mb-1">
+                      Mã báo cáo
+                    </p>
+                    <p className="text-slate-700 font-medium font-mono text-xs">
+                      {report.reportNo}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-400 uppercase tracking-wide font-medium mb-1">
+                      Người tạo
+                    </p>
+                    <p className="text-slate-700 font-medium">
+                      {report.creatorName}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-400 uppercase tracking-wide font-medium mb-1">
+                      Loại báo cáo
+                    </p>
+                    <p className="text-slate-700 font-medium">
+                      {reportTypeLabel(report.reportType)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-400 uppercase tracking-wide font-medium mb-1">
+                      Mức độ (AI)
+                    </p>
+                    <span className={severityBadge(sev)}>
+                      {severityLabel(sev)}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="mt-3 flex flex-wrap gap-2 items-center">
+                  <p className="text-sm text-slate-500 flex-1 min-w-0 truncate italic">
+                    {report.description}
+                  </p>
+                  {aiDiseaseName && (
+                    <span className="text-xs px-2.5 py-1 rounded-full bg-[#009689]/10 text-[#009689] font-semibold shrink-0">
+                      AI: {aiDiseaseName} ({aiConfidence}%)
+                    </span>
+                  )}
+                </div>
+
+                <div className="mt-4 flex justify-end">
                   <button
                     onClick={() =>
-                      navigate(`/specialist/consultations/${req.id}`)
+                      navigate(`/specialist/consultations/${report.reportId}`)
                     }
                     className="flex items-center gap-2 px-5 py-2.5 bg-[#009689] text-white text-sm font-semibold rounded-xl hover:bg-[#007f73] transition-colors"
                   >
                     <Bug className="w-4 h-4" />
-                    Xem &amp; phản hồi
+                    Xem &amp; chẩn đoán
                   </button>
-                ) : (
-                  <button
-                    onClick={() =>
-                      navigate(`/specialist/consultations/${req.id}`)
-                    }
-                    className="flex items-center gap-2 px-5 py-2.5 border border-slate-200 text-slate-600 text-sm font-medium rounded-xl hover:bg-slate-50 transition-colors"
-                  >
-                    Xem lại tư vấn
-                  </button>
-                )}
+                </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Pagination */}
-      {filtered.length > 0 && (
+      {!loading && filtered.length > PAGE_SIZE && (
         <div className="flex items-center justify-between border-t border-slate-100 pt-4">
           <p className="text-xs text-slate-500">
-            {filtered.length <= PAGE_SIZE
-              ? `${filtered.length} yêu cầu`
-              : `${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(
-                  currentPage * PAGE_SIZE,
-                  filtered.length,
-                )} / ${filtered.length} yêu cầu`}
+            {(currentPage - 1) * PAGE_SIZE + 1}–
+            {Math.min(currentPage * PAGE_SIZE, filtered.length)} /{" "}
+            {filtered.length} báo cáo
           </p>
-
-          {totalPages > 1 && (
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-                className="w-7 h-7 flex items-center justify-center rounded border border-slate-200 text-slate-500 hover:border-[#009689] hover:text-[#009689] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              >
-                <ChevronLeft className="w-3.5 h-3.5" />
-              </button>
-
-              {getPageNumbers(currentPage, totalPages).map((p, i) =>
-                p === "..." ? (
-                  <span
-                    key={`e-${i}`}
-                    className="w-7 h-7 flex items-center justify-center text-xs text-slate-400"
-                  >
-                    …
-                  </span>
-                ) : (
-                  <button
-                    key={p}
-                    onClick={() => setCurrentPage(p as number)}
-                    className={`w-7 h-7 flex items-center justify-center rounded text-xs font-medium border transition-colors ${
-                      currentPage === p
-                        ? "bg-[#009689] text-white border-[#009689]"
-                        : "border-slate-200 text-slate-500 hover:border-[#009689] hover:text-[#009689]"
-                    }`}
-                  >
-                    {p}
-                  </button>
-                ),
-              )}
-
-              <button
-                onClick={() =>
-                  setCurrentPage((p) => Math.min(totalPages, p + 1))
-                }
-                disabled={currentPage === totalPages}
-                className="w-7 h-7 flex items-center justify-center rounded border border-slate-200 text-slate-500 hover:border-[#009689] hover:text-[#009689] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              >
-                <ChevronRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          )}
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className="w-7 h-7 flex items-center justify-center rounded border border-slate-200 text-slate-500 hover:border-[#009689] hover:text-[#009689] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" />
+            </button>
+            {getPageNumbers(currentPage, totalPages).map((p, i) =>
+              p === "..." ? (
+                <span
+                  key={`e-${i}`}
+                  className="w-7 h-7 flex items-center justify-center text-xs text-slate-400"
+                >
+                  …
+                </span>
+              ) : (
+                <button
+                  key={p}
+                  onClick={() => setCurrentPage(p as number)}
+                  className={`w-7 h-7 flex items-center justify-center rounded text-xs font-medium border transition-colors ${
+                    currentPage === p
+                      ? "bg-[#009689] text-white border-[#009689]"
+                      : "border-slate-200 text-slate-500 hover:border-[#009689] hover:text-[#009689]"
+                  }`}
+                >
+                  {p}
+                </button>
+              ),
+            )}
+            <button
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              className="w-7 h-7 flex items-center justify-center rounded border border-slate-200 text-slate-500 hover:border-[#009689] hover:text-[#009689] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            >
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
       )}
     </div>
