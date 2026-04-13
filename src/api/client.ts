@@ -251,7 +251,13 @@ export interface CropGrowthStageResponse {
   cropId: string;
   cropName: string;
   stageName: string;
+  stageDescription: string;
   temperatureMin: number;
+  humidityMin: number;
+  soilMoistureMin: number;
+  growthIndicators: string;
+  commonDiseases: string;
+  notes: string;
   createdAt: string;
 }
 
@@ -476,6 +482,11 @@ export const api = {
   // Crop Growth Stages
   getCropGrowthStages: () =>
     request<CropGrowthStageResponse[]>("GET", "/api/CropGrowthStages"),
+  getCropGrowthStagesByCrop: (cropId: string) =>
+    request<CropGrowthStageResponse[]>(
+      "GET",
+      `/api/CropGrowthStages/crop/${cropId}`,
+    ),
   getCropGrowthStage: (id: string) =>
     request<CropGrowthStageResponse>("GET", `/api/CropGrowthStages/${id}`),
   createCropGrowthStage: (body: CropGrowthStageRequest) =>
