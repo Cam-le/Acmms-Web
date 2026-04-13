@@ -1,8 +1,7 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router";
-import { Eye, EyeOff, Loader2, Wifi, WifiOff } from "lucide-react";
+import { Eye, EyeOff, Loader2, Wifi } from "lucide-react";
 import { apiRegister } from "../../api/auth";
-import { mockAccounts } from "../../data/mockAccounts";
 
 export function RegisterPage() {
   const navigate = useNavigate();
@@ -16,19 +15,21 @@ export function RegisterPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [apiLoading, setApiLoading] = useState(false);
   const [error, setError] = useState("");
-  const [apiStatus, setApiStatus] = useState<"idle" | "success" | "failed">(
-    "idle",
-  );
+  const [success, setSuccess] = useState(false);
 
   const set =
     (field: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => {
-      setForm((prev) => ({ ...prev, [field]: e.target.value.trim() }));
+      setForm((prev) => ({ ...prev, [field]: e.target.value }));
     };
 
   const validate = (): string => {
-    if (!form.email || !form.password || !form.fullname || !form.phoneNumber)
+    if (
+      !form.email.trim() ||
+      !form.password.trim() ||
+      !form.fullname.trim() ||
+      !form.phoneNumber.trim()
+    )
       return "Vui lòng điền đầy đủ thông tin";
     if (form.password !== form.confirmPassword)
       return "Mật khẩu xác nhận không khớp";
@@ -36,10 +37,10 @@ export function RegisterPage() {
     return "";
   };
 
-  // ── Mock register (default path) ──────────────────────────────────────────
-  const handleMockRegister = (e: React.FormEvent) => {
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setSuccess(false);
 
     const err = validate();
     if (err) {
@@ -49,71 +50,28 @@ export function RegisterPage() {
 
     setLoading(true);
 
-    // Check for duplicate email in mock store
-    const exists = mockAccounts.find((a) => a.email === form.email);
-    if (exists) {
-      setError("Email này đã được đăng ký trong dữ liệu demo.");
-      setLoading(false);
-      return;
-    }
-
-    // Add to in-memory mock store and create session
-    mockAccounts.push({
-      userId: `mock-${Date.now()}`,
-      email: form.email,
-      password: form.password,
-      fullname: form.fullname,
-      phoneNumber: form.phoneNumber,
-      roleName: "Owner",
-    });
-
-    localStorage.setItem("isAuthenticated", "true");
-    localStorage.setItem("userId", `mock-${Date.now()}`);
-    localStorage.setItem("userEmail", form.email);
-    localStorage.setItem("authMode", "mock");
-
-    setLoading(false);
-    navigate("/dashboard");
-  };
-
-  // ── API register (opt-in) ──────────────────────────────────────────────────
-  const handleApiRegister = async () => {
-    setError("");
-    setApiStatus("idle");
-
-    const err = validate();
-    if (err) {
-      setError(err);
-      return;
-    }
-
-    setApiLoading(true);
-
     try {
       const res = await apiRegister({
-        email: form.email,
-        password: form.password,
-        fullname: form.fullname,
-        phoneNumber: form.phoneNumber,
+        email: form.email.trim(),
+        password: form.password.trim(),
+        fullname: form.fullname.trim(),
+        phoneNumber: form.phoneNumber.trim(),
       });
 
       if (res.success) {
-        setApiStatus("success");
-        // After successful real registration, redirect to login
+        setSuccess(true);
         setTimeout(() => navigate("/login"), 1200);
       } else {
-        setApiStatus("failed");
-        setError(res.message || "Đăng ký thất bại. Thử dùng chế độ demo.");
+        setError(res.message || "Đăng ký thất bại. Vui lòng thử lại.");
       }
     } catch {
-      setApiStatus("failed");
-      setError("Không thể kết nối máy chủ. Thử dùng chế độ demo.");
+      setError(
+        "Không thể kết nối máy chủ. Vui lòng kiểm tra kết nối và thử lại.",
+      );
     } finally {
-      setApiLoading(false);
+      setLoading(false);
     }
   };
-
-  const busy = loading || apiLoading;
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#f1f5f9] p-4 font-sans">
@@ -139,17 +97,7 @@ export function RegisterPage() {
           <p className="text-[#64748b] text-sm">Tạo tài khoản mới</p>
         </div>
 
-        {/* Mock-data notice */}
-        <div className="flex items-start gap-2 mb-5 p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
-          <WifiOff size={14} className="mt-0.5 shrink-0 text-amber-500" />
-          <span>
-            Mặc định đăng ký vào <strong>dữ liệu demo</strong>. Nhấn{" "}
-            <strong>"Đăng ký qua API"</strong> để ghi vào hệ thống thật.
-          </span>
-        </div>
-
-        <form onSubmit={handleMockRegister} className="space-y-4">
-          {/* Full name */}
+        <form onSubmit={handleRegister} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-[#45556c] mb-1">
               Họ và tên
@@ -160,11 +108,10 @@ export function RegisterPage() {
               onChange={set("fullname")}
               className="w-full px-4 py-3 rounded-[10px] border border-[#cbd5e1] focus:outline-none focus:ring-2 focus:ring-[#009689] focus:border-transparent transition-all text-[#334155]"
               placeholder="Nguyễn Văn A"
-              disabled={busy}
+              disabled={loading}
             />
           </div>
 
-          {/* Email */}
           <div>
             <label className="block text-sm font-medium text-[#45556c] mb-1">
               Email
@@ -175,11 +122,10 @@ export function RegisterPage() {
               onChange={set("email")}
               className="w-full px-4 py-3 rounded-[10px] border border-[#cbd5e1] focus:outline-none focus:ring-2 focus:ring-[#009689] focus:border-transparent transition-all text-[#334155]"
               placeholder="ten@farm.com"
-              disabled={busy}
+              disabled={loading}
             />
           </div>
 
-          {/* Phone */}
           <div>
             <label className="block text-sm font-medium text-[#45556c] mb-1">
               Số điện thoại
@@ -190,11 +136,10 @@ export function RegisterPage() {
               onChange={set("phoneNumber")}
               className="w-full px-4 py-3 rounded-[10px] border border-[#cbd5e1] focus:outline-none focus:ring-2 focus:ring-[#009689] focus:border-transparent transition-all text-[#334155]"
               placeholder="0909998877"
-              disabled={busy}
+              disabled={loading}
             />
           </div>
 
-          {/* Password */}
           <div>
             <label className="block text-sm font-medium text-[#45556c] mb-1">
               Mật khẩu
@@ -206,7 +151,7 @@ export function RegisterPage() {
                 onChange={set("password")}
                 className="w-full px-4 py-3 rounded-[10px] border border-[#cbd5e1] focus:outline-none focus:ring-2 focus:ring-[#009689] focus:border-transparent transition-all text-[#334155]"
                 placeholder="••••••••"
-                disabled={busy}
+                disabled={loading}
               />
               <button
                 type="button"
@@ -218,7 +163,6 @@ export function RegisterPage() {
             </div>
           </div>
 
-          {/* Confirm password */}
           <div>
             <label className="block text-sm font-medium text-[#45556c] mb-1">
               Xác nhận mật khẩu
@@ -230,7 +174,7 @@ export function RegisterPage() {
                 onChange={set("confirmPassword")}
                 className="w-full px-4 py-3 rounded-[10px] border border-[#cbd5e1] focus:outline-none focus:ring-2 focus:ring-[#009689] focus:border-transparent transition-all text-[#334155]"
                 placeholder="••••••••"
-                disabled={busy}
+                disabled={loading}
               />
               <button
                 type="button"
@@ -248,45 +192,24 @@ export function RegisterPage() {
             </div>
           )}
 
-          {apiStatus === "success" && (
+          {success && (
             <div className="p-3 bg-green-50 text-green-700 text-sm rounded-lg flex items-center gap-2">
               <Wifi size={16} /> Đăng ký thành công! Đang chuyển hướng...
             </div>
           )}
 
-          {/* Primary: mock register */}
           <button
             type="submit"
-            disabled={busy}
-            className="w-full bg-[#009689] hover:bg-[#0f766e] text-white font-medium py-3 rounded-[10px] transition-colors flex items-center justify-center"
+            disabled={loading}
+            className="w-full bg-[#009689] hover:bg-[#0f766e] text-white font-medium py-3 rounded-[10px] transition-colors flex items-center justify-center gap-2"
           >
             {loading ? (
               <>
-                <Loader2 className="animate-spin mr-2" size={18} />
+                <Loader2 className="animate-spin" size={18} />
                 Đang tạo tài khoản...
               </>
             ) : (
-              "Đăng ký (Demo)"
-            )}
-          </button>
-
-          {/* Secondary: real API register */}
-          <button
-            type="button"
-            onClick={handleApiRegister}
-            disabled={busy}
-            className="w-full border border-[#009689] text-[#009689] hover:bg-[#f0fdf9] font-medium py-3 rounded-[10px] transition-colors flex items-center justify-center gap-2"
-          >
-            {apiLoading ? (
-              <>
-                <Loader2 className="animate-spin" size={16} />
-                Đang kết nối...
-              </>
-            ) : (
-              <>
-                <Wifi size={16} />
-                Đăng ký qua API
-              </>
+              "Đăng ký"
             )}
           </button>
         </form>

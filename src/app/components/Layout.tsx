@@ -112,7 +112,7 @@ export function AppLayout() {
             )}
           </div>
           {!isSidebarCollapsed && (
-            <div>
+            <div className="flex-1 min-w-0">
               <h1 className="font-bold text-lg leading-tight tracking-wide">
                 ACMMS
               </h1>
@@ -121,6 +121,24 @@ export function AppLayout() {
               </p>
             </div>
           )}
+        </div>
+
+        {/* Collapse Toggle */}
+        <div className="flex justify-center py-2 px-3 shrink-0">
+          <button
+            onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+            className="w-full flex items-center justify-center gap-2 py-1.5 bg-[#ffffff1a] hover:bg-[#ffffff33] rounded-lg text-white transition-all text-xs font-medium"
+            title={isSidebarCollapsed ? "Mở rộng" : "Thu gọn"}
+          >
+            {isSidebarCollapsed ? (
+              <ChevronRight className="w-4 h-4" />
+            ) : (
+              <>
+                <ChevronLeft className="w-4 h-4" />
+                <span>Thu gọn</span>
+              </>
+            )}
+          </button>
         </div>
 
         {/* Navigation */}
@@ -199,21 +217,6 @@ export function AppLayout() {
           </Popover.Root>
         </div>
       </aside>
-
-      {/* Toggle Sidebar Button */}
-      <button
-        onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-        className="absolute top-4 z-30 w-10 h-10 bg-white rounded-full shadow-lg flex items-center justify-center text-[#009689] hover:bg-[#f8fafc] transition-all border border-slate-200"
-        style={{
-          left: isSidebarCollapsed ? "calc(80px - 20px)" : "calc(260px - 20px)",
-        }}
-      >
-        {isSidebarCollapsed ? (
-          <ChevronRight className="w-5 h-5" />
-        ) : (
-          <ChevronLeft className="w-5 h-5" />
-        )}
-      </button>
 
       {/* Logout Confirmation Dialog */}
       <AlertDialog.Root
