@@ -83,8 +83,8 @@ const STATUS_CONFIG: Record<
     color: "bg-[#fef3c7] text-[#92400e]",
     icon: Clock,
   },
-  ASSIGNED_FOR_DIAGNOSIS: {
-    label: "Đã gửi chuyên gia",
+  ASSIGNED: {
+    label: "Đã giao chuyên gia",
     color: "bg-[#dbeafe] text-[#1e40af]",
     icon: Send,
   },
@@ -363,7 +363,7 @@ function ListView() {
         >
           <option value="all">Tất cả trạng thái</option>
           <option value="SENT_TO_OWNER">Chờ xử lý</option>
-          <option value="ASSIGNED_FOR_DIAGNOSIS">Đã gửi chuyên gia</option>
+          <option value="ASSIGNED">Đã giao chuyên gia</option>
           <option value="DIAGNOSED">Đã chẩn đoán</option>
           <option value="CLOSED">Đã đóng</option>
         </select>

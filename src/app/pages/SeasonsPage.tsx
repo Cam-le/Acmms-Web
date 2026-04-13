@@ -339,29 +339,28 @@ function mapApiSeasonToUi(
   s: SeasonResponse,
   farms: FarmResponse[],
   details: SeasonDetailResponse[],
-  beds: BedResponse[] = [],
 ): Season {
   const farm = farms.find((f) => f.farmId === s.farmId);
   const seasonDetails = details.filter((d) => d.seasonId === s.seasonId);
 
-  const plots: PlotAssignment[] = seasonDetails.map((d) => {
-    const bed = beds.find((b) => b.bedId === d.bedId);
-    return {
-      plotId: d.seasonDetailId,
-      plotName: d.bedName ?? d.bedId ?? "—",
-      area: bed?.plotName ?? "Không rõ khu",
-      crop: (d.cropName ?? "Bắp Cải Trắng") as CropType,
-      sowingDate: d.startDate ?? "",
-      harvestDate: d.seasonExpectedHarvestDate ?? "",
-      plannedQuantity: d.cropQuantity ?? 0,
-      actualPlanted: d.cropQuantity ?? 0,
-      harvestQuantity: d.totalHarvestYield ?? 0,
-      status: "Chưa trồng" as any,
-      _seasonDetailId: d.seasonDetailId,
-      _bedId: d.bedId,
-      _cropId: d.cropId,
-    } as any as PlotAssignment;
-  });
+  const plots: PlotAssignment[] = seasonDetails.map(
+    (d) =>
+      ({
+        plotId: d.seasonDetailId,
+        plotName: d.bedName ?? d.bedId ?? "—",
+        area: d.bedName ?? "Không rõ khu",
+        crop: (d.cropName ?? "Bắp Cải Trắng") as CropType,
+        sowingDate: d.startDate ?? "",
+        harvestDate: d.seasonExpectedHarvestDate ?? "",
+        plannedQuantity: d.cropQuantity ?? 0,
+        actualPlanted: d.cropQuantity ?? 0,
+        harvestQuantity: d.totalHarvestYield ?? 0,
+        status: "Chưa trồng" as any,
+        _seasonDetailId: d.seasonDetailId,
+        _bedId: d.bedId,
+        _cropId: d.cropId,
+      }) as any as PlotAssignment,
+  );
 
   return {
     id: s.seasonId ?? "",
@@ -454,9 +453,7 @@ export function SeasonsPage() {
       setAllPlots(safePlots);
       setCrops(safeCrops.length > 0 ? safeCrops : mockCropsForFallback);
       setSeasons(
-        safeSeasons.map((s) =>
-          mapApiSeasonToUi(s, safeFarms, safeDetails, safeBeds),
-        ),
+        safeSeasons.map((s) => mapApiSeasonToUi(s, safeFarms, safeDetails)),
       );
       setIsUsingMock(false);
     } catch {
@@ -692,9 +689,7 @@ export function SeasonsPage() {
     Promise.all([api.getSeason(seasonId), api.getSeasonsDetails()])
       .then(([apiSeason, apiDetails]) => {
         const safeDetails = Array.isArray(apiDetails) ? apiDetails : [];
-        setSelectedSeason(
-          mapApiSeasonToUi(apiSeason, farms, safeDetails, beds),
-        );
+        setSelectedSeason(mapApiSeasonToUi(apiSeason, farms, safeDetails));
       })
       .catch(() => {
         setSelectedSeason(seasons.find((s) => s.id === seasonId) ?? null);
@@ -778,7 +773,9 @@ export function SeasonsPage() {
             />
           </div>
           <div className="flex gap-2">
-            {(["all", "Đang hoạt động", "Đã kết thúc"] as const).map((s) => (
+            {(
+              ["all", "Đang hoạt động", "Đã kết thúc", "Sắp diễn ra"] as const
+            ).map((s) => (
               <button
                 key={s}
                 onClick={() => setFilterStatus(s)}
@@ -1637,7 +1634,14 @@ function CreateSeasonView({
               Đang dùng dữ liệu luống mẫu — kết nối API để xem luống thực tế
             </div>
           )}
-
+          <p className="text-xs text-[#62748e] mb-4">
+            Tên luống theo quy ước{" "}
+            <span className="font-mono font-semibold text-[#009689]">
+              [Khu]-[NN]
+            </span>{" "}
+            — ví dụ: <span className="font-mono">A-01</span>,{" "}
+            <span className="font-mono">B-12</span>
+          </p>
           <div className="space-y-3">
             {availableBeds.map((plot) => {
               const isSelected = selectedPlots.includes(plot.id);
