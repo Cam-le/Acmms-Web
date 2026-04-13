@@ -690,8 +690,15 @@ export function TasksPage() {
     setShowInlineNewTask(false);
   };
 
-  const checkWorkerConflict = async (workerId: string) => {
-    if (!workerId || !newAssignment.date) {
+  const checkWorkerConflict = async (
+    workerId: string,
+    date: string,
+    sh: string,
+    sm: string,
+    eh: string,
+    em: string,
+  ) => {
+    if (!workerId || !date) {
       setWorkerConflict(null);
       return;
     }
@@ -702,12 +709,8 @@ export function TasksPage() {
         setWorkerConflict({ hasConflict: false, conflictingTask: "" });
         return;
       }
-      const newStart = new Date(
-        `${newAssignment.date}T${newAssignment.startHour}:${newAssignment.startMinute}:00`,
-      ).getTime();
-      const newEnd = new Date(
-        `${newAssignment.date}T${newAssignment.endHour}:${newAssignment.endMinute}:00`,
-      ).getTime();
+      const newStart = new Date(`${date}T${sh}:${sm}:00`).getTime();
+      const newEnd = new Date(`${date}T${eh}:${em}:00`).getTime();
       const conflict = details.find((d) => {
         if (!d.startDate || !d.endDate) return false;
         const s = new Date(d.startDate).getTime();
@@ -1447,12 +1450,19 @@ export function TasksPage() {
                     <input
                       type="date"
                       value={newAssignment.date}
-                      onChange={(e) =>
-                        setNewAssignment((p) => ({
-                          ...p,
-                          date: e.target.value,
-                        }))
-                      }
+                      onChange={(e) => {
+                        const d = e.target.value;
+                        setNewAssignment((p) => ({ ...p, date: d }));
+                        if (assignmentTarget.workerId)
+                          checkWorkerConflict(
+                            assignmentTarget.workerId,
+                            d,
+                            newAssignment.startHour,
+                            newAssignment.startMinute,
+                            newAssignment.endHour,
+                            newAssignment.endMinute,
+                          );
+                      }}
                       className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689]"
                     />
                   </div>
@@ -1479,15 +1489,24 @@ export function TasksPage() {
                         startMinute={newAssignment.startMinute}
                         endHour={newAssignment.endHour}
                         endMinute={newAssignment.endMinute}
-                        onChange={(sh, sm, eh, em) =>
+                        onChange={(sh, sm, eh, em) => {
                           setNewAssignment((p) => ({
                             ...p,
                             startHour: sh,
                             startMinute: sm,
                             endHour: eh,
                             endMinute: em,
-                          }))
-                        }
+                          }));
+                          if (assignmentTarget.workerId)
+                            checkWorkerConflict(
+                              assignmentTarget.workerId,
+                              newAssignment.date,
+                              sh,
+                              sm,
+                              eh,
+                              em,
+                            );
+                        }}
                         onClose={() => setIsTimePickerOpen(false)}
                       />
                     )}
@@ -1686,7 +1705,15 @@ export function TasksPage() {
                                   workerId: newId,
                                 }));
                                 setWorkerConflict(null);
-                                if (newId) checkWorkerConflict(newId);
+                                if (newId)
+                                  checkWorkerConflict(
+                                    newId,
+                                    newAssignment.date,
+                                    newAssignment.startHour,
+                                    newAssignment.startMinute,
+                                    newAssignment.endHour,
+                                    newAssignment.endMinute,
+                                  );
                               }}
                               title={s.fullname}
                               className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border transition-all"
