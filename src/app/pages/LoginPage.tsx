@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router";
-import { Eye, EyeOff, Loader2, Wifi, WifiOff } from "lucide-react";
+import { Eye, EyeOff, Loader2, Wifi } from "lucide-react";
 import {
   apiLogin,
   decodeJwt,
@@ -8,24 +8,6 @@ import {
   dashboardByRole,
   ALLOWED_WEB_ROLES,
 } from "../../api/auth";
-import { mockAccounts } from "../../data/mockAccounts";
-
-type Mode = "mock" | "api";
-
-// ── Mock session helper (kept separate from API session) ─────────────────────
-function saveMockSession(
-  userId: string,
-  email: string,
-  roleName?: string,
-  fullname?: string,
-) {
-  localStorage.setItem("isAuthenticated", "true");
-  localStorage.setItem("userId", userId);
-  localStorage.setItem("userEmail", email);
-  localStorage.setItem("authMode", "mock" satisfies Mode);
-  if (roleName) localStorage.setItem("userRole", roleName);
-  if (fullname) localStorage.setItem("userName", fullname);
-}
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -33,12 +15,9 @@ export function LoginPage() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [apiLoading, setApiLoading] = useState(false);
   const [error, setError] = useState("");
-  const [apiSuccess, setApiSuccess] = useState(false);
 
-  // ── Mock login (default / demo path) ─────────────────────────────────────
-  const handleMockLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
 
@@ -49,56 +28,25 @@ export function LoginPage() {
 
     setLoading(true);
 
-    const found = mockAccounts.find(
-      (a) => a.email === email && a.password === password,
-    );
-
-    if (!found) {
-      // Fallback guest session — default to Owner view
-      saveMockSession("mock-guest", email, "Owner", email);
-    } else {
-      saveMockSession(
-        found.userId,
-        found.email,
-        found.roleName,
-        found.fullname,
-      );
-    }
-
-    setLoading(false);
-    navigate(dashboardByRole(found?.roleName));
-  };
-
-  // ── API login (real backend) ──────────────────────────────────────────────
-  const handleApiLogin = async () => {
-    setError("");
-    setApiSuccess(false);
-
-    if (!email || !password) {
-      setError("Vui lòng nhập email và mật khẩu trước");
-      return;
-    }
-
-    setApiLoading(true);
-
     try {
-      const res = await apiLogin({ email, password });
+      const res = await apiLogin({
+        email: email.trim(),
+        password: password.trim(),
+      });
 
       if (!res.success || !res.data?.token) {
         setError(
-          res.message || "Đăng nhập thất bại. Dùng tài khoản demo để tiếp tục.",
+          res.message || "Đăng nhập thất bại. Vui lòng kiểm tra lại thông tin.",
         );
         return;
       }
 
-      // Decode JWT to get role + userId without an extra round-trip
       const payload = decodeJwt(res.data.token);
       if (!payload) {
         setError("Token không hợp lệ. Vui lòng thử lại.");
         return;
       }
 
-      // Block Worker accounts from the web app
       if (
         !ALLOWED_WEB_ROLES.includes(
           payload.role as (typeof ALLOWED_WEB_ROLES)[number],
@@ -110,15 +58,14 @@ export function LoginPage() {
         return;
       }
 
-      // Persist token + decoded fields
       saveApiSession(res.data.token, payload);
-
-      setApiSuccess(true);
       navigate(dashboardByRole(payload.role));
     } catch {
-      setError("Không thể kết nối máy chủ. Dùng tài khoản demo để tiếp tục.");
+      setError(
+        "Không thể kết nối máy chủ. Vui lòng kiểm tra kết nối và thử lại.",
+      );
     } finally {
-      setApiLoading(false);
+      setLoading(false);
     }
   };
 
@@ -146,20 +93,7 @@ export function LoginPage() {
           <p className="text-[#64748b] text-sm">Đăng nhập để tiếp tục</p>
         </div>
 
-        {/* Demo accounts hint */}
-        {/* <div className="mb-5 p-3 bg-[#f0fdf9] border border-[#99f6e4] rounded-xl text-xs text-[#0f766e]">
-          <p className="font-semibold mb-1.5">Tài khoản demo:</p>
-          <p className="mb-0.5">
-            <span className="font-medium">Chủ nông trại:</span> owner@gmail.com
-            / 123456
-          </p>
-          <p>
-            <span className="font-medium">Chuyên gia:</span>{" "}
-            specialist@gmail.com / 123456
-          </p>
-        </div> */}
-
-        <form onSubmit={handleMockLogin} className="space-y-4">
+        <form onSubmit={handleLogin} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-[#45556c] mb-1">
               Email
@@ -167,10 +101,10 @@ export function LoginPage() {
             <input
               type="text"
               value={email}
-              onChange={(e) => setEmail(e.target.value.trim())}
+              onChange={(e) => setEmail(e.target.value)}
               className="w-full px-4 py-3 rounded-[10px] border border-[#cbd5e1] focus:outline-none focus:ring-2 focus:ring-[#009689] focus:border-transparent transition-all text-[#334155]"
               placeholder="admin@farm.com"
-              disabled={loading || apiLoading}
+              disabled={loading}
             />
           </div>
 
@@ -182,10 +116,10 @@ export function LoginPage() {
               <input
                 type={showPassword ? "text" : "password"}
                 value={password}
-                onChange={(e) => setPassword(e.target.value.trim())}
+                onChange={(e) => setPassword(e.target.value)}
                 className="w-full px-4 py-3 rounded-[10px] border border-[#cbd5e1] focus:outline-none focus:ring-2 focus:ring-[#009689] focus:border-transparent transition-all text-[#334155]"
                 placeholder="••••••••"
-                disabled={loading || apiLoading}
+                disabled={loading}
               />
               <button
                 type="button"
@@ -203,44 +137,20 @@ export function LoginPage() {
             </div>
           )}
 
-          {apiSuccess && (
-            <div className="p-3 bg-green-50 text-green-700 text-sm rounded-lg flex items-center gap-2">
-              <Wifi size={16} /> Kết nối API thành công!
-            </div>
-          )}
-
-          {/* Primary: mock/demo login */}
           <button
             type="submit"
-            disabled={loading || apiLoading}
-            className="w-full bg-[#009689] hover:bg-[#0f766e] text-white font-medium py-3 rounded-[10px] transition-colors flex items-center justify-center"
+            disabled={loading}
+            className="w-full bg-[#009689] hover:bg-[#0f766e] text-white font-medium py-3 rounded-[10px] transition-colors flex items-center justify-center gap-2"
           >
             {loading ? (
               <>
-                <Loader2 className="animate-spin mr-2" size={18} />
+                <Loader2 className="animate-spin" size={18} />
                 Đang đăng nhập...
-              </>
-            ) : (
-              "Đăng nhập (Demo)"
-            )}
-          </button>
-
-          {/* Secondary: real API login */}
-          <button
-            type="button"
-            onClick={handleApiLogin}
-            disabled={loading || apiLoading}
-            className="w-full border border-[#009689] text-[#009689] hover:bg-[#f0fdf9] font-medium py-3 rounded-[10px] transition-colors flex items-center justify-center gap-2"
-          >
-            {apiLoading ? (
-              <>
-                <Loader2 className="animate-spin" size={16} />
-                Đang kết nối...
               </>
             ) : (
               <>
                 <Wifi size={16} />
-                Kết nối API
+                Đăng nhập
               </>
             )}
           </button>
