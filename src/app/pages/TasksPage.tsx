@@ -37,50 +37,29 @@ function normaliseTaskStatus(s: string): "active" | "inactive" {
   return s?.toLowerCase() === "inactive" ? "inactive" : "active";
 }
 
-/** Map BedResponse.bedStatus to BedStatus display key */
-function toBedStatus(s: string): BedStatus {
-  const l = s?.toLowerCase();
-  if (l === "in-use" || l === "inuse" || l === "active") return "in-use";
-  if (l === "resting" || l === "inactive") return "resting";
-  return "available";
+/**
+ * Extract HH:MM directly from an ISO datetime string returned by the backend.
+ * The backend always stores times as UTC (Z-suffixed) but the values it saves
+ * are the literal local times the user entered — so we read the raw digits
+ * instead of letting new Date() shift them by the browser timezone offset.
+ * "2026-04-13T07:00:00.000Z" → "07:00"
+ */
+function isoTime(iso: string): string {
+  if (!iso) return "";
+  const t = iso.indexOf("T");
+  if (t === -1) return "";
+  return iso.slice(t + 1, t + 6);
 }
 
-// ─── Bed status config ────────────────────────────────────────────────────────
-
-type BedStatus = "available" | "in-use" | "resting";
-
-const BED_STATUS_CONFIG: Record<
-  BedStatus,
-  {
-    label: string;
-    dot: string;
-    chipBg: string;
-    chipText: string;
-    chipBorder: string;
-  }
-> = {
-  available: {
-    label: "Sẵn sàng",
-    dot: "#10b981",
-    chipBg: "#f8fafc",
-    chipText: "#475569",
-    chipBorder: "#e2e8f0",
-  },
-  "in-use": {
-    label: "Đang sử dụng",
-    dot: "#f59e0b",
-    chipBg: "#fefce8",
-    chipText: "#92400e",
-    chipBorder: "#fde68a",
-  },
-  resting: {
-    label: "Đang nghỉ",
-    dot: "#94a3b8",
-    chipBg: "#f1f5f9",
-    chipText: "#94a3b8",
-    chipBorder: "#e2e8f0",
-  },
-};
+/**
+ * Extract DD/MM/YYYY directly from an ISO datetime string.
+ * "2026-04-13T07:00:00.000Z" → "13/04/2026"
+ */
+function isoDate(iso: string): string {
+  if (!iso) return "";
+  const [y, m, d] = iso.slice(0, 10).split("-");
+  return `${d}/${m}/${y}`;
+}
 
 const DAY_LABELS = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"];
 const HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0"));
@@ -384,12 +363,7 @@ function CalendarDayCard({
       {/* Task cards */}
       <div className="flex-1 p-1.5 space-y-1.5 overflow-y-auto">
         {visible.map((a) => {
-          const timeStr = a.startDate
-            ? new Date(a.startDate).toLocaleTimeString("vi-VN", {
-                hour: "2-digit",
-                minute: "2-digit",
-              })
-            : "";
+          const timeStr = isoTime(a.startDate);
           return (
             <button
               key={a.taskDetailId}
@@ -538,8 +512,8 @@ export function TasksPage() {
     plotIds: [],
   });
 
-  // Selected plot inside the assign modal (controls which beds are shown)
-  const [selectedPlotId, setSelectedPlotId] = useState("");
+  // Selected plots inside the assign modal (multi-select; controls which beds are shown)
+  const [selectedPlotIds, setSelectedPlotIds] = useState<string[]>([]);
 
   // ── Data loading ──────────────────────────────────────────────────────────
 
@@ -607,12 +581,12 @@ export function TasksPage() {
   const getAssignmentsForDay = (date: Date) =>
     taskDetails.filter((d) => {
       if (!d.startDate) return false;
-      const dt = new Date(d.startDate);
-      return (
-        dt.getDate() === date.getDate() &&
-        dt.getMonth() === date.getMonth() &&
-        dt.getFullYear() === date.getFullYear()
-      );
+      // Compare date portion directly from the ISO string to avoid UTC→local shift
+      const isoDay = d.startDate.slice(0, 10); // "YYYY-MM-DD"
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, "0");
+      const day = String(date.getDate()).padStart(2, "0");
+      return isoDay === `${y}-${m}-${day}`;
     });
 
   // ── Handlers ──────────────────────────────────────────────────────────────
@@ -709,8 +683,8 @@ export function TasksPage() {
         setWorkerConflict({ hasConflict: false, conflictingTask: "" });
         return;
       }
-      const newStart = new Date(`${date}T${sh}:${sm}:00`).getTime();
-      const newEnd = new Date(`${date}T${eh}:${em}:00`).getTime();
+      const newStart = new Date(`${date}T${sh}:${sm}:00.000`).getTime();
+      const newEnd = new Date(`${date}T${eh}:${em}:00.000`).getTime();
       const conflict = details.find((d) => {
         if (!d.startDate || !d.endDate) return false;
         const s = new Date(d.startDate).getTime();
@@ -742,9 +716,9 @@ export function TasksPage() {
     )
       return;
 
-    // Build ISO datetimes from date + time pickers
-    const startISO = `${newAssignment.date}T${newAssignment.startHour}:${newAssignment.startMinute}:00.000Z`;
-    const endISO = `${newAssignment.date}T${newAssignment.endHour}:${newAssignment.endMinute}:00.000Z`;
+    // Build ISO datetimes from date + time pickers (no Z — local time)
+    const startISO = `${newAssignment.date}T${newAssignment.startHour}:${newAssignment.startMinute}:00.000`;
+    const endISO = `${newAssignment.date}T${newAssignment.endHour}:${newAssignment.endMinute}:00.000`;
 
     // Derive plotIds from selected beds
     const plotIds = Array.from(
@@ -755,17 +729,26 @@ export function TasksPage() {
       ),
     );
 
+    // Derive farmId from the selected season via allPlots
+    const selectedSeason = seasons.find(
+      (s) => s.seasonId === newAssignment.seasonId,
+    );
+    const farmId =
+      allPlots.find((p) => p.farmId === selectedSeason?.farmId)?.farmId ?? "";
+
     setIsSaving(true);
     try {
       await api.createTaskDetail({
         taskId: newAssignment.taskId,
         seasonId: newAssignment.seasonId,
+        farmId,
         assignedToWorkerIds: [assignmentTarget.workerId],
         bedIds: assignmentTarget.bedIds,
         plotIds,
         startDate: startISO,
         endDate: endISO,
         notes: newAssignment.notes,
+        status: "Active",
       });
       await loadAllData();
     } catch (err) {
@@ -1217,7 +1200,7 @@ export function TasksPage() {
             setAssignmentTarget({ workerId: "", bedIds: [], plotIds: [] });
             setShowInlineNewTask(false);
             setInlineNewTask({ name: "", type: "", description: "" });
-            setSelectedPlotId("");
+            setSelectedPlotIds([]);
             setWorkerConflict(null);
           }
         }}
@@ -1382,7 +1365,7 @@ export function TasksPage() {
                       bedIds: [],
                       plotIds: [],
                     }));
-                    setSelectedPlotId("");
+                    setSelectedPlotIds([]);
                   }}
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#009689]"
                 >
@@ -1404,31 +1387,45 @@ export function TasksPage() {
                       (s) => s.seasonId === newAssignment.seasonId,
                     );
                     if (!season) return null;
+                    const farmName =
+                      allPlots.find((p) => p.farmId === season.farmId)
+                        ?.farmName ?? null;
                     return (
-                      <div className="mt-2 flex items-center justify-between px-3 py-2 bg-[#f8fafc] rounded-lg border border-[#e2e8f0] text-xs">
-                        <span className="text-[#64748b]">
-                          {season.seasonStartDate
-                            .split("-")
-                            .reverse()
-                            .join("/")}{" "}
-                          –{" "}
-                          {season.seasonEndDate.split("-").reverse().join("/")}
-                        </span>
-                        <span
-                          className={`font-medium px-2 py-0.5 rounded-full ${
-                            season.status === "Active"
-                              ? "bg-[#d1fae5] text-[#065f46]"
+                      <div className="mt-2 space-y-1.5">
+                        <div className="flex items-center justify-between px-3 py-2 bg-[#f8fafc] rounded-lg border border-[#e2e8f0] text-xs">
+                          <span className="text-[#64748b]">
+                            {season.seasonStartDate
+                              .split("-")
+                              .reverse()
+                              .join("/")}{" "}
+                            –{" "}
+                            {season.seasonEndDate
+                              .split("-")
+                              .reverse()
+                              .join("/")}
+                          </span>
+                          <span
+                            className={`font-medium px-2 py-0.5 rounded-full ${
+                              season.status === "Active"
+                                ? "bg-[#d1fae5] text-[#065f46]"
+                                : season.status === "Completed"
+                                  ? "bg-[#f1f5f9] text-[#64748b]"
+                                  : "bg-[#fef3c7] text-[#92400e]"
+                            }`}
+                          >
+                            {season.status === "Active"
+                              ? "Đang hoạt động"
                               : season.status === "Completed"
-                                ? "bg-[#f1f5f9] text-[#64748b]"
-                                : "bg-[#fef3c7] text-[#92400e]"
-                          }`}
-                        >
-                          {season.status === "Active"
-                            ? "Đang hoạt động"
-                            : season.status === "Completed"
-                              ? "Đã kết thúc"
-                              : "Sắp diễn ra"}
-                        </span>
+                                ? "Đã kết thúc"
+                                : "Sắp diễn ra"}
+                          </span>
+                        </div>
+                        {farmName && (
+                          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[#f0fdfa] rounded-lg border border-[#ccfbf1] text-xs text-[#0f766e]">
+                            <MapPin className="w-3 h-3 shrink-0" />
+                            <span className="font-medium">{farmName}</span>
+                          </div>
+                        )}
                       </div>
                     );
                   })()}
@@ -1524,152 +1521,199 @@ export function TasksPage() {
                 </h3>
 
                 <div className="space-y-4">
-                  {/* Vuông selector */}
+                  {/* Vuông — multi-select chips */}
                   <div>
                     <label className="block text-xs font-semibold text-[#475569] uppercase tracking-wide mb-1.5">
                       Vuông <span className="text-red-500">*</span>
+                      {selectedPlotIds.length > 0 && (
+                        <span className="ml-2 normal-case font-semibold text-[#009689]">
+                          ({selectedPlotIds.length} đã chọn)
+                        </span>
+                      )}
                     </label>
                     {!newAssignment.seasonId ? (
-                      <select
-                        disabled
-                        className="w-full px-3 py-2 border border-[#e2e8f0] rounded-lg text-sm bg-[#f8fafc] text-[#cbd5e1] cursor-not-allowed"
-                      >
-                        <option>-- Chọn mùa vụ trước --</option>
-                      </select>
+                      <div className="px-3 py-2 bg-[#f8fafc] border border-dashed border-[#e2e8f0] rounded-lg text-xs text-[#94a3b8] italic">
+                        Chọn mùa vụ trước
+                      </div>
                     ) : seasonPlotsForAssign.length === 0 ? (
                       <div className="px-3 py-2 bg-[#f8fafc] border border-dashed border-[#e2e8f0] rounded-lg text-xs text-[#94a3b8] italic">
                         Mùa vụ này chưa có vuông nào
                       </div>
                     ) : (
-                      <select
-                        value={selectedPlotId}
-                        onChange={(e) => {
-                          setSelectedPlotId(e.target.value);
-                          // Clear beds that don't belong to the new plot
-                          const newPlotId = e.target.value;
-                          const bedsInNewPlot = new Set(
-                            seasonBedsForAssign
-                              .filter((b) => b.plotId === newPlotId)
-                              .map((b) => b.bedId),
+                      <div className="flex flex-wrap gap-1.5">
+                        {seasonPlotsForAssign.map((plot) => {
+                          const isSel = selectedPlotIds.includes(plot.plotId);
+                          return (
+                            <button
+                              key={plot.plotId}
+                              onClick={() => {
+                                const next = isSel
+                                  ? selectedPlotIds.filter(
+                                      (id) => id !== plot.plotId,
+                                    )
+                                  : [...selectedPlotIds, plot.plotId];
+                                setSelectedPlotIds(next);
+                                // Drop beds that no longer belong to any selected plot
+                                const keepBeds = new Set(
+                                  seasonBedsForAssign
+                                    .filter((b) => next.includes(b.plotId))
+                                    .map((b) => b.bedId),
+                                );
+                                setAssignmentTarget((p) => ({
+                                  ...p,
+                                  bedIds: p.bedIds.filter((id) =>
+                                    keepBeds.has(id),
+                                  ),
+                                }));
+                              }}
+                              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all"
+                              style={
+                                isSel
+                                  ? {
+                                      background: "#009689",
+                                      color: "#fff",
+                                      borderColor: "#009689",
+                                    }
+                                  : {
+                                      background: "#f8fafc",
+                                      color: "#475569",
+                                      borderColor: "#e2e8f0",
+                                    }
+                              }
+                            >
+                              {plot.plotName}
+                              {isSel && (
+                                <CheckCircle2 className="w-3 h-3 shrink-0" />
+                              )}
+                            </button>
                           );
-                          setAssignmentTarget((p) => ({
-                            ...p,
-                            bedIds: p.bedIds.filter((id) =>
-                              bedsInNewPlot.has(id),
-                            ),
-                          }));
-                        }}
-                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                      >
-                        <option value="">-- Chọn vuông --</option>
-                        {seasonPlotsForAssign.map((p) => (
-                          <option key={p.plotId} value={p.plotId}>
-                            {p.plotName}
-                          </option>
-                        ))}
-                      </select>
+                        })}
+                      </div>
                     )}
                   </div>
 
-                  {/* Luống — only shown after a plot is selected */}
-                  {selectedPlotId &&
+                  {/* Luống — shown per selected plot, grouped */}
+                  {selectedPlotIds.length > 0 &&
                     (() => {
-                      const plotBeds = seasonBedsForAssign
-                        .filter((b) => b.plotId === selectedPlotId)
-                        .sort((a, b) => a.bedName.localeCompare(b.bedName));
-                      const selectedCount = plotBeds.filter((b) =>
-                        assignmentTarget.bedIds.includes(b.bedId),
-                      ).length;
-                      const allSelected =
-                        plotBeds.length > 0 &&
-                        plotBeds.every((b) =>
-                          assignmentTarget.bedIds.includes(b.bedId),
-                        );
+                      const groups = selectedPlotIds
+                        .map((plotId) => {
+                          const plot = seasonPlotsForAssign.find(
+                            (p) => p.plotId === plotId,
+                          );
+                          const plotBeds = seasonBedsForAssign
+                            .filter((b) => b.plotId === plotId)
+                            .sort((a, b) => a.bedName.localeCompare(b.bedName));
+                          return { plot, plotBeds };
+                        })
+                        .filter((g) => g.plot && g.plotBeds.length > 0);
+
+                      if (groups.length === 0) return null;
+
+                      const totalSelected = assignmentTarget.bedIds.length;
+
                       return (
-                        <div>
-                          <div className="flex items-center justify-between mb-1.5">
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between">
                             <label className="text-xs font-semibold text-[#475569] uppercase tracking-wide">
                               Luống <span className="text-red-500">*</span>
-                              {selectedCount > 0 && (
+                              {totalSelected > 0 && (
                                 <span className="ml-2 normal-case font-semibold text-[#009689]">
-                                  ({selectedCount} đã chọn)
+                                  ({totalSelected} đã chọn)
                                 </span>
                               )}
                             </label>
-                            <button
-                              onClick={() => {
-                                const ids = plotBeds.map((b) => b.bedId);
-                                setAssignmentTarget((p) => ({
-                                  ...p,
-                                  bedIds: allSelected
-                                    ? p.bedIds.filter((id) => !ids.includes(id))
-                                    : [...new Set([...p.bedIds, ...ids])],
-                                }));
-                              }}
-                              className="text-[11px] font-medium text-[#009689] hover:underline"
-                            >
-                              {allSelected
-                                ? "Bỏ chọn tất cả"
-                                : `Chọn tất cả (${plotBeds.length})`}
-                            </button>
                           </div>
-                          <div className="flex flex-wrap gap-1.5">
-                            {plotBeds.map((bed) => {
-                              const bedStatus = toBedStatus(bed.bedStatus);
-                              const cfg = BED_STATUS_CONFIG[bedStatus];
-                              const isSel = assignmentTarget.bedIds.includes(
-                                bed.bedId,
-                              );
-                              return (
-                                <button
-                                  key={bed.bedId}
-                                  onClick={() =>
-                                    setAssignmentTarget((p) => ({
-                                      ...p,
-                                      bedIds: isSel
-                                        ? p.bedIds.filter(
-                                            (id) => id !== bed.bedId,
-                                          )
-                                        : [...p.bedIds, bed.bedId],
-                                    }))
-                                  }
-                                  title={`${bed.bedName} — ${cfg.label}`}
-                                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all"
-                                  style={
-                                    isSel
-                                      ? {
-                                          background: "#009689",
-                                          color: "#fff",
-                                          borderColor: "#009689",
-                                        }
-                                      : {
-                                          background: cfg.chipBg,
-                                          color: cfg.chipText,
-                                          borderColor: cfg.chipBorder,
-                                        }
-                                  }
-                                >
-                                  <span
-                                    className="w-1.5 h-1.5 rounded-full shrink-0"
-                                    style={{
-                                      background: isSel
-                                        ? "rgba(255,255,255,0.7)"
-                                        : cfg.dot,
+                          {groups.map(({ plot, plotBeds }) => {
+                            const allSel = plotBeds.every((b) =>
+                              assignmentTarget.bedIds.includes(b.bedId),
+                            );
+                            const plotSelectedCount = plotBeds.filter((b) =>
+                              assignmentTarget.bedIds.includes(b.bedId),
+                            ).length;
+                            return (
+                              <div
+                                key={plot!.plotId}
+                                className="rounded-lg border border-[#e2e8f0] bg-[#f8fafc] p-3"
+                              >
+                                <div className="flex items-center justify-between mb-2">
+                                  <span className="text-[11px] font-semibold text-[#475569]">
+                                    {plot!.plotName}
+                                    {plotSelectedCount > 0 && (
+                                      <span className="ml-1.5 text-[#009689]">
+                                        ({plotSelectedCount})
+                                      </span>
+                                    )}
+                                  </span>
+                                  <button
+                                    onClick={() => {
+                                      const ids = plotBeds.map((b) => b.bedId);
+                                      setAssignmentTarget((p) => ({
+                                        ...p,
+                                        bedIds: allSel
+                                          ? p.bedIds.filter(
+                                              (id) => !ids.includes(id),
+                                            )
+                                          : [...new Set([...p.bedIds, ...ids])],
+                                      }));
                                     }}
-                                  />
-                                  {bed.bedName}
-                                  {isSel && (
-                                    <CheckCircle2 className="w-3 h-3 shrink-0" />
-                                  )}
-                                </button>
-                              );
-                            })}
-                          </div>
+                                    className="text-[11px] font-medium text-[#009689] hover:underline"
+                                  >
+                                    {allSel
+                                      ? "Bỏ chọn tất cả"
+                                      : `Chọn tất cả (${plotBeds.length})`}
+                                  </button>
+                                </div>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {plotBeds.map((bed) => {
+                                    const isSel =
+                                      assignmentTarget.bedIds.includes(
+                                        bed.bedId,
+                                      );
+                                    return (
+                                      <button
+                                        key={bed.bedId}
+                                        onClick={() =>
+                                          setAssignmentTarget((p) => ({
+                                            ...p,
+                                            bedIds: isSel
+                                              ? p.bedIds.filter(
+                                                  (id) => id !== bed.bedId,
+                                                )
+                                              : [...p.bedIds, bed.bedId],
+                                          }))
+                                        }
+                                        title={bed.bedName}
+                                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all"
+                                        style={
+                                          isSel
+                                            ? {
+                                                background: "#009689",
+                                                color: "#fff",
+                                                borderColor: "#009689",
+                                              }
+                                            : {
+                                                background: "#fff",
+                                                color: "#475569",
+                                                borderColor: "#e2e8f0",
+                                              }
+                                        }
+                                      >
+                                        {bed.bedName}
+                                        {isSel && (
+                                          <CheckCircle2 className="w-3 h-3 shrink-0" />
+                                        )}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       );
                     })()}
                   {newAssignment.seasonId &&
-                    !selectedPlotId &&
+                    selectedPlotIds.length === 0 &&
                     seasonPlotsForAssign.length > 0 && (
                       <div className="px-3 py-2 bg-[#f8fafc] border border-dashed border-[#e2e8f0] rounded-lg text-xs text-[#94a3b8] italic">
                         Chọn vuông để xem danh sách luống
@@ -1834,7 +1878,7 @@ export function TasksPage() {
                     bedIds: [],
                     plotIds: [],
                   });
-                  setSelectedPlotId("");
+                  setSelectedPlotIds([]);
                 }}
                 className="flex-1 px-4 py-2 rounded-lg text-sm font-medium text-slate-700 border border-[#e2e8f0] hover:bg-slate-50 transition-colors"
               >
@@ -1914,10 +1958,8 @@ export function TasksPage() {
                     (id) => allBeds.find((b) => b.bedId === id)?.bedName ?? id,
                   )
                   .join(", ");
-                const startDt = new Date(selectedDetail.startDate);
-                const endDt = new Date(selectedDetail.endDate);
-                const displayDate = startDt.toLocaleDateString("vi-VN");
-                const timeStr = `${startDt.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })} – ${endDt.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}`;
+                const displayDate = isoDate(selectedDetail.startDate);
+                const timeStr = `${isoTime(selectedDetail.startDate)} – ${isoTime(selectedDetail.endDate)}`;
                 return (
                   <div className="space-y-4">
                     {/* Task header */}

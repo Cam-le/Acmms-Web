@@ -341,12 +341,14 @@ export interface TaskDetailResponse {
 export interface TaskDetailRequest {
   taskId: string;
   seasonId: string;
+  farmId: string;
   assignedToWorkerIds: string[]; // always 1 element
   bedIds: string[];
   plotIds: string[];
   startDate: string; // ISO datetime
   endDate: string;
   notes?: string;
+  status?: string;
 }
 
 // ── Reports ───────────────────────────────────────────────────────────────────
