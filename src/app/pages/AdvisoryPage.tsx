@@ -155,6 +155,11 @@ const REPORT_TYPE_MAP: Record<
     icon: Stethoscope,
     color: "bg-[#fee2e2] text-[#991b1b]",
   },
+  OTHER: {
+    label: "Báo cáo khác",
+    icon: FileText,
+    color: "bg-[#f8fafc] text-[#475569]",
+  },
 };
 
 function getReportType(type: string) {
