@@ -1938,7 +1938,7 @@ function CreateBedModal({
         <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-md bg-white rounded-xl shadow-2xl p-6">
           <div className="flex items-center justify-between mb-6">
             <Dialog.Title className="text-xl font-semibold text-[#115e59]">
-              Thêm Luống Thủ Công
+              Thêm Luống
             </Dialog.Title>
             <Dialog.Close asChild>
               <button className="p-2 text-[#62748e] hover:bg-[#f8fafc] rounded-lg transition-colors">
@@ -1966,7 +1966,7 @@ function CreateBedModal({
               </label>
               <input
                 type="text"
-                placeholder="Ví dụ: west_01"
+                placeholder="Ví dụ: "
                 value={formData.bedName}
                 onChange={(e) => {
                   setFormData({ ...formData, bedName: e.target.value });

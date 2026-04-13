@@ -92,7 +92,7 @@ const getCompatibilityBadgeColor = (compat: string) => {
 };
 const compatibilityLabel = (compat: string) => {
   const c = compat.toLowerCase();
-  if (c === "high") return "Cao";
+  if (c === "good") return "Cao";
   if (c === "medium") return "Trung bình";
   return "Thấp";
 };
@@ -568,7 +568,7 @@ export function CropsPage() {
                             : "—",
                       },
                       {
-                        label: "Số lượng cây",
+                        label: "Số lượng giống",
                         value:
                           selectedCrop.cropQuantities != null
                             ? selectedCrop.cropQuantities.toString()
