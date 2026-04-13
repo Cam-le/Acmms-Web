@@ -193,6 +193,7 @@ export function CropsPage() {
             (cropData as CropEx).plantSpacing ||
             cropData.plantDistance.row ||
             undefined,
+          cropQuantities: (cropData as CropEx).cropQuantities || undefined,
           cropStatus:
             cropData.status === "Đang sử dụng" ? "Active" : "Inactive",
         });
@@ -225,6 +226,7 @@ export function CropsPage() {
             updatedCrop.plantSpacing ||
             updatedCrop.plantDistance.row ||
             undefined,
+          cropQuantities: updatedCrop.cropQuantities || undefined,
           cropStatus:
             updatedCrop.status === "Đang sử dụng" ? "Active" : "Inactive",
         });
@@ -1786,6 +1788,7 @@ function CropFormFields({
     image: string;
     description: string;
     plantSpacing: string;
+    cropQuantities: string;
   };
   setFormData: React.Dispatch<React.SetStateAction<typeof formData>>;
   errors?: CropFormErrors;
@@ -1862,20 +1865,40 @@ function CropFormFields({
           )}
         </div>
       </div>
-      <div>
-        <label className="block text-sm font-medium text-[#45556c] mb-1">
-          Trạng thái
-        </label>
-        <select
-          value={formData.status}
-          onChange={(e) =>
-            setFormData((p) => ({ ...p, status: e.target.value as CropStatus }))
-          }
-          className="w-full px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] bg-white text-[#334155]"
-        >
-          <option value="Đang sử dụng">Đang sử dụng</option>
-          <option value="Không sử dụng">Không sử dụng</option>
-        </select>
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-[#45556c] mb-1">
+            Số lượng giống
+          </label>
+          <input
+            type="number"
+            min={0}
+            value={formData.cropQuantities}
+            onChange={(e) =>
+              setFormData((p) => ({ ...p, cropQuantities: e.target.value }))
+            }
+            className="w-full px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155]"
+            placeholder="1000"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-[#45556c] mb-1">
+            Trạng thái
+          </label>
+          <select
+            value={formData.status}
+            onChange={(e) =>
+              setFormData((p) => ({
+                ...p,
+                status: e.target.value as CropStatus,
+              }))
+            }
+            className="w-full px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] bg-white text-[#334155]"
+          >
+            <option value="Đang sử dụng">Đang sử dụng</option>
+            <option value="Không sử dụng">Không sử dụng</option>
+          </select>
+        </div>
       </div>
       <div>
         <label className="block text-sm font-medium text-[#45556c] mb-1">
@@ -1903,6 +1926,7 @@ const defaultFormData = {
   image: "",
   description: "",
   plantSpacing: "",
+  cropQuantities: "",
 };
 
 function CreateCropModal({
@@ -1932,10 +1956,11 @@ function CreateCropModal({
       image: formData.image,
       description: formData.description.trim(),
       plantDistance: {
-        row: parseInt(formData.plantSpacing) || 0,
-        column: parseInt(formData.plantSpacing) || 0,
+        row: parseFloat(formData.plantSpacing) || 0,
+        column: parseFloat(formData.plantSpacing) || 0,
       },
-      plantSpacing: parseInt(formData.plantSpacing) || undefined,
+      plantSpacing: parseFloat(formData.plantSpacing) || undefined,
+      cropQuantities: parseInt(formData.cropQuantities) || undefined,
       compatibleSoils: [],
     });
     setFormData(defaultFormData);
@@ -2010,6 +2035,7 @@ function EditCropModal({
     image: string;
     description: string;
     plantSpacing: string;
+    cropQuantities: string;
   }>({
     name: crop.name,
     scientificName: crop.scientificName,
@@ -2018,6 +2044,7 @@ function EditCropModal({
     image: crop.image,
     description: crop.description,
     plantSpacing: (crop.plantSpacing ?? crop.plantDistance.row ?? 0).toString(),
+    cropQuantities: crop.cropQuantities?.toString() ?? "",
   });
   const [formErrors, setFormErrors] = useState<CropFormErrors>({});
   const handleSubmit = (e: React.FormEvent) => {
@@ -2034,10 +2061,11 @@ function EditCropModal({
       image: formData.image,
       description: formData.description.trim(),
       plantDistance: {
-        row: parseInt(formData.plantSpacing) || 0,
-        column: parseInt(formData.plantSpacing) || 0,
+        row: parseFloat(formData.plantSpacing) || 0,
+        column: parseFloat(formData.plantSpacing) || 0,
       },
-      plantSpacing: parseInt(formData.plantSpacing) || undefined,
+      plantSpacing: parseFloat(formData.plantSpacing) || undefined,
+      cropQuantities: parseInt(formData.cropQuantities) || undefined,
     });
   };
   return (
