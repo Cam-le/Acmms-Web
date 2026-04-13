@@ -289,7 +289,7 @@ function ListView() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("SENT_TO_OWNER");
   const [page, setPage] = useState(1);
 
   async function fetchReports() {
@@ -314,15 +314,20 @@ function ListView() {
     setPage(1);
   }, [search, statusFilter]);
 
-  const filtered = reports.filter((r) => {
-    const q = search.toLowerCase();
-    const matchSearch =
-      r.reportNo.toLowerCase().includes(q) ||
-      r.title.toLowerCase().includes(q) ||
-      r.creatorName.toLowerCase().includes(q);
-    const matchStatus = statusFilter === "all" || r.status === statusFilter;
-    return matchSearch && matchStatus;
-  });
+  const filtered = reports
+    .filter((r) => {
+      const q = search.toLowerCase();
+      const matchSearch =
+        r.reportNo.toLowerCase().includes(q) ||
+        r.title.toLowerCase().includes(q) ||
+        r.creatorName.toLowerCase().includes(q);
+      const matchStatus = statusFilter === "all" || r.status === statusFilter;
+      return matchSearch && matchStatus;
+    })
+    .sort(
+      (a, b) =>
+        new Date(b.submitDate).getTime() - new Date(a.submitDate).getTime(),
+    );
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
