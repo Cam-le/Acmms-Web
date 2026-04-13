@@ -277,7 +277,7 @@ function ReportTypeBadge({ type }: { type: string }) {
 
 // ===================== LIST VIEW =====================
 
-const PAGE_SIZE = 8;
+const PAGE_SIZE = 5;
 
 function ListView() {
   const [reports, setReports] = useState<ReportResponse[]>([]);
