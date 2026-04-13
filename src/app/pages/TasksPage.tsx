@@ -482,6 +482,13 @@ export function TasksPage() {
     useState<TaskDetailResponse | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
+  // Worker conflict detection
+  const [workerConflict, setWorkerConflict] = useState<{
+    hasConflict: boolean;
+    conflictingTask: string;
+  } | null>(null);
+  const [isCheckingConflict, setIsCheckingConflict] = useState(false);
+
   // ── Handlers ──────────────────────────────────────────────────────────────
 
   // Template table state
@@ -681,6 +688,45 @@ export function TasksPage() {
     }
     setInlineNewTask({ name: "", type: "", description: "" });
     setShowInlineNewTask(false);
+  };
+
+  const checkWorkerConflict = async (workerId: string) => {
+    if (!workerId || !newAssignment.date) {
+      setWorkerConflict(null);
+      return;
+    }
+    setIsCheckingConflict(true);
+    try {
+      const details = await api.getTaskDetailsByWorker(workerId);
+      if (!details || details.length === 0) {
+        setWorkerConflict({ hasConflict: false, conflictingTask: "" });
+        return;
+      }
+      const newStart = new Date(
+        `${newAssignment.date}T${newAssignment.startHour}:${newAssignment.startMinute}:00`,
+      ).getTime();
+      const newEnd = new Date(
+        `${newAssignment.date}T${newAssignment.endHour}:${newAssignment.endMinute}:00`,
+      ).getTime();
+      const conflict = details.find((d) => {
+        if (!d.startDate || !d.endDate) return false;
+        const s = new Date(d.startDate).getTime();
+        const e = new Date(d.endDate).getTime();
+        return newStart < e && newEnd > s;
+      });
+      setWorkerConflict(
+        conflict
+          ? {
+              hasConflict: true,
+              conflictingTask: conflict.taskTitle ?? "công việc khác",
+            }
+          : { hasConflict: false, conflictingTask: "" },
+      );
+    } catch {
+      setWorkerConflict(null);
+    } finally {
+      setIsCheckingConflict(false);
+    }
   };
 
   const handleCreateAssignment = async () => {
@@ -1169,6 +1215,7 @@ export function TasksPage() {
             setShowInlineNewTask(false);
             setInlineNewTask({ name: "", type: "", description: "" });
             setSelectedPlotId("");
+            setWorkerConflict(null);
           }
         }}
       >
@@ -1617,79 +1664,115 @@ export function TasksPage() {
                       <span className="text-red-500">*</span>
                     </label>
                     <div className="flex flex-wrap gap-1.5">
-                      {staffList.map((s) => {
-                        const rawStatus = (s.status ?? "").toLowerCase();
-                        const isDisabled = rawStatus === "inactive";
-                        const sel = assignmentTarget.workerId === s.userId;
-                        const dotColor = isDisabled
-                          ? "#94a3b8"
-                          : rawStatus === "busy"
-                            ? "#f59e0b"
-                            : "#10b981";
-                        return (
-                          <button
-                            key={s.userId}
-                            disabled={isDisabled}
-                            onClick={() =>
-                              setAssignmentTarget((p) => ({
-                                ...p,
-                                workerId: sel ? "" : s.userId,
-                              }))
-                            }
-                            title={s.fullname}
-                            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border transition-all"
-                            style={
-                              sel
-                                ? {
-                                    background: "#009689",
-                                    color: "#fff",
-                                    borderColor: "#009689",
-                                  }
-                                : isDisabled
-                                  ? {
-                                      background: "#f1f5f9",
-                                      color: "#94a3b8",
-                                      borderColor: "#e2e8f0",
-                                      opacity: 0.5,
-                                      cursor: "not-allowed",
-                                    }
-                                  : {
-                                      background: "#f8fafc",
-                                      color: "#475569",
-                                      borderColor: "#e2e8f0",
-                                    }
-                            }
-                          >
-                            <span
-                              className="w-5 h-5 rounded-full text-[10px] flex items-center justify-center font-bold shrink-0"
-                              style={{
-                                background: sel
-                                  ? "rgba(255,255,255,0.25)"
-                                  : "#009689",
-                                color: "#fff",
+                      {staffList
+                        .filter((s) => s.roleName === "Worker")
+                        .map((s) => {
+                          const rawStatus = (s.status ?? "").toLowerCase();
+                          const isDisabled = rawStatus === "inactive";
+                          const sel = assignmentTarget.workerId === s.userId;
+                          const dotColor = isDisabled
+                            ? "#94a3b8"
+                            : rawStatus === "busy"
+                              ? "#f59e0b"
+                              : "#10b981";
+                          return (
+                            <button
+                              key={s.userId}
+                              disabled={isDisabled}
+                              onClick={() => {
+                                const newId = sel ? "" : s.userId;
+                                setAssignmentTarget((p) => ({
+                                  ...p,
+                                  workerId: newId,
+                                }));
+                                setWorkerConflict(null);
+                                if (newId) checkWorkerConflict(newId);
                               }}
+                              title={s.fullname}
+                              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border transition-all"
+                              style={
+                                sel
+                                  ? {
+                                      background: "#009689",
+                                      color: "#fff",
+                                      borderColor: "#009689",
+                                    }
+                                  : isDisabled
+                                    ? {
+                                        background: "#f1f5f9",
+                                        color: "#94a3b8",
+                                        borderColor: "#e2e8f0",
+                                        opacity: 0.5,
+                                        cursor: "not-allowed",
+                                      }
+                                    : {
+                                        background: "#f8fafc",
+                                        color: "#475569",
+                                        borderColor: "#e2e8f0",
+                                      }
+                              }
                             >
-                              {s.fullname.charAt(0).toUpperCase()}
-                            </span>
-                            {s.fullname}
-                            {!sel && (
                               <span
-                                className="w-1.5 h-1.5 rounded-full shrink-0"
-                                style={{ background: dotColor }}
-                              />
-                            )}
-                            {sel && (
-                              <CheckCircle2 className="w-3 h-3 shrink-0" />
-                            )}
-                          </button>
-                        );
-                      })}
-                      {staffList.length === 0 && (
+                                className="w-5 h-5 rounded-full text-[10px] flex items-center justify-center font-bold shrink-0"
+                                style={{
+                                  background: sel
+                                    ? "rgba(255,255,255,0.25)"
+                                    : "#009689",
+                                  color: "#fff",
+                                }}
+                              >
+                                {s.fullname.charAt(0).toUpperCase()}
+                              </span>
+                              {s.fullname}
+                              {!sel && (
+                                <span
+                                  className="w-1.5 h-1.5 rounded-full shrink-0"
+                                  style={{ background: dotColor }}
+                                />
+                              )}
+                              {sel && (
+                                <CheckCircle2 className="w-3 h-3 shrink-0" />
+                              )}
+                            </button>
+                          );
+                        })}
+                      {staffList.filter((s) => s.roleName === "Worker")
+                        .length === 0 && (
                         <p className="text-xs text-[#94a3b8]">
                           Chưa có nhân viên
                         </p>
                       )}
                     </div>
+                    {/* Conflict indicator */}
+                    {isCheckingConflict && (
+                      <p className="mt-2 text-xs text-[#64748b] flex items-center gap-1.5">
+                        <span className="w-3 h-3 border-2 border-[#009689] border-t-transparent rounded-full animate-spin inline-block" />
+                        Đang kiểm tra lịch...
+                      </p>
+                    )}
+                    {!isCheckingConflict && workerConflict?.hasConflict && (
+                      <div className="mt-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 flex items-start gap-2">
+                        <span className="text-amber-500 text-sm shrink-0">
+                          ⚠
+                        </span>
+                        <p className="text-xs text-amber-700">
+                          Nhân viên này đã có lịch{" "}
+                          <span className="font-semibold">
+                            "{workerConflict.conflictingTask}"
+                          </span>{" "}
+                          trùng khung giờ. Bạn vẫn có thể giao việc nếu cần.
+                        </p>
+                      </div>
+                    )}
+                    {!isCheckingConflict &&
+                      workerConflict &&
+                      !workerConflict.hasConflict &&
+                      assignmentTarget.workerId && (
+                        <p className="mt-2 text-xs text-emerald-600 flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3" /> Không có lịch
+                          xung đột
+                        </p>
+                      )}
                   </div>
                 </div>
               </section>
