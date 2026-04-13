@@ -304,12 +304,18 @@ function CalendarDayCard({
   isToday,
   assignments,
   onTaskClick,
+  isEditMode,
+  onEditClick,
+  onDeleteClick,
 }: {
   day: Date;
   dayLabel: string;
   isToday: boolean;
   assignments: TaskDetailResponse[];
   onTaskClick: (a: TaskDetailResponse) => void;
+  isEditMode: boolean;
+  onEditClick: (a: TaskDetailResponse) => void;
+  onDeleteClick: (a: TaskDetailResponse) => void;
 }) {
   const [showAll, setShowAll] = useState(false);
   const MAX_VISIBLE = 3;
@@ -364,6 +370,45 @@ function CalendarDayCard({
       <div className="flex-1 p-1.5 space-y-1.5 overflow-y-auto">
         {visible.map((a) => {
           const timeStr = isoTime(a.startDate);
+          if (isEditMode) {
+            return (
+              <div
+                key={a.taskDetailId}
+                className="w-full rounded-lg overflow-hidden shadow-sm"
+                style={{ borderLeft: "3px solid #f59e0b" }}
+              >
+                <div className="bg-white px-2 py-1.5">
+                  <p className="text-[11px] font-semibold text-[#1e293b] line-clamp-2 leading-tight mb-1.5">
+                    {a.taskTitle}
+                  </p>
+                  {timeStr && (
+                    <div className="flex items-center gap-1 mb-1.5">
+                      <Clock className="w-2.5 h-2.5 text-[#94a3b8] shrink-0" />
+                      <span className="text-[10px] text-[#64748b]">
+                        {timeStr}
+                      </span>
+                    </div>
+                  )}
+                  <div className="flex gap-1">
+                    <button
+                      onClick={() => onEditClick(a)}
+                      className="flex-1 flex items-center justify-center gap-1 py-1 rounded-md text-[10px] font-semibold bg-[#f0fdfa] text-[#009689] hover:bg-[#ccfbf1] transition-colors"
+                    >
+                      <Pencil className="w-2.5 h-2.5" />
+                      Sửa
+                    </button>
+                    <button
+                      onClick={() => onDeleteClick(a)}
+                      className="flex-1 flex items-center justify-center gap-1 py-1 rounded-md text-[10px] font-semibold bg-red-50 text-red-500 hover:bg-red-100 transition-colors"
+                    >
+                      <Trash2 className="w-2.5 h-2.5" />
+                      Xoá
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          }
           return (
             <button
               key={a.taskDetailId}
@@ -443,11 +488,13 @@ export function TasksPage() {
 
   // UI
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [isCalendarEditMode, setIsCalendarEditMode] = useState(false);
 
   // Modals
   const [isCreateTemplateOpen, setIsCreateTemplateOpen] = useState(false);
   const [isAssignOpen, setIsAssignOpen] = useState(false);
   const [isViewOpen, setIsViewOpen] = useState(false);
+  const [isEditDetailOpen, setIsEditDetailOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [isTimePickerOpen, setIsTimePickerOpen] = useState(false);
   const [selectedDetail, setSelectedDetail] =
@@ -786,6 +833,100 @@ export function TasksPage() {
     setDetailToDelete(null);
   };
 
+  // ── Edit task detail ───────────────────────────────────────────────────────
+
+  const [editDetail, setEditDetail] = useState<{
+    taskId: string;
+    seasonId: string;
+    date: string;
+    startHour: string;
+    startMinute: string;
+    endHour: string;
+    endMinute: string;
+    notes: string;
+    workerId: string;
+    status: string;
+    bedIds: string[];
+    plotIds: string[];
+    selectedPlotIds: string[];
+  } | null>(null);
+  const [isEditTimePickerOpen, setIsEditTimePickerOpen] = useState(false);
+
+  const openEditDetail = (detail: TaskDetailResponse) => {
+    const dateStr = detail.startDate.slice(0, 10);
+    const startH = detail.startDate.slice(11, 13);
+    const startM = detail.startDate.slice(14, 16);
+    const endH = detail.endDate.slice(11, 13);
+    const endM = detail.endDate.slice(14, 16);
+    // Derive which plots are selected from the bed list
+    const plotIdsFromBeds = Array.from(
+      new Set(
+        detail.bedIds
+          .map((bid) => allBeds.find((b) => b.bedId === bid)?.plotId)
+          .filter(Boolean) as string[],
+      ),
+    );
+    setEditDetail({
+      taskId: detail.taskId,
+      seasonId: detail.seasonId,
+      date: dateStr,
+      startHour: startH,
+      startMinute: startM,
+      endHour: endH,
+      endMinute: endM,
+      notes: detail.notes ?? "",
+      workerId: detail.assignedToWorkerIds[0] ?? "",
+      status: detail.status ?? "Active",
+      bedIds: detail.bedIds,
+      plotIds: detail.plotIds,
+      selectedPlotIds: plotIdsFromBeds,
+    });
+    setIsEditDetailOpen(true);
+  };
+
+  const handleUpdateAssignment = async () => {
+    if (!selectedDetail || !editDetail) return;
+    setIsSaving(true);
+    try {
+      const startISO = `${editDetail.date}T${editDetail.startHour}:${editDetail.startMinute}:00.000`;
+      const endISO = `${editDetail.date}T${editDetail.endHour}:${editDetail.endMinute}:00.000`;
+      const farmId =
+        allPlots.find(
+          (p) =>
+            p.farmId ===
+            seasons.find((s) => s.seasonId === editDetail.seasonId)?.farmId,
+        )?.farmId ?? "";
+      // Derive plotIds from selected beds
+      const plotIds = Array.from(
+        new Set(
+          editDetail.bedIds
+            .map((bid) => allBeds.find((b) => b.bedId === bid)?.plotId)
+            .filter(Boolean) as string[],
+        ),
+      );
+      await api.updateTaskDetail(selectedDetail.taskDetailId, {
+        taskId: editDetail.taskId,
+        seasonId: editDetail.seasonId,
+        farmId,
+        assignedToWorkerIds: [editDetail.workerId],
+        bedIds: editDetail.bedIds,
+        plotIds,
+        startDate: startISO,
+        endDate: endISO,
+        notes: editDetail.notes,
+        status: editDetail.status,
+      });
+      await loadAllData();
+    } catch (err) {
+      console.error("Failed to update task detail:", err);
+    } finally {
+      setIsSaving(false);
+    }
+    setIsEditDetailOpen(false);
+    setEditDetail(null);
+    setIsViewOpen(false);
+  };
+
   // Derived helpers
   const selectedTask = tasks.find((t) => t.taskId === newAssignment.taskId);
 
@@ -858,7 +999,9 @@ export function TasksPage() {
         {/* ══ TAB: LỊCH TRÌNH ══ */}
         <Tabs.Content value="schedule" className="mt-6 space-y-4">
           {/* Week nav */}
-          <div className="bg-white rounded-[10px] p-4 shadow-sm border border-[#e2e8f0] flex items-center justify-between flex-wrap gap-3">
+          <div
+            className={`bg-white rounded-[10px] p-4 shadow-sm border flex items-center justify-between flex-wrap gap-3 transition-colors ${isCalendarEditMode ? "border-amber-300 bg-amber-50" : "border-[#e2e8f0]"}`}
+          >
             <div className="flex items-center gap-3">
               <button
                 onClick={() => {
@@ -886,13 +1029,18 @@ export function TasksPage() {
                 <ChevronRight className="w-5 h-5 text-[#64748b]" />
               </button>
             </div>
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-4 text-xs text-[#64748b]">
-                <span className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full inline-block bg-[#009689]" />
-                  Đã giao
-                </span>
-              </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setIsCalendarEditMode((p) => !p)}
+                className={`px-3 py-1.5 rounded-lg text-sm flex items-center gap-1.5 font-medium border transition-colors ${
+                  isCalendarEditMode
+                    ? "bg-amber-500 text-white border-amber-500 hover:bg-amber-600"
+                    : "bg-white text-[#64748b] border-[#e2e8f0] hover:border-amber-400 hover:text-amber-600"
+                }`}
+              >
+                <Pencil className="w-3.5 h-3.5" />
+                {isCalendarEditMode ? "Thoát chỉnh sửa" : "Chỉnh sửa lịch"}
+              </button>
               <button
                 onClick={() => setIsAssignOpen(true)}
                 className="bg-[#009689] text-white px-3 py-1.5 rounded-lg text-sm flex items-center gap-1.5 hover:bg-[#007f73] transition-colors shrink-0"
@@ -901,6 +1049,19 @@ export function TasksPage() {
               </button>
             </div>
           </div>
+
+          {/* Edit mode banner */}
+          {isCalendarEditMode && (
+            <div className="flex items-center gap-2 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-[10px] text-sm text-amber-700">
+              <Pencil className="w-4 h-4 shrink-0 text-amber-500" />
+              <span>
+                Đang ở chế độ chỉnh sửa — nhấn{" "}
+                <span className="font-semibold">Sửa</span> hoặc{" "}
+                <span className="font-semibold">Xoá</span> trực tiếp trên từng
+                công việc.
+              </span>
+            </div>
+          )}
 
           {/* Calendar grid */}
           <div className="bg-white rounded-[10px] shadow-sm border border-[#e2e8f0] overflow-hidden">
@@ -921,6 +1082,15 @@ export function TasksPage() {
                     onTaskClick={(a) => {
                       setSelectedDetail(a);
                       setIsViewOpen(true);
+                    }}
+                    isEditMode={isCalendarEditMode}
+                    onEditClick={(a) => {
+                      setSelectedDetail(a);
+                      openEditDetail(a);
+                    }}
+                    onDeleteClick={(a) => {
+                      setDetailToDelete(a);
+                      setIsDeleteOpen(true);
                     }}
                   />
                 );
@@ -1918,26 +2088,11 @@ export function TasksPage() {
               <Dialog.Title className="text-lg font-bold text-[#1e293b]">
                 Chi tiết lịch trình
               </Dialog.Title>
-              <div className="flex items-center gap-1">
-                {selectedDetail && (
-                  <button
-                    onClick={() => {
-                      setIsViewOpen(false);
-                      setDetailToDelete(selectedDetail);
-                      setIsDeleteOpen(true);
-                    }}
-                    title="Xoá lịch trình này"
-                    className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                )}
-                <Dialog.Close asChild>
-                  <button className="p-1 text-slate-400 hover:text-slate-600 rounded">
-                    <X className="w-5 h-5" />
-                  </button>
-                </Dialog.Close>
-              </div>
+              <Dialog.Close asChild>
+                <button className="p-1 text-slate-400 hover:text-slate-600 rounded">
+                  <X className="w-5 h-5" />
+                </button>
+              </Dialog.Close>
             </div>
             <Dialog.Description className="sr-only">
               Thông tin chi tiết của công việc được giao
@@ -1950,6 +2105,9 @@ export function TasksPage() {
                 const season = seasons.find(
                   (s) => s.seasonId === selectedDetail.seasonId,
                 );
+                const farmName =
+                  allPlots.find((p) => p.farmId === season?.farmId)?.farmName ??
+                  null;
                 const worker = staffList.find(
                   (s) => s.userId === selectedDetail.assignedToWorkerIds[0],
                 );
@@ -1958,8 +2116,29 @@ export function TasksPage() {
                     (id) => allBeds.find((b) => b.bedId === id)?.bedName ?? id,
                   )
                   .join(", ");
+                const plots = selectedDetail.plotIds
+                  .map(
+                    (id) =>
+                      allPlots.find((p) => p.plotId === id)?.plotName ?? id,
+                  )
+                  .join(", ");
                 const displayDate = isoDate(selectedDetail.startDate);
                 const timeStr = `${isoTime(selectedDetail.startDate)} – ${isoTime(selectedDetail.endDate)}`;
+                const statusColor =
+                  selectedDetail.status === "Active" ||
+                  selectedDetail.status === "Pending"
+                    ? "bg-[#d1fae5] text-[#065f46]"
+                    : selectedDetail.status === "Completed"
+                      ? "bg-[#f1f5f9] text-[#64748b]"
+                      : "bg-[#fef3c7] text-[#92400e]";
+                const statusLabel =
+                  selectedDetail.status === "Active"
+                    ? "Đang thực hiện"
+                    : selectedDetail.status === "Pending"
+                      ? "Chờ thực hiện"
+                      : selectedDetail.status === "Completed"
+                        ? "Hoàn thành"
+                        : (selectedDetail.status ?? "—");
                 return (
                   <div className="space-y-4">
                     {/* Task header */}
@@ -1971,8 +2150,10 @@ export function TasksPage() {
                         <p className="font-semibold text-[#1e293b]">
                           {task?.taskTitle ?? selectedDetail.taskTitle ?? "—"}
                         </p>
-                        <span className="inline-block px-2.5 py-0.5 rounded text-xs font-medium bg-[#d1fae5] text-[#065f46]">
-                          Đã giao
+                        <span
+                          className={`inline-block px-2.5 py-0.5 rounded text-xs font-medium ${statusColor}`}
+                        >
+                          {statusLabel}
                         </span>
                       </div>
                     </div>
@@ -1985,18 +2166,34 @@ export function TasksPage() {
                           {season?.seasonName ?? "—"}
                         </p>
                       </div>
+                      {farmName && (
+                        <div>
+                          <p className="text-xs text-[#64748b] mb-0.5">
+                            Trang trại
+                          </p>
+                          <p className="font-medium text-[#1e293b]">
+                            {farmName}
+                          </p>
+                        </div>
+                      )}
                       <div>
-                        <p className="text-xs text-[#64748b] mb-0.5">
-                          Ngày thực hiện
-                        </p>
+                        <p className="text-xs text-[#64748b] mb-0.5">Vuông</p>
                         <p className="font-medium text-[#1e293b]">
-                          {displayDate}
+                          {plots || "—"}
                         </p>
                       </div>
                       <div>
                         <p className="text-xs text-[#64748b] mb-0.5">Luống</p>
                         <p className="font-medium text-[#1e293b]">
                           {beds || "—"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-[#64748b] mb-0.5">
+                          Ngày thực hiện
+                        </p>
+                        <p className="font-medium text-[#1e293b]">
+                          {displayDate}
                         </p>
                       </div>
                       <div>
@@ -2033,7 +2230,7 @@ export function TasksPage() {
                       </div>
                     )}
 
-                    <div className="flex gap-3">
+                    <div className="flex gap-3 pt-1">
                       <button
                         onClick={() => setIsViewOpen(false)}
                         className="w-full px-4 py-2 rounded-lg text-sm font-medium bg-[#009689] text-white hover:bg-[#007f73] transition-colors"
@@ -2044,6 +2241,592 @@ export function TasksPage() {
                   </div>
                 );
               })()}
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+
+      {/* ══ MODAL: Edit Assignment ══ */}
+      <Dialog.Root
+        open={isEditDetailOpen}
+        onOpenChange={(o) => {
+          setIsEditDetailOpen(o);
+          if (!o) {
+            setEditDetail(null);
+            setIsEditTimePickerOpen(false);
+          }
+        }}
+      >
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 bg-black/50 z-40" />
+          <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-2xl bg-white rounded-xl shadow-2xl max-h-[92vh] flex flex-col">
+            <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-[#f1f5f9] shrink-0">
+              <Dialog.Title className="text-lg font-bold text-[#1e293b]">
+                Chỉnh sửa lịch trình
+              </Dialog.Title>
+              <Dialog.Close asChild>
+                <button className="p-1 text-slate-400 hover:text-slate-600 rounded">
+                  <X className="w-5 h-5" />
+                </button>
+              </Dialog.Close>
+            </div>
+            <Dialog.Description className="sr-only">
+              Chỉnh sửa thông tin lịch trình công việc
+            </Dialog.Description>
+            {editDetail &&
+              selectedDetail &&
+              (() => {
+                // Derived values for season-related sections
+                const editSeason = seasons.find(
+                  (s) => s.seasonId === editDetail.seasonId,
+                );
+                const editFarmName =
+                  allPlots.find((p) => p.farmId === editSeason?.farmId)
+                    ?.farmName ?? null;
+                const editSeasonBeds = (() => {
+                  if (!editDetail.seasonId) return [];
+                  const season = seasons.find(
+                    (s) => s.seasonId === editDetail.seasonId,
+                  );
+                  if (!season) return [];
+                  const bedIds = new Set(
+                    season.seasonsDetails.map((sd) => sd.bedId),
+                  );
+                  return allBeds.filter((b) => bedIds.has(b.bedId));
+                })();
+                const editSeasonPlots = (() => {
+                  const plotIds = new Set(editSeasonBeds.map((b) => b.plotId));
+                  return allPlots.filter((p) => plotIds.has(p.plotId));
+                })();
+                return (
+                  <div className="overflow-y-auto flex-1 px-6 py-5 space-y-6">
+                    {/* ── 1. Công việc ── */}
+                    <section>
+                      <h3 className="text-xs font-bold text-[#009689] uppercase tracking-widest mb-3 flex items-center gap-1.5">
+                        <span className="w-5 h-5 rounded-full bg-[#009689] text-white text-[10px] flex items-center justify-center font-bold">
+                          1
+                        </span>
+                        Công việc
+                      </h3>
+                      <select
+                        value={editDetail.taskId}
+                        onChange={(e) =>
+                          setEditDetail((p) =>
+                            p ? { ...p, taskId: e.target.value } : p,
+                          )
+                        }
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                      >
+                        <option value="">-- Chọn công việc --</option>
+                        {tasks.map((t) => (
+                          <option key={t.taskId} value={t.taskId}>
+                            {t.taskTitle}
+                          </option>
+                        ))}
+                      </select>
+                    </section>
+
+                    {/* ── 2. Mùa vụ ── */}
+                    <section>
+                      <h3 className="text-xs font-bold text-[#009689] uppercase tracking-widest mb-3 flex items-center gap-1.5">
+                        <span className="w-5 h-5 rounded-full bg-[#009689] text-white text-[10px] flex items-center justify-center font-bold">
+                          2
+                        </span>
+                        Mùa vụ
+                      </h3>
+                      <select
+                        value={editDetail.seasonId}
+                        onChange={(e) => {
+                          const sid = e.target.value;
+                          setEditDetail((p) =>
+                            p
+                              ? {
+                                  ...p,
+                                  seasonId: sid,
+                                  bedIds: [],
+                                  plotIds: [],
+                                  selectedPlotIds: [],
+                                }
+                              : p,
+                          );
+                        }}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                      >
+                        <option value="">-- Chọn mùa vụ --</option>
+                        {seasons.map((s) => (
+                          <option key={s.seasonId} value={s.seasonId}>
+                            {s.seasonName}
+                            {s.status === "Active"
+                              ? " (Đang hoạt động)"
+                              : s.status === "Completed"
+                                ? " (Đã kết thúc)"
+                                : " (Sắp diễn ra)"}
+                          </option>
+                        ))}
+                      </select>
+                      {editDetail.seasonId && editSeason && (
+                        <div className="mt-2 space-y-1.5">
+                          <div className="flex items-center justify-between px-3 py-2 bg-[#f8fafc] rounded-lg border border-[#e2e8f0] text-xs">
+                            <span className="text-[#64748b]">
+                              {editSeason.seasonStartDate
+                                .split("-")
+                                .reverse()
+                                .join("/")}{" "}
+                              –{" "}
+                              {editSeason.seasonEndDate
+                                .split("-")
+                                .reverse()
+                                .join("/")}
+                            </span>
+                            <span
+                              className={`font-medium px-2 py-0.5 rounded-full ${editSeason.status === "Active" ? "bg-[#d1fae5] text-[#065f46]" : editSeason.status === "Completed" ? "bg-[#f1f5f9] text-[#64748b]" : "bg-[#fef3c7] text-[#92400e]"}`}
+                            >
+                              {editSeason.status === "Active"
+                                ? "Đang hoạt động"
+                                : editSeason.status === "Completed"
+                                  ? "Đã kết thúc"
+                                  : "Sắp diễn ra"}
+                            </span>
+                          </div>
+                          {editFarmName && (
+                            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[#f0fdfa] rounded-lg border border-[#ccfbf1] text-xs text-[#0f766e]">
+                              <MapPin className="w-3 h-3 shrink-0" />
+                              <span className="font-medium">
+                                {editFarmName}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </section>
+
+                    {/* ── 3. Ngày & Giờ ── */}
+                    <section>
+                      <h3 className="text-xs font-bold text-[#009689] uppercase tracking-widest mb-3 flex items-center gap-1.5">
+                        <span className="w-5 h-5 rounded-full bg-[#009689] text-white text-[10px] flex items-center justify-center font-bold">
+                          3
+                        </span>
+                        Ngày &amp; Giờ
+                      </h3>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-medium text-slate-500 mb-1.5">
+                            Ngày thực hiện{" "}
+                            <span className="text-red-500">*</span>
+                          </label>
+                          <input
+                            type="date"
+                            value={editDetail.date}
+                            onChange={(e) =>
+                              setEditDetail((p) =>
+                                p ? { ...p, date: e.target.value } : p,
+                              )
+                            }
+                            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-500 mb-1.5">
+                            Khung giờ
+                          </label>
+                          <button
+                            onClick={() => setIsEditTimePickerOpen((p) => !p)}
+                            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-left flex items-center gap-2 hover:border-[#009689] focus:outline-none focus:ring-2 focus:ring-[#009689] transition-colors"
+                          >
+                            <Clock className="w-4 h-4 text-[#009689] shrink-0" />
+                            <span className="text-[#1e293b]">
+                              {editDetail.startHour}:{editDetail.startMinute} –{" "}
+                              {editDetail.endHour}:{editDetail.endMinute}
+                            </span>
+                          </button>
+                          {isEditTimePickerOpen && (
+                            <TimePickerSheet
+                              startHour={editDetail.startHour}
+                              startMinute={editDetail.startMinute}
+                              endHour={editDetail.endHour}
+                              endMinute={editDetail.endMinute}
+                              onChange={(sh, sm, eh, em) =>
+                                setEditDetail((p) =>
+                                  p
+                                    ? {
+                                        ...p,
+                                        startHour: sh,
+                                        startMinute: sm,
+                                        endHour: eh,
+                                        endMinute: em,
+                                      }
+                                    : p,
+                                )
+                              }
+                              onClose={() => setIsEditTimePickerOpen(false)}
+                            />
+                          )}
+                        </div>
+                      </div>
+                    </section>
+
+                    {/* ── 4. Vuông, Luống & Nhân viên ── */}
+                    <section>
+                      <h3 className="text-xs font-bold text-[#009689] uppercase tracking-widest mb-3 flex items-center gap-1.5">
+                        <span className="w-5 h-5 rounded-full bg-[#009689] text-white text-[10px] flex items-center justify-center font-bold">
+                          4
+                        </span>
+                        Vuông, Luống &amp; Nhân viên
+                      </h3>
+                      <div className="space-y-4">
+                        {/* Vuông */}
+                        <div>
+                          <label className="block text-xs font-semibold text-[#475569] uppercase tracking-wide mb-1.5">
+                            Vuông
+                            {editDetail.selectedPlotIds.length > 0 && (
+                              <span className="ml-2 normal-case font-semibold text-[#009689]">
+                                ({editDetail.selectedPlotIds.length} đã chọn)
+                              </span>
+                            )}
+                          </label>
+                          {!editDetail.seasonId ? (
+                            <div className="px-3 py-2 bg-[#f8fafc] border border-dashed border-[#e2e8f0] rounded-lg text-xs text-[#94a3b8] italic">
+                              Chọn mùa vụ trước
+                            </div>
+                          ) : editSeasonPlots.length === 0 ? (
+                            <div className="px-3 py-2 bg-[#f8fafc] border border-dashed border-[#e2e8f0] rounded-lg text-xs text-[#94a3b8] italic">
+                              Mùa vụ này chưa có vuông nào
+                            </div>
+                          ) : (
+                            <div className="flex flex-wrap gap-1.5">
+                              {editSeasonPlots.map((plot) => {
+                                const isSel =
+                                  editDetail.selectedPlotIds.includes(
+                                    plot.plotId,
+                                  );
+                                return (
+                                  <button
+                                    key={plot.plotId}
+                                    onClick={() => {
+                                      const next = isSel
+                                        ? editDetail.selectedPlotIds.filter(
+                                            (id) => id !== plot.plotId,
+                                          )
+                                        : [
+                                            ...editDetail.selectedPlotIds,
+                                            plot.plotId,
+                                          ];
+                                      const keepBeds = new Set(
+                                        editSeasonBeds
+                                          .filter((b) =>
+                                            next.includes(b.plotId),
+                                          )
+                                          .map((b) => b.bedId),
+                                      );
+                                      setEditDetail((p) =>
+                                        p
+                                          ? {
+                                              ...p,
+                                              selectedPlotIds: next,
+                                              bedIds: p.bedIds.filter((id) =>
+                                                keepBeds.has(id),
+                                              ),
+                                            }
+                                          : p,
+                                      );
+                                    }}
+                                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all"
+                                    style={
+                                      isSel
+                                        ? {
+                                            background: "#009689",
+                                            color: "#fff",
+                                            borderColor: "#009689",
+                                          }
+                                        : {
+                                            background: "#f8fafc",
+                                            color: "#475569",
+                                            borderColor: "#e2e8f0",
+                                          }
+                                    }
+                                  >
+                                    {plot.plotName}
+                                    {isSel && (
+                                      <CheckCircle2 className="w-3 h-3 shrink-0" />
+                                    )}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Luống — grouped by selected plot */}
+                        {editDetail.selectedPlotIds.length > 0 &&
+                          (() => {
+                            const groups = editDetail.selectedPlotIds
+                              .map((plotId) => ({
+                                plot: editSeasonPlots.find(
+                                  (p) => p.plotId === plotId,
+                                ),
+                                plotBeds: editSeasonBeds
+                                  .filter((b) => b.plotId === plotId)
+                                  .sort((a, b) =>
+                                    a.bedName.localeCompare(b.bedName),
+                                  ),
+                              }))
+                              .filter((g) => g.plot && g.plotBeds.length > 0);
+                            if (groups.length === 0) return null;
+                            return (
+                              <div className="space-y-3">
+                                <label className="block text-xs font-semibold text-[#475569] uppercase tracking-wide">
+                                  Luống
+                                  {editDetail.bedIds.length > 0 && (
+                                    <span className="ml-2 normal-case font-semibold text-[#009689]">
+                                      ({editDetail.bedIds.length} đã chọn)
+                                    </span>
+                                  )}
+                                </label>
+                                {groups.map(({ plot, plotBeds }) => {
+                                  const allSel = plotBeds.every((b) =>
+                                    editDetail.bedIds.includes(b.bedId),
+                                  );
+                                  const plotSelCount = plotBeds.filter((b) =>
+                                    editDetail.bedIds.includes(b.bedId),
+                                  ).length;
+                                  return (
+                                    <div
+                                      key={plot!.plotId}
+                                      className="rounded-lg border border-[#e2e8f0] bg-[#f8fafc] p-3"
+                                    >
+                                      <div className="flex items-center justify-between mb-2">
+                                        <span className="text-[11px] font-semibold text-[#475569]">
+                                          {plot!.plotName}
+                                          {plotSelCount > 0 && (
+                                            <span className="ml-1.5 text-[#009689]">
+                                              ({plotSelCount})
+                                            </span>
+                                          )}
+                                        </span>
+                                        <button
+                                          onClick={() => {
+                                            const ids = plotBeds.map(
+                                              (b) => b.bedId,
+                                            );
+                                            setEditDetail((p) =>
+                                              p
+                                                ? {
+                                                    ...p,
+                                                    bedIds: allSel
+                                                      ? p.bedIds.filter(
+                                                          (id) =>
+                                                            !ids.includes(id),
+                                                        )
+                                                      : [
+                                                          ...new Set([
+                                                            ...p.bedIds,
+                                                            ...ids,
+                                                          ]),
+                                                        ],
+                                                  }
+                                                : p,
+                                            );
+                                          }}
+                                          className="text-[11px] font-medium text-[#009689] hover:underline"
+                                        >
+                                          {allSel
+                                            ? "Bỏ chọn tất cả"
+                                            : `Chọn tất cả (${plotBeds.length})`}
+                                        </button>
+                                      </div>
+                                      <div className="flex flex-wrap gap-1.5">
+                                        {plotBeds.map((bed) => {
+                                          const isSel =
+                                            editDetail.bedIds.includes(
+                                              bed.bedId,
+                                            );
+                                          return (
+                                            <button
+                                              key={bed.bedId}
+                                              onClick={() =>
+                                                setEditDetail((p) =>
+                                                  p
+                                                    ? {
+                                                        ...p,
+                                                        bedIds: isSel
+                                                          ? p.bedIds.filter(
+                                                              (id) =>
+                                                                id !==
+                                                                bed.bedId,
+                                                            )
+                                                          : [
+                                                              ...p.bedIds,
+                                                              bed.bedId,
+                                                            ],
+                                                      }
+                                                    : p,
+                                                )
+                                              }
+                                              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all"
+                                              style={
+                                                isSel
+                                                  ? {
+                                                      background: "#009689",
+                                                      color: "#fff",
+                                                      borderColor: "#009689",
+                                                    }
+                                                  : {
+                                                      background: "#fff",
+                                                      color: "#475569",
+                                                      borderColor: "#e2e8f0",
+                                                    }
+                                              }
+                                            >
+                                              {bed.bedName}
+                                              {isSel && (
+                                                <CheckCircle2 className="w-3 h-3 shrink-0" />
+                                              )}
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            );
+                          })()}
+
+                        {/* Nhân viên */}
+                        <div>
+                          <label className="block text-xs font-semibold text-[#475569] uppercase tracking-wide mb-1.5">
+                            Nhân viên phụ trách{" "}
+                            <span className="text-red-500">*</span>
+                          </label>
+                          <div className="flex flex-wrap gap-1.5">
+                            {staffList
+                              .filter((s) => s.roleName === "Worker")
+                              .map((s) => {
+                                const isDisabled =
+                                  (s.status ?? "").toLowerCase() === "inactive";
+                                const sel = editDetail.workerId === s.userId;
+                                return (
+                                  <button
+                                    key={s.userId}
+                                    disabled={isDisabled}
+                                    onClick={() =>
+                                      setEditDetail((p) =>
+                                        p ? { ...p, workerId: s.userId } : p,
+                                      )
+                                    }
+                                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border transition-all"
+                                    style={
+                                      sel
+                                        ? {
+                                            background: "#009689",
+                                            color: "#fff",
+                                            borderColor: "#009689",
+                                          }
+                                        : isDisabled
+                                          ? {
+                                              background: "#f1f5f9",
+                                              color: "#94a3b8",
+                                              borderColor: "#e2e8f0",
+                                              opacity: 0.5,
+                                              cursor: "not-allowed",
+                                            }
+                                          : {
+                                              background: "#f8fafc",
+                                              color: "#475569",
+                                              borderColor: "#e2e8f0",
+                                            }
+                                    }
+                                  >
+                                    <span
+                                      className="w-5 h-5 rounded-full text-[10px] flex items-center justify-center font-bold shrink-0"
+                                      style={{
+                                        background: sel
+                                          ? "rgba(255,255,255,0.25)"
+                                          : "#009689",
+                                        color: "#fff",
+                                      }}
+                                    >
+                                      {s.fullname.charAt(0).toUpperCase()}
+                                    </span>
+                                    {s.fullname}
+                                    {sel && (
+                                      <CheckCircle2 className="w-3 h-3 shrink-0" />
+                                    )}
+                                  </button>
+                                );
+                              })}
+                          </div>
+                        </div>
+                      </div>
+                    </section>
+
+                    {/* ── 5. Trạng thái ── */}
+                    <section>
+                      <h3 className="text-xs font-bold text-[#009689] uppercase tracking-widest mb-3 flex items-center gap-1.5">
+                        <span className="w-5 h-5 rounded-full bg-[#009689] text-white text-[10px] flex items-center justify-center font-bold">
+                          5
+                        </span>
+                        Trạng thái
+                      </h3>
+                      <select
+                        value={editDetail.status}
+                        onChange={(e) =>
+                          setEditDetail((p) =>
+                            p ? { ...p, status: e.target.value } : p,
+                          )
+                        }
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                      >
+                        <option value="Pending">Chờ thực hiện</option>
+                        <option value="Active">Đang thực hiện</option>
+                        <option value="Completed">Hoàn thành</option>
+                      </select>
+                    </section>
+
+                    {/* ── 6. Ghi chú ── */}
+                    <section>
+                      <h3 className="text-xs font-bold text-[#009689] uppercase tracking-widest mb-3 flex items-center gap-1.5">
+                        <span className="w-5 h-5 rounded-full bg-[#009689] text-white text-[10px] flex items-center justify-center font-bold">
+                          6
+                        </span>
+                        Ghi chú
+                      </h3>
+                      <textarea
+                        rows={3}
+                        value={editDetail.notes}
+                        onChange={(e) =>
+                          setEditDetail((p) =>
+                            p ? { ...p, notes: e.target.value } : p,
+                          )
+                        }
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] resize-none"
+                      />
+                    </section>
+                  </div>
+                );
+              })()}
+
+            {/* Footer */}
+            <div className="shrink-0 border-t border-[#e2e8f0] px-6 py-4 flex gap-3 justify-end bg-white">
+              <button
+                onClick={() => {
+                  setIsEditDetailOpen(false);
+                  setEditDetail(null);
+                }}
+                className="px-4 py-2 rounded-lg text-sm font-medium text-slate-700 border border-[#e2e8f0] hover:bg-slate-50 transition-colors"
+              >
+                Hủy
+              </button>
+              <button
+                onClick={handleUpdateAssignment}
+                disabled={
+                  !editDetail?.date || !editDetail?.workerId || isSaving
+                }
+                className="px-4 py-2 rounded-lg text-sm font-medium bg-[#009689] text-white hover:bg-[#007f73] disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                {isSaving ? "Đang lưu..." : "Lưu thay đổi"}
+              </button>
+            </div>
           </Dialog.Content>
         </Dialog.Portal>
       </Dialog.Root>

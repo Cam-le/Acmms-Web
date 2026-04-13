@@ -330,12 +330,14 @@ export interface TaskDetailResponse {
   taskId: string;
   taskTitle: string;
   seasonId: string;
+  farmId?: string;
   assignedToWorkerIds: string[];
   bedIds: string[];
   plotIds: string[];
   startDate: string; // ISO datetime
   endDate: string; // ISO datetime
   notes: string;
+  status?: string;
 }
 
 export interface TaskDetailRequest {
