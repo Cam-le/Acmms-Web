@@ -307,6 +307,7 @@ function CalendarDayCard({
   isEditMode,
   onEditClick,
   onDeleteClick,
+  style,
 }: {
   day: Date;
   dayLabel: string;
@@ -316,6 +317,7 @@ function CalendarDayCard({
   isEditMode: boolean;
   onEditClick: (a: TaskDetailResponse) => void;
   onDeleteClick: (a: TaskDetailResponse) => void;
+  style?: React.CSSProperties;
 }) {
   const [showAll, setShowAll] = useState(false);
   const MAX_VISIBLE = 3;
@@ -324,6 +326,7 @@ function CalendarDayCard({
 
   return (
     <div
+      style={style}
       className={`flex flex-col border-r border-[#f1f5f9] last:border-r-0 min-h-[320px] ${isToday ? "bg-[#f0fdfa]" : "bg-white"}`}
     >
       {/* Day header */}
@@ -472,10 +475,276 @@ function CalendarDayCard({
   );
 }
 
+// ─── Worker Schedule Preview ──────────────────────────────────────────────────
+
+/**
+ * Compact busy-schedule widget shown inside the assign modal.
+ * Renders a scrollable grid: one row per week, one cell per day.
+ * Each cell shows hour-bars for existing tasks in that worker's schedule.
+ */
+function WorkerSchedulePreview({
+  workerId,
+  fromDate,
+  toDate,
+  taskDetails,
+  staffList,
+}: {
+  workerId: string;
+  fromDate: string;
+  toDate: string;
+  taskDetails: TaskDetailResponse[];
+  staffList: UserResponse[];
+}) {
+  // Working-hours window rendered in the timeline
+  const HOUR_START = 6; // 06:00
+  const HOUR_END = 20; // 20:00 (exclusive top boundary)
+  const TOTAL_MINS = (HOUR_END - HOUR_START) * 60; // 840 min
+  const CELL_H = 72; // px height of each day's timeline track
+
+  // Hour-tick labels shown on the left axis — every 2 hours
+  const AXIS_TICKS = [6, 8, 10, 12, 14, 16, 18, 20];
+
+  // Build days array (max 42)
+  const days: Date[] = [];
+  const start = new Date(fromDate);
+  const end = new Date(toDate);
+  const cursor = new Date(start);
+  while (cursor <= end && days.length < 42) {
+    days.push(new Date(cursor));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  // Filter + group tasks for this worker by date
+  const byDate: Record<string, TaskDetailResponse[]> = {};
+  taskDetails
+    .filter((d) => d.assignedToWorkerIds.includes(workerId))
+    .forEach((d) => {
+      if (!d.startDate) return;
+      const key = d.startDate.slice(0, 10);
+      if (!byDate[key]) byDate[key] = [];
+      byDate[key].push(d);
+    });
+
+  // Pad to Monday-aligned weeks
+  const dow0 = start.getDay();
+  const padBefore = dow0 === 0 ? 6 : dow0 - 1;
+  const padded: (Date | null)[] = [...Array(padBefore).fill(null), ...days];
+  while (padded.length % 7 !== 0) padded.push(null);
+  const weeks: (Date | null)[][] = [];
+  for (let i = 0; i < padded.length; i += 7) weeks.push(padded.slice(i, i + 7));
+
+  const workerName =
+    staffList.find((s) => s.userId === workerId)?.fullname ?? "";
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const DAY_HDRS = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"];
+
+  const busyCount = days.filter((d) => {
+    const k = d.toISOString().slice(0, 10);
+    return (byDate[k]?.length ?? 0) > 0;
+  }).length;
+
+  // Convert hh:mm string to minutes-since-midnight
+  const toMins = (iso: string) => {
+    const h = parseInt(iso.slice(11, 13), 10);
+    const m = parseInt(iso.slice(14, 16), 10);
+    return h * 60 + m;
+  };
+
+  // Map a minute value to a % position inside the CELL_H track
+  const toTop = (mins: number) =>
+    Math.max(0, Math.min(100, ((mins - HOUR_START * 60) / TOTAL_MINS) * 100));
+  const toHeight = (startMins: number, endMins: number) =>
+    Math.max(
+      6,
+      ((Math.min(endMins, HOUR_END * 60) -
+        Math.max(startMins, HOUR_START * 60)) /
+        TOTAL_MINS) *
+        100,
+    );
+
+  // Colour palette for overlapping tasks — cycles so adjacent bars are distinct
+  const BAR_COLORS = [
+    { bg: "rgba(245,158,11,0.18)", border: "#f59e0b", text: "#92400e" },
+    { bg: "rgba(239,68,68,0.14)", border: "#ef4444", text: "#991b1b" },
+    { bg: "rgba(99,102,241,0.14)", border: "#6366f1", text: "#3730a3" },
+    { bg: "rgba(16,185,129,0.14)", border: "#10b981", text: "#065f46" },
+  ];
+
+  return (
+    <div className="rounded-lg border border-[#e2e8f0] overflow-hidden bg-white">
+      {/* Header */}
+      <div className="flex items-center justify-between px-3 py-2 bg-[#f8fafc] border-b border-[#e2e8f0]">
+        <span className="text-xs font-semibold text-[#475569]">
+          Lịch bận của <span className="text-[#009689]">{workerName}</span>
+          <span className="ml-2 font-normal text-[#94a3b8]">
+            ({HOUR_START}:00 – {HOUR_END}:00)
+          </span>
+        </span>
+        {busyCount > 0 ? (
+          <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 font-medium">
+            {busyCount} ngày bận
+          </span>
+        ) : (
+          <span className="text-[11px] px-2 py-0.5 rounded-full bg-[#f0fdfa] text-[#009689] border border-[#009689]/20 font-medium">
+            Không có lịch bận
+          </span>
+        )}
+      </div>
+
+      {/* Day-of-week header */}
+      <div className="flex border-b border-[#e2e8f0]">
+        {/* Axis gutter */}
+        <div className="w-7 shrink-0" />
+        <div className="flex-1 grid grid-cols-7">
+          {DAY_HDRS.map((h) => (
+            <div
+              key={h}
+              className="py-1 text-center text-[10px] font-bold uppercase tracking-wider text-[#94a3b8]"
+            >
+              {h}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Scrollable week rows */}
+      <div className="max-h-[300px] overflow-y-auto">
+        {weeks.map((week, wi) => (
+          <div
+            key={wi}
+            className="flex border-b border-[#f1f5f9] last:border-b-0"
+          >
+            {/* Hour axis — shared for the whole row */}
+            <div
+              className="w-7 shrink-0 relative border-r border-[#f1f5f9]"
+              style={{ height: CELL_H + 20 }}
+            >
+              {/* date number placeholder at top */}
+              <div style={{ height: 20 }} />
+              <div className="relative" style={{ height: CELL_H }}>
+                {AXIS_TICKS.map((h) => (
+                  <div
+                    key={h}
+                    className="absolute right-1 text-[8px] text-[#cbd5e1] leading-none"
+                    style={{
+                      top: `${toTop(h * 60)}%`,
+                      transform: "translateY(-50%)",
+                    }}
+                  >
+                    {h}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Day cells */}
+            <div className="flex-1 grid grid-cols-7">
+              {week.map((day, di) => {
+                if (!day) {
+                  return (
+                    <div
+                      key={di}
+                      style={{ height: CELL_H + 20 }}
+                      className="bg-[#fafafa] border-r border-[#f1f5f9] last:border-r-0"
+                    />
+                  );
+                }
+
+                const key = day.toISOString().slice(0, 10);
+                const dayTasks = byDate[key] ?? [];
+                const isToday = key === todayKey;
+                const isBusy = dayTasks.length > 0;
+
+                return (
+                  <div
+                    key={di}
+                    className={`border-r border-[#f1f5f9] last:border-r-0 ${isBusy ? "bg-amber-50/40" : ""}`}
+                    style={{ height: CELL_H + 20 }}
+                  >
+                    {/* Date number row */}
+                    <div className="h-5 flex items-center justify-center">
+                      <span
+                        className="text-[10px] font-semibold w-5 h-5 flex items-center justify-center rounded-full leading-none"
+                        style={
+                          isToday
+                            ? { background: "#009689", color: "#fff" }
+                            : isBusy
+                              ? { color: "#92400e" }
+                              : { color: "#cbd5e1" }
+                        }
+                      >
+                        {day.getDate()}
+                      </span>
+                    </div>
+
+                    {/* Timeline track */}
+                    <div className="relative mx-0.5" style={{ height: CELL_H }}>
+                      {/* Hour-grid lines */}
+                      {AXIS_TICKS.map((h) => (
+                        <div
+                          key={h}
+                          className="absolute inset-x-0 border-t border-dashed border-[#f1f5f9]"
+                          style={{ top: `${toTop(h * 60)}%` }}
+                        />
+                      ))}
+
+                      {/* Task bars */}
+                      {dayTasks.map((t, ti) => {
+                        if (!t.startDate || !t.endDate) return null;
+                        const sm = toMins(t.startDate);
+                        const em = toMins(t.endDate);
+                        const top = toTop(sm);
+                        const ht = toHeight(sm, em);
+                        const col = BAR_COLORS[ti % BAR_COLORS.length];
+                        const sh = t.startDate.slice(11, 16);
+                        const eh = t.endDate.slice(11, 16);
+                        // Bar is tall enough to show text if >= ~20% of cell
+                        const showLabel = ht >= 18;
+
+                        return (
+                          <div
+                            key={t.taskDetailId}
+                            title={`${t.taskTitle ?? "Công việc"} · ${sh}–${eh}`}
+                            className="absolute inset-x-0 rounded overflow-hidden"
+                            style={{
+                              top: `${top}%`,
+                              height: `${ht}%`,
+                              background: col.bg,
+                              borderLeft: `2px solid ${col.border}`,
+                              minHeight: 4,
+                            }}
+                          >
+                            {showLabel && (
+                              <div
+                                className="absolute inset-0 flex items-center justify-center px-0.5"
+                                style={{ color: col.text }}
+                              >
+                                <span className="text-[8px] font-bold leading-none truncate">
+                                  {sh}–{eh}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function TasksPage() {
-  const [activeTab, setActiveTab] = useState("schedule");
+  const [activeTab, setActiveTab] = useState<"schedule" | "allTasks" | "tasks">(
+    "schedule",
+  );
 
   // ── API data ─────────────────────────────────────────────────────────────
   const [tasks, setTasks] = useState<TaskResponse[]>([]);
@@ -487,8 +756,33 @@ export function TasksPage() {
   const [isLoading, setIsLoading] = useState(true);
 
   // UI
-  const [currentDate, setCurrentDate] = useState(new Date());
   const [isCalendarEditMode, setIsCalendarEditMode] = useState(false);
+
+  // Calendar filter (worker + date range)
+  const [calWorkerFilter, setCalWorkerFilter] = useState("");
+  const [calFromDate, setCalFromDate] = useState(() => {
+    const d = new Date();
+    const dow = d.getDay();
+    const diff = dow === 0 ? -6 : 1 - dow;
+    const mon = new Date(d);
+    mon.setDate(d.getDate() + diff);
+    return mon.toISOString().slice(0, 10);
+  });
+  const [calToDate, setCalToDate] = useState(() => {
+    const d = new Date();
+    const dow = d.getDay();
+    const diff = dow === 0 ? 0 : 7 - dow;
+    const sun = new Date(d);
+    sun.setDate(d.getDate() + diff);
+    return sun.toISOString().slice(0, 10);
+  });
+
+  // All-tasks table
+  const [allTasksSearch, setAllTasksSearch] = useState("");
+  const [allTasksWorkerFilter, setAllTasksWorkerFilter] = useState("");
+  const [allTasksStatusFilter, setAllTasksStatusFilter] = useState("");
+  const [allTasksPage, setAllTasksPage] = useState(1);
+  const ALL_TASKS_PER_PAGE = 8;
 
   // Modals
   const [isCreateTemplateOpen, setIsCreateTemplateOpen] = useState(false);
@@ -502,13 +796,6 @@ export function TasksPage() {
   const [detailToDelete, setDetailToDelete] =
     useState<TaskDetailResponse | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-
-  // Worker conflict detection
-  const [workerConflict, setWorkerConflict] = useState<{
-    hasConflict: boolean;
-    conflictingTask: string;
-  } | null>(null);
-  const [isCheckingConflict, setIsCheckingConflict] = useState(false);
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
@@ -529,11 +816,28 @@ export function TasksPage() {
     description: "",
   });
 
-  // New assignment form
-  const [newAssignment, setNewAssignment] = useState({
+  // ── Assign modal: mode + shared state ────────────────────────────────────
+  const [assignMode, setAssignMode] = useState<"bulk" | "single">("bulk");
+
+  // Bulk form
+  const WEEKDAY_MAP: Record<string, number> = {
+    T2: 1,
+    T3: 2,
+    T4: 3,
+    T5: 4,
+    T6: 5,
+    T7: 6,
+    CN: 0,
+  };
+  const [bulkForm, setBulkForm] = useState({
+    workerId: "",
     taskId: "",
     seasonId: "",
-    date: "",
+    plotId: "",
+    bedIds: [] as string[],
+    fromDate: "",
+    toDate: "",
+    selectedDays: ["T2", "T3", "T4", "T5", "T6"] as string[],
     startHour: "07",
     startMinute: "00",
     endHour: "09",
@@ -541,26 +845,126 @@ export function TasksPage() {
     notes: "",
   });
 
-  // Inline "create task" form inside the assign modal
-  const [showInlineNewTask, setShowInlineNewTask] = useState(false);
-  const [inlineNewTask, setInlineNewTask] = useState({
-    name: "",
-    type: "",
-    description: "",
-  });
-  // Assignment target: single worker, multiple beds + plots from season
-  const [assignmentTarget, setAssignmentTarget] = useState<{
-    workerId: string;
-    bedIds: string[];
-    plotIds: string[];
-  }>({
+  // Single form
+  const [singleForm, setSingleForm] = useState({
     workerId: "",
-    bedIds: [],
-    plotIds: [],
+    taskId: "",
+    seasonId: "",
+    plotId: "",
+    bedIds: [] as string[],
+    date: "",
+    startHour: "07",
+    startMinute: "00",
+    endHour: "09",
+    endMinute: "00",
+    notes: "",
   });
+  const [singleConflict, setSingleConflict] = useState<string[]>([]);
+  const [isSingleTimerOpen, setIsSingleTimerOpen] = useState(false);
+  const [isBulkTimerOpen, setIsBulkTimerOpen] = useState(false);
 
-  // Selected plots inside the assign modal (multi-select; controls which beds are shown)
-  const [selectedPlotIds, setSelectedPlotIds] = useState<string[]>([]);
+  // Derived: beds available for a given seasonId + plotId
+  const getBedsForPlot = (seasonId: string, plotId: string) => {
+    if (!seasonId || !plotId) return [];
+    const season = seasons.find((s) => s.seasonId === seasonId);
+    if (!season) return [];
+    const seasonBedIds = new Set(season.seasonsDetails.map((sd) => sd.bedId));
+    return allBeds.filter(
+      (b) => seasonBedIds.has(b.bedId) && b.plotId === plotId,
+    );
+  };
+
+  const getPlotsForSeason = (seasonId: string) => {
+    if (!seasonId) return [];
+    const season = seasons.find((s) => s.seasonId === seasonId);
+    if (!season) return [];
+    const seasonBedIds = new Set(season.seasonsDetails.map((sd) => sd.bedId));
+    const plotIds = new Set(
+      allBeds.filter((b) => seasonBedIds.has(b.bedId)).map((b) => b.plotId),
+    );
+    return allPlots.filter((p) => plotIds.has(p.plotId));
+  };
+
+  // Bulk preview count
+  const bulkPreviewCount = (() => {
+    if (!bulkForm.fromDate || !bulkForm.toDate || !bulkForm.selectedDays.length)
+      return 0;
+    const from = new Date(bulkForm.fromDate);
+    const to = new Date(bulkForm.toDate);
+    if (from > to) return 0;
+    const selSet = new Set(bulkForm.selectedDays.map((d) => WEEKDAY_MAP[d]));
+    let count = 0;
+    const cur = new Date(from);
+    while (cur <= to) {
+      if (selSet.has(cur.getDay())) count++;
+      cur.setDate(cur.getDate() + 1);
+    }
+    return count;
+  })();
+
+  // Single conflict check (against existing mock taskDetails)
+  const checkSingleConflict = (
+    workerId: string,
+    date: string,
+    sh: string,
+    sm: string,
+    eh: string,
+    em: string,
+  ) => {
+    if (!workerId || !date) {
+      setSingleConflict([]);
+      return;
+    }
+    const newStart = new Date(`${date}T${sh}:${sm}:00`).getTime();
+    const newEnd = new Date(`${date}T${eh}:${em}:00`).getTime();
+    const conflicts = taskDetails
+      .filter((d) => {
+        if (!d.assignedToWorkerIds.includes(workerId)) return false;
+        if (!d.startDate || !d.endDate) return false;
+        if (d.startDate.slice(0, 10) !== date) return false;
+        const s = new Date(d.startDate).getTime();
+        const e = new Date(d.endDate).getTime();
+        return newStart < e && newEnd > s;
+      })
+      .map((d) => d.taskTitle ?? "Công việc khác");
+    setSingleConflict(conflicts);
+  };
+
+  // Reset assign modal
+  const resetAssignModal = () => {
+    setBulkForm({
+      workerId: "",
+      taskId: "",
+      seasonId: "",
+      plotId: "",
+      bedIds: [],
+      fromDate: "",
+      toDate: "",
+      selectedDays: ["T2", "T3", "T4", "T5", "T6"],
+      startHour: "07",
+      startMinute: "00",
+      endHour: "09",
+      endMinute: "00",
+      notes: "",
+    });
+    setSingleForm({
+      workerId: "",
+      taskId: "",
+      seasonId: "",
+      plotId: "",
+      bedIds: [],
+      date: "",
+      startHour: "07",
+      startMinute: "00",
+      endHour: "09",
+      endMinute: "00",
+      notes: "",
+    });
+    setSingleConflict([]);
+    setAssignMode("bulk");
+    setIsBulkTimerOpen(false);
+    setIsSingleTimerOpen(false);
+  };
 
   // ── Data loading ──────────────────────────────────────────────────────────
 
@@ -609,32 +1013,6 @@ export function TasksPage() {
   useEffect(() => {
     loadAllData();
   }, [loadAllData]);
-
-  // ── Calendar ──────────────────────────────────────────────────────────────
-  const weekDays = (() => {
-    const days: Date[] = [];
-    const start = new Date(currentDate);
-    const day = start.getDay();
-    const diff = day === 0 ? -6 : 1 - day;
-    start.setDate(start.getDate() + diff);
-    for (let i = 0; i < 7; i++) {
-      const d = new Date(start);
-      d.setDate(start.getDate() + i);
-      days.push(d);
-    }
-    return days;
-  })();
-
-  const getAssignmentsForDay = (date: Date) =>
-    taskDetails.filter((d) => {
-      if (!d.startDate) return false;
-      // Compare date portion directly from the ISO string to avoid UTC→local shift
-      const isoDay = d.startDate.slice(0, 10); // "YYYY-MM-DD"
-      const y = date.getFullYear();
-      const m = String(date.getMonth() + 1).padStart(2, "0");
-      const day = String(date.getDate()).padStart(2, "0");
-      return isoDay === `${y}-${m}-${day}`;
-    });
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
@@ -692,129 +1070,122 @@ export function TasksPage() {
     setEditTpl(null);
   };
 
-  const handleInlineCreateTask = async () => {
-    if (!inlineNewTask.name) return;
-    setIsSaving(true);
-    try {
-      await api.createTask({
-        taskTitle: inlineNewTask.name,
-        taskStatus: "Active",
-        taskNotes: inlineNewTask.description,
-      });
-      await loadAllData();
-    } catch (err) {
-      console.error("Failed to create task:", err);
-    } finally {
-      setIsSaving(false);
-    }
-    setInlineNewTask({ name: "", type: "", description: "" });
-    setShowInlineNewTask(false);
-  };
+  // ── NEW: Mock submit handlers for bulk + single assign ────────────────────
 
-  const checkWorkerConflict = async (
-    workerId: string,
-    date: string,
-    sh: string,
-    sm: string,
-    eh: string,
-    em: string,
-  ) => {
-    if (!workerId || !date) {
-      setWorkerConflict(null);
-      return;
-    }
-    setIsCheckingConflict(true);
-    try {
-      const details = await api.getTaskDetailsByWorker(workerId);
-      if (!details || details.length === 0) {
-        setWorkerConflict({ hasConflict: false, conflictingTask: "" });
-        return;
-      }
-      const newStart = new Date(`${date}T${sh}:${sm}:00.000`).getTime();
-      const newEnd = new Date(`${date}T${eh}:${em}:00.000`).getTime();
-      const conflict = details.find((d) => {
-        if (!d.startDate || !d.endDate) return false;
-        const s = new Date(d.startDate).getTime();
-        const e = new Date(d.endDate).getTime();
-        return newStart < e && newEnd > s;
-      });
-      setWorkerConflict(
-        conflict
-          ? {
-              hasConflict: true,
-              conflictingTask: conflict.taskTitle ?? "công việc khác",
-            }
-          : { hasConflict: false, conflictingTask: "" },
-      );
-    } catch {
-      setWorkerConflict(null);
-    } finally {
-      setIsCheckingConflict(false);
-    }
-  };
-
-  const handleCreateAssignment = async () => {
+  const handleSubmitBulk = () => {
+    const {
+      workerId,
+      taskId,
+      seasonId,
+      bedIds,
+      fromDate,
+      toDate,
+      selectedDays,
+      startHour,
+      startMinute,
+      endHour,
+      endMinute,
+      notes,
+    } = bulkForm;
     if (
-      !newAssignment.taskId ||
-      !newAssignment.seasonId ||
-      !newAssignment.date ||
-      !assignmentTarget.workerId ||
-      assignmentTarget.bedIds.length === 0
+      !workerId ||
+      !taskId ||
+      !seasonId ||
+      !bedIds.length ||
+      !fromDate ||
+      !toDate ||
+      !selectedDays.length
     )
       return;
 
-    // Build ISO datetimes from date + time pickers (no Z — local time)
-    const startISO = `${newAssignment.date}T${newAssignment.startHour}:${newAssignment.startMinute}:00.000`;
-    const endISO = `${newAssignment.date}T${newAssignment.endHour}:${newAssignment.endMinute}:00.000`;
-
-    // Derive plotIds from selected beds
+    const selSet = new Set(selectedDays.map((d) => WEEKDAY_MAP[d]));
     const plotIds = Array.from(
       new Set(
-        assignmentTarget.bedIds
+        bedIds
           .map((bid) => allBeds.find((b) => b.bedId === bid)?.plotId)
           .filter(Boolean) as string[],
       ),
     );
-
-    // Derive farmId from the selected season via allPlots
-    const selectedSeason = seasons.find(
-      (s) => s.seasonId === newAssignment.seasonId,
-    );
+    const season = seasons.find((s) => s.seasonId === seasonId);
     const farmId =
-      allPlots.find((p) => p.farmId === selectedSeason?.farmId)?.farmId ?? "";
+      allPlots.find((p) => p.farmId === season?.farmId)?.farmId ?? "";
+    const task = tasks.find((t) => t.taskId === taskId);
+    const cycleLabel = selectedDays.join("+");
 
-    setIsSaving(true);
-    try {
-      await api.createTaskDetail({
-        taskId: newAssignment.taskId,
-        seasonId: newAssignment.seasonId,
-        farmId,
-        assignedToWorkerIds: [assignmentTarget.workerId],
-        bedIds: assignmentTarget.bedIds,
-        plotIds,
-        startDate: startISO,
-        endDate: endISO,
-        notes: newAssignment.notes,
-        status: "Active",
-      });
-      await loadAllData();
-    } catch (err) {
-      console.error("Failed to create task detail:", err);
-    } finally {
-      setIsSaving(false);
+    const newDetails: TaskDetailResponse[] = [];
+    const cur = new Date(fromDate);
+    const end = new Date(toDate);
+    while (cur <= end) {
+      if (selSet.has(cur.getDay())) {
+        const dateStr = cur.toISOString().slice(0, 10);
+        newDetails.push({
+          taskDetailId: `mock-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          taskId,
+          taskTitle: task?.taskTitle ?? "",
+          seasonId,
+          farmId,
+          assignedToWorkerIds: [workerId],
+          bedIds,
+          plotIds,
+          startDate: `${dateStr}T${startHour}:${startMinute}:00.000`,
+          endDate: `${dateStr}T${endHour}:${endMinute}:00.000`,
+          notes,
+          status: "Pending",
+          cycle: cycleLabel,
+        } as TaskDetailResponse & { cycle?: string });
+      }
+      cur.setDate(cur.getDate() + 1);
     }
+    setTaskDetails((prev) => [...prev, ...newDetails]);
+    resetAssignModal();
+    setIsAssignOpen(false);
+  };
 
-    setNewAssignment({
-      taskId: "",
-      seasonId: "",
-      date: "",
-      startHour: "07",
-      startMinute: "00",
-      endHour: "09",
-      endMinute: "00",
-      notes: "",
-    });
-    setAssignmentTarget({ workerId: "", bedIds: [], plotIds: [] });
+  const handleSubmitSingle = () => {
+    const {
+      workerId,
+      taskId,
+      seasonId,
+      bedIds,
+      date,
+      startHour,
+      startMinute,
+      endHour,
+      endMinute,
+      notes,
+    } = singleForm;
+    if (!workerId || !taskId || !seasonId || !bedIds.length || !date) return;
+
+    const plotIds = Array.from(
+      new Set(
+        bedIds
+          .map((bid) => allBeds.find((b) => b.bedId === bid)?.plotId)
+          .filter(Boolean) as string[],
+      ),
+    );
+    const season = seasons.find((s) => s.seasonId === seasonId);
+    const farmId =
+      allPlots.find((p) => p.farmId === season?.farmId)?.farmId ?? "";
+    const task = tasks.find((t) => t.taskId === taskId);
+
+    const newDetail = {
+      taskDetailId: `mock-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      taskId,
+      taskTitle: task?.taskTitle ?? "",
+      seasonId,
+      farmId,
+      assignedToWorkerIds: [workerId],
+      bedIds,
+      plotIds,
+      startDate: `${date}T${startHour}:${startMinute}:00.000`,
+      endDate: `${date}T${endHour}:${endMinute}:00.000`,
+      notes,
+      status: "Pending",
+      cycle: "Đột xuất",
+    } as TaskDetailResponse & { cycle?: string };
+
+    setTaskDetails((prev) => [...prev, newDetail]);
+    resetAssignModal();
     setIsAssignOpen(false);
   };
 
@@ -825,7 +1196,10 @@ export function TasksPage() {
       await api.deleteTaskDetail(detailToDelete.taskDetailId);
       await loadAllData();
     } catch (err) {
-      console.error("Failed to delete task detail:", err);
+      // Mock fallback: remove from local state
+      setTaskDetails((prev) =>
+        prev.filter((d) => d.taskDetailId !== detailToDelete.taskDetailId),
+      );
     } finally {
       setIsSaving(false);
     }
@@ -927,27 +1301,57 @@ export function TasksPage() {
     setIsViewOpen(false);
   };
 
-  // Derived helpers
-  const selectedTask = tasks.find((t) => t.taskId === newAssignment.taskId);
+  // ── All-tasks derived data ─────────────────────────────────────────────────
+  const STATUS_SORT_ORDER: Record<string, number> = {
+    Active: 0,
+    Pending: 1,
+    Completed: 2,
+  };
 
-  const timeDisplay = newAssignment.startHour
-    ? `${newAssignment.startHour}:${newAssignment.startMinute} – ${newAssignment.endHour}:${newAssignment.endMinute}`
-    : "";
-
-  // Beds available for the selected season (from seasonsDetails)
-  const seasonBedsForAssign = (() => {
-    if (!newAssignment.seasonId) return [];
-    const season = seasons.find((s) => s.seasonId === newAssignment.seasonId);
-    if (!season) return [];
-    const bedIds = new Set(season.seasonsDetails.map((sd) => sd.bedId));
-    return allBeds.filter((b) => bedIds.has(b.bedId));
+  const allTasksFiltered = (() => {
+    const q = allTasksSearch.toLowerCase();
+    return taskDetails
+      .filter((d) => {
+        if (
+          q &&
+          !(d.taskTitle ?? "").toLowerCase().includes(q) &&
+          !staffList
+            .find((s) => s.userId === d.assignedToWorkerIds[0])
+            ?.fullname.toLowerCase()
+            .includes(q)
+        )
+          return false;
+        if (
+          allTasksWorkerFilter &&
+          d.assignedToWorkerIds[0] !== allTasksWorkerFilter
+        )
+          return false;
+        if (allTasksStatusFilter && d.status !== allTasksStatusFilter)
+          return false;
+        return true;
+      })
+      .sort((a, b) => {
+        // Primary: status priority (Active → Pending → Completed → rest)
+        const sa = STATUS_SORT_ORDER[a.status ?? ""] ?? 99;
+        const sb = STATUS_SORT_ORDER[b.status ?? ""] ?? 99;
+        if (sa !== sb) return sa - sb;
+        // Secondary: most recent date first
+        return (
+          new Date(b.startDate ?? 0).getTime() -
+          new Date(a.startDate ?? 0).getTime()
+        );
+      });
   })();
 
-  // Plots that contain those beds
-  const seasonPlotsForAssign = (() => {
-    const plotIds = new Set(seasonBedsForAssign.map((b) => b.plotId));
-    return allPlots.filter((p) => plotIds.has(p.plotId));
-  })();
+  const allTasksTotalPages = Math.max(
+    1,
+    Math.ceil(allTasksFiltered.length / ALL_TASKS_PER_PAGE),
+  );
+  const allTasksPageClamped = Math.min(allTasksPage, allTasksTotalPages);
+  const allTasksSlice = allTasksFiltered.slice(
+    (allTasksPageClamped - 1) * ALL_TASKS_PER_PAGE,
+    allTasksPageClamped * ALL_TASKS_PER_PAGE,
+  );
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -960,26 +1364,42 @@ export function TasksPage() {
             Quản lý và phân công công việc tại trang trại
           </p>
         </div>
-        {isLoading && (
-          <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-500">
-            Đang tải...
-          </span>
-        )}
+        <div className="flex items-center gap-3">
+          {isLoading && (
+            <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-500">
+              Đang tải...
+            </span>
+          )}
+          <button
+            onClick={() => setIsAssignOpen(true)}
+            className="bg-[#009689] text-white px-3 py-1.5 rounded-lg text-sm flex items-center gap-1.5 hover:bg-[#007f73] transition-colors"
+          >
+            <Plus className="w-3.5 h-3.5" /> Giao việc
+          </button>
+        </div>
       </div>
 
       {/* Tabs */}
-      <Tabs.Root value={activeTab} onValueChange={setActiveTab}>
+      <Tabs.Root
+        value={activeTab}
+        onValueChange={(v) => setActiveTab(v as typeof activeTab)}
+      >
         <Tabs.List className="flex gap-6 border-b border-[#e2e8f0]">
           {[
             {
               value: "schedule",
-              label: "Lịch trình",
+              label: "Lịch theo nhân viên",
               icon: <Calendar className="w-4 h-4" />,
             },
             {
-              value: "tasks",
-              label: "Thêm công việc",
+              value: "allTasks",
+              label: "Tất cả công việc",
               icon: <List className="w-4 h-4" />,
+            },
+            {
+              value: "tasks",
+              label: "Mẫu công việc",
+              icon: <ClipboardList className="w-4 h-4" />,
             },
           ].map((tab) => (
             <Tabs.Trigger
@@ -996,43 +1416,55 @@ export function TasksPage() {
           ))}
         </Tabs.List>
 
-        {/* ══ TAB: LỊCH TRÌNH ══ */}
+        {/* ══ TAB: LỊCH THEO NHÂN VIÊN ══ */}
         <Tabs.Content value="schedule" className="mt-6 space-y-4">
-          {/* Week nav */}
-          <div
-            className={`bg-white rounded-[10px] p-4 shadow-sm border flex items-center justify-between flex-wrap gap-3 transition-colors ${isCalendarEditMode ? "border-amber-300 bg-amber-50" : "border-[#e2e8f0]"}`}
-          >
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => {
-                  const d = new Date(currentDate);
-                  d.setDate(d.getDate() - 7);
-                  setCurrentDate(d);
-                }}
-                className="p-2 hover:bg-[#f1f5f9] rounded-lg transition-colors"
+          {/* Filter bar */}
+          <div className="bg-white rounded-[10px] p-4 shadow-sm border border-[#e2e8f0] flex items-end gap-3 flex-wrap">
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-[#64748b]">
+                Nhân viên
+              </label>
+              <select
+                value={calWorkerFilter}
+                onChange={(e) => setCalWorkerFilter(e.target.value)}
+                className="px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#009689] w-52"
               >
-                <ChevronLeft className="w-5 h-5 text-[#64748b]" />
-              </button>
-              <span className="text-base font-semibold text-[#1e293b]">
-                {weekDays[0].getDate()}/{weekDays[0].getMonth() + 1} –{" "}
-                {weekDays[6].getDate()}/{weekDays[6].getMonth() + 1}/
-                {weekDays[6].getFullYear()}
-              </span>
-              <button
-                onClick={() => {
-                  const d = new Date(currentDate);
-                  d.setDate(d.getDate() + 7);
-                  setCurrentDate(d);
-                }}
-                className="p-2 hover:bg-[#f1f5f9] rounded-lg transition-colors"
-              >
-                <ChevronRight className="w-5 h-5 text-[#64748b]" />
-              </button>
+                <option value="">-- Chọn nhân viên --</option>
+                {staffList
+                  .filter((s) => s.roleName === "Worker")
+                  .map((s) => (
+                    <option key={s.userId} value={s.userId}>
+                      {s.fullname}
+                    </option>
+                  ))}
+              </select>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-[#64748b]">
+                Từ ngày
+              </label>
+              <input
+                type="date"
+                value={calFromDate}
+                onChange={(e) => setCalFromDate(e.target.value)}
+                className="px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689]"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-[#64748b]">
+                Đến ngày
+              </label>
+              <input
+                type="date"
+                value={calToDate}
+                onChange={(e) => setCalToDate(e.target.value)}
+                className="px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689]"
+              />
+            </div>
+            <div className="flex items-center gap-2 ml-auto">
               <button
                 onClick={() => setIsCalendarEditMode((p) => !p)}
-                className={`px-3 py-1.5 rounded-lg text-sm flex items-center gap-1.5 font-medium border transition-colors ${
+                className={`px-3 py-2 rounded-lg text-sm flex items-center gap-1.5 font-medium border transition-colors ${
                   isCalendarEditMode
                     ? "bg-amber-500 text-white border-amber-500 hover:bg-amber-600"
                     : "bg-white text-[#64748b] border-[#e2e8f0] hover:border-amber-400 hover:text-amber-600"
@@ -1041,89 +1473,225 @@ export function TasksPage() {
                 <Pencil className="w-3.5 h-3.5" />
                 {isCalendarEditMode ? "Thoát chỉnh sửa" : "Chỉnh sửa lịch"}
               </button>
-              <button
-                onClick={() => setIsAssignOpen(true)}
-                className="bg-[#009689] text-white px-3 py-1.5 rounded-lg text-sm flex items-center gap-1.5 hover:bg-[#007f73] transition-colors shrink-0"
-              >
-                <Plus className="w-3.5 h-3.5" /> Giao việc
-              </button>
             </div>
           </div>
 
-          {/* Edit mode banner */}
-          {isCalendarEditMode && (
-            <div className="flex items-center gap-2 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-[10px] text-sm text-amber-700">
-              <Pencil className="w-4 h-4 shrink-0 text-amber-500" />
-              <span>
-                Đang ở chế độ chỉnh sửa — nhấn{" "}
-                <span className="font-semibold">Sửa</span> hoặc{" "}
-                <span className="font-semibold">Xoá</span> trực tiếp trên từng
-                công việc.
-              </span>
+          {/* Validation / empty prompt */}
+          {!calWorkerFilter ? (
+            <div className="bg-white rounded-[10px] shadow-sm border border-[#e2e8f0] py-16 text-center text-[#94a3b8] text-sm">
+              <User className="w-8 h-8 mx-auto mb-2 opacity-30" />
+              Chọn nhân viên và khoảng thời gian để xem lịch làm việc
             </div>
-          )}
-
-          {/* Calendar grid */}
-          <div className="bg-white rounded-[10px] shadow-sm border border-[#e2e8f0] overflow-hidden">
-            <div className="grid grid-cols-7 divide-x divide-[#f1f5f9]">
-              {weekDays.map((day, idx) => {
-                const today = new Date();
-                const isToday =
-                  day.getDate() === today.getDate() &&
-                  day.getMonth() === today.getMonth() &&
-                  day.getFullYear() === today.getFullYear();
+          ) : (
+            (() => {
+              const from = calFromDate ? new Date(calFromDate) : null;
+              const to = calToDate ? new Date(calToDate) : null;
+              if (!from || !to)
                 return (
-                  <CalendarDayCard
-                    key={idx}
-                    day={day}
-                    dayLabel={DAY_LABELS[idx]}
-                    isToday={isToday}
-                    assignments={getAssignmentsForDay(day)}
-                    onTaskClick={(a) => {
-                      setSelectedDetail(a);
-                      setIsViewOpen(true);
-                    }}
-                    isEditMode={isCalendarEditMode}
-                    onEditClick={(a) => {
-                      setSelectedDetail(a);
-                      openEditDetail(a);
-                    }}
-                    onDeleteClick={(a) => {
-                      setDetailToDelete(a);
-                      setIsDeleteOpen(true);
-                    }}
-                  />
+                  <div className="bg-white rounded-[10px] shadow-sm border border-[#e2e8f0] py-16 text-center text-[#94a3b8] text-sm">
+                    Vui lòng chọn khoảng thời gian để hiển thị lịch
+                  </div>
                 );
-              })}
-            </div>
-          </div>
+              if (from > to)
+                return (
+                  <div className="bg-red-50 rounded-[10px] border border-red-200 py-6 text-center text-red-500 text-sm">
+                    Ngày bắt đầu phải trước ngày kết thúc
+                  </div>
+                );
+              const diffDays =
+                Math.round((to.getTime() - from.getTime()) / 86400000) + 1;
+              if (diffDays > 42)
+                return (
+                  <div className="bg-amber-50 rounded-[10px] border border-amber-200 py-6 text-center text-amber-600 text-sm">
+                    Khoảng thời gian tối đa hiển thị là 6 tuần. Vui lòng thu hẹp
+                    phạm vi.
+                  </div>
+                );
+
+              // Build calendar days from Monday of the week containing "from"
+              // to Sunday of the week containing "to"
+              const calStart = new Date(from);
+              const startDow = calStart.getDay();
+              calStart.setDate(
+                calStart.getDate() + (startDow === 0 ? -6 : 1 - startDow),
+              );
+
+              const calEnd = new Date(to);
+              const endDow = calEnd.getDay();
+              if (endDow !== 0) calEnd.setDate(calEnd.getDate() + (7 - endDow));
+
+              const calDays: Date[] = [];
+              const cursor = new Date(calStart);
+              while (cursor <= calEnd && calDays.length < 42) {
+                calDays.push(new Date(cursor));
+                cursor.setDate(cursor.getDate() + 1);
+              }
+
+              // Filter task details for this worker only
+              const workerDetails = taskDetails.filter((d) =>
+                d.assignedToWorkerIds.includes(calWorkerFilter),
+              );
+
+              const getAssignmentsForDay = (date: Date) =>
+                workerDetails.filter((d) => {
+                  if (!d.startDate) return false;
+                  const isoDay = d.startDate.slice(0, 10);
+                  const y = date.getFullYear();
+                  const m = String(date.getMonth() + 1).padStart(2, "0");
+                  const day = String(date.getDate()).padStart(2, "0");
+                  return isoDay === `${y}-${m}-${day}`;
+                });
+
+              const selectedWorker = staffList.find(
+                (s) => s.userId === calWorkerFilter,
+              );
+              const totalInRange = workerDetails.filter((d) => {
+                if (!d.startDate) return false;
+                return (
+                  d.startDate.slice(0, 10) >= calFromDate &&
+                  d.startDate.slice(0, 10) <= calToDate
+                );
+              }).length;
+
+              return (
+                <>
+                  {isCalendarEditMode && (
+                    <div className="flex items-center gap-2 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-[10px] text-sm text-amber-700">
+                      <Pencil className="w-4 h-4 shrink-0 text-amber-500" />
+                      <span>
+                        Đang ở chế độ chỉnh sửa — nhấn{" "}
+                        <span className="font-semibold">Sửa</span> hoặc{" "}
+                        <span className="font-semibold">Xoá</span> trực tiếp
+                        trên từng công việc.
+                      </span>
+                    </div>
+                  )}
+                  <p className="text-sm text-[#64748b]">
+                    <span className="font-semibold text-[#1e293b]">
+                      {selectedWorker?.fullname ?? calWorkerFilter}
+                    </span>{" "}
+                    —{" "}
+                    <span className="font-semibold text-[#009689]">
+                      {totalInRange}
+                    </span>{" "}
+                    công việc trong khoảng thời gian đã chọn
+                  </p>
+                  {/* Calendar grid */}
+                  <div className="bg-white rounded-[10px] shadow-sm border border-[#e2e8f0] overflow-hidden">
+                    <div className="grid grid-cols-7 divide-x divide-[#f1f5f9]">
+                      {DAY_LABELS.map((label) => (
+                        <div
+                          key={label}
+                          className="py-2 text-center text-[10px] font-bold uppercase tracking-widest text-[#94a3b8] bg-[#f8fafc] border-b border-[#f1f5f9]"
+                        >
+                          {label}
+                        </div>
+                      ))}
+                      {calDays.map((day, idx) => {
+                        const today = new Date();
+                        const isToday =
+                          day.getDate() === today.getDate() &&
+                          day.getMonth() === today.getMonth() &&
+                          day.getFullYear() === today.getFullYear();
+                        const inRange =
+                          day.toISOString().slice(0, 10) >= calFromDate &&
+                          day.toISOString().slice(0, 10) <= calToDate;
+                        return (
+                          <CalendarDayCard
+                            key={idx}
+                            day={day}
+                            dayLabel={DAY_LABELS[idx % 7]}
+                            isToday={isToday}
+                            assignments={getAssignmentsForDay(day)}
+                            onTaskClick={(a) => {
+                              setSelectedDetail(a);
+                              setIsViewOpen(true);
+                            }}
+                            isEditMode={isCalendarEditMode}
+                            onEditClick={(a) => {
+                              setSelectedDetail(a);
+                              openEditDetail(a);
+                            }}
+                            onDeleteClick={(a) => {
+                              setDetailToDelete(a);
+                              setIsDeleteOpen(true);
+                            }}
+                            style={!inRange ? { opacity: 0.35 } : undefined}
+                          />
+                        );
+                      })}
+                    </div>
+                  </div>
+                </>
+              );
+            })()
+          )}
         </Tabs.Content>
 
-        {/* ══ TAB: THÊM CÔNG VIỆC ══ */}
-        <Tabs.Content value="tasks" className="mt-6">
-          <div className="bg-white rounded-[10px] shadow-sm border border-[#e2e8f0] overflow-hidden">
-            {/* Table header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-[#e2e8f0]">
-              <h2 className="text-sm font-bold text-[#1e293b]">
-                Danh sách công việc
-              </h2>
-              <button
-                onClick={() => setIsCreateTemplateOpen(true)}
-                className="bg-[#009689] text-white px-3 py-1.5 rounded-lg text-sm flex items-center gap-1.5 hover:bg-[#007f73] transition-colors"
-              >
-                <Plus className="w-3.5 h-3.5" /> Thêm công việc
-              </button>
-            </div>
+        {/* ══ TAB: TẤT CẢ CÔNG VIỆC ══ */}
+        <Tabs.Content value="allTasks" className="mt-6 space-y-4">
+          {/* Toolbar */}
+          <div className="flex items-center gap-3 flex-wrap">
+            <input
+              type="text"
+              placeholder="Tìm tên công việc hoặc nhân viên..."
+              value={allTasksSearch}
+              onChange={(e) => {
+                setAllTasksSearch(e.target.value);
+                setAllTasksPage(1);
+              }}
+              className="px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] w-72"
+            />
+            <select
+              value={allTasksWorkerFilter}
+              onChange={(e) => {
+                setAllTasksWorkerFilter(e.target.value);
+                setAllTasksPage(1);
+              }}
+              className="px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#009689] w-52"
+            >
+              <option value="">Tất cả nhân viên</option>
+              {staffList
+                .filter((s) => s.roleName === "Worker")
+                .map((s) => (
+                  <option key={s.userId} value={s.userId}>
+                    {s.fullname}
+                  </option>
+                ))}
+            </select>
+            <select
+              value={allTasksStatusFilter}
+              onChange={(e) => {
+                setAllTasksStatusFilter(e.target.value);
+                setAllTasksPage(1);
+              }}
+              className="px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#009689] w-48"
+            >
+              <option value="">Tất cả trạng thái</option>
+              <option value="Active">Đang thực hiện</option>
+              <option value="Pending">Chờ thực hiện</option>
+              <option value="Completed">Hoàn thành</option>
+            </select>
+          </div>
 
-            {/* Table */}
+          {/* Table */}
+          <div className="bg-white rounded-[10px] shadow-sm border border-[#e2e8f0] overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead className="bg-[#f8fafc] border-b border-[#e2e8f0]">
                   <tr>
-                    {["Công việc", "Trạng thái", "Hành động"].map((h, i) => (
+                    {[
+                      "Tên công việc",
+                      "Nhân viên",
+                      "Vuông",
+                      "Ngày",
+                      "Giờ",
+                      "Trạng thái",
+                      "Hành động",
+                    ].map((h, i) => (
                       <th
                         key={h}
-                        className={`px-6 py-3 text-xs font-semibold text-[#62748e] uppercase tracking-wide ${i === 2 ? "text-center" : "text-left"}`}
+                        className={`px-4 py-3 text-xs font-semibold text-[#62748e] uppercase tracking-wide whitespace-nowrap ${i === 6 ? "text-center" : "text-left"}`}
                       >
                         {h}
                       </th>
@@ -1134,7 +1702,214 @@ export function TasksPage() {
                   {isLoading ? (
                     <tr>
                       <td
-                        colSpan={3}
+                        colSpan={7}
+                        className="px-4 py-16 text-center text-[#94a3b8] text-sm"
+                      >
+                        Đang tải...
+                      </td>
+                    </tr>
+                  ) : allTasksSlice.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={7}
+                        className="px-4 py-16 text-center text-[#94a3b8] text-sm"
+                      >
+                        Không tìm thấy công việc phù hợp
+                      </td>
+                    </tr>
+                  ) : (
+                    allTasksSlice.map((detail) => {
+                      const worker = staffList.find(
+                        (s) => s.userId === detail.assignedToWorkerIds[0],
+                      );
+                      const plotNames = detail.plotIds
+                        .map(
+                          (id) =>
+                            allPlots.find((p) => p.plotId === id)?.plotName ??
+                            id,
+                        )
+                        .join(", ");
+                      const locationLabel = plotNames || "—";
+                      const dateLabel = isoDate(detail.startDate);
+                      const timeLabel =
+                        detail.startDate && detail.endDate
+                          ? `${isoTime(detail.startDate)} – ${isoTime(detail.endDate)}`
+                          : "—";
+                      const statusMap: Record<
+                        string,
+                        { label: string; cls: string }
+                      > = {
+                        Active: {
+                          label: "Đang thực hiện",
+                          cls: "bg-blue-50 text-blue-700",
+                        },
+                        Pending: {
+                          label: "Chờ thực hiện",
+                          cls: "bg-[#fef3c7] text-[#92400e]",
+                        },
+                        Completed: {
+                          label: "Hoàn thành",
+                          cls: "bg-[#d1fae5] text-[#065f46]",
+                        },
+                      };
+                      const statusInfo = statusMap[detail.status ?? ""] ?? {
+                        label: detail.status ?? "—",
+                        cls: "bg-[#f1f5f9] text-[#64748b]",
+                      };
+                      return (
+                        <tr
+                          key={detail.taskDetailId}
+                          className="hover:bg-[#f8fafc] transition-colors"
+                        >
+                          <td className="px-4 py-3 text-sm font-medium text-[#1e293b]">
+                            {detail.taskTitle ??
+                              tasks.find((t) => t.taskId === detail.taskId)
+                                ?.taskTitle ??
+                              "—"}
+                          </td>
+                          <td className="px-4 py-3">
+                            {worker ? (
+                              <div className="flex items-center gap-2">
+                                <div className="w-7 h-7 rounded-full bg-[#009689] flex items-center justify-center text-white text-[11px] font-bold shrink-0">
+                                  {worker.fullname.charAt(0).toUpperCase()}
+                                </div>
+                                <span className="text-sm text-[#1e293b]">
+                                  {worker.fullname}
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="text-sm text-[#94a3b8]">—</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-[#64748b] max-w-[180px] truncate">
+                            {locationLabel}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-[#1e293b] whitespace-nowrap">
+                            {dateLabel}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-[#64748b] whitespace-nowrap">
+                            {timeLabel}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span
+                              className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-medium ${statusInfo.cls}`}
+                            >
+                              {statusInfo.label}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center justify-center gap-1">
+                              <button
+                                onClick={() => {
+                                  setSelectedDetail(detail);
+                                  setIsViewOpen(true);
+                                }}
+                                className="p-1.5 text-[#009689] hover:bg-[#f0fdfa] rounded-lg transition-colors"
+                                title="Xem chi tiết"
+                              >
+                                <Eye className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setSelectedDetail(detail);
+                                  openEditDetail(detail);
+                                }}
+                                className="p-1.5 text-[#64748b] hover:bg-[#f1f5f9] rounded-lg transition-colors"
+                                title="Chỉnh sửa"
+                              >
+                                <Pencil className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setDetailToDelete(detail);
+                                  setIsDeleteOpen(true);
+                                }}
+                                className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg transition-colors"
+                                title="Xoá"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination */}
+            <div className="px-4 py-3 border-t border-[#e2e8f0] flex items-center justify-end gap-1">
+              <button
+                onClick={() => setAllTasksPage((p) => Math.max(1, p - 1))}
+                disabled={allTasksPageClamped === 1}
+                className="p-1.5 border border-[#e2e8f0] rounded-lg hover:bg-[#f8fafc] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronLeft className="w-4 h-4 text-[#64748b]" />
+              </button>
+              {Array.from({ length: allTasksTotalPages }, (_, i) => (
+                <button
+                  key={i}
+                  onClick={() => setAllTasksPage(i + 1)}
+                  className={`w-7 h-7 rounded-lg text-xs font-medium transition-colors ${
+                    allTasksPageClamped === i + 1
+                      ? "bg-[#009689] text-white"
+                      : "hover:bg-[#f8fafc] text-[#64748b]"
+                  }`}
+                >
+                  {i + 1}
+                </button>
+              ))}
+              <button
+                onClick={() =>
+                  setAllTasksPage((p) => Math.min(allTasksTotalPages, p + 1))
+                }
+                disabled={allTasksPageClamped === allTasksTotalPages}
+                className="p-1.5 border border-[#e2e8f0] rounded-lg hover:bg-[#f8fafc] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronRight className="w-4 h-4 text-[#64748b]" />
+              </button>
+            </div>
+          </div>
+        </Tabs.Content>
+
+        {/* ══ TAB: MẪU CÔNG VIỆC ══ */}
+        <Tabs.Content value="tasks" className="mt-6">
+          <div className="bg-white rounded-[10px] shadow-sm border border-[#e2e8f0] overflow-hidden">
+            {/* Table header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-[#e2e8f0]">
+              <h2 className="text-sm font-bold text-[#1e293b]">
+                Mẫu công việc
+              </h2>
+              <button
+                onClick={() => setIsCreateTemplateOpen(true)}
+                className="bg-[#009689] text-white px-3 py-1.5 rounded-lg text-sm flex items-center gap-1.5 hover:bg-[#007f73] transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5" /> Thêm mẫu
+              </button>
+            </div>
+
+            {/* Table */}
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-[#f8fafc] border-b border-[#e2e8f0]">
+                  <tr>
+                    {["Công việc", "Hành động"].map((h, i) => (
+                      <th
+                        key={h}
+                        className={`px-6 py-3 text-xs font-semibold text-[#62748e] uppercase tracking-wide ${i === 1 ? "text-center" : "text-left"}`}
+                      >
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#f1f5f9]">
+                  {isLoading ? (
+                    <tr>
+                      <td
+                        colSpan={2}
                         className="px-6 py-16 text-center text-[#94a3b8] text-sm"
                       >
                         Đang tải...
@@ -1162,19 +1937,6 @@ export function TasksPage() {
                                 </p>
                               )}
                             </div>
-                          </td>
-                          <td className="px-6 py-3.5">
-                            <span
-                              className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-medium ${
-                                normaliseTaskStatus(tpl.taskStatus) === "active"
-                                  ? "bg-[#d1fae5] text-[#065f46]"
-                                  : "bg-[#f1f5f9] text-[#64748b]"
-                              }`}
-                            >
-                              {normaliseTaskStatus(tpl.taskStatus) === "active"
-                                ? "Đang hoạt động"
-                                : "Không hoạt động"}
-                            </span>
                           </td>
                           <td className="px-6 py-3.5">
                             <div className="flex items-center justify-center gap-1">
@@ -1216,10 +1978,10 @@ export function TasksPage() {
                   {!isLoading && tasks.length === 0 && (
                     <tr>
                       <td
-                        colSpan={3}
+                        colSpan={2}
                         className="px-6 py-16 text-center text-[#94a3b8] text-sm"
                       >
-                        Chưa có công việc nào. Nhấn "Thêm công việc" để bắt đầu.
+                        Chưa có mẫu công việc nào. Nhấn "Thêm mẫu" để bắt đầu.
                       </td>
                     </tr>
                   )}
@@ -1231,8 +1993,8 @@ export function TasksPage() {
             <div className="px-6 py-3 border-t border-[#e2e8f0] flex items-center justify-between">
               <p className="text-xs text-[#64748b]">
                 {tasks.length === 0
-                  ? "Chưa có công việc nào"
-                  : `${(tplPage - 1) * TPL_PER_PAGE + 1}–${Math.min(tplPage * TPL_PER_PAGE, tasks.length)} / ${tasks.length} công việc`}
+                  ? "Chưa có mẫu nào"
+                  : `${(tplPage - 1) * TPL_PER_PAGE + 1}–${Math.min(tplPage * TPL_PER_PAGE, tasks.length)} / ${tasks.length} mẫu`}
               </p>
               <div className="flex items-center gap-1">
                 <button
@@ -1361,24 +2123,18 @@ export function TasksPage() {
         </Dialog.Portal>
       </Dialog.Root>
 
-      {/* ══ MODAL: Assign Task ══ */}
+      {/* ══ MODAL: Assign Task (Bulk + Single) ══ */}
       <Dialog.Root
         open={isAssignOpen}
         onOpenChange={(open) => {
           setIsAssignOpen(open);
-          if (!open) {
-            setAssignmentTarget({ workerId: "", bedIds: [], plotIds: [] });
-            setShowInlineNewTask(false);
-            setInlineNewTask({ name: "", type: "", description: "" });
-            setSelectedPlotIds([]);
-            setWorkerConflict(null);
-          }
+          if (!open) resetAssignModal();
         }}
       >
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 bg-black/50 z-40" />
           <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-2xl bg-white rounded-xl shadow-2xl max-h-[92vh] flex flex-col">
-            {/* Sticky header */}
+            {/* Header */}
             <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-[#f1f5f9] shrink-0">
               <Dialog.Title className="text-lg font-bold text-[#1e293b]">
                 Giao việc
@@ -1390,547 +2146,599 @@ export function TasksPage() {
               </Dialog.Close>
             </div>
             <Dialog.Description className="sr-only">
-              Giao công việc cho nhân viên theo nhóm luống
+              Giao công việc cho nhân viên theo lịch định kỳ hoặc đột xuất
             </Dialog.Description>
 
-            {/* Scrollable body */}
-            <div className="overflow-y-auto flex-1 px-6 py-5 space-y-6">
-              {/* ── 1. Task ── */}
-              <section>
-                <h3 className="text-xs font-bold text-[#009689] uppercase tracking-widest mb-3 flex items-center gap-1.5">
-                  <span className="w-5 h-5 rounded-full bg-[#009689] text-white text-[10px] flex items-center justify-center font-bold">
-                    1
-                  </span>
-                  Công việc
-                </h3>
-                <div className="flex gap-2">
-                  <select
-                    value={newAssignment.taskId}
-                    onChange={(e) => {
-                      setNewAssignment((p) => ({
-                        ...p,
-                        taskId: e.target.value,
-                      }));
-                      if (showInlineNewTask) setShowInlineNewTask(false);
-                    }}
-                    className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                  >
-                    <option value="">-- Chọn công việc --</option>
-                    {tasks.map((t) => (
-                      <option key={t.taskId} value={t.taskId}>
-                        {t.taskTitle}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    onClick={() => {
-                      setShowInlineNewTask((p) => !p);
-                      if (!showInlineNewTask) {
-                        setNewAssignment((p) => ({ ...p, taskId: "" }));
-                      }
-                    }}
-                    title="Tạo công việc mới"
-                    className={`shrink-0 w-9 h-9 rounded-lg border flex items-center justify-center transition-colors ${
-                      showInlineNewTask
-                        ? "bg-[#009689] border-[#009689] text-white"
-                        : "border-slate-300 text-[#009689] hover:border-[#009689] hover:bg-[#f0fdfa]"
-                    }`}
-                  >
-                    {showInlineNewTask ? (
-                      <X className="w-4 h-4" />
-                    ) : (
-                      <Plus className="w-4 h-4" />
-                    )}
-                  </button>
-                </div>
+            {/* Mode toggle */}
+            <div className="px-6 pt-4 shrink-0">
+              <div className="grid grid-cols-2 rounded-lg border border-[#e2e8f0] overflow-hidden text-sm font-medium">
+                <button
+                  onClick={() => setAssignMode("bulk")}
+                  className={`py-2.5 flex items-center justify-center gap-2 transition-colors ${assignMode === "bulk" ? "bg-[#009689] text-white" : "bg-white text-[#64748b] hover:bg-[#f8fafc]"}`}
+                >
+                  <Calendar className="w-3.5 h-3.5" />
+                  Định kỳ (nhiều ngày)
+                </button>
+                <button
+                  onClick={() => setAssignMode("single")}
+                  className={`py-2.5 flex items-center justify-center gap-2 transition-colors ${assignMode === "single" ? "bg-[#009689] text-white" : "bg-white text-[#64748b] hover:bg-[#f8fafc]"}`}
+                >
+                  <Clock className="w-3.5 h-3.5" />
+                  Đột xuất (1 ngày)
+                </button>
+              </div>
+            </div>
 
-                {/* Inline create task form */}
-                {showInlineNewTask && (
-                  <div className="mt-3 rounded-xl border border-[#009689]/30 bg-[#f0fdfa] p-4 space-y-3">
-                    <p className="text-xs font-semibold text-[#009689] flex items-center gap-1.5">
-                      <Plus className="w-3.5 h-3.5" /> Tạo công việc mới
-                    </p>
+            {/* Scrollable body */}
+            <div className="overflow-y-auto flex-1 px-6 py-5">
+              {/* ══ BULK MODE ══ */}
+              {assignMode === "bulk" && (
+                <div className="space-y-5">
+                  <p className="text-xs text-[#64748b] bg-[#f0fdfa] border border-[#009689]/20 rounded-lg px-3 py-2">
+                    Giao cùng 1 công việc lặp đi lặp lại trong khung thời gian
+                    dài. Hệ thống sẽ tạo lịch tự động theo các ngày được chọn.
+                  </p>
+
+                  {/* Row 1: Worker + Task */}
+                  <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-xs font-medium text-slate-600 mb-1">
-                        Tên công việc <span className="text-red-500">*</span>
+                      <label className="block text-xs font-medium text-[#475569] mb-1.5">
+                        Nhân viên <span className="text-red-500">*</span>
                       </label>
-                      <input
-                        type="text"
-                        placeholder="VD: Phun thuốc phòng bệnh..."
-                        value={inlineNewTask.name}
+                      <select
+                        value={bulkForm.workerId}
                         onChange={(e) =>
-                          setInlineNewTask((p) => ({
+                          setBulkForm((p) => ({
                             ...p,
-                            name: e.target.value,
+                            workerId: e.target.value,
                           }))
                         }
                         className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                      >
+                        <option value="">-- Chọn nhân viên --</option>
+                        {staffList
+                          .filter((s) => s.roleName === "Worker")
+                          .map((s) => (
+                            <option key={s.userId} value={s.userId}>
+                              {s.fullname}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-[#475569] mb-1.5">
+                        Mẫu công việc <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        value={bulkForm.taskId}
+                        onChange={(e) =>
+                          setBulkForm((p) => ({ ...p, taskId: e.target.value }))
+                        }
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                      >
+                        <option value="">-- Chọn công việc --</option>
+                        {tasks.map((t) => (
+                          <option key={t.taskId} value={t.taskId}>
+                            {t.taskTitle}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Row 2: Season + Plot */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-medium text-[#475569] mb-1.5">
+                        Mùa vụ <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        value={bulkForm.seasonId}
+                        onChange={(e) =>
+                          setBulkForm((p) => ({
+                            ...p,
+                            seasonId: e.target.value,
+                            plotId: "",
+                            bedIds: [],
+                          }))
+                        }
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                      >
+                        <option value="">-- Chọn mùa vụ --</option>
+                        {seasons.map((s) => (
+                          <option key={s.seasonId} value={s.seasonId}>
+                            {s.seasonName}
+                            {s.status === "Active"
+                              ? " (Đang hoạt động)"
+                              : s.status === "Completed"
+                                ? " (Đã kết thúc)"
+                                : " (Sắp diễn ra)"}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-[#475569] mb-1.5">
+                        Vuông <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        value={bulkForm.plotId}
+                        onChange={(e) =>
+                          setBulkForm((p) => ({
+                            ...p,
+                            plotId: e.target.value,
+                            bedIds: [],
+                          }))
+                        }
+                        disabled={!bulkForm.seasonId}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#009689] disabled:opacity-50"
+                      >
+                        <option value="">-- Chọn vuông --</option>
+                        {getPlotsForSeason(bulkForm.seasonId).map((p) => (
+                          <option key={p.plotId} value={p.plotId}>
+                            {p.plotName}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Bed multi-select */}
+                  {bulkForm.plotId && (
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="text-xs font-medium text-[#475569]">
+                          Luống <span className="text-red-500">*</span>
+                          {bulkForm.bedIds.length > 0 && (
+                            <span className="ml-1.5 text-[#009689] font-semibold">
+                              ({bulkForm.bedIds.length} đã chọn)
+                            </span>
+                          )}
+                        </label>
+                        <button
+                          onClick={() => {
+                            const all = getBedsForPlot(
+                              bulkForm.seasonId,
+                              bulkForm.plotId,
+                            ).map((b) => b.bedId);
+                            setBulkForm((p) => ({
+                              ...p,
+                              bedIds: p.bedIds.length === all.length ? [] : all,
+                            }));
+                          }}
+                          className="text-xs text-[#009689] hover:underline"
+                        >
+                          {bulkForm.bedIds.length ===
+                          getBedsForPlot(bulkForm.seasonId, bulkForm.plotId)
+                            .length
+                            ? "Bỏ chọn tất cả"
+                            : "Chọn tất cả"}
+                        </button>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5 p-3 bg-[#f8fafc] rounded-lg border border-[#e2e8f0]">
+                        {getBedsForPlot(bulkForm.seasonId, bulkForm.plotId).map(
+                          (bed) => {
+                            const sel = bulkForm.bedIds.includes(bed.bedId);
+                            return (
+                              <button
+                                key={bed.bedId}
+                                onClick={() =>
+                                  setBulkForm((p) => ({
+                                    ...p,
+                                    bedIds: sel
+                                      ? p.bedIds.filter(
+                                          (id) => id !== bed.bedId,
+                                        )
+                                      : [...p.bedIds, bed.bedId],
+                                  }))
+                                }
+                                className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all"
+                                style={
+                                  sel
+                                    ? {
+                                        background: "#009689",
+                                        color: "#fff",
+                                        borderColor: "#009689",
+                                      }
+                                    : {
+                                        background: "#fff",
+                                        color: "#475569",
+                                        borderColor: "#e2e8f0",
+                                      }
+                                }
+                              >
+                                {bed.bedName}
+                                {sel && (
+                                  <CheckCircle2 className="w-3 h-3 shrink-0" />
+                                )}
+                              </button>
+                            );
+                          },
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Row 3: Date range */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-medium text-[#475569] mb-1.5">
+                        Từ ngày <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="date"
+                        value={bulkForm.fromDate}
+                        onChange={(e) =>
+                          setBulkForm((p) => ({
+                            ...p,
+                            fromDate: e.target.value,
+                          }))
+                        }
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689]"
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-slate-600 mb-1">
-                        Ghi chú
+                      <label className="block text-xs font-medium text-[#475569] mb-1.5">
+                        Đến ngày <span className="text-red-500">*</span>
                       </label>
-                      <textarea
-                        rows={2}
-                        placeholder="Ghi chú thêm nếu cần..."
-                        value={inlineNewTask.description}
+                      <input
+                        type="date"
+                        value={bulkForm.toDate}
                         onChange={(e) =>
-                          setInlineNewTask((p) => ({
-                            ...p,
-                            description: e.target.value,
-                          }))
+                          setBulkForm((p) => ({ ...p, toDate: e.target.value }))
                         }
-                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#009689] resize-none"
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689]"
                       />
                     </div>
-                    <div className="flex gap-2 pt-1">
-                      <button
-                        onClick={() => {
-                          setShowInlineNewTask(false);
-                          setInlineNewTask({
-                            name: "",
-                            type: "",
-                            description: "",
-                          });
-                        }}
-                        className="flex-1 px-3 py-2 rounded-lg text-xs font-medium text-slate-600 border border-slate-300 hover:bg-white transition-colors"
-                      >
-                        Hủy
-                      </button>
-                      <button
-                        onClick={handleInlineCreateTask}
-                        disabled={!inlineNewTask.name || isSaving}
-                        className="flex-1 px-3 py-2 rounded-lg text-xs font-medium bg-[#009689] text-white hover:bg-[#007f73] disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-1.5"
-                      >
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        {isSaving ? "Đang lưu..." : "Tạo & chọn"}
-                      </button>
+                  </div>
+
+                  {/* Worker schedule preview — shown once worker + date range are set */}
+                  {bulkForm.workerId &&
+                    bulkForm.fromDate &&
+                    bulkForm.toDate &&
+                    new Date(bulkForm.fromDate) <=
+                      new Date(bulkForm.toDate) && (
+                      <WorkerSchedulePreview
+                        workerId={bulkForm.workerId}
+                        fromDate={bulkForm.fromDate}
+                        toDate={bulkForm.toDate}
+                        taskDetails={taskDetails}
+                        staffList={staffList}
+                      />
+                    )}
+
+                  {/* Weekday selector */}
+                  <div>
+                    <label className="block text-xs font-medium text-[#475569] mb-1.5">
+                      Các ngày trong tuần{" "}
+                      <span className="text-red-500">*</span>
+                    </label>
+                    <div className="flex gap-2">
+                      {(
+                        ["T2", "T3", "T4", "T5", "T6", "T7", "CN"] as const
+                      ).map((d) => {
+                        const sel = bulkForm.selectedDays.includes(d);
+                        return (
+                          <button
+                            key={d}
+                            onClick={() =>
+                              setBulkForm((p) => ({
+                                ...p,
+                                selectedDays: sel
+                                  ? p.selectedDays.filter((x) => x !== d)
+                                  : [...p.selectedDays, d],
+                              }))
+                            }
+                            className="w-9 h-9 rounded-full text-xs font-semibold border transition-all"
+                            style={
+                              sel
+                                ? {
+                                    background: "#009689",
+                                    color: "#fff",
+                                    borderColor: "#009689",
+                                  }
+                                : {
+                                    background: "#f8fafc",
+                                    color: "#475569",
+                                    borderColor: "#e2e8f0",
+                                  }
+                            }
+                          >
+                            {d}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
-                )}
 
-                {selectedTask && !showInlineNewTask && (
-                  <p className="mt-2 text-xs text-[#64748b] bg-[#f8fafc] rounded-lg px-3 py-2 border border-[#e2e8f0]">
-                    {selectedTask.taskNotes || "Không có ghi chú"}
-                  </p>
-                )}
-              </section>
-
-              {/* ── 2. Season ── */}
-              <section>
-                <h3 className="text-xs font-bold text-[#009689] uppercase tracking-widest mb-3 flex items-center gap-1.5">
-                  <span className="w-5 h-5 rounded-full bg-[#009689] text-white text-[10px] flex items-center justify-center font-bold">
-                    2
-                  </span>
-                  Mùa vụ
-                </h3>
-                <select
-                  value={newAssignment.seasonId}
-                  onChange={(e) => {
-                    const sid = e.target.value;
-                    setNewAssignment((p) => ({ ...p, seasonId: sid }));
-                    setAssignmentTarget((p) => ({
-                      ...p,
-                      bedIds: [],
-                      plotIds: [],
-                    }));
-                    setSelectedPlotIds([]);
-                  }}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                >
-                  <option value="">-- Chọn mùa vụ --</option>
-                  {seasons.map((s) => (
-                    <option key={s.seasonId} value={s.seasonId}>
-                      {s.seasonName}
-                      {s.status === "Active"
-                        ? " (Đang hoạt động)"
-                        : s.status === "Completed"
-                          ? " (Đã kết thúc)"
-                          : " (Sắp diễn ra)"}
-                    </option>
-                  ))}
-                </select>
-                {newAssignment.seasonId &&
-                  (() => {
-                    const season = seasons.find(
-                      (s) => s.seasonId === newAssignment.seasonId,
-                    );
-                    if (!season) return null;
-                    const farmName =
-                      allPlots.find((p) => p.farmId === season.farmId)
-                        ?.farmName ?? null;
-                    return (
-                      <div className="mt-2 space-y-1.5">
-                        <div className="flex items-center justify-between px-3 py-2 bg-[#f8fafc] rounded-lg border border-[#e2e8f0] text-xs">
-                          <span className="text-[#64748b]">
-                            {season.seasonStartDate
-                              .split("-")
-                              .reverse()
-                              .join("/")}{" "}
-                            –{" "}
-                            {season.seasonEndDate
-                              .split("-")
-                              .reverse()
-                              .join("/")}
-                          </span>
-                          <span
-                            className={`font-medium px-2 py-0.5 rounded-full ${
-                              season.status === "Active"
-                                ? "bg-[#d1fae5] text-[#065f46]"
-                                : season.status === "Completed"
-                                  ? "bg-[#f1f5f9] text-[#64748b]"
-                                  : "bg-[#fef3c7] text-[#92400e]"
-                            }`}
-                          >
-                            {season.status === "Active"
-                              ? "Đang hoạt động"
-                              : season.status === "Completed"
-                                ? "Đã kết thúc"
-                                : "Sắp diễn ra"}
-                          </span>
-                        </div>
-                        {farmName && (
-                          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[#f0fdfa] rounded-lg border border-[#ccfbf1] text-xs text-[#0f766e]">
-                            <MapPin className="w-3 h-3 shrink-0" />
-                            <span className="font-medium">{farmName}</span>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })()}
-              </section>
-
-              {/* ── 3. Date & Time ── */}
-              <section>
-                <h3 className="text-xs font-bold text-[#009689] uppercase tracking-widest mb-3 flex items-center gap-1.5">
-                  <span className="w-5 h-5 rounded-full bg-[#009689] text-white text-[10px] flex items-center justify-center font-bold">
-                    3
-                  </span>
-                  Ngày &amp; Giờ
-                </h3>
-                <div className="grid grid-cols-2 gap-4">
+                  {/* Time range */}
                   <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1.5">
-                      Ngày thực hiện <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="date"
-                      value={newAssignment.date}
-                      onChange={(e) => {
-                        const d = e.target.value;
-                        setNewAssignment((p) => ({ ...p, date: d }));
-                        if (assignmentTarget.workerId)
-                          checkWorkerConflict(
-                            assignmentTarget.workerId,
-                            d,
-                            newAssignment.startHour,
-                            newAssignment.startMinute,
-                            newAssignment.endHour,
-                            newAssignment.endMinute,
-                          );
-                      }}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1.5">
+                    <label className="block text-xs font-medium text-[#475569] mb-1.5">
                       Khung giờ
                     </label>
                     <button
-                      onClick={() => setIsTimePickerOpen((p) => !p)}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-left flex items-center gap-2 hover:border-[#009689] focus:outline-none focus:ring-2 focus:ring-[#009689] transition-colors"
+                      onClick={() => setIsBulkTimerOpen((p) => !p)}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-left flex items-center gap-2 hover:border-[#009689] transition-colors"
                     >
                       <Clock className="w-4 h-4 text-[#009689] shrink-0" />
-                      <span
-                        className={
-                          timeDisplay ? "text-[#1e293b]" : "text-[#94a3b8]"
-                        }
-                      >
-                        {timeDisplay || "Chọn giờ..."}
+                      <span className="text-[#1e293b]">
+                        {bulkForm.startHour}:{bulkForm.startMinute} –{" "}
+                        {bulkForm.endHour}:{bulkForm.endMinute}
                       </span>
                     </button>
-                    {isTimePickerOpen && (
+                    {isBulkTimerOpen && (
                       <TimePickerSheet
-                        startHour={newAssignment.startHour}
-                        startMinute={newAssignment.startMinute}
-                        endHour={newAssignment.endHour}
-                        endMinute={newAssignment.endMinute}
-                        onChange={(sh, sm, eh, em) => {
-                          setNewAssignment((p) => ({
+                        startHour={bulkForm.startHour}
+                        startMinute={bulkForm.startMinute}
+                        endHour={bulkForm.endHour}
+                        endMinute={bulkForm.endMinute}
+                        onChange={(sh, sm, eh, em) =>
+                          setBulkForm((p) => ({
                             ...p,
                             startHour: sh,
                             startMinute: sm,
                             endHour: eh,
                             endMinute: em,
-                          }));
-                          if (assignmentTarget.workerId)
-                            checkWorkerConflict(
-                              assignmentTarget.workerId,
-                              newAssignment.date,
-                              sh,
-                              sm,
-                              eh,
-                              em,
-                            );
-                        }}
-                        onClose={() => setIsTimePickerOpen(false)}
+                          }))
+                        }
+                        onClose={() => setIsBulkTimerOpen(false)}
                       />
                     )}
                   </div>
-                </div>
-              </section>
 
-              {/* ── 4. Vuông, Luống & Nhân viên ── */}
-              <section>
-                <h3 className="text-xs font-bold text-[#009689] uppercase tracking-widest mb-3 flex items-center gap-1.5">
-                  <span className="w-5 h-5 rounded-full bg-[#009689] text-white text-[10px] flex items-center justify-center font-bold">
-                    4
-                  </span>
-                  Vuông, Luống &amp; Nhân viên
-                </h3>
-
-                <div className="space-y-4">
-                  {/* Vuông — multi-select chips */}
+                  {/* Notes */}
                   <div>
-                    <label className="block text-xs font-semibold text-[#475569] uppercase tracking-wide mb-1.5">
-                      Vuông <span className="text-red-500">*</span>
-                      {selectedPlotIds.length > 0 && (
-                        <span className="ml-2 normal-case font-semibold text-[#009689]">
-                          ({selectedPlotIds.length} đã chọn)
-                        </span>
-                      )}
+                    <label className="block text-xs font-medium text-[#475569] mb-1.5">
+                      Ghi chú
                     </label>
-                    {!newAssignment.seasonId ? (
-                      <div className="px-3 py-2 bg-[#f8fafc] border border-dashed border-[#e2e8f0] rounded-lg text-xs text-[#94a3b8] italic">
-                        Chọn mùa vụ trước
-                      </div>
-                    ) : seasonPlotsForAssign.length === 0 ? (
-                      <div className="px-3 py-2 bg-[#f8fafc] border border-dashed border-[#e2e8f0] rounded-lg text-xs text-[#94a3b8] italic">
-                        Mùa vụ này chưa có vuông nào
-                      </div>
-                    ) : (
-                      <div className="flex flex-wrap gap-1.5">
-                        {seasonPlotsForAssign.map((plot) => {
-                          const isSel = selectedPlotIds.includes(plot.plotId);
-                          return (
-                            <button
-                              key={plot.plotId}
-                              onClick={() => {
-                                const next = isSel
-                                  ? selectedPlotIds.filter(
-                                      (id) => id !== plot.plotId,
-                                    )
-                                  : [...selectedPlotIds, plot.plotId];
-                                setSelectedPlotIds(next);
-                                // Drop beds that no longer belong to any selected plot
-                                const keepBeds = new Set(
-                                  seasonBedsForAssign
-                                    .filter((b) => next.includes(b.plotId))
-                                    .map((b) => b.bedId),
-                                );
-                                setAssignmentTarget((p) => ({
-                                  ...p,
-                                  bedIds: p.bedIds.filter((id) =>
-                                    keepBeds.has(id),
-                                  ),
-                                }));
-                              }}
-                              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all"
-                              style={
-                                isSel
-                                  ? {
-                                      background: "#009689",
-                                      color: "#fff",
-                                      borderColor: "#009689",
-                                    }
-                                  : {
-                                      background: "#f8fafc",
-                                      color: "#475569",
-                                      borderColor: "#e2e8f0",
-                                    }
-                              }
-                            >
-                              {plot.plotName}
-                              {isSel && (
-                                <CheckCircle2 className="w-3 h-3 shrink-0" />
-                              )}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
+                    <textarea
+                      rows={2}
+                      placeholder="Lưu ý đặc biệt cho nhân viên..."
+                      value={bulkForm.notes}
+                      onChange={(e) =>
+                        setBulkForm((p) => ({ ...p, notes: e.target.value }))
+                      }
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] resize-none"
+                    />
                   </div>
 
-                  {/* Luống — shown per selected plot, grouped */}
-                  {selectedPlotIds.length > 0 &&
-                    (() => {
-                      const groups = selectedPlotIds
-                        .map((plotId) => {
-                          const plot = seasonPlotsForAssign.find(
-                            (p) => p.plotId === plotId,
+                  {/* Preview */}
+                  {bulkPreviewCount > 0 && (
+                    <div className="px-3 py-2.5 bg-[#f0fdfa] border border-[#009689]/25 rounded-lg text-sm text-[#0f766e]">
+                      Hệ thống sẽ{" "}
+                      <span className="font-semibold">
+                        giao {bulkPreviewCount} việc
+                      </span>{" "}
+                      trong khoảng thời gian đã chọn (
+                      {bulkForm.selectedDays.join(", ")} hàng tuần)
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ══ SINGLE MODE ══ */}
+              {assignMode === "single" && (
+                <div className="space-y-5">
+                  <p className="text-xs text-[#64748b] bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                    Giao việc đặc biệt vào một ngày cụ thể, ngoài lịch định kỳ
+                    thông thường.
+                  </p>
+
+                  {/* Row 1: Worker + Date */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-medium text-[#475569] mb-1.5">
+                        Nhân viên <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        value={singleForm.workerId}
+                        onChange={(e) => {
+                          const wid = e.target.value;
+                          setSingleForm((p) => ({ ...p, workerId: wid }));
+                          checkSingleConflict(
+                            wid,
+                            singleForm.date,
+                            singleForm.startHour,
+                            singleForm.startMinute,
+                            singleForm.endHour,
+                            singleForm.endMinute,
                           );
-                          const plotBeds = seasonBedsForAssign
-                            .filter((b) => b.plotId === plotId)
-                            .sort((a, b) => a.bedName.localeCompare(b.bedName));
-                          return { plot, plotBeds };
-                        })
-                        .filter((g) => g.plot && g.plotBeds.length > 0);
+                        }}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                      >
+                        <option value="">-- Chọn nhân viên --</option>
+                        {staffList
+                          .filter((s) => s.roleName === "Worker")
+                          .map((s) => (
+                            <option key={s.userId} value={s.userId}>
+                              {s.fullname}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-[#475569] mb-1.5">
+                        Ngày thực hiện <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="date"
+                        value={singleForm.date}
+                        onChange={(e) => {
+                          const d = e.target.value;
+                          setSingleForm((p) => ({ ...p, date: d }));
+                          checkSingleConflict(
+                            singleForm.workerId,
+                            d,
+                            singleForm.startHour,
+                            singleForm.startMinute,
+                            singleForm.endHour,
+                            singleForm.endMinute,
+                          );
+                        }}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                      />
+                    </div>
+                  </div>
 
-                      if (groups.length === 0) return null;
+                  {/* Conflict warning */}
+                  {singleConflict.length > 0 && (
+                    <div className="flex items-start gap-2 px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700">
+                      <span className="shrink-0 mt-0.5">⚠</span>
+                      <p>
+                        Nhân viên đã có lịch trùng ngày này:{" "}
+                        <span className="font-semibold">
+                          {singleConflict.join(", ")}
+                        </span>
+                        . Bạn vẫn có thể giao nếu cần.
+                      </p>
+                    </div>
+                  )}
 
-                      const totalSelected = assignmentTarget.bedIds.length;
+                  {/* Worker schedule preview */}
+                  {singleForm.workerId && singleForm.date && (
+                    <WorkerSchedulePreview
+                      workerId={singleForm.workerId}
+                      fromDate={singleForm.date}
+                      toDate={singleForm.date}
+                      taskDetails={taskDetails}
+                      staffList={staffList}
+                    />
+                  )}
 
-                      return (
-                        <div className="space-y-3">
-                          <div className="flex items-center justify-between">
-                            <label className="text-xs font-semibold text-[#475569] uppercase tracking-wide">
-                              Luống <span className="text-red-500">*</span>
-                              {totalSelected > 0 && (
-                                <span className="ml-2 normal-case font-semibold text-[#009689]">
-                                  ({totalSelected} đã chọn)
-                                </span>
-                              )}
-                            </label>
-                          </div>
-                          {groups.map(({ plot, plotBeds }) => {
-                            const allSel = plotBeds.every((b) =>
-                              assignmentTarget.bedIds.includes(b.bedId),
-                            );
-                            const plotSelectedCount = plotBeds.filter((b) =>
-                              assignmentTarget.bedIds.includes(b.bedId),
-                            ).length;
-                            return (
-                              <div
-                                key={plot!.plotId}
-                                className="rounded-lg border border-[#e2e8f0] bg-[#f8fafc] p-3"
-                              >
-                                <div className="flex items-center justify-between mb-2">
-                                  <span className="text-[11px] font-semibold text-[#475569]">
-                                    {plot!.plotName}
-                                    {plotSelectedCount > 0 && (
-                                      <span className="ml-1.5 text-[#009689]">
-                                        ({plotSelectedCount})
-                                      </span>
-                                    )}
-                                  </span>
-                                  <button
-                                    onClick={() => {
-                                      const ids = plotBeds.map((b) => b.bedId);
-                                      setAssignmentTarget((p) => ({
-                                        ...p,
-                                        bedIds: allSel
-                                          ? p.bedIds.filter(
-                                              (id) => !ids.includes(id),
-                                            )
-                                          : [...new Set([...p.bedIds, ...ids])],
-                                      }));
-                                    }}
-                                    className="text-[11px] font-medium text-[#009689] hover:underline"
-                                  >
-                                    {allSel
-                                      ? "Bỏ chọn tất cả"
-                                      : `Chọn tất cả (${plotBeds.length})`}
-                                  </button>
-                                </div>
-                                <div className="flex flex-wrap gap-1.5">
-                                  {plotBeds.map((bed) => {
-                                    const isSel =
-                                      assignmentTarget.bedIds.includes(
-                                        bed.bedId,
-                                      );
-                                    return (
-                                      <button
-                                        key={bed.bedId}
-                                        onClick={() =>
-                                          setAssignmentTarget((p) => ({
-                                            ...p,
-                                            bedIds: isSel
-                                              ? p.bedIds.filter(
-                                                  (id) => id !== bed.bedId,
-                                                )
-                                              : [...p.bedIds, bed.bedId],
-                                          }))
-                                        }
-                                        title={bed.bedName}
-                                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all"
-                                        style={
-                                          isSel
-                                            ? {
-                                                background: "#009689",
-                                                color: "#fff",
-                                                borderColor: "#009689",
-                                              }
-                                            : {
-                                                background: "#fff",
-                                                color: "#475569",
-                                                borderColor: "#e2e8f0",
-                                              }
-                                        }
-                                      >
-                                        {bed.bedName}
-                                        {isSel && (
-                                          <CheckCircle2 className="w-3 h-3 shrink-0" />
-                                        )}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      );
-                    })()}
-                  {newAssignment.seasonId &&
-                    selectedPlotIds.length === 0 &&
-                    seasonPlotsForAssign.length > 0 && (
-                      <div className="px-3 py-2 bg-[#f8fafc] border border-dashed border-[#e2e8f0] rounded-lg text-xs text-[#94a3b8] italic">
-                        Chọn vuông để xem danh sách luống
+                  {/* Row 2: Task + Season */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-medium text-[#475569] mb-1.5">
+                        Mẫu công việc <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        value={singleForm.taskId}
+                        onChange={(e) =>
+                          setSingleForm((p) => ({
+                            ...p,
+                            taskId: e.target.value,
+                          }))
+                        }
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                      >
+                        <option value="">-- Chọn công việc --</option>
+                        {tasks.map((t) => (
+                          <option key={t.taskId} value={t.taskId}>
+                            {t.taskTitle}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-[#475569] mb-1.5">
+                        Mùa vụ <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        value={singleForm.seasonId}
+                        onChange={(e) =>
+                          setSingleForm((p) => ({
+                            ...p,
+                            seasonId: e.target.value,
+                            plotId: "",
+                            bedIds: [],
+                          }))
+                        }
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                      >
+                        <option value="">-- Chọn mùa vụ --</option>
+                        {seasons.map((s) => (
+                          <option key={s.seasonId} value={s.seasonId}>
+                            {s.seasonName}
+                            {s.status === "Active"
+                              ? " (Đang hoạt động)"
+                              : s.status === "Completed"
+                                ? " (Đã kết thúc)"
+                                : " (Sắp diễn ra)"}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Row 3: Plot + Beds */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-medium text-[#475569] mb-1.5">
+                        Vuông <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        value={singleForm.plotId}
+                        onChange={(e) =>
+                          setSingleForm((p) => ({
+                            ...p,
+                            plotId: e.target.value,
+                            bedIds: [],
+                          }))
+                        }
+                        disabled={!singleForm.seasonId}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#009689] disabled:opacity-50"
+                      >
+                        <option value="">-- Chọn vuông --</option>
+                        {getPlotsForSeason(singleForm.seasonId).map((p) => (
+                          <option key={p.plotId} value={p.plotId}>
+                            {p.plotName}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div />
+                  </div>
+
+                  {/* Bed multi-select */}
+                  {singleForm.plotId && (
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="text-xs font-medium text-[#475569]">
+                          Luống <span className="text-red-500">*</span>
+                          {singleForm.bedIds.length > 0 && (
+                            <span className="ml-1.5 text-[#009689] font-semibold">
+                              ({singleForm.bedIds.length} đã chọn)
+                            </span>
+                          )}
+                        </label>
+                        <button
+                          onClick={() => {
+                            const all = getBedsForPlot(
+                              singleForm.seasonId,
+                              singleForm.plotId,
+                            ).map((b) => b.bedId);
+                            setSingleForm((p) => ({
+                              ...p,
+                              bedIds: p.bedIds.length === all.length ? [] : all,
+                            }));
+                          }}
+                          className="text-xs text-[#009689] hover:underline"
+                        >
+                          {singleForm.bedIds.length ===
+                          getBedsForPlot(singleForm.seasonId, singleForm.plotId)
+                            .length
+                            ? "Bỏ chọn tất cả"
+                            : "Chọn tất cả"}
+                        </button>
                       </div>
-                    )}
-
-                  {/* Nhân viên */}
-                  <div>
-                    <label className="block text-xs font-semibold text-[#475569] uppercase tracking-wide mb-1.5">
-                      Nhân viên phụ trách{" "}
-                      <span className="text-red-500">*</span>
-                    </label>
-                    <div className="flex flex-wrap gap-1.5">
-                      {staffList
-                        .filter((s) => s.roleName === "Worker")
-                        .map((s) => {
-                          const rawStatus = (s.status ?? "").toLowerCase();
-                          const isDisabled = rawStatus === "inactive";
-                          const sel = assignmentTarget.workerId === s.userId;
-                          const dotColor = isDisabled
-                            ? "#94a3b8"
-                            : rawStatus === "busy"
-                              ? "#f59e0b"
-                              : "#10b981";
+                      <div className="flex flex-wrap gap-1.5 p-3 bg-[#f8fafc] rounded-lg border border-[#e2e8f0]">
+                        {getBedsForPlot(
+                          singleForm.seasonId,
+                          singleForm.plotId,
+                        ).map((bed) => {
+                          const sel = singleForm.bedIds.includes(bed.bedId);
                           return (
                             <button
-                              key={s.userId}
-                              disabled={isDisabled}
-                              onClick={() => {
-                                const newId = sel ? "" : s.userId;
-                                setAssignmentTarget((p) => ({
+                              key={bed.bedId}
+                              onClick={() =>
+                                setSingleForm((p) => ({
                                   ...p,
-                                  workerId: newId,
-                                }));
-                                setWorkerConflict(null);
-                                if (newId)
-                                  checkWorkerConflict(
-                                    newId,
-                                    newAssignment.date,
-                                    newAssignment.startHour,
-                                    newAssignment.startMinute,
-                                    newAssignment.endHour,
-                                    newAssignment.endMinute,
-                                  );
-                              }}
-                              title={s.fullname}
-                              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border transition-all"
+                                  bedIds: sel
+                                    ? p.bedIds.filter((id) => id !== bed.bedId)
+                                    : [...p.bedIds, bed.bedId],
+                                }))
+                              }
+                              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all"
                               style={
                                 sel
                                   ? {
@@ -1938,104 +2746,84 @@ export function TasksPage() {
                                       color: "#fff",
                                       borderColor: "#009689",
                                     }
-                                  : isDisabled
-                                    ? {
-                                        background: "#f1f5f9",
-                                        color: "#94a3b8",
-                                        borderColor: "#e2e8f0",
-                                        opacity: 0.5,
-                                        cursor: "not-allowed",
-                                      }
-                                    : {
-                                        background: "#f8fafc",
-                                        color: "#475569",
-                                        borderColor: "#e2e8f0",
-                                      }
+                                  : {
+                                      background: "#fff",
+                                      color: "#475569",
+                                      borderColor: "#e2e8f0",
+                                    }
                               }
                             >
-                              <span
-                                className="w-5 h-5 rounded-full text-[10px] flex items-center justify-center font-bold shrink-0"
-                                style={{
-                                  background: sel
-                                    ? "rgba(255,255,255,0.25)"
-                                    : "#009689",
-                                  color: "#fff",
-                                }}
-                              >
-                                {s.fullname.charAt(0).toUpperCase()}
-                              </span>
-                              {s.fullname}
-                              {!sel && (
-                                <span
-                                  className="w-1.5 h-1.5 rounded-full shrink-0"
-                                  style={{ background: dotColor }}
-                                />
-                              )}
+                              {bed.bedName}
                               {sel && (
                                 <CheckCircle2 className="w-3 h-3 shrink-0" />
                               )}
                             </button>
                           );
                         })}
-                      {staffList.filter((s) => s.roleName === "Worker")
-                        .length === 0 && (
-                        <p className="text-xs text-[#94a3b8]">
-                          Chưa có nhân viên
-                        </p>
-                      )}
-                    </div>
-                    {/* Conflict indicator */}
-                    {isCheckingConflict && (
-                      <p className="mt-2 text-xs text-[#64748b] flex items-center gap-1.5">
-                        <span className="w-3 h-3 border-2 border-[#009689] border-t-transparent rounded-full animate-spin inline-block" />
-                        Đang kiểm tra lịch...
-                      </p>
-                    )}
-                    {!isCheckingConflict && workerConflict?.hasConflict && (
-                      <div className="mt-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 flex items-start gap-2">
-                        <span className="text-amber-500 text-sm shrink-0">
-                          ⚠
-                        </span>
-                        <p className="text-xs text-amber-700">
-                          Nhân viên này đã có lịch{" "}
-                          <span className="font-semibold">
-                            "{workerConflict.conflictingTask}"
-                          </span>{" "}
-                          trùng khung giờ. Bạn vẫn có thể giao việc nếu cần.
-                        </p>
                       </div>
+                    </div>
+                  )}
+
+                  {/* Time range */}
+                  <div>
+                    <label className="block text-xs font-medium text-[#475569] mb-1.5">
+                      Khung giờ
+                    </label>
+                    <button
+                      onClick={() => setIsSingleTimerOpen((p) => !p)}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-left flex items-center gap-2 hover:border-[#009689] transition-colors"
+                    >
+                      <Clock className="w-4 h-4 text-[#009689] shrink-0" />
+                      <span className="text-[#1e293b]">
+                        {singleForm.startHour}:{singleForm.startMinute} –{" "}
+                        {singleForm.endHour}:{singleForm.endMinute}
+                      </span>
+                    </button>
+                    {isSingleTimerOpen && (
+                      <TimePickerSheet
+                        startHour={singleForm.startHour}
+                        startMinute={singleForm.startMinute}
+                        endHour={singleForm.endHour}
+                        endMinute={singleForm.endMinute}
+                        onChange={(sh, sm, eh, em) => {
+                          setSingleForm((p) => ({
+                            ...p,
+                            startHour: sh,
+                            startMinute: sm,
+                            endHour: eh,
+                            endMinute: em,
+                          }));
+                          checkSingleConflict(
+                            singleForm.workerId,
+                            singleForm.date,
+                            sh,
+                            sm,
+                            eh,
+                            em,
+                          );
+                        }}
+                        onClose={() => setIsSingleTimerOpen(false)}
+                      />
                     )}
-                    {!isCheckingConflict &&
-                      workerConflict &&
-                      !workerConflict.hasConflict &&
-                      assignmentTarget.workerId && (
-                        <p className="mt-2 text-xs text-emerald-600 flex items-center gap-1">
-                          <CheckCircle2 className="w-3 h-3" /> Không có lịch
-                          xung đột
-                        </p>
-                      )}
+                  </div>
+
+                  {/* Notes */}
+                  <div>
+                    <label className="block text-xs font-medium text-[#475569] mb-1.5">
+                      Ghi chú
+                    </label>
+                    <textarea
+                      rows={2}
+                      placeholder="Lý do giao việc đột xuất, yêu cầu cụ thể..."
+                      value={singleForm.notes}
+                      onChange={(e) =>
+                        setSingleForm((p) => ({ ...p, notes: e.target.value }))
+                      }
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] resize-none"
+                    />
                   </div>
                 </div>
-              </section>
-
-              {/* ── 5. Notes ── */}
-              <section>
-                <h3 className="text-xs font-bold text-[#009689] uppercase tracking-widest mb-3 flex items-center gap-1.5">
-                  <span className="w-5 h-5 rounded-full bg-[#009689] text-white text-[10px] flex items-center justify-center font-bold">
-                    5
-                  </span>
-                  Ghi chú
-                </h3>
-                <textarea
-                  rows={2}
-                  placeholder="Lưu ý đặc biệt cho nhân viên..."
-                  value={newAssignment.notes}
-                  onChange={(e) =>
-                    setNewAssignment((p) => ({ ...p, notes: e.target.value }))
-                  }
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] resize-none"
-                />
-              </section>
+              )}
             </div>
 
             {/* Sticky footer */}
@@ -2043,42 +2831,44 @@ export function TasksPage() {
               <button
                 onClick={() => {
                   setIsAssignOpen(false);
-                  setAssignmentTarget({
-                    workerId: "",
-                    bedIds: [],
-                    plotIds: [],
-                  });
-                  setSelectedPlotIds([]);
+                  resetAssignModal();
                 }}
                 className="flex-1 px-4 py-2 rounded-lg text-sm font-medium text-slate-700 border border-[#e2e8f0] hover:bg-slate-50 transition-colors"
               >
                 Hủy
               </button>
               <button
-                onClick={handleCreateAssignment}
+                onClick={
+                  assignMode === "bulk" ? handleSubmitBulk : handleSubmitSingle
+                }
                 disabled={
-                  !newAssignment.taskId ||
-                  !newAssignment.seasonId ||
-                  assignmentTarget.bedIds.length === 0 ||
-                  !assignmentTarget.workerId ||
-                  !newAssignment.date ||
-                  isSaving
+                  assignMode === "bulk"
+                    ? !bulkForm.workerId ||
+                      !bulkForm.taskId ||
+                      !bulkForm.seasonId ||
+                      !bulkForm.bedIds.length ||
+                      !bulkForm.fromDate ||
+                      !bulkForm.toDate ||
+                      !bulkForm.selectedDays.length
+                    : !singleForm.workerId ||
+                      !singleForm.taskId ||
+                      !singleForm.seasonId ||
+                      !singleForm.bedIds.length ||
+                      !singleForm.date
                 }
                 className="flex-1 px-4 py-2 rounded-lg text-sm font-medium bg-[#009689] text-white hover:bg-[#007f73] disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
               >
                 <CheckCircle2 className="w-4 h-4" />
-                {isSaving ? "Đang lưu..." : "Giao việc"}
-                {assignmentTarget.bedIds.length > 0 && (
-                  <span className="bg-white/20 text-white text-xs px-1.5 py-0.5 rounded-md">
-                    {assignmentTarget.bedIds.length} luống
-                  </span>
-                )}
+                {assignMode === "bulk"
+                  ? bulkPreviewCount > 0
+                    ? `Xác nhận (${bulkPreviewCount} giao việc)`
+                    : "Xác nhận giao việc"
+                  : "Xác nhận giao việc"}
               </button>
             </div>
           </Dialog.Content>
         </Dialog.Portal>
       </Dialog.Root>
-
       {/* ══ MODAL: View Assignment ══ */}
       <Dialog.Root open={isViewOpen} onOpenChange={setIsViewOpen}>
         <Dialog.Portal>
