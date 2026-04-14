@@ -88,7 +88,7 @@ const STORAGE_KEYS = {
 } as const;
 
 export function saveApiSession(token: string, payload: JwtPayload) {
-  // Derive a display name from the email (part before @)
+  // Store email-derived name as initial fallback; overwritten by fetchAndSaveFullname if successful
   const displayName = payload.email.split("@")[0];
 
   localStorage.setItem(STORAGE_KEYS.isAuthenticated, "true");
@@ -98,6 +98,38 @@ export function saveApiSession(token: string, payload: JwtPayload) {
   localStorage.setItem(STORAGE_KEYS.userRole, payload.role);
   localStorage.setItem(STORAGE_KEYS.authMode, "api");
   localStorage.setItem("userName", displayName);
+}
+
+/**
+ * Fetch the user's full name from GET /api/Staffs/{userId} and overwrite
+ * the "userName" key in localStorage.
+ *
+ * Must be called AFTER saveApiSession (token must already be stored).
+ * Fails silently — login succeeds regardless of whether this call succeeds.
+ */
+export async function fetchAndSaveFullname(userId: string): Promise<void> {
+  try {
+    const token = localStorage.getItem("authToken");
+    if (!token) return;
+
+    const res = await fetch(`${BASE_URL}/api/Staffs/${userId}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!res.ok) return;
+
+    const data = await res.json();
+
+    // Response shape: { success, message, data: { fullname, ... } }
+    const fullname: string | undefined = data?.data?.fullname;
+    if (fullname && fullname.trim()) {
+      localStorage.setItem("userName", fullname.trim());
+    }
+  } catch {
+    // Silent failure — the email-derived fallback set by saveApiSession remains
+  }
 }
 
 export function clearSession() {
