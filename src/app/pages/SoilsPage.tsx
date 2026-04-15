@@ -21,6 +21,72 @@ import {
 } from "../../api/client";
 import { CheckCircle2, AlertCircle, XCircle } from "lucide-react";
 
+// ─── Toast ────────────────────────────────────────────────────────────────────
+
+interface Toast {
+  id: number;
+  type: "success" | "error";
+  message: string;
+}
+
+let toastSeq = 0;
+
+function useToast() {
+  const [toasts, setToasts] = useState<Toast[]>([]);
+
+  function toast(type: "success" | "error", message: string) {
+    const id = ++toastSeq;
+    setToasts((prev) => [...prev, { id, type, message }]);
+    setTimeout(
+      () => setToasts((prev) => prev.filter((t) => t.id !== id)),
+      3500,
+    );
+  }
+
+  function dismiss(id: number) {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }
+
+  return { toasts, toast, dismiss };
+}
+
+function ToastContainer({
+  toasts,
+  dismiss,
+}: {
+  toasts: Toast[];
+  dismiss: (id: number) => void;
+}) {
+  if (toasts.length === 0) return null;
+  return (
+    <div className="fixed bottom-5 right-5 z-[100] flex flex-col gap-2 pointer-events-none">
+      {toasts.map((t) => (
+        <div
+          key={t.id}
+          className={`flex items-center gap-3 px-4 py-3 rounded-lg shadow-lg text-sm font-medium pointer-events-auto transition-all ${
+            t.type === "success"
+              ? "bg-[#009689] text-white"
+              : "bg-[#dc2626] text-white"
+          }`}
+        >
+          {t.type === "success" ? (
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
+          ) : (
+            <XCircle className="w-4 h-4 shrink-0" />
+          )}
+          <span>{t.message}</span>
+          <button
+            onClick={() => dismiss(t.id)}
+            className="ml-1 opacity-70 hover:opacity-100 transition-opacity"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const PAGE_SIZE = 6;
@@ -91,6 +157,8 @@ export function SoilsPage() {
   const [form, setForm] = useState<SoilFormState>(emptySoilForm);
   const [errors, setErrors] = useState<Partial<SoilFormState>>({});
 
+  const { toasts, toast, dismiss } = useToast();
+
   // ── Load on mount ─────────────────────────────────────────────────────────
   useEffect(() => {
     async function load() {
@@ -104,7 +172,7 @@ export function SoilsPage() {
         setCompatibilities(compatData);
         setCrops(cropData);
       } catch {
-        alert("Không thể tải dữ liệu. Vui lòng thử lại.");
+        toast("error", "Không thể tải dữ liệu. Vui lòng thử lại.");
       } finally {
         setLoading(false);
       }
@@ -174,6 +242,7 @@ export function SoilsPage() {
     ]);
     setCompatibilities(refreshedCompat);
     setSoils(refreshedSoils);
+    toast("success", "Thêm tương thích cây trồng thành công.");
   }
 
   async function handleEditCompat(
@@ -191,6 +260,7 @@ export function SoilsPage() {
     });
     const refreshed = await api.getSoilCropCompatibilities();
     setCompatibilities(refreshed);
+    toast("success", "Cập nhật tương thích thành công.");
   }
 
   async function handleDeleteCompat(comptId: string) {
@@ -198,6 +268,7 @@ export function SoilsPage() {
     setCompatibilities((prev) => prev.filter((c) => c.comptId !== comptId));
     const refreshedSoils = await api.getSoils();
     setSoils(refreshedSoils);
+    toast("success", "Đã xóa tương thích cây trồng.");
   }
 
   // ── Soil modal helpers ────────────────────────────────────────────────────
@@ -250,8 +321,9 @@ export function SoilsPage() {
       setSoils(await api.getSoils());
       setPage(1);
       closeModal();
+      toast("success", "Thêm loại đất thành công.");
     } catch {
-      alert("Tạo loại đất thất bại. Vui lòng thử lại.");
+      toast("error", "Tạo loại đất thất bại. Vui lòng thử lại.");
     }
   }
 
@@ -264,8 +336,9 @@ export function SoilsPage() {
       });
       setSoils(await api.getSoils());
       closeModal();
+      toast("success", "Cập nhật loại đất thành công.");
     } catch {
-      alert("Cập nhật loại đất thất bại. Vui lòng thử lại.");
+      toast("error", "Cập nhật loại đất thất bại. Vui lòng thử lại.");
     }
   }
 
@@ -275,8 +348,9 @@ export function SoilsPage() {
       await api.deleteSoil(selectedSoil.soilId);
       setSoils((prev) => prev.filter((s) => s.soilId !== selectedSoil.soilId));
       closeModal();
+      toast("success", `Đã xóa loại đất "${selectedSoil.name}".`);
     } catch {
-      alert("Xóa loại đất thất bại. Vui lòng thử lại.");
+      toast("error", "Xóa loại đất thất bại. Vui lòng thử lại.");
     }
   }
 
@@ -289,6 +363,7 @@ export function SoilsPage() {
 
   return (
     <div className="flex flex-col gap-6 p-6">
+      <ToastContainer toasts={toasts} dismiss={dismiss} />
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -414,6 +489,7 @@ export function SoilsPage() {
                     onAdd={handleAddCompat}
                     onEdit={handleEditCompat}
                     onDelete={handleDeleteCompat}
+                    toast={toast}
                   />
                 )}
               </div>
@@ -510,6 +586,7 @@ function CompatPanel({
   onAdd,
   onEdit,
   onDelete,
+  toast,
 }: {
   soil: Soil;
   compat: SoilCropCompatibilityResponse[];
@@ -528,20 +605,25 @@ function CompatPanel({
     note: string,
   ) => Promise<void>;
   onDelete: (comptId: string) => Promise<void>;
+  toast: (type: "success" | "error", message: string) => void;
 }) {
   const [showAddForm, setShowAddForm] = useState(false);
   const [addForm, setAddForm] = useState<CompatFormState>(emptyCompatForm);
   const [addSubmitting, setAddSubmitting] = useState(false);
 
-  // Per-row edit state: comptId → form
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<CompatFormState>(emptyCompatForm);
   const [editSubmitting, setEditSubmitting] = useState(false);
+
+  // Inline delete confirmation: comptId waiting for confirm
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteSubmitting, setDeleteSubmitting] = useState(false);
 
   const linkedCropIds = new Set(compat.map((c) => c.cropId));
   const availableCrops = crops.filter((c) => !linkedCropIds.has(c.cropId));
 
   function openEditRow(row: SoilCropCompatibilityResponse) {
+    setDeletingId(null);
     setEditingId(row.comptId);
     setEditForm({
       cropId: row.cropId,
@@ -568,7 +650,7 @@ function CompatPanel({
       setAddForm(emptyCompatForm);
       setShowAddForm(false);
     } catch {
-      alert("Thêm tương thích thất bại. Vui lòng thử lại.");
+      toast("error", "Thêm tương thích thất bại. Vui lòng thử lại.");
     } finally {
       setAddSubmitting(false);
     }
@@ -586,17 +668,21 @@ function CompatPanel({
       );
       cancelEdit();
     } catch {
-      alert("Cập nhật tương thích thất bại. Vui lòng thử lại.");
+      toast("error", "Cập nhật tương thích thất bại. Vui lòng thử lại.");
     } finally {
       setEditSubmitting(false);
     }
   }
 
-  async function handleDelete(comptId: string) {
+  async function confirmDelete(comptId: string) {
+    setDeleteSubmitting(true);
     try {
       await onDelete(comptId);
+      setDeletingId(null);
     } catch {
-      alert("Xóa tương thích thất bại. Vui lòng thử lại.");
+      toast("error", "Xóa tương thích thất bại. Vui lòng thử lại.");
+    } finally {
+      setDeleteSubmitting(false);
     }
   }
 
@@ -613,7 +699,7 @@ function CompatPanel({
             className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-[#009689] bg-white border border-[#009689] rounded-lg hover:bg-[#f0fdf9] transition-colors"
           >
             <Plus className="w-3 h-3" />
-            Thêm cây
+            Thêm tương thích cây trồng
           </button>
         )}
       </div>
@@ -766,6 +852,32 @@ function CompatPanel({
                       </button>
                     </div>
                   </div>
+                ) : deletingId === row.comptId ? (
+                  // Inline delete confirmation
+                  <div className="flex items-center gap-3 px-4 py-2.5 bg-[#fff7f7] border-l-2 border-[#dc2626]">
+                    <span className="flex-1 text-xs text-[#dc2626] font-medium">
+                      Xóa tương thích với{" "}
+                      <span className="font-semibold">{row.cropName}</span>?
+                    </span>
+                    <button
+                      onClick={() => setDeletingId(null)}
+                      className="px-2.5 py-1 text-xs text-[#62748e] border border-[#cad5e2] rounded-lg hover:bg-[#f1f5f9] transition-colors"
+                    >
+                      Hủy
+                    </button>
+                    <button
+                      onClick={() => {
+                        void confirmDelete(row.comptId);
+                      }}
+                      disabled={deleteSubmitting}
+                      className="flex items-center gap-1.5 px-2.5 py-1 text-xs text-white bg-[#dc2626] rounded-lg hover:bg-[#b91c1c] disabled:opacity-50 transition-colors"
+                    >
+                      {deleteSubmitting && (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      )}
+                      Xóa
+                    </button>
+                  </div>
                 ) : (
                   // Read row
                   <div className="flex items-center gap-3 px-4 py-2.5 hover:bg-white transition-colors">
@@ -793,12 +905,13 @@ function CompatPanel({
                       </button>
                       <button
                         onClick={() => {
-                          void handleDelete(row.comptId);
+                          setEditingId(null);
+                          setDeletingId(row.comptId);
                         }}
                         className="p-1 text-[#94a3b8] hover:text-[#dc2626] hover:bg-[#fee2e2] rounded transition-colors"
                         title="Xóa"
                       >
-                        <X className="w-3.5 h-3.5" />
+                        <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   </div>
