@@ -5,6 +5,7 @@ import {
   apiLogin,
   decodeJwt,
   saveApiSession,
+  fetchAndSaveFullname,
   dashboardByRole,
   ALLOWED_WEB_ROLES,
 } from "../../api/auth";
@@ -59,6 +60,9 @@ export function LoginPage() {
       }
 
       saveApiSession(res.data.token, payload);
+      // Fetch full name from /api/Staffs/{userId} and overwrite the
+      // email-derived placeholder in localStorage. Fails silently.
+      await fetchAndSaveFullname(payload.nameid);
       navigate(dashboardByRole(payload.role));
     } catch {
       setError(
