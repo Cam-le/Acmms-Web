@@ -179,7 +179,7 @@ export function AppLayout() {
                 {!isSidebarCollapsed && (
                   <>
                     <div className="flex-1 min-w-0 text-left">
-                      <p className="font-medium text-sm truncate text-white">
+                      <p className="font-medium text-sm leading-snug text-white break-words">
                         {user.name}
                       </p>
                       <p className="text-xs text-[#ffffffcc] truncate">
