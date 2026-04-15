@@ -142,6 +142,23 @@ export interface SoilRequest {
   scienceName: string;
 }
 
+export interface SoilCropCompatibilityResponse {
+  comptId: string;
+  soilId: string;
+  soilName: string;
+  cropId: string;
+  cropName: string;
+  compatibility: string; // "good" | "average" | "poor"
+  note: string;
+}
+
+export interface SoilCropCompatibilityRequest {
+  soilId: string;
+  cropId: string;
+  compatibility: string; // "good" | "average" | "poor"
+  note: string;
+}
+
 export interface UserResponse {
   userId: string;
   email: string;
@@ -456,6 +473,35 @@ export const api = {
   updateSoil: (id: string, body: SoilRequest) =>
     request<SoilResponse>("PUT", `/api/Soils/${id}`, body),
   deleteSoil: (id: string) => request<unknown>("DELETE", `/api/Soils/${id}`),
+
+  // Soil-Crop Compatibilities
+  getSoilCropCompatibilities: () =>
+    request<SoilCropCompatibilityResponse[]>(
+      "GET",
+      "/api/SoilCropCompatibilities",
+    ),
+  getSoilCropCompatibility: (id: string) =>
+    request<SoilCropCompatibilityResponse>(
+      "GET",
+      `/api/SoilCropCompatibilities/${id}`,
+    ),
+  createSoilCropCompatibility: (body: SoilCropCompatibilityRequest) =>
+    request<SoilCropCompatibilityResponse>(
+      "POST",
+      "/api/SoilCropCompatibilities",
+      body,
+    ),
+  updateSoilCropCompatibility: (
+    id: string,
+    body: SoilCropCompatibilityRequest,
+  ) =>
+    request<SoilCropCompatibilityResponse>(
+      "PUT",
+      `/api/SoilCropCompatibilities/${id}`,
+      body,
+    ),
+  deleteSoilCropCompatibility: (id: string) =>
+    request<unknown>("DELETE", `/api/SoilCropCompatibilities/${id}`),
 
   // Seasons Details
   getSeasonsDetails: () =>
