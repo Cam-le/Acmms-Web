@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useSearchParams } from "react-router";
 import {
   Plus,
   X,
@@ -796,6 +797,18 @@ export function TasksPage() {
   const [detailToDelete, setDetailToDelete] =
     useState<TaskDetailResponse | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+
+  // Auto-open "Thêm công việc" modal when navigated from Advisory page
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    if (searchParams.get("openCreateTask") === "true") {
+      const description = searchParams.get("description") ?? "";
+      setNewTemplate((p) => ({ ...p, description }));
+      setActiveTab("tasks");
+      setIsCreateTemplateOpen(true);
+      setSearchParams({}, { replace: true });
+    }
+  }, []);
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 

@@ -822,102 +822,104 @@ function DetailView({ reportId }: { reportId: string }) {
 
           {/* Diagnosis results — fetched from API when status is DIAGNOSED */}
           {report.status === "DIAGNOSED" && (
-            <div className="space-y-3">
-              <h3 className="text-sm font-semibold text-[#62748e] flex items-center gap-2">
-                <BadgeCheck className="w-4 h-4 text-[#16a34a]" />
-                Kết quả chẩn đoán từ chuyên gia
-              </h3>
+            <>
+              <div className="space-y-3">
+                <h3 className="text-sm font-semibold text-[#62748e] flex items-center gap-2">
+                  <BadgeCheck className="w-4 h-4 text-[#16a34a]" />
+                  Kết quả chẩn đoán từ chuyên gia
+                </h3>
 
-              {diagnosesLoading ? (
-                <div className="flex items-center gap-2 py-4 text-[#62748e] text-sm">
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Đang tải kết quả chẩn đoán...
-                </div>
-              ) : diagnoses.length === 0 ? (
-                <div className="bg-[#f0fdf4] rounded-lg border border-[#86efac] p-4 text-sm text-[#166534]">
-                  Chuyên gia đã hoàn thành chẩn đoán nhưng chưa có dữ liệu chi
-                  tiết.
-                </div>
-              ) : (
-                diagnoses.map((dx, idx) => {
-                  const sev = getSeverityConfig(dx.severityLevel);
-                  return (
-                    <div
-                      key={dx.id}
-                      className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm overflow-hidden"
-                    >
-                      {/* Card header */}
-                      <div className="flex items-center justify-between px-4 py-2.5 bg-[#f8fafc] border-b border-[#e2e8f0]">
-                        <div className="flex items-center gap-2">
-                          <div className="w-6 h-6 rounded-full bg-[#009689] flex items-center justify-center text-white text-[10px] font-bold shrink-0">
-                            {dx.diagnoserName.split(" ").pop()?.[0] ?? "?"}
-                          </div>
-                          <span className="text-sm font-semibold text-[#115e59]">
-                            {dx.diagnoserName}
-                          </span>
-                          {diagnoses.length > 1 && (
-                            <span className="text-xs text-[#90a1b9]">
-                              · Chẩn đoán {idx + 1}
+                {diagnosesLoading ? (
+                  <div className="flex items-center gap-2 py-4 text-[#62748e] text-sm">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Đang tải kết quả chẩn đoán...
+                  </div>
+                ) : diagnoses.length === 0 ? (
+                  <div className="bg-[#f0fdf4] rounded-lg border border-[#86efac] p-4 text-sm text-[#166534]">
+                    Chuyên gia đã hoàn thành chẩn đoán nhưng chưa có dữ liệu chi
+                    tiết.
+                  </div>
+                ) : (
+                  diagnoses.map((dx, idx) => {
+                    const sev = getSeverityConfig(dx.severityLevel);
+                    return (
+                      <div
+                        key={dx.id}
+                        className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm overflow-hidden"
+                      >
+                        {/* Card header */}
+                        <div className="flex items-center justify-between px-4 py-2.5 bg-[#f8fafc] border-b border-[#e2e8f0]">
+                          <div className="flex items-center gap-2">
+                            <div className="w-6 h-6 rounded-full bg-[#009689] flex items-center justify-center text-white text-[10px] font-bold shrink-0">
+                              {dx.diagnoserName.split(" ").pop()?.[0] ?? "?"}
+                            </div>
+                            <span className="text-sm font-semibold text-[#115e59]">
+                              {dx.diagnoserName}
                             </span>
-                          )}
+                            {diagnoses.length > 1 && (
+                              <span className="text-xs text-[#90a1b9]">
+                                · Chẩn đoán {idx + 1}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`px-2 py-0.5 rounded text-xs font-medium ${sev.color}`}
+                            >
+                              {sev.label}
+                            </span>
+                            <span className="text-xs text-[#90a1b9] whitespace-nowrap">
+                              {formatDate(dx.createdAt)}
+                            </span>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <span
-                            className={`px-2 py-0.5 rounded text-xs font-medium ${sev.color}`}
-                          >
-                            {sev.label}
-                          </span>
-                          <span className="text-xs text-[#90a1b9] whitespace-nowrap">
-                            {formatDate(dx.createdAt)}
-                          </span>
+
+                        {/* Card body */}
+                        <div className="p-4 space-y-3">
+                          {/* Disease name */}
+                          <div>
+                            <div className="text-xs text-[#62748e] mb-0.5">
+                              Tên bệnh
+                            </div>
+                            <div className="text-sm font-semibold text-[#115e59]">
+                              {dx.diseaseName}
+                            </div>
+                          </div>
+
+                          {/* Conclusion */}
+                          <div>
+                            <div className="text-xs text-[#62748e] mb-0.5">
+                              Kết luận
+                            </div>
+                            <p className="text-sm text-[#334155] leading-relaxed">
+                              {dx.conclusion}
+                            </p>
+                          </div>
+
+                          {/* Recommended action */}
+                          <div className="bg-[#f0fdfa] border border-[#009689]/20 rounded-lg p-3">
+                            <div className="text-xs text-[#62748e] mb-1 flex items-center gap-1">
+                              <FlaskConical className="w-3 h-3" /> Khuyến nghị
+                              xử lý
+                            </div>
+                            <p className="text-sm text-[#115e59] leading-relaxed">
+                              {dx.recommendedAction}
+                            </p>
+                          </div>
                         </div>
                       </div>
+                    );
+                  })
+                )}
+              </div>
 
-                      {/* Card body */}
-                      <div className="p-4 space-y-3">
-                        {/* Disease name */}
-                        <div>
-                          <div className="text-xs text-[#62748e] mb-0.5">
-                            Tên bệnh
-                          </div>
-                          <div className="text-sm font-semibold text-[#115e59]">
-                            {dx.diseaseName}
-                          </div>
-                        </div>
-
-                        {/* Conclusion */}
-                        <div>
-                          <div className="text-xs text-[#62748e] mb-0.5">
-                            Kết luận
-                          </div>
-                          <p className="text-sm text-[#334155] leading-relaxed">
-                            {dx.conclusion}
-                          </p>
-                        </div>
-
-                        {/* Recommended action */}
-                        <div className="bg-[#f0fdfa] border border-[#009689]/20 rounded-lg p-3">
-                          <div className="text-xs text-[#62748e] mb-1 flex items-center gap-1">
-                            <FlaskConical className="w-3 h-3" /> Khuyến nghị xử
-                            lý
-                          </div>
-                          <p className="text-sm text-[#115e59] leading-relaxed">
-                            {dx.recommendedAction}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-
-              {/* Navigate to Tasks page with assign modal pre-opened */}
+              {/* Jump to Tasks page → Mẫu công việc tab, pre-fill description */}
               {!diagnosesLoading && diagnoses.length > 0 && (
                 <button
                   onClick={() => {
-                    const notes = diagnoses[0]?.recommendedAction ?? "";
+                    const description = diagnoses[0]?.recommendedAction ?? "";
                     navigate(
-                      `/tasks?openAssign=true&notes=${encodeURIComponent(notes)}`,
+                      `/tasks?openCreateTask=true&description=${encodeURIComponent(description)}`,
                     );
                   }}
                   className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-[#115e59] text-white rounded-lg hover:bg-[#0f4f4a] transition-colors text-sm font-medium"
@@ -926,7 +928,7 @@ function DetailView({ reportId }: { reportId: string }) {
                   Tạo công việc từ báo cáo
                 </button>
               )}
-            </div>
+            </>
           )}
         </div>
         <div className="lg:col-span-3 space-y-4">
