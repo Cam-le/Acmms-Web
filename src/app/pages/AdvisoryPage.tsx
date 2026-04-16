@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Link, useSearchParams } from "react-router";
+import { Link, useSearchParams, useNavigate } from "react-router";
 import {
   Search,
   Clock,
@@ -25,6 +25,7 @@ import {
   Wind,
   ClipboardList,
   BadgeCheck,
+  PlusCircle,
 } from "lucide-react";
 import { api } from "../../api/client";
 
@@ -539,6 +540,7 @@ function ListView() {
 // ===================== DETAIL VIEW =====================
 
 function DetailView({ reportId }: { reportId: string }) {
+  const navigate = useNavigate();
   const [report, setReport] = useState<ReportResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -907,6 +909,22 @@ function DetailView({ reportId }: { reportId: string }) {
                     </div>
                   );
                 })
+              )}
+
+              {/* Navigate to Tasks page with assign modal pre-opened */}
+              {!diagnosesLoading && diagnoses.length > 0 && (
+                <button
+                  onClick={() => {
+                    const notes = diagnoses[0]?.recommendedAction ?? "";
+                    navigate(
+                      `/tasks?openAssign=true&notes=${encodeURIComponent(notes)}`,
+                    );
+                  }}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-[#115e59] text-white rounded-lg hover:bg-[#0f4f4a] transition-colors text-sm font-medium"
+                >
+                  <PlusCircle className="w-4 h-4" />
+                  Tạo công việc từ báo cáo
+                </button>
               )}
             </div>
           )}
