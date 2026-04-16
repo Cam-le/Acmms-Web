@@ -7,6 +7,7 @@ import { TasksPage } from "./pages/TasksPage";
 import { CropsPage } from "./pages/CropsPage";
 import { FarmPage } from "./pages/FarmPage";
 import { AdvisoryPage } from "./pages/AdvisoryPage";
+import { BillingPage } from "./pages/BillingPage";
 import { SoilsPage } from "./pages/SoilsPage";
 import { SeasonsPage } from "./pages/SeasonsPage";
 import { PlotsPage } from "./pages/PlotsPage";
@@ -89,6 +90,10 @@ export const router = createBrowserRouter([
       {
         path: "advisory",
         Component: AdvisoryPage,
+      },
+      {
+        path: "billing",
+        Component: BillingPage,
       },
 
       // ── Specialist routes ─────────────────────────────────────────────────

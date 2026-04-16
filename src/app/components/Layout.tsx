@@ -19,6 +19,8 @@ import {
   History,
   UserCog,
   Layers,
+  Receipt,
+  List,
 } from "lucide-react";
 import * as Popover from "@radix-ui/react-popover";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
@@ -34,6 +36,7 @@ const ownerNavItems = [
   { icon: Users, label: "Nhân viên", to: "/workers" },
   { icon: Briefcase, label: "Công việc", to: "/tasks" },
   { icon: MessagesSquare, label: "Tư vấn", to: "/advisory" },
+  { icon: ClipboardList, label: "Thanh toán", to: "/billing" },
 ];
 
 const specialistNavItems = [
