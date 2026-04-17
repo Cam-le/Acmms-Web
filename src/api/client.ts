@@ -410,6 +410,33 @@ export interface AiResultParsed {
   isHealthy?: boolean;
 }
 
+// ── IoT Devices ───────────────────────────────────────────────────────────────
+
+export interface IotDeviceResponse {
+  deviceId: string;
+  bedId: string;
+  deviceCode: string;
+  name: string;
+  type: string;
+  status: string;
+  installationDate: string;
+  latitude: number;
+  longitude: number;
+  createdAt: string;
+  lastActiveAt: string;
+}
+
+export interface IotDeviceRequest {
+  bedId: string;
+  deviceCode: string;
+  name: string;
+  type: string;
+  status: string;
+  installationDate: string; // ISO datetime
+  latitude: number;
+  longitude: number;
+}
+
 // ==================== API Methods ====================
 
 export const api = {
@@ -585,6 +612,17 @@ export const api = {
     request<unknown>("PUT", `/api/CropGrowthTask/${id}`, body),
   deleteCropGrowthTask: (id: string) =>
     request<unknown>("DELETE", `/api/CropGrowthTask/${id}`),
+
+  // IoT Devices
+  getIotDevices: () => request<IotDeviceResponse[]>("GET", "/api/IotDevices"),
+  getIotDevice: (id: string) =>
+    request<IotDeviceResponse>("GET", `/api/IotDevices/${id}`),
+  createIotDevice: (body: IotDeviceRequest) =>
+    request<IotDeviceResponse>("POST", "/api/IotDevices", body),
+  updateIotDevice: (id: string, body: IotDeviceRequest) =>
+    request<IotDeviceResponse>("PUT", `/api/IotDevices/${id}`, body),
+  deleteIotDevice: (id: string) =>
+    request<unknown>("DELETE", `/api/IotDevices/${id}`),
 
   // Reports
   getReports: () => request<ReportResponse[]>("GET", "/api/Reports"),
