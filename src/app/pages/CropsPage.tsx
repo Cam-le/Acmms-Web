@@ -25,7 +25,6 @@ import {
 import * as Dialog from "@radix-ui/react-dialog";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import * as Select from "@radix-ui/react-select";
-import { Crop, CropStatus } from "../../data/mockData";
 import {
   api,
   CropResponse,
@@ -34,12 +33,23 @@ import {
   CropGrowthTaskResponse,
 } from "../../api/client";
 
-// Local extended type — adds API-only fields on top of the mockData Crop shape
-type CropEx = Crop & {
-  plantSpacing?: number;
-  compatibleSoils?: CompatibleSoil[];
-  cropQuantities?: number;
-};
+// Defined locally — no longer imported from mockData
+type CropStatus = "Đang sử dụng" | "Không sử dụng";
+
+// Flat local type — derived purely from API fields, no mock dependency
+interface CropEx {
+  id: string;
+  name: string;
+  scientificName: string;
+  growthPeriod: number;
+  plantSpacing: number;
+  bedWidthDefault: number;
+  pathWidthDefault: number;
+  rowsPerBed: number;
+  rowSpacing: number;
+  status: CropStatus;
+  compatibleSoils: CompatibleSoil[];
+}
 
 // ---- Status normalisation (defensive: API returns inconsistent casing/language) ----
 function normaliseStatus(raw?: string): CropStatus {
@@ -52,25 +62,18 @@ function normaliseStatus(raw?: string): CropStatus {
 
 // Map API response → local CropEx shape
 function mapCrop(c: CropResponse): CropEx {
-  const primarySoil = (c.compatibleSoils ?? [])[0]?.soilName ?? "";
   return {
     id: c.cropId,
     name: c.cropName ?? "",
     scientificName: c.cropScientificName ?? "",
     growthPeriod: c.cropDefaultGrowthDays ?? 0,
-    soilType: primarySoil as Crop["soilType"],
+    plantSpacing: c.plantSpacing ?? 0,
+    bedWidthDefault: c.bedWidthDefault ?? 0,
+    pathWidthDefault: c.pathWidthDefault ?? 0,
+    rowsPerBed: c.rowsPerBed ?? 0,
+    rowSpacing: c.rowSpacing ?? 0,
     status: normaliseStatus(c.cropStatus),
-    image: "",
-    description: "",
-    // plantSpacing is a single value (cm); store in both row/column for UI compatibility
-    plantDistance: {
-      row: c.plantSpacing ?? 0,
-      column: c.plantSpacing ?? 0,
-    },
-    // Extended fields
-    plantSpacing: c.plantSpacing,
     compatibleSoils: c.compatibleSoils ?? [],
-    cropQuantities: c.cropQuantities,
   };
 }
 
@@ -173,11 +176,11 @@ export function CropsPage() {
         cropName: cropData.name,
         cropScientificName: cropData.scientificName || undefined,
         cropDefaultGrowthDays: cropData.growthPeriod || undefined,
-        plantSpacing:
-          (cropData as CropEx).plantSpacing ||
-          cropData.plantDistance.row ||
-          undefined,
-        cropQuantities: (cropData as CropEx).cropQuantities || undefined,
+        plantSpacing: cropData.plantSpacing || undefined,
+        bedWidthDefault: cropData.bedWidthDefault || undefined,
+        pathWidthDefault: cropData.pathWidthDefault || undefined,
+        rowsPerBed: cropData.rowsPerBed || undefined,
+        rowSpacing: cropData.rowSpacing || undefined,
         cropStatus: cropData.status === "Đang sử dụng" ? "Active" : "Inactive",
       });
       await loadCrops();
@@ -199,11 +202,11 @@ export function CropsPage() {
         cropName: updatedCrop.name,
         cropScientificName: updatedCrop.scientificName || undefined,
         cropDefaultGrowthDays: updatedCrop.growthPeriod || undefined,
-        plantSpacing:
-          updatedCrop.plantSpacing ||
-          updatedCrop.plantDistance.row ||
-          undefined,
-        cropQuantities: updatedCrop.cropQuantities || undefined,
+        plantSpacing: updatedCrop.plantSpacing || undefined,
+        bedWidthDefault: updatedCrop.bedWidthDefault || undefined,
+        pathWidthDefault: updatedCrop.pathWidthDefault || undefined,
+        rowsPerBed: updatedCrop.rowsPerBed || undefined,
+        rowSpacing: updatedCrop.rowSpacing || undefined,
         cropStatus:
           updatedCrop.status === "Đang sử dụng" ? "Active" : "Inactive",
       });
@@ -327,15 +330,12 @@ export function CropsPage() {
               <table className="w-full">
                 <thead className="bg-[#f8fafc] border-b border-[#e2e8f0]">
                   <tr>
-                    {/* Column order: Cây trồng → Tên khoa học → Loại đất → Chu kỳ → Trạng thái → Thao tác */}
+                    {/* Column order: Cây trồng → Tên khoa học → Chu kỳ → Trạng thái → Thao tác */}
                     <th className="px-6 py-4 text-left text-xs font-bold text-[#62748e] uppercase tracking-wider">
                       Cây trồng
                     </th>
                     <th className="px-6 py-4 text-left text-xs font-bold text-[#62748e] uppercase tracking-wider">
                       Tên khoa học
-                    </th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-[#62748e] uppercase tracking-wider">
-                      Loại đất
                     </th>
                     <th className="px-6 py-4 text-left text-xs font-bold text-[#62748e] uppercase tracking-wider">
                       <button
@@ -367,17 +367,9 @@ export function CropsPage() {
                       {/* Cây trồng */}
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
-                          {crop.image ? (
-                            <img
-                              src={crop.image}
-                              alt={crop.name}
-                              className="w-10 h-10 rounded-lg object-cover shrink-0"
-                            />
-                          ) : (
-                            <div className="w-10 h-10 bg-[#f0fdf9] rounded-lg flex items-center justify-center shrink-0">
-                              <ImageIcon className="w-5 h-5 text-[#009689]" />
-                            </div>
-                          )}
+                          <div className="w-10 h-10 bg-[#f0fdf9] rounded-lg flex items-center justify-center shrink-0">
+                            <ImageIcon className="w-5 h-5 text-[#009689]" />
+                          </div>
                           <span className="font-medium text-[#115e59] text-sm">
                             {crop.name}
                           </span>
@@ -386,18 +378,6 @@ export function CropsPage() {
                       {/* Tên khoa học */}
                       <td className="px-6 py-4 text-sm text-[#62748e] italic">
                         {crop.scientificName || "—"}
-                      </td>
-                      {/* Loại đất */}
-                      <td className="px-6 py-4">
-                        {crop.soilType ? (
-                          <span
-                            className={`px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap ${getSoilBadgeColor()}`}
-                          >
-                            {crop.soilType}
-                          </span>
-                        ) : (
-                          "—"
-                        )}
                       </td>
                       {/* Chu kỳ */}
                       <td className="px-6 py-4 text-sm text-[#62748e] whitespace-nowrap">
@@ -508,17 +488,9 @@ export function CropsPage() {
                     Chi tiết cây trồng
                   </Dialog.Description>
                   <div className="flex items-center gap-4 mb-4">
-                    {selectedCrop.image ? (
-                      <img
-                        src={selectedCrop.image}
-                        alt={selectedCrop.name}
-                        className="w-16 h-16 rounded-xl object-cover"
-                      />
-                    ) : (
-                      <div className="w-16 h-16 bg-[#f0fdf9] rounded-xl flex items-center justify-center">
-                        <Sprout className="w-8 h-8 text-[#009689]" />
-                      </div>
-                    )}
+                    <div className="w-16 h-16 bg-[#f0fdf9] rounded-xl flex items-center justify-center">
+                      <Sprout className="w-8 h-8 text-[#009689]" />
+                    </div>
                     <div>
                       <div className="italic text-sm text-[#62748e]">
                         {selectedCrop.scientificName || "—"}
@@ -542,16 +514,36 @@ export function CropsPage() {
                       {
                         label: "Khoảng cách trồng",
                         value:
-                          (selectedCrop.plantSpacing ??
-                            selectedCrop.plantDistance.row) > 0
-                            ? `${selectedCrop.plantSpacing ?? selectedCrop.plantDistance.row} cm`
+                          selectedCrop.plantSpacing > 0
+                            ? `${selectedCrop.plantSpacing} m`
                             : "—",
                       },
                       {
-                        label: "Số lượng giống",
+                        label: "Chiều rộng luống (tối thiểu)",
                         value:
-                          selectedCrop.cropQuantities != null
-                            ? selectedCrop.cropQuantities.toString()
+                          selectedCrop.bedWidthDefault > 0
+                            ? `${selectedCrop.bedWidthDefault} m`
+                            : "—",
+                      },
+                      {
+                        label: "Khoảng cách lối đi giữa các luống",
+                        value:
+                          selectedCrop.pathWidthDefault > 0
+                            ? `${selectedCrop.pathWidthDefault} m`
+                            : "—",
+                      },
+                      {
+                        label: "Hàng / luống",
+                        value:
+                          selectedCrop.rowsPerBed > 0
+                            ? `${selectedCrop.rowsPerBed}`
+                            : "—",
+                      },
+                      {
+                        label: "Khoảng cách hàng",
+                        value:
+                          selectedCrop.rowSpacing > 0
+                            ? `${selectedCrop.rowSpacing} m`
                             : "—",
                       },
                     ].map(({ label, value }) => (
@@ -591,14 +583,6 @@ export function CropsPage() {
                         </div>
                       )}
                     </div>
-                    {selectedCrop.description && (
-                      <div className="pt-2">
-                        <div className="text-xs text-[#62748e] mb-1">Mô tả</div>
-                        <p className="text-sm text-[#334155]">
-                          {selectedCrop.description}
-                        </p>
-                      </div>
-                    )}
                   </div>
                   <div className="mt-6 flex justify-end">
                     <Dialog.Close className="px-4 py-2 bg-[#f1f5f9] text-[#314158] rounded-lg text-sm hover:bg-[#e2e8f0]">
@@ -928,17 +912,9 @@ function GrowthStagesTab({
                 onClick={() => setSelectedCropId(crop.id)}
                 className={`w-full text-left px-4 py-3 flex items-center gap-3 transition-colors ${isSelected ? "bg-[#f0fdf9]" : "hover:bg-[#f8fafc]"}`}
               >
-                {crop.image ? (
-                  <img
-                    src={crop.image}
-                    alt={crop.name}
-                    className="w-9 h-9 rounded-lg object-cover shrink-0"
-                  />
-                ) : (
-                  <div className="w-9 h-9 bg-[#f0fdf9] rounded-lg flex items-center justify-center shrink-0">
-                    <Sprout className="w-4 h-4 text-[#009689]" />
-                  </div>
-                )}
+                <div className="w-9 h-9 bg-[#f0fdf9] rounded-lg flex items-center justify-center shrink-0">
+                  <Sprout className="w-4 h-4 text-[#009689]" />
+                </div>
                 <div className="flex-1 min-w-0">
                   <p
                     className={`text-sm font-medium truncate ${isSelected ? "text-[#009689]" : "text-[#115e59]"}`}
@@ -986,17 +962,9 @@ function GrowthStagesTab({
           <div className="flex flex-col gap-4">
             {/* Crop header */}
             <div className="bg-white rounded-xl border border-[#e2e8f0] shadow-sm px-5 py-4 flex items-center gap-4">
-              {selectedCrop.image ? (
-                <img
-                  src={selectedCrop.image}
-                  alt={selectedCrop.name}
-                  className="w-12 h-12 rounded-xl object-cover"
-                />
-              ) : (
-                <div className="w-12 h-12 bg-[#f0fdf9] rounded-xl flex items-center justify-center">
-                  <Sprout className="w-6 h-6 text-[#009689]" />
-                </div>
-              )}
+              <div className="w-12 h-12 bg-[#f0fdf9] rounded-xl flex items-center justify-center">
+                <Sprout className="w-6 h-6 text-[#009689]" />
+              </div>
               <div className="flex-1">
                 <h2 className="text-base font-bold text-[#115e59]">
                   {selectedCrop.name}
@@ -1974,26 +1942,31 @@ function validateCropForm(formData: {
   return errors;
 }
 
+// Shared form data type — mirrors API fields only (no image/description)
+type CropFormData = {
+  name: string;
+  scientificName: string;
+  growthPeriod: string;
+  plantSpacing: string;
+  bedWidthDefault: string;
+  pathWidthDefault: string;
+  rowsPerBed: string;
+  rowSpacing: string;
+  status: CropStatus;
+};
+
 function CropFormFields({
   formData,
   setFormData,
   errors = {},
 }: {
-  formData: {
-    name: string;
-    scientificName: string;
-    growthPeriod: string;
-    status: CropStatus;
-    image: string;
-    description: string;
-    plantSpacing: string;
-    cropQuantities: string;
-  };
-  setFormData: React.Dispatch<React.SetStateAction<typeof formData>>;
+  formData: CropFormData;
+  setFormData: (updater: (prev: CropFormData) => CropFormData) => void;
   errors?: CropFormErrors;
 }) {
   return (
     <div className="space-y-4">
+      {/* Row 1: Tên cây trồng + Tên khoa học */}
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium text-[#45556c] mb-1">
@@ -2028,6 +2001,7 @@ function CropFormFields({
           )}
         </div>
       </div>
+      {/* Row 2: Chu kỳ sinh trưởng + Khoảng cách trồng */}
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium text-[#45556c] mb-1">
@@ -2035,12 +2009,13 @@ function CropFormFields({
           </label>
           <input
             type="number"
+            min={1}
             value={formData.growthPeriod}
             onChange={(e) =>
               setFormData((p) => ({ ...p, growthPeriod: e.target.value }))
             }
             className={`w-full px-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155] ${errors.growthPeriod ? "border-red-300 bg-red-50" : "border-[#e2e8f0]"}`}
-            placeholder="90"
+            placeholder="105"
           />
           {errors.growthPeriod && (
             <p className="mt-1 text-xs text-red-500">{errors.growthPeriod}</p>
@@ -2048,36 +2023,94 @@ function CropFormFields({
         </div>
         <div>
           <label className="block text-sm font-medium text-[#45556c] mb-1">
-            Khoảng cách trồng (cm)
+            Khoảng cách trồng (m)
           </label>
           <input
             type="number"
+            step="0.01"
+            min={0}
             value={formData.plantSpacing}
             onChange={(e) =>
               setFormData((p) => ({ ...p, plantSpacing: e.target.value }))
             }
             className={`w-full px-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155] ${errors.plantSpacing ? "border-red-300 bg-red-50" : "border-[#e2e8f0]"}`}
-            placeholder="50"
+            placeholder="0.45"
           />
           {errors.plantSpacing && (
             <p className="mt-1 text-xs text-red-500">{errors.plantSpacing}</p>
           )}
         </div>
       </div>
-      <div>
-        <label className="block text-sm font-medium text-[#45556c] mb-1">
-          Số lượng giống
-        </label>
-        <input
-          type="number"
-          value={formData.cropQuantities}
-          onChange={(e) =>
-            setFormData((p) => ({ ...p, cropQuantities: e.target.value }))
-          }
-          className="w-full px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155]"
-          placeholder="1000"
-        />
+      {/* Row 3: Rộng luống + Rộng lối đi */}
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-[#45556c] mb-1">
+            Chiều rộng luống (tối thiểu) (m)
+          </label>
+          <input
+            type="number"
+            step="0.01"
+            min={0}
+            value={formData.bedWidthDefault}
+            onChange={(e) =>
+              setFormData((p) => ({ ...p, bedWidthDefault: e.target.value }))
+            }
+            className="w-full px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155]"
+            placeholder="0.7"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-[#45556c] mb-1">
+            Khoảng cách lối đi giữa các luống (m)
+          </label>
+          <input
+            type="number"
+            step="0.01"
+            min={0}
+            value={formData.pathWidthDefault}
+            onChange={(e) =>
+              setFormData((p) => ({ ...p, pathWidthDefault: e.target.value }))
+            }
+            className="w-full px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155]"
+            placeholder="0.5"
+          />
+        </div>
       </div>
+      {/* Row 4: Hàng / luống + Khoảng cách hàng */}
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-[#45556c] mb-1">
+            Hàng / luống
+          </label>
+          <input
+            type="number"
+            min={1}
+            value={formData.rowsPerBed}
+            onChange={(e) =>
+              setFormData((p) => ({ ...p, rowsPerBed: e.target.value }))
+            }
+            className="w-full px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155]"
+            placeholder="1"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-[#45556c] mb-1">
+            Khoảng cách hàng (m)
+          </label>
+          <input
+            type="number"
+            step="0.01"
+            min={0}
+            value={formData.rowSpacing}
+            onChange={(e) =>
+              setFormData((p) => ({ ...p, rowSpacing: e.target.value }))
+            }
+            className="w-full px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155]"
+            placeholder="0.55"
+          />
+        </div>
+      </div>
+      {/* Row 5: Trạng thái */}
       <div>
         <label className="block text-sm font-medium text-[#45556c] mb-1">
           Trạng thái
@@ -2085,27 +2118,16 @@ function CropFormFields({
         <select
           value={formData.status}
           onChange={(e) =>
-            setFormData((p) => ({ ...p, status: e.target.value as CropStatus }))
+            setFormData((p) => ({
+              ...p,
+              status: e.target.value as CropStatus,
+            }))
           }
           className="w-full px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] bg-white text-[#334155]"
         >
           <option value="Đang sử dụng">Đang sử dụng</option>
           <option value="Không sử dụng">Không sử dụng</option>
         </select>
-      </div>
-      <div>
-        <label className="block text-sm font-medium text-[#45556c] mb-1">
-          Mô tả
-        </label>
-        <textarea
-          value={formData.description}
-          onChange={(e) =>
-            setFormData((p) => ({ ...p, description: e.target.value }))
-          }
-          rows={2}
-          className="w-full px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155] resize-none"
-          placeholder="Mô tả cây trồng..."
-        />
       </div>
     </div>
   );
@@ -2115,11 +2137,12 @@ const defaultFormData = {
   name: "",
   scientificName: "",
   growthPeriod: "",
-  status: "Đang sử dụng" as CropStatus,
-  image: "",
-  description: "",
   plantSpacing: "",
-  cropQuantities: "",
+  bedWidthDefault: "",
+  pathWidthDefault: "",
+  rowsPerBed: "",
+  rowSpacing: "",
+  status: "Đang sử dụng" as CropStatus,
 };
 
 function CreateCropModal({
@@ -2144,16 +2167,12 @@ function CreateCropModal({
       name: formData.name.trim(),
       scientificName: formData.scientificName.trim(),
       growthPeriod: parseInt(formData.growthPeriod) || 0,
-      soilType: "" as Crop["soilType"],
+      plantSpacing: parseFloat(formData.plantSpacing) || 0,
+      bedWidthDefault: parseFloat(formData.bedWidthDefault) || 0,
+      pathWidthDefault: parseFloat(formData.pathWidthDefault) || 0,
+      rowsPerBed: parseInt(formData.rowsPerBed) || 0,
+      rowSpacing: parseFloat(formData.rowSpacing) || 0,
       status: formData.status,
-      image: formData.image,
-      description: formData.description.trim(),
-      plantDistance: {
-        row: parseInt(formData.plantSpacing) || 0,
-        column: parseInt(formData.plantSpacing) || 0,
-      },
-      plantSpacing: parseFloat(formData.plantSpacing) || undefined,
-      cropQuantities: parseFloat(formData.cropQuantities) || undefined,
       compatibleSoils: [],
     });
     setFormData(defaultFormData);
@@ -2182,7 +2201,7 @@ function CreateCropModal({
             <CropFormFields
               formData={formData}
               setFormData={(updater) => {
-                setFormData(updater);
+                setFormData((prev) => updater(prev));
                 setFormErrors({});
               }}
               errors={formErrors}
@@ -2220,25 +2239,16 @@ function EditCropModal({
   onUpdate: (c: CropEx) => void;
   submitting: boolean;
 }) {
-  const [formData, setFormData] = useState<{
-    name: string;
-    scientificName: string;
-    growthPeriod: string;
-    status: CropStatus;
-    image: string;
-    description: string;
-    plantSpacing: string;
-    cropQuantities: string;
-  }>({
+  const [formData, setFormData] = useState<CropFormData>({
     name: crop.name,
     scientificName: crop.scientificName,
     growthPeriod: crop.growthPeriod.toString(),
+    plantSpacing: crop.plantSpacing.toString(),
+    bedWidthDefault: crop.bedWidthDefault.toString(),
+    pathWidthDefault: crop.pathWidthDefault.toString(),
+    rowsPerBed: crop.rowsPerBed.toString(),
+    rowSpacing: crop.rowSpacing.toString(),
     status: crop.status,
-    image: crop.image,
-    description: crop.description,
-    plantSpacing: (crop.plantSpacing ?? crop.plantDistance.row ?? 0).toString(),
-    cropQuantities:
-      crop.cropQuantities != null ? crop.cropQuantities.toString() : "",
   });
   const [formErrors, setFormErrors] = useState<CropFormErrors>({});
   const handleSubmit = (e: React.FormEvent) => {
@@ -2251,15 +2261,12 @@ function EditCropModal({
       name: formData.name.trim(),
       scientificName: formData.scientificName.trim(),
       growthPeriod: parseInt(formData.growthPeriod) || 0,
+      plantSpacing: parseFloat(formData.plantSpacing) || 0,
+      bedWidthDefault: parseFloat(formData.bedWidthDefault) || 0,
+      pathWidthDefault: parseFloat(formData.pathWidthDefault) || 0,
+      rowsPerBed: parseInt(formData.rowsPerBed) || 0,
+      rowSpacing: parseFloat(formData.rowSpacing) || 0,
       status: formData.status,
-      image: formData.image,
-      description: formData.description.trim(),
-      plantDistance: {
-        row: parseInt(formData.plantSpacing) || 0,
-        column: parseInt(formData.plantSpacing) || 0,
-      },
-      plantSpacing: parseFloat(formData.plantSpacing) || undefined,
-      cropQuantities: parseFloat(formData.cropQuantities) || undefined,
     });
   };
   return (
@@ -2285,7 +2292,7 @@ function EditCropModal({
             <CropFormFields
               formData={formData}
               setFormData={(updater) => {
-                setFormData(updater);
+                setFormData((prev) => updater(prev));
                 setFormErrors({});
               }}
               errors={formErrors}

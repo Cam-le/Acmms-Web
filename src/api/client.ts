@@ -83,6 +83,10 @@ export interface CropResponse {
   cropScientificName?: string;
   cropDefaultGrowthDays?: number;
   plantSpacing?: number;
+  bedWidthDefault?: number;
+  pathWidthDefault?: number;
+  rowsPerBed?: number;
+  rowSpacing?: number;
   cropQuantities?: number;
   cropStatus?: string;
   compatibleSoils?: CompatibleSoil[];
@@ -267,7 +271,10 @@ export interface CropRequest {
   cropScientificName?: string;
   cropDefaultGrowthDays?: number;
   plantSpacing?: number;
-  cropQuantities?: number;
+  bedWidthDefault?: number;
+  pathWidthDefault?: number;
+  rowsPerBed?: number;
+  rowSpacing?: number;
   cropStatus?: string;
 }
 
