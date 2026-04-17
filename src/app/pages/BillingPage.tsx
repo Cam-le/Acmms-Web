@@ -697,13 +697,13 @@ function InvoiceCard({
       {/* Breakdown */}
       <div className="bg-[#f8fafc] rounded-xl border border-[#e2e8f0] p-4 mb-4 space-y-2.5">
         <div className="flex justify-between text-sm text-[#334155]">
-          <span>Số lượt tư vấn (DIAGNOSED)</span>
+          <span>Số yêu cầu đã tư vấn</span>
           <span className="font-semibold">
-            {invoice.consultationCount} lượt
+            {invoice.consultationCount} yêu cầu
           </span>
         </div>
         <div className="flex justify-between text-sm text-[#334155]">
-          <span>Đơn giá mỗi lượt</span>
+          <span>Đơn giá mỗi yêu cầu</span>
           <span className="font-semibold">
             {formatVND(invoice.pricePerConsult)}
           </span>
@@ -718,34 +718,6 @@ function InvoiceCard({
           </span>
         </div>
       </div>
-
-      {/* Diagnoses list */}
-      {invoice.diagnoses.length > 0 && (
-        <details className="group mb-4">
-          <summary className="flex items-center justify-between cursor-pointer text-xs font-medium text-[#62748e] hover:text-[#115e59] transition-colors list-none select-none">
-            <span>Chi tiết {invoice.diagnoses.length} lượt chẩn đoán</span>
-            <ChevronRight className="w-3.5 h-3.5 group-open:rotate-90 transition-transform" />
-          </summary>
-          <div className="mt-2 space-y-1.5 max-h-40 overflow-y-auto pr-1">
-            {invoice.diagnoses.map((dx, i) => (
-              <div
-                key={dx.id}
-                className="flex items-center gap-2 px-2.5 py-1.5 bg-[#f0fdfa] rounded-lg text-xs text-[#334155]"
-              >
-                <span className="w-4 h-4 rounded-full bg-[#009689] text-white flex items-center justify-center text-[9px] font-bold shrink-0">
-                  {i + 1}
-                </span>
-                <span className="flex-1 truncate font-medium">
-                  {dx.diseaseName}
-                </span>
-                <span className="text-[#62748e] whitespace-nowrap">
-                  {formatDate(dx.createdAt)}
-                </span>
-              </div>
-            ))}
-          </div>
-        </details>
-      )}
 
       {/* Footer */}
       {isPaid && (
@@ -1065,7 +1037,7 @@ export function BillingPage() {
           Quản lý thanh toán
         </h1>
         <p className="text-[#62748e] text-sm mt-1">
-          Hóa đơn phát sinh vào ngày 01 hàng tháng · Gia hạn {GRACE_DAYS} ngày
+          Hóa đơn phát sinh vào ngày 01 hàng tháng
         </p>
       </div>
 
