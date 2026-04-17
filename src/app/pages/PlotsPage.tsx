@@ -776,6 +776,8 @@ function CreatePlotModal({
     soilId: "",
     plotName: "",
     plotArea: 0,
+    plotLength: 0,
+    plotWidth: 0,
     plotMargin: 0.3,
     plotStatus: "Active",
   });
@@ -788,6 +790,8 @@ function CreatePlotModal({
         soilId: soils[0]?.soilId ?? "",
         plotName: "",
         plotArea: 0,
+        plotLength: 0,
+        plotWidth: 0,
         plotMargin: 0.3,
         plotStatus: "Active",
       });
@@ -923,6 +927,44 @@ function CreatePlotModal({
                 />
               </div>
             </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-[#115e59] mb-2">
+                  Chiều Dài (m)
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  step={0.1}
+                  value={formData.plotLength || ""}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      plotLength: parseFloat(e.target.value) || 0,
+                    })
+                  }
+                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-[#115e59] mb-2">
+                  Chiều Rộng (m)
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  step={0.1}
+                  value={formData.plotWidth || ""}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      plotWidth: parseFloat(e.target.value) || 0,
+                    })
+                  }
+                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                />
+              </div>
+            </div>
             <div>
               <label className="block text-sm font-medium text-[#115e59] mb-2">
                 Trạng Thái
@@ -1023,6 +1065,28 @@ function ViewPlotModal({
                 </div>
               </div>
             </div>
+            <div className="grid grid-cols-3 gap-4 pt-4 border-t border-[#e2e8f0]">
+              <div>
+                <div className="text-xs text-[#62748e] uppercase mb-1">Dài</div>
+                <div className="font-medium text-[#115e59]">
+                  {plot.plotLength ?? "-"} m
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-[#62748e] uppercase mb-1">
+                  Rộng
+                </div>
+                <div className="font-medium text-[#115e59]">
+                  {plot.plotWidth ?? "-"} m
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-[#62748e] uppercase mb-1">Lề</div>
+                <div className="font-medium text-[#115e59]">
+                  {plot.plotMargin ?? "-"} m
+                </div>
+              </div>
+            </div>
             <div className="pt-4 border-t border-[#e2e8f0]">
               <div className="text-xs text-[#62748e] uppercase mb-1">
                 Số luống
@@ -1072,6 +1136,8 @@ function EditPlotModal({
     soilId: plot.soilId,
     plotName: plot.plotName,
     plotArea: plot.plotArea,
+    plotLength: plot.plotLength ?? 0,
+    plotWidth: plot.plotWidth ?? 0,
     plotMargin: plot.plotMargin ?? 0.3,
     plotStatus: plot.plotStatus,
   });
@@ -1082,6 +1148,8 @@ function EditPlotModal({
         soilId: plot.soilId,
         plotName: plot.plotName,
         plotArea: plot.plotArea,
+        plotLength: plot.plotLength ?? 0,
+        plotWidth: plot.plotWidth ?? 0,
         plotMargin: plot.plotMargin ?? 0.3,
         plotStatus: plot.plotStatus,
       });
@@ -1193,6 +1261,44 @@ function EditPlotModal({
                     setFormData({
                       ...formData,
                       plotMargin: parseFloat(e.target.value) || 0,
+                    })
+                  }
+                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-[#115e59] mb-2">
+                  Chiều Dài (m)
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  step={0.1}
+                  value={formData.plotLength}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      plotLength: parseFloat(e.target.value) || 0,
+                    })
+                  }
+                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-[#115e59] mb-2">
+                  Chiều Rộng (m)
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  step={0.1}
+                  value={formData.plotWidth}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      plotWidth: parseFloat(e.target.value) || 0,
                     })
                   }
                   className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"

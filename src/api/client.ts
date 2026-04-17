@@ -106,6 +106,8 @@ export interface PlotResponse {
   soilId: string;
   plotName: string;
   plotArea: number;
+  plotLength: number;
+  plotWidth: number;
   plotMargin: number;
   plotStatus: string;
   bedCreatedAt: string;
@@ -119,6 +121,8 @@ export interface PlotRequest {
   soilId: string;
   plotName: string;
   plotArea: number;
+  plotLength: number;
+  plotWidth: number;
   plotMargin: number;
   plotStatus: string;
 }
