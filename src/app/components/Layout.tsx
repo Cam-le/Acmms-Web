@@ -21,6 +21,7 @@ import {
   Layers,
   Receipt,
   List,
+  Cpu,
 } from "lucide-react";
 import * as Popover from "@radix-ui/react-popover";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
@@ -30,6 +31,7 @@ const ownerNavItems = [
   { icon: LayoutDashboard, label: "Dashboard", to: "/dashboard" },
   { icon: Tractor, label: "Trang trại", to: "/farm" },
   { icon: MapPin, label: "Vuông đất", to: "/lands" },
+  { icon: Cpu, label: "Thiết bị IoT", to: "/iot" },
   { icon: CalendarDays, label: "Mùa vụ", to: "/seasons" },
   { icon: Sprout, label: "Cây trồng", to: "/crops" },
   { icon: Layers, label: "Loại đất", to: "/soils" },
