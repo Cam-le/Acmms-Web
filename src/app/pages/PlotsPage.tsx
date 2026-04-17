@@ -1579,7 +1579,7 @@ function CreateBedModal({
     bedName: "",
     bedArea: 0,
     bedStatus: "Empty",
-    cropQuantities: 0,
+    cropQuantities: 0, // not sent to API — kept to satisfy BedRequest type
     cropId: undefined,
     bedWidth: undefined,
     bedLength: undefined,
