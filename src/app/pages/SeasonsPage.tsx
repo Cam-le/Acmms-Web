@@ -405,6 +405,14 @@ function mapApiSeasonToUi(
 
   const plots: PlotAssignment[] = seasonDetails.map((d) => {
     const bed = beds.find((b) => b.bedId === d.bedId);
+    // Map API bedStatus → SeasonPlotStatus
+    const bedStatusMap: Record<string, string> = {
+      Planted: "Đang trồng",
+      Empty: "Chưa trồng",
+      Warning: "Cảnh báo",
+      Active: "Đang trồng", // legacy fallback
+    };
+    const plotStatus = bedStatusMap[bed?.bedStatus ?? ""] ?? "Chưa trồng";
     return {
       plotId: d.seasonDetailId,
       plotName: d.bedName ?? d.bedId ?? "—",
@@ -413,9 +421,10 @@ function mapApiSeasonToUi(
       sowingDate: d.startDate ?? "",
       harvestDate: d.seasonExpectedHarvestDate ?? "",
       plannedQuantity: d.cropQuantity ?? 0,
-      actualPlanted: d.cropQuantity ?? 0,
+      // actualPlanted comes from bed.cropQuantities (how many plants are in the bed)
+      actualPlanted: bed?.cropQuantities ?? 0,
       harvestQuantity: d.totalHarvestYield ?? 0,
-      status: "Chưa trồng" as any,
+      status: plotStatus as any,
       _seasonDetailId: d.seasonDetailId,
       _bedId: d.bedId,
       _cropId: d.cropId,
@@ -580,9 +589,9 @@ export function SeasonsPage() {
             bedId: d.bedId,
             cropId: d.cropId,
             cropQuantity: d.cropQuantity,
-            startDate: d.startDate,
-            endDate: d.endDate,
-            seasonExpectedHarvestDate: d.harvestDate,
+            startDate: d.startDate || seasonData.startDate,
+            endDate: d.endDate || seasonData.endDate,
+            seasonExpectedHarvestDate: d.harvestDate || seasonData.endDate,
             totalHarvestYield: 0,
           }),
         ),
@@ -612,6 +621,7 @@ export function SeasonsPage() {
         startDate: string;
         endDate: string;
         harvestDate: string;
+        totalHarvestYield: number;
       }>;
     },
   ) => {
@@ -638,9 +648,9 @@ export function SeasonsPage() {
             bedId: d.bedId,
             cropId: d.cropId,
             cropQuantity: d.cropQuantity,
-            startDate: d.startDate,
-            endDate: d.endDate,
-            seasonExpectedHarvestDate: d.harvestDate,
+            startDate: d.startDate || updatedSeason.startDate,
+            endDate: d.endDate || updatedSeason.endDate,
+            seasonExpectedHarvestDate: d.harvestDate || updatedSeason.endDate,
             totalHarvestYield: 0,
           }),
         ),
@@ -650,10 +660,10 @@ export function SeasonsPage() {
             bedId: d.bedId,
             cropId: d.cropId,
             cropQuantity: d.cropQuantity,
-            startDate: d.startDate,
-            endDate: d.endDate,
-            seasonExpectedHarvestDate: d.harvestDate,
-            totalHarvestYield: 0,
+            startDate: d.startDate || updatedSeason.startDate,
+            endDate: d.endDate || updatedSeason.endDate,
+            seasonExpectedHarvestDate: d.harvestDate || updatedSeason.endDate,
+            totalHarvestYield: d.totalHarvestYield,
           }),
         ),
       ]);
@@ -1379,11 +1389,11 @@ function CreateSeasonView({
       const details = plotDetails[plotId] || defaultDetail;
       return {
         bedId: plotId,
-        cropId: details.cropId,
+        cropId: details.cropId || firstCropId,
         cropQuantity: details.cropQuantity,
         startDate: details.sowingDate || formData.startDate,
         endDate: formData.endDate,
-        harvestDate: details.harvestDate,
+        harvestDate: details.harvestDate || formData.endDate,
       };
     });
 
@@ -1846,6 +1856,7 @@ function EditSeasonView({
         startDate: string;
         endDate: string;
         harvestDate: string;
+        totalHarvestYield: number;
       }>;
     },
   ) => void;
@@ -2014,11 +2025,11 @@ function EditSeasonView({
         .filter((p) => !(p as any)._seasonDetailId)
         .map((p) => ({
           bedId: (p as any)._bedId ?? p.plotId,
-          cropId: (p as any)._cropId ?? "",
+          cropId: (p as any)._cropId || "",
           cropQuantity: p.plannedQuantity ?? 0,
           startDate: p.sowingDate || formData.startDate,
           endDate: formData.endDate,
-          harvestDate: p.harvestDate,
+          harvestDate: p.harvestDate || formData.endDate,
         }));
       const toUpdate = plots
         .filter((p) => {
@@ -2033,15 +2044,20 @@ function EditSeasonView({
             (p as any)._cropId !== (orig as any)._cropId
           );
         })
-        .map((p) => ({
-          seasonDetailId: (p as any)._seasonDetailId as string,
-          bedId: (p as any)._bedId ?? p.plotId,
-          cropId: (p as any)._cropId ?? "",
-          cropQuantity: p.plannedQuantity ?? 0,
-          startDate: p.sowingDate || formData.startDate,
-          endDate: formData.endDate,
-          harvestDate: p.harvestDate,
-        }));
+        .map((p) => {
+          const orig = originalPlotMap.get((p as any)._seasonDetailId)!;
+          return {
+            seasonDetailId: (p as any)._seasonDetailId as string,
+            bedId: (p as any)._bedId ?? p.plotId,
+            cropId: (p as any)._cropId || "",
+            cropQuantity: p.plannedQuantity ?? 0,
+            startDate: p.sowingDate || formData.startDate,
+            endDate: formData.endDate,
+            harvestDate: p.harvestDate || formData.endDate,
+            // Preserve existing harvest yield — never reset to 0 on update
+            totalHarvestYield: (orig as any).harvestQuantity ?? 0,
+          };
+        });
 
       onUpdate(
         {
@@ -2087,14 +2103,38 @@ function EditSeasonView({
       "Cảnh báo": "Warning",
     };
     try {
-      // getBed first to get current values required by BedRequest
       const current = await api.getBed(bedId);
       await api.updateBed(bedId, {
         plotId: current.plotId,
         bedName: current.bedName,
         bedArea: current.bedArea,
         bedStatus: bedStatusMap[newStatus],
-        cropQuantities: current.cropQuantities,
+        // preserve current cropQuantities from plot state, not from re-fetched bed
+        cropQuantities: plot.actualPlanted ?? current.cropQuantities,
+      });
+    } catch {
+      // silent — UI already reflects the change
+    }
+  };
+
+  /**
+   * Persists actualPlanted changes to PUT /api/Beds/{id} (cropQuantities field).
+   * Called on blur of the SL thực tế input. Silently ignores failures.
+   */
+  const updateBedCropQuantities = async (
+    plot: PlotAssignmentV2,
+    qty: number,
+  ) => {
+    const bedId = (plot as any)._bedId ?? plot.plotId;
+    if (!bedId) return;
+    try {
+      const current = await api.getBed(bedId);
+      await api.updateBed(bedId, {
+        plotId: current.plotId,
+        bedName: current.bedName,
+        bedArea: current.bedArea,
+        bedStatus: current.bedStatus,
+        cropQuantities: qty,
       });
     } catch {
       // silent — UI already reflects the change
@@ -2668,6 +2708,12 @@ function EditSeasonView({
                                             updatePlot(
                                               plot.plotId,
                                               "actualPlanted",
+                                              parseInt(e.target.value) || 0,
+                                            )
+                                          }
+                                          onBlur={(e) =>
+                                            updateBedCropQuantities(
+                                              plot,
                                               parseInt(e.target.value) || 0,
                                             )
                                           }
