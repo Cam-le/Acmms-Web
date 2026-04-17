@@ -9,7 +9,6 @@ import {
   MapPin,
   X,
   RefreshCw,
-  ChevronDown,
 } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
@@ -25,13 +24,11 @@ import {
 const iotStatusMap: Record<string, string> = {
   Active: "Hoạt động",
   Inactive: "Không hoạt động",
-  Maintenance: "Bảo trì",
 };
 
 const iotStatusConfig: Record<string, string> = {
   Active: "bg-[#dcfce7] text-[#008236]",
   Inactive: "bg-[#fee2e2] text-[#991b1b]",
-  Maintenance: "bg-amber-100 text-amber-700",
 };
 
 function formatDate(iso: string) {
@@ -49,10 +46,15 @@ export function IoTPage() {
   const [seasons, setSeasons] = useState<SeasonResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [bedNameCache, setBedNameCache] = useState<Record<string, string>>({});
 
   // Season/bed picker for add-device modal
   const [selectedSeasonId, setSelectedSeasonId] = useState<string>("");
   const [selectedBedId, setSelectedBedId] = useState<string>("");
+
+  // Pagination
+  const PAGE_SIZE = 10;
+  const [currentPage, setCurrentPage] = useState(1);
 
   // Modals
   const [addOpen, setAddOpen] = useState(false);
@@ -86,6 +88,19 @@ export function IoTPage() {
       const data = await api.getIotDevices();
       setDevices(data);
       setError(null);
+      // Fetch bed names for all unique bedIds
+      const uniqueBedIds = [...new Set(data.map((d) => d.bedId))];
+      const entries = await Promise.all(
+        uniqueBedIds.map(async (id) => {
+          try {
+            const bed = await api.getBed(id);
+            return [id, bed.bedName] as [string, string];
+          } catch {
+            return [id, id.slice(0, 8) + "…"] as [string, string];
+          }
+        }),
+      );
+      setBedNameCache(Object.fromEntries(entries));
     } catch (err) {
       setError("Không thể tải danh sách thiết bị: " + (err as Error).message);
     }
@@ -125,17 +140,19 @@ export function IoTPage() {
     return matchSearch && matchStatus;
   });
 
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(currentPage, totalPages);
+  const paginatedDevices = filtered.slice(
+    (safePage - 1) * PAGE_SIZE,
+    safePage * PAGE_SIZE,
+  );
+
   // ── CRUD ─────────────────────────────────────────────────────────────────
   const openAdd = () => {
     setFormData({
       ...emptyForm,
       bedId: selectedBedId || (bedsForSeason[0]?.bedId ?? ""),
     });
-    setAddOpen(true);
-  };
-
-  const openAddForBed = (bedId: string) => {
-    setFormData({ ...emptyForm, bedId });
     setAddOpen(true);
   };
 
@@ -237,63 +254,6 @@ export function IoTPage() {
         </div>
       )}
 
-      {/* Beds per season quick-add section */}
-      {seasons.length > 0 && (
-        <div className="bg-white rounded-xl border border-[#e2e8f0] p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-base font-semibold text-[#115e59] flex items-center gap-2">
-              <Radio className="w-4 h-4 text-[#009689]" />
-              Thêm thiết bị theo mùa vụ
-            </h2>
-            <div className="relative">
-              <select
-                value={selectedSeasonId}
-                onChange={(e) => setSelectedSeasonId(e.target.value)}
-                className="appearance-none pl-3 pr-8 py-2 text-sm border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] bg-white"
-              >
-                {seasons.map((s) => (
-                  <option key={s.seasonId} value={s.seasonId}>
-                    {s.seasonName}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-[#62748e] pointer-events-none" />
-            </div>
-          </div>
-
-          {bedsForSeason.length === 0 ? (
-            <p className="text-sm text-[#62748e] text-center py-4">
-              Mùa vụ này chưa có luống nào
-            </p>
-          ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-              {bedsForSeason.map((detail, i) => (
-                <div
-                  key={detail.seasonDetailId}
-                  className="border border-[#e2e8f0] rounded-lg p-3 flex items-center justify-between bg-[#f8fafc] hover:bg-[#f0fdfa] transition-colors"
-                >
-                  <div className="min-w-0">
-                    <p className="text-xs font-medium text-[#115e59] truncate">
-                      Luống #{i + 1}
-                    </p>
-                    <p className="text-[10px] text-[#62748e] truncate font-mono">
-                      {detail.bedId.slice(0, 8)}…
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => openAddForBed(detail.bedId)}
-                    className="flex-shrink-0 flex items-center gap-1 px-2.5 py-1.5 text-xs bg-[#009689] text-white rounded-lg hover:bg-[#007f75] transition-colors ml-2"
-                  >
-                    <Plus className="w-3 h-3" />
-                    Thêm
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
       {/* Main table */}
       <div className="bg-white rounded-xl border border-[#e2e8f0] overflow-hidden">
         {/* Toolbar */}
@@ -314,7 +274,6 @@ export function IoTPage() {
               <option value="">Tất cả trạng thái</option>
               <option value="Active">Hoạt động</option>
               <option value="Inactive">Không hoạt động</option>
-              <option value="Maintenance">Bảo trì</option>
             </select>
           </div>
           <button
@@ -346,7 +305,7 @@ export function IoTPage() {
                     Loại
                   </th>
                   <th className="px-5 py-3 text-left text-xs font-medium text-[#62748e] uppercase tracking-wider">
-                    Luống (ID)
+                    Luống
                   </th>
                   <th className="px-5 py-3 text-left text-xs font-medium text-[#62748e] uppercase tracking-wider">
                     Tọa độ
@@ -363,7 +322,7 @@ export function IoTPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#e2e8f0]">
-                {filtered.map((device) => (
+                {paginatedDevices.map((device) => (
                   <tr
                     key={device.deviceId}
                     className="hover:bg-[#f8fafc] transition-colors"
@@ -386,8 +345,9 @@ export function IoTPage() {
                     <td className="px-5 py-3 text-sm text-[#314158]">
                       {device.type}
                     </td>
-                    <td className="px-5 py-3 text-xs text-[#62748e] font-mono">
-                      {device.bedId.slice(0, 8)}…
+                    <td className="px-5 py-3 text-sm text-[#314158]">
+                      {bedNameCache[device.bedId] ??
+                        device.bedId.slice(0, 8) + "…"}
                     </td>
                     <td className="px-5 py-3 text-xs text-[#62748e]">
                       {device.latitude !== 0 || device.longitude !== 0 ? (
@@ -441,12 +401,57 @@ export function IoTPage() {
           </div>
         )}
 
-        {/* Footer count */}
-        {filtered.length > 0 && (
-          <div className="px-5 py-3 border-t border-[#e2e8f0] text-xs text-[#62748e]">
-            Hiển thị {filtered.length} / {devices.length} thiết bị
+        {/* Pagination */}
+        <div className="px-5 py-3 border-t border-[#e2e8f0] flex items-center justify-between text-xs text-[#62748e]">
+          <span>
+            Trang {safePage} / {totalPages}
+          </span>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={safePage === 1}
+              className="px-3 py-1.5 rounded-lg border border-[#e2e8f0] hover:bg-[#f8fafc] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              ‹
+            </button>
+            {Array.from({ length: totalPages }, (_, i) => i + 1)
+              .filter(
+                (p) =>
+                  p === 1 || p === totalPages || Math.abs(p - safePage) <= 1,
+              )
+              .reduce<(number | "…")[]>((acc, p, idx, arr) => {
+                if (idx > 0 && (arr[idx - 1] as number) + 1 < p) acc.push("…");
+                acc.push(p);
+                return acc;
+              }, [])
+              .map((p, idx) =>
+                p === "…" ? (
+                  <span key={`ellipsis-${idx}`} className="px-2">
+                    …
+                  </span>
+                ) : (
+                  <button
+                    key={p}
+                    onClick={() => setCurrentPage(p as number)}
+                    className={`px-3 py-1.5 rounded-lg border transition-colors ${
+                      p === safePage
+                        ? "bg-[#009689] text-white border-[#009689]"
+                        : "border-[#e2e8f0] hover:bg-[#f8fafc]"
+                    }`}
+                  >
+                    {p}
+                  </button>
+                ),
+              )}
+            <button
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={safePage === totalPages}
+              className="px-3 py-1.5 rounded-lg border border-[#e2e8f0] hover:bg-[#f8fafc] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              ›
+            </button>
           </div>
-        )}
+        </div>
       </div>
 
       {/* ── Add / Edit Modal ─────────────────────────────────────────────── */}
@@ -471,6 +476,9 @@ export function IoTPage() {
       {viewTarget && (
         <ViewDeviceModal
           device={viewTarget}
+          bedName={
+            bedNameCache[viewTarget.bedId] ?? viewTarget.bedId.slice(0, 8) + "…"
+          }
           onClose={() => setViewTarget(null)}
         />
       )}
@@ -540,6 +548,26 @@ function IotFormModal({
 }) {
   const activeSeason = seasons.find((s) => s.seasonId === selectedSeasonId);
   const bedsForSeason = activeSeason?.seasonsDetails ?? [];
+  const [bedNames, setBedNames] = useState<Record<string, string>>({});
+
+  // Fetch bed names whenever the bed list changes
+  useEffect(() => {
+    if (bedsForSeason.length === 0) return;
+    Promise.all(
+      bedsForSeason.map(async (detail) => {
+        try {
+          const bed = await api.getBed(detail.bedId);
+          return [detail.bedId, bed.bedName] as [string, string];
+        } catch {
+          return [detail.bedId, detail.bedId.slice(0, 8) + "…"] as [
+            string,
+            string,
+          ];
+        }
+      }),
+    ).then((entries) => setBedNames(Object.fromEntries(entries)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedSeasonId]);
 
   const canSubmit =
     formData.bedId.trim() !== "" &&
@@ -607,9 +635,10 @@ function IotFormModal({
                     className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] text-sm font-mono"
                   >
                     <option value="">— Chọn luống —</option>
-                    {bedsForSeason.map((detail, i) => (
+                    {bedsForSeason.map((detail) => (
                       <option key={detail.seasonDetailId} value={detail.bedId}>
-                        Luống #{i + 1} — {detail.bedId}
+                        {bedNames[detail.bedId] ??
+                          detail.bedId.slice(0, 8) + "…"}
                       </option>
                     ))}
                   </select>
@@ -678,7 +707,6 @@ function IotFormModal({
                 >
                   <option value="Active">Hoạt động</option>
                   <option value="Inactive">Không hoạt động</option>
-                  <option value="Maintenance">Bảo trì</option>
                 </select>
               </div>
             </div>
@@ -707,14 +735,14 @@ function IotFormModal({
             <div>
               <label className="block text-sm font-medium text-[#115e59] mb-1.5 flex items-center gap-1.5">
                 <MapPin className="w-3.5 h-3.5" />
-                Tọa độ (tuỳ chọn)
+                Tọa độ
               </label>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <input
                     type="number"
                     step="any"
-                    placeholder="Latitude"
+                    placeholder="Vĩ độ"
                     value={formData.latitude || ""}
                     onChange={(e) =>
                       setFormData({
@@ -724,13 +752,12 @@ function IotFormModal({
                     }
                     className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] text-sm"
                   />
-                  <p className="mt-1 text-xs text-[#62748e]">Vĩ độ</p>
                 </div>
                 <div>
                   <input
                     type="number"
                     step="any"
-                    placeholder="Longitude"
+                    placeholder="Kinh độ"
                     value={formData.longitude || ""}
                     onChange={(e) =>
                       setFormData({
@@ -740,7 +767,6 @@ function IotFormModal({
                     }
                     className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] text-sm"
                   />
-                  <p className="mt-1 text-xs text-[#62748e]">Kinh độ</p>
                 </div>
               </div>
             </div>
@@ -777,15 +803,17 @@ function IotFormModal({
 
 function ViewDeviceModal({
   device,
+  bedName,
   onClose,
 }: {
   device: IotDeviceResponse;
+  bedName: string;
   onClose: () => void;
 }) {
   const rows: [string, string][] = [
     ["Mã thiết bị", device.deviceCode],
     ["Loại", device.type],
-    ["Luống (bedId)", device.bedId],
+    ["Luống", bedName],
     ["Tọa độ", `${device.latitude}, ${device.longitude}`],
     ["Ngày lắp đặt", formatDate(device.installationDate)],
     ["Ngày tạo", formatDate(device.createdAt)],
