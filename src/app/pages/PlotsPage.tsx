@@ -13,9 +13,6 @@ import {
   Calendar,
   MapPin,
   Cpu,
-  Radio,
-  CheckCircle2,
-  XCircle,
 } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
@@ -28,144 +25,11 @@ import {
   BedRequest,
   FarmResponse,
   SoilResponse,
+  CropResponse,
+  IotDeviceRequest,
+  AutoAllocatePreviewResponse,
+  AutoAllocateBedItem,
 } from "../../api/client";
-
-// ==================== Mock Data ====================
-
-const mockPlots: PlotResponse[] = [
-  {
-    plotId: "mock-plot-1",
-    farmId: "mock-farm-1",
-    soilId: "mock-soil-1",
-    plotName: "Plot A1",
-    plotArea: 500,
-    plotStatus: "Active",
-    bedCreatedAt: "2026-01-10T00:00:00Z",
-    farmName: "Trang trại Thung Lũng Xanh",
-    soilName: "Đất phù sa",
-    bedsCount: 3,
-  },
-  {
-    plotId: "mock-plot-2",
-    farmId: "mock-farm-1",
-    soilId: "mock-soil-2",
-    plotName: "Plot B1",
-    plotArea: 350,
-    plotStatus: "Active",
-    bedCreatedAt: "2026-01-15T00:00:00Z",
-    farmName: "Trang trại Thung Lũng Xanh",
-    soilName: "Đất thịt",
-    bedsCount: 2,
-  },
-  {
-    plotId: "mock-plot-3",
-    farmId: "mock-farm-2",
-    soilId: "mock-soil-1",
-    plotName: "Plot C1",
-    plotArea: 200,
-    plotStatus: "Inactive",
-    bedCreatedAt: "2026-02-01T00:00:00Z",
-    farmName: "Trang trại Nắng Hạ",
-    soilName: "Đất phù sa",
-    bedsCount: 0,
-  },
-];
-
-const mockBeds: BedResponse[] = [
-  {
-    bedId: "mock-bed-1",
-    plotId: "mock-plot-1",
-    bedName: "Luống A1-1",
-    bedArea: 50,
-    bedStatus: "Active",
-    bedCreatedAt: "2026-01-12T00:00:00Z",
-    cropQuantities: 25,
-    plotName: "Plot A1",
-    seasonsDetailsCount: 1,
-  },
-  {
-    bedId: "mock-bed-2",
-    plotId: "mock-plot-1",
-    bedName: "Luống A1-2",
-    bedArea: 50,
-    bedStatus: "Active",
-    bedCreatedAt: "2026-01-12T00:00:00Z",
-    cropQuantities: 20,
-    plotName: "Plot A1",
-    seasonsDetailsCount: 0,
-  },
-  {
-    bedId: "mock-bed-3",
-    plotId: "mock-plot-1",
-    bedName: "Luống A1-3",
-    bedArea: 45,
-    bedStatus: "Inactive",
-    bedCreatedAt: "2026-01-13T00:00:00Z",
-    cropQuantities: 0,
-    plotName: "Plot A1",
-    seasonsDetailsCount: 0,
-  },
-  {
-    bedId: "mock-bed-4",
-    plotId: "mock-plot-2",
-    bedName: "Luống B1-1",
-    bedArea: 60,
-    bedStatus: "Active",
-    bedCreatedAt: "2026-01-18T00:00:00Z",
-    cropQuantities: 30,
-    plotName: "Plot B1",
-    seasonsDetailsCount: 1,
-  },
-  {
-    bedId: "mock-bed-5",
-    plotId: "mock-plot-2",
-    bedName: "Luống B1-2",
-    bedArea: 55,
-    bedStatus: "Active",
-    bedCreatedAt: "2026-01-18T00:00:00Z",
-    cropQuantities: 28,
-    plotName: "Plot B1",
-    seasonsDetailsCount: 0,
-  },
-];
-
-const mockFarms: FarmResponse[] = [
-  {
-    farmId: "mock-farm-1",
-    farmName: "Trang trại Thung Lũng Xanh",
-    farmLocation: "Đà Lạt",
-    farmArea: 5000,
-    farmStatus: "Active",
-    farmCreatedAt: "2025-01-01T00:00:00Z",
-    seasonsCount: 2,
-  },
-  {
-    farmId: "mock-farm-2",
-    farmName: "Trang trại Nắng Hạ",
-    farmLocation: "Bảo Lộc",
-    farmArea: 3000,
-    farmStatus: "Active",
-    farmCreatedAt: "2025-03-01T00:00:00Z",
-    seasonsCount: 1,
-  },
-];
-
-const mockSoils: SoilResponse[] = [
-  {
-    soilId: "mock-soil-1",
-    name: "Đất phù sa",
-    scienceName: "Alluvial soil",
-    cropsCount: 3,
-    plotsCount: 2,
-  },
-  {
-    soilId: "mock-soil-2",
-    name: "Đất thịt",
-    scienceName: "Loam soil",
-    cropsCount: 2,
-    plotsCount: 1,
-  },
-];
 
 // ==================== Helpers ====================
 
@@ -175,49 +39,21 @@ const plotStatusMap: Record<string, string> = {
 };
 
 const bedStatusMap: Record<string, string> = {
-  Active: "Đang sử dụng",
-  active: "Đang sử dụng",
-  Inactive: "Khả dụng",
-  inactive: "Khả dụng",
+  Planted: "Đang trồng",
+  planted: "Đang trồng",
+  Empty: "Chưa trồng",
+  empty: "Chưa trồng",
+  Warning: "Đang bị bệnh",
+  warning: "Đang bị bệnh",
 };
 
 const bedStatusConfig: Record<string, string> = {
-  Active: "bg-[#dbeafe] text-[#1e40af]",
-  active: "bg-[#dbeafe] text-[#1e40af]",
-  Inactive: "bg-[#f1f5f9] text-[#475569]",
-  inactive: "bg-[#f1f5f9] text-[#475569]",
-};
-
-// ==================== IoT Types ====================
-
-export interface IotDeviceForm {
-  name: string;
-  type: string;
-  status: string;
-  installation_date: string;
-  latitude: number | "";
-  longitude: number | "";
-}
-
-const iotDeviceTypeOptions = [
-  { value: "temperature", label: "Cảm biến nhiệt độ" },
-  { value: "humidity", label: "Cảm biến độ ẩm" },
-  { value: "soil_moisture", label: "Cảm biến độ ẩm đất" },
-  { value: "light", label: "Cảm biến ánh sáng" },
-  { value: "camera", label: "Camera giám sát" },
-  { value: "other", label: "Khác" },
-];
-
-const iotStatusMap: Record<string, string> = {
-  Active: "Hoạt động",
-  Inactive: "Không hoạt động",
-  Maintenance: "Bảo trì",
-};
-
-const iotStatusConfig: Record<string, string> = {
-  Active: "bg-[#dcfce7] text-[#008236]",
-  Inactive: "bg-[#fee2e2] text-[#991b1b]",
-  Maintenance: "bg-amber-100 text-amber-700",
+  Planted: "bg-[#dcfce7] text-[#166534]",
+  planted: "bg-[#dcfce7] text-[#166534]",
+  Empty: "bg-[#f1f5f9] text-[#475569]",
+  empty: "bg-[#f1f5f9] text-[#475569]",
+  Warning: "bg-[#fef9c3] text-[#854d0e]",
+  warning: "bg-[#fef9c3] text-[#854d0e]",
 };
 
 function formatDate(iso: string) {
@@ -235,7 +71,7 @@ export function PlotsPage() {
   const [beds, setBeds] = useState<BedResponse[]>([]);
   const [farms, setFarms] = useState<FarmResponse[]>([]);
   const [soils, setSoils] = useState<SoilResponse[]>([]);
-  const [isMockData, setIsMockData] = useState(false);
+  const [crops, setCrops] = useState<CropResponse[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [selectedFarmId, setSelectedFarmId] = useState<string>("");
@@ -256,11 +92,12 @@ export function PlotsPage() {
   const [deleteBedDialogOpen, setDeleteBedDialogOpen] = useState(false);
   const [plotToDeleteId, setPlotToDeleteId] = useState<string | null>(null);
   const [bedToDeleteId, setBedToDeleteId] = useState<string | null>(null);
+  // IoT quick-add: bedId to pre-fill the modal launched from a bed row
+  const [iotBedTarget, setIotBedTarget] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadAll() {
       setLoading(true);
-      let useMock = false;
       try {
         const [plotsData, bedsData] = await Promise.all([
           api.getPlots(),
@@ -269,24 +106,26 @@ export function PlotsPage() {
         setPlots(plotsData);
         setBeds(bedsData);
       } catch {
-        setPlots(mockPlots);
-        setBeds(mockBeds);
-        useMock = true;
+        setPlots([]);
+        setBeds([]);
       }
       try {
         const farmsData = await api.getFarms();
         setFarms(farmsData);
         if (farmsData.length > 0) setSelectedFarmId(farmsData[0].farmId);
       } catch {
-        setFarms(mockFarms);
-        if (mockFarms.length > 0) setSelectedFarmId(mockFarms[0].farmId);
+        setFarms([]);
       }
       try {
         setSoils(await api.getSoils());
       } catch {
-        setSoils(mockSoils);
+        setSoils([]);
       }
-      setIsMockData(useMock);
+      try {
+        setCrops(await api.getCrops());
+      } catch {
+        // crops list is optional for display; proceed without
+      }
       setLoading(false);
     }
     loadAll();
@@ -303,11 +142,6 @@ export function PlotsPage() {
   const bedsForPlot = (plotId: string) =>
     beds.filter((b): b is BedResponse => !!b?.bedId && b.plotId === plotId);
 
-  const calcRemainingArea = (plot: PlotResponse) => {
-    const used = bedsForPlot(plot.plotId).reduce((s, b) => s + b.bedArea, 0);
-    return Math.max(0, plot.plotArea - used);
-  };
-
   const filteredPlots = plots
     .filter((p) => p.farmId === selectedFarmId)
     .filter((p): p is PlotResponse => !!p?.plotId)
@@ -316,33 +150,10 @@ export function PlotsPage() {
         new Date(a.bedCreatedAt).getTime() - new Date(b.bedCreatedAt).getTime(),
     );
 
-  const farmOptions: FarmResponse[] = farms.length
-    ? farms
-    : Array.from(new Map(plots.map((p) => [p.farmId, p])).values()).map(
-        (p) => ({ farmId: p.farmId, farmName: p.farmName }) as FarmResponse,
-      );
+  const farmOptions: FarmResponse[] = farms;
 
   // ── Plot CRUD ──
   const handleCreatePlot = async (data: PlotRequest) => {
-    if (isMockData) {
-      const newPlot: PlotResponse = {
-        plotId: `mock-${Date.now()}`,
-        farmId: data.farmId,
-        soilId: data.soilId,
-        plotName: data.plotName,
-        plotArea: data.plotArea,
-        plotStatus: data.plotStatus,
-        bedCreatedAt: new Date().toISOString(),
-        farmName:
-          farms.find((f) => f.farmId === data.farmId)?.farmName ?? data.farmId,
-        soilName:
-          soils.find((s) => s.soilId === data.soilId)?.name ?? data.soilId,
-        bedsCount: 0,
-      };
-      setPlots([...plots, newPlot]);
-      setCreatePlotOpen(false);
-      return;
-    }
     try {
       await api.createPlot(data);
       const refreshed = await api.getPlots();
@@ -354,26 +165,6 @@ export function PlotsPage() {
   };
 
   const handleUpdatePlot = async (id: string, data: PlotRequest) => {
-    if (isMockData) {
-      setPlots(
-        plots.map((p) =>
-          p.plotId === id
-            ? {
-                ...p,
-                ...data,
-                farmName:
-                  farms.find((f) => f.farmId === data.farmId)?.farmName ??
-                  p.farmName,
-                soilName:
-                  soils.find((s) => s.soilId === data.soilId)?.name ??
-                  p.soilName,
-              }
-            : p,
-        ),
-      );
-      setEditPlotOpen(false);
-      return;
-    }
     try {
       await api.updatePlot(id, data);
       const refreshed = await api.getPlots();
@@ -391,17 +182,12 @@ export function PlotsPage() {
 
   const confirmDeletePlot = async () => {
     if (!plotToDeleteId) return;
-    if (isMockData) {
+    try {
+      await api.deletePlot(plotToDeleteId);
       setPlots(plots.filter((p) => p.plotId !== plotToDeleteId));
       setBeds(beds.filter((b) => b.plotId !== plotToDeleteId));
-    } else {
-      try {
-        await api.deletePlot(plotToDeleteId);
-        setPlots(plots.filter((p) => p.plotId !== plotToDeleteId));
-        setBeds(beds.filter((b) => b.plotId !== plotToDeleteId));
-      } catch (err) {
-        alert("Xóa vuông đất thất bại: " + (err as Error).message);
-      }
+    } catch (err) {
+      alert("Xóa vuông đất thất bại: " + (err as Error).message);
     }
     setPlotToDeleteId(null);
     setDeletePlotDialogOpen(false);
@@ -409,33 +195,13 @@ export function PlotsPage() {
 
   // ── Bed CRUD ──
   const handleCreateBed = async (data: BedRequest) => {
-    if (isMockData) {
-      const newBed: BedResponse = {
-        bedId: `mock-bed-${Date.now()}`,
-        plotId: data.plotId,
-        bedName: data.bedName,
-        bedArea: data.bedArea,
-        bedStatus: data.bedStatus,
-        bedCreatedAt: new Date().toISOString(),
-        cropQuantities: data.cropQuantities,
-        plotName:
-          plots.find((p) => p.plotId === data.plotId)?.plotName ?? data.plotId,
-        seasonsDetailsCount: 0,
-      };
-      setBeds([...beds, newBed]);
-      setPlots(
-        plots.map((p) =>
-          p.plotId === data.plotId ? { ...p, bedsCount: p.bedsCount + 1 } : p,
-        ),
-      );
-      setCreateBedOpen(false);
-      return;
-    }
     try {
       await api.createBed(data);
-      const refreshedBeds = await api.getBeds();
+      const [refreshedBeds, refreshedPlots] = await Promise.all([
+        api.getBeds(),
+        api.getPlots(),
+      ]);
       setBeds(refreshedBeds);
-      const refreshedPlots = await api.getPlots();
       setPlots(refreshedPlots);
       setCreateBedOpen(false);
     } catch (err) {
@@ -444,11 +210,6 @@ export function PlotsPage() {
   };
 
   const handleUpdateBed = async (id: string, data: BedRequest) => {
-    if (isMockData) {
-      setBeds(beds.map((b) => (b.bedId === id ? { ...b, ...data } : b)));
-      setEditBedOpen(false);
-      return;
-    }
     try {
       await api.updateBed(id, data);
       const refreshed = await api.getBeds();
@@ -467,7 +228,8 @@ export function PlotsPage() {
   const confirmDeleteBed = async () => {
     if (!bedToDeleteId) return;
     const bed = beds.find((b) => b.bedId === bedToDeleteId);
-    const doDelete = () => {
+    try {
+      await api.deleteBed(bedToDeleteId);
       setBeds(beds.filter((b) => b.bedId !== bedToDeleteId));
       if (bed)
         setPlots(
@@ -477,65 +239,11 @@ export function PlotsPage() {
               : p,
           ),
         );
-    };
-    if (isMockData) {
-      doDelete();
-    } else {
-      try {
-        await api.deleteBed(bedToDeleteId);
-        doDelete();
-      } catch (err) {
-        alert("Xóa luống thất bại: " + (err as Error).message);
-      }
+    } catch (err) {
+      alert("Xóa luống thất bại: " + (err as Error).message);
     }
     setBedToDeleteId(null);
     setDeleteBedDialogOpen(false);
-  };
-
-  const handleAutoPlot = async (
-    plotId: string,
-    bedSize: number,
-    cropQuantities: number,
-    prefix: string,
-  ) => {
-    const plot = plots.find((p) => p.plotId === plotId);
-    if (!plot) return;
-    const count = Math.floor(calcRemainingArea(plot) / bedSize);
-    if (count === 0) return;
-    const existing = bedsForPlot(plotId).length;
-
-    if (isMockData) {
-      const newBeds: BedResponse[] = Array.from({ length: count }, (_, i) => ({
-        bedId: `mock-bed-${Date.now()}-${i}`,
-        plotId,
-        bedName: `${prefix}_${String(existing + i + 1).padStart(2, "0")}`,
-        bedArea: bedSize,
-        bedStatus: "Active",
-        bedCreatedAt: new Date().toISOString(),
-        cropQuantities,
-        plotName: plot.plotName,
-        seasonsDetailsCount: 0,
-      }));
-      setBeds((prev) => [...prev, ...newBeds]);
-      setPlots((prev) =>
-        prev.map((p) =>
-          p.plotId === plotId ? { ...p, bedsCount: p.bedsCount + count } : p,
-        ),
-      );
-      setAutoPlotOpen(false);
-      return;
-    }
-
-    for (let i = 0; i < count; i++) {
-      await handleCreateBed({
-        plotId,
-        bedName: `${prefix}_${String(existing + i + 1).padStart(2, "0")}`,
-        bedArea: bedSize,
-        bedStatus: "Active",
-        cropQuantities,
-      });
-    }
-    setAutoPlotOpen(false);
   };
 
   if (loading) {
@@ -557,11 +265,6 @@ export function PlotsPage() {
           <p className="text-[#45556c] text-sm">Quản lý đất và luống</p>
         </div>
         <div className="flex items-center gap-3">
-          {isMockData && (
-            <span className="px-2.5 py-1 bg-amber-100 text-amber-700 text-xs font-medium rounded-full">
-              Dữ liệu mẫu
-            </span>
-          )}
           <button
             onClick={() => setCreatePlotOpen(true)}
             className="bg-[#009689] text-white px-4 py-2 rounded-lg hover:bg-[#007f75] transition-colors flex items-center gap-2"
@@ -599,11 +302,15 @@ export function PlotsPage() {
         ) : (
           filteredPlots.map((plot) => {
             const isOpen = openPlotIds.includes(plot.plotId);
-            const plotBeds = bedsForPlot(plot.plotId).sort((a, b) =>
-              a.bedName.localeCompare(b.bedName, "vi"),
-            );
+            const plotBeds = bedsForPlot(plot.plotId).sort((a, b) => {
+              // Extract leading number from bedName for natural numeric sort
+              const numA = parseInt(a.bedName.match(/\d+/)?.[0] ?? "0", 10);
+              const numB = parseInt(b.bedName.match(/\d+/)?.[0] ?? "0", 10);
+              if (numA !== numB) return numA - numB;
+              return a.bedName.localeCompare(b.bedName, "vi");
+            });
             const activeBeds = plotBeds.filter(
-              (b) => b.bedStatus === "Active" || b.bedStatus === "active",
+              (b) => b.bedStatus === "Planted" || b.bedStatus === "planted",
             ).length;
 
             return (
@@ -629,7 +336,7 @@ export function PlotsPage() {
                             {plot.soilName}
                           </span>
                           <span className="text-xs text-[#62748e]">
-                            {activeBeds}/{plotBeds.length} luống hoạt động
+                            {activeBeds}/{plotBeds.length} luống đang trồng
                           </span>
                         </div>
                       </div>
@@ -697,7 +404,7 @@ export function PlotsPage() {
                           <ChevronDown className="w-5 h-5" />
                         )}
                         <span>
-                          Luống ({activeBeds}/{plotBeds.length} luống hoạt động)
+                          Luống ({activeBeds}/{plotBeds.length} đang trồng)
                         </span>
                       </Collapsible.Trigger>
                       <button
@@ -726,10 +433,22 @@ export function PlotsPage() {
                                   Tên luống
                                 </th>
                                 <th className="px-4 py-3 text-left text-xs font-medium text-[#62748e] uppercase">
+                                  Cây trồng
+                                </th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-[#62748e] uppercase">
                                   Diện tích
                                 </th>
                                 <th className="px-4 py-3 text-left text-xs font-medium text-[#62748e] uppercase">
-                                  Số lượng cây
+                                  Dài (m)
+                                </th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-[#62748e] uppercase">
+                                  Rộng (m)
+                                </th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-[#62748e] uppercase">
+                                  Số hàng
+                                </th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-[#62748e] uppercase">
+                                  Số cây
                                 </th>
                                 <th className="px-4 py-3 text-left text-xs font-medium text-[#62748e] uppercase">
                                   Trạng thái
@@ -749,11 +468,25 @@ export function PlotsPage() {
                                     {bed.bedName}
                                   </td>
                                   <td className="px-4 py-3 text-sm text-[#62748e]">
+                                    {bed.cropName ?? "-"}
+                                  </td>
+                                  <td className="px-4 py-3 text-sm text-[#62748e]">
                                     {bed.bedArea} m²
                                   </td>
                                   <td className="px-4 py-3 text-sm text-[#62748e]">
-                                    {bed.cropQuantities > 0
-                                      ? bed.cropQuantities
+                                    {bed.bedLength != null
+                                      ? bed.bedLength
+                                      : "-"}
+                                  </td>
+                                  <td className="px-4 py-3 text-sm text-[#62748e]">
+                                    {bed.bedWidth != null ? bed.bedWidth : "-"}
+                                  </td>
+                                  <td className="px-4 py-3 text-sm text-[#62748e]">
+                                    {bed.rowCount != null ? bed.rowCount : "-"}
+                                  </td>
+                                  <td className="px-4 py-3 text-sm text-[#62748e]">
+                                    {bed.plantCount != null
+                                      ? bed.plantCount
                                       : "-"}
                                   </td>
                                   <td className="px-4 py-3">
@@ -796,6 +529,15 @@ export function PlotsPage() {
                                         title="Xóa"
                                       >
                                         <Trash2 className="w-4 h-4" />
+                                      </button>
+                                      <button
+                                        onClick={() =>
+                                          setIotBedTarget(bed.bedId)
+                                        }
+                                        className="p-2 text-[#009689] hover:bg-[#f0fdfa] rounded-lg transition-colors"
+                                        title="Thêm thiết bị IoT"
+                                      >
+                                        <Cpu className="w-4 h-4" />
                                       </button>
                                     </div>
                                   </td>
@@ -842,14 +584,23 @@ export function PlotsPage() {
             open={createBedOpen}
             onClose={() => setCreateBedOpen(false)}
             plot={selectedPlot}
+            crops={crops}
             onCreate={handleCreateBed}
           />
           <AutoBedModal
             open={autoPlotOpen}
             onClose={() => setAutoPlotOpen(false)}
             plot={selectedPlot}
-            remainingArea={calcRemainingArea(selectedPlot)}
-            onCreate={handleAutoPlot}
+            crops={crops}
+            onConfirmed={async () => {
+              const [refreshedBeds, refreshedPlots] = await Promise.all([
+                api.getBeds(),
+                api.getPlots(),
+              ]);
+              setBeds(refreshedBeds);
+              setPlots(refreshedPlots);
+              setAutoPlotOpen(false);
+            }}
           />
         </>
       )}
@@ -866,6 +617,7 @@ export function PlotsPage() {
             open={editBedOpen}
             onClose={() => setEditBedOpen(false)}
             bed={selectedBed}
+            crops={crops}
             onUpdate={handleUpdateBed}
           />
         </>
@@ -938,6 +690,14 @@ export function PlotsPage() {
           </AlertDialog.Content>
         </AlertDialog.Portal>
       </AlertDialog.Root>
+
+      {/* IoT Quick-Add Modal — launched from bed row Cpu button */}
+      {iotBedTarget && (
+        <IotQuickAddModal
+          bedId={iotBedTarget}
+          onClose={() => setIotBedTarget(null)}
+        />
+      )}
     </div>
   );
 }
@@ -996,30 +756,6 @@ function validateBedForm(data: BedRequest): BedFormErrors {
   return errors;
 }
 
-interface AutoBedFormErrors {
-  prefix?: string;
-  bedSize?: string;
-}
-
-function validateAutoBedForm(
-  prefix: string,
-  bedSize: number,
-  remainingArea: number,
-): AutoBedFormErrors {
-  const errors: AutoBedFormErrors = {};
-  if (!prefix.trim()) {
-    errors.prefix = "Vui lòng nhập prefix tên luống";
-  } else if (/\s/.test(prefix.trim())) {
-    errors.prefix = "Prefix không được chứa khoảng trắng";
-  }
-  if (bedSize <= 0) {
-    errors.bedSize = "Diện tích mỗi luống phải là số dương";
-  } else if (bedSize > remainingArea) {
-    errors.bedSize = "Diện tích mỗi luống vượt quá diện tích còn lại";
-  }
-  return errors;
-}
-
 // ==================== Plot Modals ====================
 
 function CreatePlotModal({
@@ -1040,6 +776,7 @@ function CreatePlotModal({
     soilId: "",
     plotName: "",
     plotArea: 0,
+    plotMargin: 0.3,
     plotStatus: "Active",
   });
   const [formErrors, setFormErrors] = useState<PlotFormErrors>({});
@@ -1051,6 +788,7 @@ function CreatePlotModal({
         soilId: soils[0]?.soilId ?? "",
         plotName: "",
         plotArea: 0,
+        plotMargin: 0.3,
         plotStatus: "Active",
       });
       setFormErrors({});
@@ -1168,19 +906,37 @@ function CreatePlotModal({
               </div>
               <div>
                 <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Trạng Thái
+                  Lề Vuông (m)
                 </label>
-                <select
-                  value={formData.plotStatus}
+                <input
+                  type="number"
+                  min={0}
+                  step={0.1}
+                  value={formData.plotMargin}
                   onChange={(e) =>
-                    setFormData({ ...formData, plotStatus: e.target.value })
+                    setFormData({
+                      ...formData,
+                      plotMargin: parseFloat(e.target.value) || 0,
+                    })
                   }
                   className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                >
-                  <option value="Active">Hoạt động</option>
-                  <option value="Inactive">Không hoạt động</option>
-                </select>
+                />
               </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-[#115e59] mb-2">
+                Trạng Thái
+              </label>
+              <select
+                value={formData.plotStatus}
+                onChange={(e) =>
+                  setFormData({ ...formData, plotStatus: e.target.value })
+                }
+                className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+              >
+                <option value="Active">Hoạt động</option>
+                <option value="Inactive">Không hoạt động</option>
+              </select>
             </div>
             <div className="flex justify-end gap-3 pt-4">
               <button
@@ -1316,10 +1072,9 @@ function EditPlotModal({
     soilId: plot.soilId,
     plotName: plot.plotName,
     plotArea: plot.plotArea,
+    plotMargin: plot.plotMargin ?? 0.3,
     plotStatus: plot.plotStatus,
   });
-  const [iotModalOpen, setIotModalOpen] = useState(false);
-
   useEffect(() => {
     if (open)
       setFormData({
@@ -1327,390 +1082,217 @@ function EditPlotModal({
         soilId: plot.soilId,
         plotName: plot.plotName,
         plotArea: plot.plotArea,
+        plotMargin: plot.plotMargin ?? 0.3,
         plotStatus: plot.plotStatus,
       });
   }, [open, plot]);
 
   return (
-    <>
-      <Dialog.Root open={open} onOpenChange={onClose}>
-        <Dialog.Portal>
-          <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
-          <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-lg bg-white rounded-xl shadow-2xl p-6">
-            <div className="flex items-center justify-between mb-6">
-              <Dialog.Title className="text-xl font-semibold text-[#115e59]">
-                Chỉnh Sửa Vuông Đất
-              </Dialog.Title>
-              <Dialog.Close asChild>
-                <button className="p-2 text-[#62748e] hover:bg-[#f8fafc] rounded-lg transition-colors">
-                  <X className="w-5 h-5" />
-                </button>
-              </Dialog.Close>
+    <Dialog.Root open={open} onOpenChange={onClose}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
+        <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-lg bg-white rounded-xl shadow-2xl p-6">
+          <div className="flex items-center justify-between mb-6">
+            <Dialog.Title className="text-xl font-semibold text-[#115e59]">
+              Chỉnh Sửa Vuông Đất
+            </Dialog.Title>
+            <Dialog.Close asChild>
+              <button className="p-2 text-[#62748e] hover:bg-[#f8fafc] rounded-lg transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </Dialog.Close>
+          </div>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              onUpdate(plot.plotId, formData);
+            }}
+            className="space-y-4"
+          >
+            <div>
+              <label className="block text-sm font-medium text-[#115e59] mb-2">
+                Tên Vuông Đất
+              </label>
+              <input
+                type="text"
+                required
+                value={formData.plotName}
+                onChange={(e) =>
+                  setFormData({ ...formData, plotName: e.target.value })
+                }
+                className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+              />
             </div>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                onUpdate(plot.plotId, formData);
-              }}
-              className="space-y-4"
-            >
+            <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Tên Vuông Đất
+                  Trang Trại
+                </label>
+                <select
+                  value={formData.farmId}
+                  onChange={(e) =>
+                    setFormData({ ...formData, farmId: e.target.value })
+                  }
+                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                >
+                  {farms.map((f) => (
+                    <option key={f.farmId} value={f.farmId}>
+                      {f.farmName}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-[#115e59] mb-2">
+                  Loại Đất
+                </label>
+                <select
+                  value={formData.soilId}
+                  onChange={(e) =>
+                    setFormData({ ...formData, soilId: e.target.value })
+                  }
+                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                >
+                  {soils.map((s) => (
+                    <option key={s.soilId} value={s.soilId}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-[#115e59] mb-2">
+                  Diện Tích (m²)
                 </label>
                 <input
-                  type="text"
+                  type="number"
                   required
-                  value={formData.plotName}
+                  min={1}
+                  value={formData.plotArea}
                   onChange={(e) =>
-                    setFormData({ ...formData, plotName: e.target.value })
+                    setFormData({
+                      ...formData,
+                      plotArea: parseFloat(e.target.value) || 0,
+                    })
                   }
                   className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
                 />
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-[#115e59] mb-2">
-                    Trang Trại
-                  </label>
-                  <select
-                    value={formData.farmId}
-                    onChange={(e) =>
-                      setFormData({ ...formData, farmId: e.target.value })
-                    }
-                    className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                  >
-                    {farms.map((f) => (
-                      <option key={f.farmId} value={f.farmId}>
-                        {f.farmName}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-[#115e59] mb-2">
-                    Loại Đất
-                  </label>
-                  <select
-                    value={formData.soilId}
-                    onChange={(e) =>
-                      setFormData({ ...formData, soilId: e.target.value })
-                    }
-                    className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                  >
-                    {soils.map((s) => (
-                      <option key={s.soilId} value={s.soilId}>
-                        {s.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+              <div>
+                <label className="block text-sm font-medium text-[#115e59] mb-2">
+                  Lề Vuông (m)
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  step={0.1}
+                  value={formData.plotMargin}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      plotMargin: parseFloat(e.target.value) || 0,
+                    })
+                  }
+                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                />
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-[#115e59] mb-2">
-                    Diện Tích (m²)
-                  </label>
-                  <input
-                    type="number"
-                    required
-                    min={1}
-                    value={formData.plotArea}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        plotArea: parseFloat(e.target.value) || 0,
-                      })
-                    }
-                    className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-[#115e59] mb-2">
-                    Trạng Thái
-                  </label>
-                  <select
-                    value={formData.plotStatus}
-                    onChange={(e) =>
-                      setFormData({ ...formData, plotStatus: e.target.value })
-                    }
-                    className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                  >
-                    <option value="Active">Hoạt động</option>
-                    <option value="Inactive">Không hoạt động</option>
-                  </select>
-                </div>
-              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-[#115e59] mb-2">
+                Trạng Thái
+              </label>
+              <select
+                value={formData.plotStatus}
+                onChange={(e) =>
+                  setFormData({ ...formData, plotStatus: e.target.value })
+                }
+                className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+              >
+                <option value="Active">Hoạt động</option>
+                <option value="Inactive">Không hoạt động</option>
+              </select>
+            </div>
 
-              {/* IoT Devices Section */}
-              <div className="border border-[#e2e8f0] rounded-lg p-4 bg-[#f8fafc]">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Cpu className="w-4 h-4 text-[#009689]" />
-                    <span className="text-sm font-medium text-[#115e59]">
-                      Thiết Bị IoT
-                    </span>
-                    <span className="text-xs text-[#62748e]">
-                      (áp dụng cho tất cả luống trong vuông này)
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setIotModalOpen(true)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-[#009689] text-white rounded-lg hover:bg-[#007f75] transition-colors"
-                  >
-                    <Radio className="w-4 h-4" />
-                    Quản lý thiết bị
-                  </button>
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-3 pt-4">
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="px-6 py-2 bg-[#f1f5f9] text-[#314158] rounded-lg hover:bg-[#e2e8f0] transition-colors"
-                >
-                  Hủy Bỏ
-                </button>
-                <button
-                  type="submit"
-                  className="px-6 py-2 bg-[#009689] text-white rounded-lg hover:bg-[#007f75] transition-colors"
-                >
-                  Lưu Thay Đổi
-                </button>
-              </div>
-            </form>
-          </Dialog.Content>
-        </Dialog.Portal>
-      </Dialog.Root>
-
-      {/* IoT Devices Modal — rendered outside the edit modal to avoid z-index stacking issues */}
-      <IotDevicesModal
-        open={iotModalOpen}
-        onClose={() => setIotModalOpen(false)}
-        plot={plot}
-      />
-    </>
+            <div className="flex justify-end gap-3 pt-4">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-6 py-2 bg-[#f1f5f9] text-[#314158] rounded-lg hover:bg-[#e2e8f0] transition-colors"
+              >
+                Hủy Bỏ
+              </button>
+              <button
+                type="submit"
+                className="px-6 py-2 bg-[#009689] text-white rounded-lg hover:bg-[#007f75] transition-colors"
+              >
+                Lưu Thay Đổi
+              </button>
+            </div>
+          </form>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
 }
 
-// ==================== IoT Devices Modal ====================
+// ==================== IoT Quick-Add Modal (from PlotsPage bed row) ====================
 
-function IotDevicesModal({
-  open,
+function IotQuickAddModal({
+  bedId,
   onClose,
-  plot,
 }: {
-  open: boolean;
+  bedId: string;
   onClose: () => void;
-  plot: PlotResponse;
 }) {
-  const emptyForm: IotDeviceForm = {
+  const emptyForm: IotDeviceRequest = {
+    bedId,
+    deviceCode: "",
     name: "",
-    type: "temperature",
+    type: "Environment",
     status: "Active",
-    installation_date: new Date().toISOString().split("T")[0],
-    latitude: "",
-    longitude: "",
+    installationDate: new Date().toISOString(),
+    latitude: 0,
+    longitude: 0,
   };
+  const [formData, setFormData] = useState<IotDeviceRequest>(emptyForm);
+  const [submitting, setSubmitting] = useState(false);
 
-  // UI-only state — no API calls yet
-  const [devices, setDevices] = useState<(IotDeviceForm & { id: string })[]>(
-    [],
-  );
-  const [addOpen, setAddOpen] = useState(false);
-  const [editTarget, setEditTarget] = useState<
-    (IotDeviceForm & { id: string }) | null
-  >(null);
-  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
-  const [formData, setFormData] = useState<IotDeviceForm>(emptyForm);
+  const canSubmit =
+    formData.name.trim() !== "" && formData.deviceCode.trim() !== "";
 
-  // Reset form when sub-panels open
-  useEffect(() => {
-    if (addOpen) setFormData(emptyForm);
-  }, [addOpen]);
-
-  useEffect(() => {
-    if (editTarget) setFormData({ ...editTarget });
-  }, [editTarget]);
-
-  const handleAdd = () => {
-    setDevices((prev) => [...prev, { ...formData, id: `iot-${Date.now()}` }]);
-    setAddOpen(false);
+  const handleSubmit = async () => {
+    setSubmitting(true);
+    try {
+      await api.createIotDevice({
+        ...formData,
+        installationDate: new Date(formData.installationDate).toISOString(),
+      });
+      onClose();
+    } catch (err) {
+      alert("Thêm thiết bị thất bại: " + (err as Error).message);
+    } finally {
+      setSubmitting(false);
+    }
   };
-
-  const handleEdit = () => {
-    if (!editTarget) return;
-    setDevices((prev) =>
-      prev.map((d) => (d.id === editTarget.id ? { ...formData, id: d.id } : d)),
-    );
-    setEditTarget(null);
-  };
-
-  const handleDelete = (id: string) => {
-    setDevices((prev) => prev.filter((d) => d.id !== id));
-    setDeleteTargetId(null);
-  };
-
-  const DeviceForm = ({
-    onSubmit,
-    submitLabel,
-  }: {
-    onSubmit: () => void;
-    submitLabel: string;
-  }) => (
-    <div className="space-y-4 mt-4">
-      {/* Name */}
-      <div>
-        <label className="block text-sm font-medium text-[#115e59] mb-1.5">
-          Tên Thiết Bị <span className="text-red-500">*</span>
-        </label>
-        <input
-          type="text"
-          required
-          placeholder="Ví dụ: Cảm biến nhiệt độ A1"
-          value={formData.name}
-          onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-          className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-        />
-      </div>
-
-      {/* Type + Status */}
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-[#115e59] mb-1.5">
-            Loại Thiết Bị <span className="text-red-500">*</span>
-          </label>
-          <select
-            value={formData.type}
-            onChange={(e) => setFormData({ ...formData, type: e.target.value })}
-            className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-          >
-            {iotDeviceTypeOptions.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-[#115e59] mb-1.5">
-            Trạng Thái
-          </label>
-          <select
-            value={formData.status}
-            onChange={(e) =>
-              setFormData({ ...formData, status: e.target.value })
-            }
-            className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-          >
-            <option value="Active">Hoạt động</option>
-            <option value="Inactive">Không hoạt động</option>
-            <option value="Maintenance">Bảo trì</option>
-          </select>
-        </div>
-      </div>
-
-      {/* Installation Date */}
-      <div>
-        <label className="block text-sm font-medium text-[#115e59] mb-1.5">
-          Ngày Lắp Đặt
-        </label>
-        <input
-          type="date"
-          value={formData.installation_date}
-          onChange={(e) =>
-            setFormData({ ...formData, installation_date: e.target.value })
-          }
-          className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-        />
-      </div>
-
-      {/* Coordinates */}
-      <div>
-        <label className="block text-sm font-medium text-[#115e59] mb-1.5 flex items-center gap-1.5">
-          <MapPin className="w-3.5 h-3.5" />
-          Tọa Độ (tuỳ chọn)
-        </label>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <input
-              type="number"
-              step="any"
-              placeholder="Latitude"
-              value={formData.latitude}
-              onChange={(e) =>
-                setFormData({
-                  ...formData,
-                  latitude:
-                    e.target.value === "" ? "" : parseFloat(e.target.value),
-                })
-              }
-              className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] text-sm"
-            />
-            <p className="mt-1 text-xs text-[#62748e]">Vĩ độ</p>
-          </div>
-          <div>
-            <input
-              type="number"
-              step="any"
-              placeholder="Longitude"
-              value={formData.longitude}
-              onChange={(e) =>
-                setFormData({
-                  ...formData,
-                  longitude:
-                    e.target.value === "" ? "" : parseFloat(e.target.value),
-                })
-              }
-              className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] text-sm"
-            />
-            <p className="mt-1 text-xs text-[#62748e]">Kinh độ</p>
-          </div>
-        </div>
-      </div>
-
-      <div className="flex justify-end gap-3 pt-2">
-        <button
-          type="button"
-          onClick={() => {
-            setAddOpen(false);
-            setEditTarget(null);
-          }}
-          className="px-5 py-2 bg-[#f1f5f9] text-[#314158] rounded-lg hover:bg-[#e2e8f0] transition-colors text-sm"
-        >
-          Hủy
-        </button>
-        <button
-          type="button"
-          onClick={onSubmit}
-          disabled={!formData.name.trim()}
-          className="px-5 py-2 bg-[#009689] text-white rounded-lg hover:bg-[#007f75] transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {submitLabel}
-        </button>
-      </div>
-    </div>
-  );
 
   return (
-    <Dialog.Root open={open} onOpenChange={onClose}>
+    <Dialog.Root open onOpenChange={(o) => !o && onClose()}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/50 z-[60]" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[60] w-full max-w-2xl bg-white rounded-xl shadow-2xl flex flex-col max-h-[90vh]">
-          {/* Header */}
+        <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
+        <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-md bg-white rounded-xl shadow-2xl overflow-hidden">
           <div className="flex items-center justify-between px-6 py-5 border-b border-[#e2e8f0]">
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 bg-[#f0fdfa] rounded-lg flex items-center justify-center">
                 <Cpu className="w-5 h-5 text-[#009689]" />
               </div>
               <div>
-                <Dialog.Title className="text-lg font-semibold text-[#115e59]">
-                  Thiết Bị IoT — {plot.plotName}
+                <Dialog.Title className="text-base font-semibold text-[#115e59]">
+                  Thêm Thiết Bị IoT
                 </Dialog.Title>
-                <p className="text-xs text-[#62748e] mt-0.5">
-                  Thiết bị sẽ được gán cho tất cả luống trong vuông này
+                <p className="text-xs text-[#62748e] mt-0.5 font-mono">
+                  Luống: {bedId.slice(0, 8)}…
                 </p>
               </div>
             </div>
@@ -1721,173 +1303,148 @@ function IotDevicesModal({
             </Dialog.Close>
           </div>
 
-          {/* Scrollable body */}
-          <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
-            {/* Add new device panel */}
-            {!editTarget && (
-              <div className="border border-[#e2e8f0] rounded-lg overflow-hidden">
-                <button
-                  type="button"
-                  onClick={() => setAddOpen((v) => !v)}
-                  className="w-full flex items-center justify-between px-4 py-3 bg-[#f8fafc] hover:bg-[#f0fdfa] transition-colors text-sm font-medium text-[#115e59]"
+          <div className="px-6 py-5 space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-[#115e59] mb-1.5">
+                  Mã thiết bị <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="CMMS_01_ESP"
+                  value={formData.deviceCode}
+                  onChange={(e) =>
+                    setFormData({ ...formData, deviceCode: e.target.value })
+                  }
+                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-[#115e59] mb-1.5">
+                  Tên thiết bị <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="Cảm biến nhiệt độ A1"
+                  value={formData.name}
+                  onChange={(e) =>
+                    setFormData({ ...formData, name: e.target.value })
+                  }
+                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] text-sm"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-[#115e59] mb-1.5">
+                  Loại thiết bị
+                </label>
+                <input
+                  type="text"
+                  placeholder="Environment"
+                  value={formData.type}
+                  onChange={(e) =>
+                    setFormData({ ...formData, type: e.target.value })
+                  }
+                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-[#115e59] mb-1.5">
+                  Trạng thái
+                </label>
+                <select
+                  value={formData.status}
+                  onChange={(e) =>
+                    setFormData({ ...formData, status: e.target.value })
+                  }
+                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] text-sm"
                 >
-                  <span className="flex items-center gap-2">
-                    <Plus className="w-4 h-4 text-[#009689]" />
-                    Thêm thiết bị mới
-                  </span>
-                  {addOpen ? (
-                    <ChevronUp className="w-4 h-4 text-[#62748e]" />
-                  ) : (
-                    <ChevronDown className="w-4 h-4 text-[#62748e]" />
-                  )}
-                </button>
-                {addOpen && (
-                  <div className="px-4 pb-4">
-                    <DeviceForm
-                      onSubmit={handleAdd}
-                      submitLabel="Thêm Thiết Bị"
-                    />
-                  </div>
-                )}
+                  <option value="Active">Hoạt động</option>
+                  <option value="Inactive">Không hoạt động</option>
+                  <option value="Maintenance">Bảo trì</option>
+                </select>
               </div>
-            )}
+            </div>
 
-            {/* Edit panel */}
-            {editTarget && (
-              <div className="border-2 border-[#009689] rounded-lg px-4 pb-4">
-                <div className="flex items-center justify-between py-3">
-                  <span className="text-sm font-medium text-[#115e59] flex items-center gap-2">
-                    <Edit className="w-4 h-4 text-[#009689]" />
-                    Chỉnh sửa: {editTarget.name}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setEditTarget(null)}
-                    className="text-[#62748e] hover:text-[#314158]"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-                <DeviceForm onSubmit={handleEdit} submitLabel="Lưu Thay Đổi" />
-              </div>
-            )}
-
-            {/* Device list */}
             <div>
-              <h3 className="text-sm font-medium text-[#62748e] mb-3 uppercase tracking-wide">
-                Danh sách thiết bị ({devices.length})
-              </h3>
-              {devices.length === 0 ? (
-                <div className="border border-dashed border-[#cad5e2] rounded-lg py-10 text-center text-[#62748e]">
-                  <Cpu className="w-8 h-8 mx-auto mb-2 opacity-30" />
-                  <p className="text-sm">Chưa có thiết bị nào được thêm</p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {devices.map((device) => (
-                    <div
-                      key={device.id}
-                      className="border border-[#e2e8f0] rounded-lg p-4 bg-white"
-                    >
-                      {deleteTargetId === device.id ? (
-                        <div className="flex items-center justify-between">
-                          <p className="text-sm text-[#314158]">
-                            Xóa thiết bị{" "}
-                            <span className="font-medium">{device.name}</span>?
-                          </p>
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => setDeleteTargetId(null)}
-                              className="px-3 py-1.5 text-xs bg-[#f1f5f9] text-[#314158] rounded-lg hover:bg-[#e2e8f0] transition-colors"
-                            >
-                              Hủy
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDelete(device.id)}
-                              className="px-3 py-1.5 text-xs bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
-                            >
-                              Xác nhận xóa
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="flex items-start justify-between gap-4">
-                          <div className="flex items-start gap-3">
-                            <div className="w-8 h-8 bg-[#f0fdfa] rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
-                              <Radio className="w-4 h-4 text-[#009689]" />
-                            </div>
-                            <div className="min-w-0">
-                              <p className="font-medium text-[#115e59] text-sm">
-                                {device.name}
-                              </p>
-                              <p className="text-xs text-[#62748e] mt-0.5">
-                                {iotDeviceTypeOptions.find(
-                                  (o) => o.value === device.type,
-                                )?.label ?? device.type}
-                                {device.installation_date && (
-                                  <> · Lắp đặt: {device.installation_date}</>
-                                )}
-                              </p>
-                              {(device.latitude !== "" ||
-                                device.longitude !== "") && (
-                                <p className="text-xs text-[#62748e] flex items-center gap-1 mt-0.5">
-                                  <MapPin className="w-3 h-3" />
-                                  {device.latitude}, {device.longitude}
-                                </p>
-                              )}
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2 flex-shrink-0">
-                            <span
-                              className={`px-2 py-0.5 rounded text-xs font-medium ${
-                                iotStatusConfig[device.status] ??
-                                "bg-[#f1f5f9] text-[#475569]"
-                              }`}
-                            >
-                              {iotStatusMap[device.status] ?? device.status}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setAddOpen(false);
-                                setEditTarget(device);
-                              }}
-                              className="p-1.5 text-[#009689] hover:bg-[#f0fdfa] rounded-lg transition-colors"
-                              title="Chỉnh sửa"
-                            >
-                              <Edit className="w-4 h-4" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setDeleteTargetId(device.id)}
-                              className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                              title="Xóa"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
+              <label className="block text-sm font-medium text-[#115e59] mb-1.5">
+                Ngày lắp đặt
+              </label>
+              <input
+                type="date"
+                value={formData.installationDate.split("T")[0]}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    installationDate: e.target.value
+                      ? new Date(e.target.value).toISOString()
+                      : new Date().toISOString(),
+                  })
+                }
+                className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] text-sm"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium text-[#115e59] mb-1.5">
+                  Vĩ độ
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  placeholder="0"
+                  value={formData.latitude || ""}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      latitude: parseFloat(e.target.value) || 0,
+                    })
+                  }
+                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-[#115e59] mb-1.5">
+                  Kinh độ
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  placeholder="0"
+                  value={formData.longitude || ""}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      longitude: parseFloat(e.target.value) || 0,
+                    })
+                  }
+                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] text-sm"
+                />
+              </div>
             </div>
           </div>
 
-          {/* Footer */}
-          <div className="px-6 py-4 border-t border-[#e2e8f0] bg-[#f8fafc] flex justify-between items-center rounded-b-xl">
-            <p className="text-xs text-[#62748e]">
-              {devices.length} thiết bị · Chưa kết nối API
-            </p>
+          <div className="px-6 py-4 border-t border-[#e2e8f0] flex justify-end gap-3">
             <button
               type="button"
               onClick={onClose}
-              className="px-5 py-2 bg-[#009689] text-white rounded-lg hover:bg-[#007f75] transition-colors text-sm"
+              className="px-5 py-2 bg-[#f1f5f9] text-[#314158] rounded-lg hover:bg-[#e2e8f0] transition-colors text-sm"
             >
-              Xong
+              Hủy bỏ
+            </button>
+            <button
+              type="button"
+              onClick={handleSubmit}
+              disabled={!canSubmit || submitting}
+              className="px-5 py-2 bg-[#009689] text-white rounded-lg hover:bg-[#007f75] transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              {submitting && (
+                <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              )}
+              Thêm Thiết Bị
             </button>
           </div>
         </Dialog.Content>
@@ -1902,40 +1459,47 @@ function CreateBedModal({
   open,
   onClose,
   plot,
+  crops,
   onCreate,
 }: {
   open: boolean;
   onClose: () => void;
   plot: PlotResponse;
+  crops: CropResponse[];
   onCreate: (data: BedRequest) => void;
 }) {
-  const [formData, setFormData] = useState<BedRequest>({
+  const emptyForm = (): BedRequest => ({
     plotId: plot.plotId,
     bedName: "",
     bedArea: 0,
-    bedStatus: "Active",
+    bedStatus: "Empty",
     cropQuantities: 0,
+    cropId: crops[0]?.cropId ?? "",
+    bedWidth: undefined,
+    bedLength: undefined,
+    pathWidth: undefined,
+    plantCount: undefined,
+    rowCount: undefined,
   });
+  const [formData, setFormData] = useState<BedRequest>(emptyForm());
   const [formErrors, setFormErrors] = useState<BedFormErrors>({});
 
   useEffect(() => {
     if (open) {
       setFormData({
-        plotId: plot.plotId,
-        bedName: "",
-        bedArea: 0,
-        bedStatus: "Active",
-        cropQuantities: 0,
+        ...emptyForm(),
+        cropId: crops[0]?.cropId ?? "",
       });
       setFormErrors({});
     }
-  }, [open, plot]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, plot, crops]);
 
   return (
     <Dialog.Root open={open} onOpenChange={onClose}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-md bg-white rounded-xl shadow-2xl p-6">
+        <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-lg bg-white rounded-xl shadow-2xl p-6 max-h-[90vh] overflow-y-auto">
           <div className="flex items-center justify-between mb-6">
             <Dialog.Title className="text-xl font-semibold text-[#115e59]">
               Thêm Luống
@@ -1966,7 +1530,6 @@ function CreateBedModal({
               </label>
               <input
                 type="text"
-                placeholder="Ví dụ: "
                 value={formData.bedName}
                 onChange={(e) => {
                   setFormData({ ...formData, bedName: e.target.value });
@@ -1980,46 +1543,164 @@ function CreateBedModal({
                 </p>
               )}
             </div>
-            <div>
-              <label className="block text-sm font-medium text-[#115e59] mb-2">
-                Diện Tích (m²) <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="number"
-                min={0.1}
-                step={0.1}
-                value={formData.bedArea || ""}
-                onChange={(e) => {
-                  setFormData({
-                    ...formData,
-                    bedArea: parseFloat(e.target.value) || 0,
-                  });
-                  setFormErrors((p) => ({ ...p, bedArea: undefined }));
-                }}
-                className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] ${formErrors.bedArea ? "border-red-300 bg-red-50" : "border-[#cad5e2]"}`}
-              />
-              {formErrors.bedArea && (
-                <p className="mt-1 text-xs text-red-500">
-                  {formErrors.bedArea}
-                </p>
-              )}
+            {crops.length > 0 && (
+              <div>
+                <label className="block text-sm font-medium text-[#115e59] mb-2">
+                  Cây Trồng
+                </label>
+                <select
+                  value={formData.cropId ?? ""}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      cropId: e.target.value || undefined,
+                    })
+                  }
+                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                >
+                  <option value="">-- Không chọn --</option>
+                  {crops.map((c) => (
+                    <option key={c.cropId} value={c.cropId}>
+                      {c.cropName}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-[#115e59] mb-2">
+                  Diện Tích (m²) <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  min={0.1}
+                  step={0.01}
+                  value={formData.bedArea || ""}
+                  onChange={(e) => {
+                    setFormData({
+                      ...formData,
+                      bedArea: parseFloat(e.target.value) || 0,
+                    });
+                    setFormErrors((p) => ({ ...p, bedArea: undefined }));
+                  }}
+                  className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] ${formErrors.bedArea ? "border-red-300 bg-red-50" : "border-[#cad5e2]"}`}
+                />
+                {formErrors.bedArea && (
+                  <p className="mt-1 text-xs text-red-500">
+                    {formErrors.bedArea}
+                  </p>
+                )}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-[#115e59] mb-2">
+                  Số Lượng Cây
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  value={formData.cropQuantities}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      cropQuantities: parseInt(e.target.value) || 0,
+                    })
+                  }
+                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                />
+              </div>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-[#115e59] mb-2">
-                Số Lượng Cây Trồng
-              </label>
-              <input
-                type="number"
-                min={0}
-                value={formData.cropQuantities}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    cropQuantities: parseInt(e.target.value) || 0,
-                  })
-                }
-                className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-              />
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-[#115e59] mb-2">
+                  Chiều Dài (m)
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  value={formData.bedLength ?? ""}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      bedLength: parseFloat(e.target.value) || undefined,
+                    })
+                  }
+                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-[#115e59] mb-2">
+                  Chiều Rộng (m)
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  value={formData.bedWidth ?? ""}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      bedWidth: parseFloat(e.target.value) || undefined,
+                    })
+                  }
+                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-[#115e59] mb-2">
+                  Lối Đi (m)
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  value={formData.pathWidth ?? ""}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      pathWidth: parseFloat(e.target.value) || undefined,
+                    })
+                  }
+                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-[#115e59] mb-2">
+                  Số Hàng
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  value={formData.rowCount ?? ""}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      rowCount: parseInt(e.target.value) || undefined,
+                    })
+                  }
+                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-[#115e59] mb-2">
+                  Số Cây
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  value={formData.plantCount ?? ""}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      plantCount: parseInt(e.target.value) || undefined,
+                    })
+                  }
+                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                />
+              </div>
             </div>
             <div>
               <label className="block text-sm font-medium text-[#115e59] mb-2">
@@ -2032,8 +1713,9 @@ function CreateBedModal({
                 }
                 className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
               >
-                <option value="Active">Đang sử dụng</option>
-                <option value="Inactive">Khả dụng</option>
+                <option value="Planted">Đang trồng</option>
+                <option value="Empty">Chưa trồng</option>
+                <option value="Warning">Đang bị bệnh</option>
               </select>
             </div>
             <div className="flex justify-end gap-3 pt-4">
@@ -2096,18 +1778,60 @@ function ViewBedModal({
                   {bed.bedName}
                 </span>
               </div>
+              {bed.cropName && (
+                <div className="flex justify-between">
+                  <span className="text-sm text-[#62748e]">Cây trồng:</span>
+                  <span className="text-sm font-medium text-[#115e59]">
+                    {bed.cropName}
+                  </span>
+                </div>
+              )}
               <div className="flex justify-between">
                 <span className="text-sm text-[#62748e]">Diện tích:</span>
                 <span className="text-sm font-medium text-[#115e59]">
                   {bed.bedArea} m²
                 </span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-sm text-[#62748e]">Số lượng cây:</span>
-                <span className="text-sm font-medium text-[#115e59]">
-                  {bed.cropQuantities}
-                </span>
-              </div>
+              {bed.bedLength != null && (
+                <div className="flex justify-between">
+                  <span className="text-sm text-[#62748e]">Chiều dài:</span>
+                  <span className="text-sm font-medium text-[#115e59]">
+                    {bed.bedLength} m
+                  </span>
+                </div>
+              )}
+              {bed.bedWidth != null && (
+                <div className="flex justify-between">
+                  <span className="text-sm text-[#62748e]">Chiều rộng:</span>
+                  <span className="text-sm font-medium text-[#115e59]">
+                    {bed.bedWidth} m
+                  </span>
+                </div>
+              )}
+              {bed.pathWidth != null && (
+                <div className="flex justify-between">
+                  <span className="text-sm text-[#62748e]">Lối đi:</span>
+                  <span className="text-sm font-medium text-[#115e59]">
+                    {bed.pathWidth} m
+                  </span>
+                </div>
+              )}
+              {bed.rowCount != null && (
+                <div className="flex justify-between">
+                  <span className="text-sm text-[#62748e]">Số hàng:</span>
+                  <span className="text-sm font-medium text-[#115e59]">
+                    {bed.rowCount}
+                  </span>
+                </div>
+              )}
+              {bed.plantCount != null && (
+                <div className="flex justify-between">
+                  <span className="text-sm text-[#62748e]">Số cây:</span>
+                  <span className="text-sm font-medium text-[#115e59]">
+                    {bed.plantCount}
+                  </span>
+                </div>
+              )}
               <div className="flex justify-between">
                 <span className="text-sm text-[#62748e]">Mùa vụ liên kết:</span>
                 <span className="text-sm font-medium text-[#115e59]">
@@ -2148,11 +1872,13 @@ function EditBedModal({
   open,
   onClose,
   bed,
+  crops,
   onUpdate,
 }: {
   open: boolean;
   onClose: () => void;
   bed: BedResponse;
+  crops: CropResponse[];
   onUpdate: (id: string, data: BedRequest) => void;
 }) {
   const [formData, setFormData] = useState<BedRequest>({
@@ -2161,6 +1887,12 @@ function EditBedModal({
     bedArea: bed.bedArea,
     bedStatus: bed.bedStatus,
     cropQuantities: bed.cropQuantities,
+    cropId: bed.cropId,
+    bedWidth: bed.bedWidth,
+    bedLength: bed.bedLength,
+    pathWidth: bed.pathWidth,
+    plantCount: bed.plantCount,
+    rowCount: bed.rowCount,
   });
   const [formErrors, setFormErrors] = useState<BedFormErrors>({});
 
@@ -2172,6 +1904,12 @@ function EditBedModal({
         bedArea: bed.bedArea,
         bedStatus: bed.bedStatus,
         cropQuantities: bed.cropQuantities,
+        cropId: bed.cropId,
+        bedWidth: bed.bedWidth,
+        bedLength: bed.bedLength,
+        pathWidth: bed.pathWidth,
+        plantCount: bed.plantCount,
+        rowCount: bed.rowCount,
       });
       setFormErrors({});
     }
@@ -2181,7 +1919,7 @@ function EditBedModal({
     <Dialog.Root open={open} onOpenChange={onClose}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-md bg-white rounded-xl shadow-2xl p-6">
+        <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-lg bg-white rounded-xl shadow-2xl p-6 max-h-[90vh] overflow-y-auto">
           <div className="flex items-center justify-between mb-6">
             <Dialog.Title className="text-xl font-semibold text-[#115e59]">
               Chỉnh Sửa Luống
@@ -2224,46 +1962,164 @@ function EditBedModal({
                 </p>
               )}
             </div>
-            <div>
-              <label className="block text-sm font-medium text-[#115e59] mb-2">
-                Diện Tích (m²)
-              </label>
-              <input
-                type="number"
-                min={0.1}
-                step={0.1}
-                value={formData.bedArea}
-                onChange={(e) => {
-                  setFormData({
-                    ...formData,
-                    bedArea: parseFloat(e.target.value) || 0,
-                  });
-                  setFormErrors((p) => ({ ...p, bedArea: undefined }));
-                }}
-                className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] ${formErrors.bedArea ? "border-red-300 bg-red-50" : "border-[#cad5e2]"}`}
-              />
-              {formErrors.bedArea && (
-                <p className="mt-1 text-xs text-red-500">
-                  {formErrors.bedArea}
-                </p>
-              )}
+            {crops.length > 0 && (
+              <div>
+                <label className="block text-sm font-medium text-[#115e59] mb-2">
+                  Cây Trồng
+                </label>
+                <select
+                  value={formData.cropId ?? ""}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      cropId: e.target.value || undefined,
+                    })
+                  }
+                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                >
+                  <option value="">-- Không chọn --</option>
+                  {crops.map((c) => (
+                    <option key={c.cropId} value={c.cropId}>
+                      {c.cropName}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-[#115e59] mb-2">
+                  Diện Tích (m²)
+                </label>
+                <input
+                  type="number"
+                  min={0.1}
+                  step={0.01}
+                  value={formData.bedArea || ""}
+                  onChange={(e) => {
+                    setFormData({
+                      ...formData,
+                      bedArea: parseFloat(e.target.value) || 0,
+                    });
+                    setFormErrors((p) => ({ ...p, bedArea: undefined }));
+                  }}
+                  className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] ${formErrors.bedArea ? "border-red-300 bg-red-50" : "border-[#cad5e2]"}`}
+                />
+                {formErrors.bedArea && (
+                  <p className="mt-1 text-xs text-red-500">
+                    {formErrors.bedArea}
+                  </p>
+                )}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-[#115e59] mb-2">
+                  Số Lượng Cây
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  value={formData.cropQuantities}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      cropQuantities: parseInt(e.target.value) || 0,
+                    })
+                  }
+                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                />
+              </div>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-[#115e59] mb-2">
-                Số Lượng Cây Trồng
-              </label>
-              <input
-                type="number"
-                min={0}
-                value={formData.cropQuantities}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    cropQuantities: parseInt(e.target.value) || 0,
-                  })
-                }
-                className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-              />
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-[#115e59] mb-2">
+                  Chiều Dài (m)
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  value={formData.bedLength ?? ""}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      bedLength: parseFloat(e.target.value) || undefined,
+                    })
+                  }
+                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-[#115e59] mb-2">
+                  Chiều Rộng (m)
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  value={formData.bedWidth ?? ""}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      bedWidth: parseFloat(e.target.value) || undefined,
+                    })
+                  }
+                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-[#115e59] mb-2">
+                  Lối Đi (m)
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  value={formData.pathWidth ?? ""}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      pathWidth: parseFloat(e.target.value) || undefined,
+                    })
+                  }
+                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-[#115e59] mb-2">
+                  Số Hàng
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  value={formData.rowCount ?? ""}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      rowCount: parseInt(e.target.value) || undefined,
+                    })
+                  }
+                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-[#115e59] mb-2">
+                  Số Cây
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  value={formData.plantCount ?? ""}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      plantCount: parseInt(e.target.value) || undefined,
+                    })
+                  }
+                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                />
+              </div>
             </div>
             <div>
               <label className="block text-sm font-medium text-[#115e59] mb-2">
@@ -2276,8 +2132,9 @@ function EditBedModal({
                 }
                 className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
               >
-                <option value="Active">Đang sử dụng</option>
-                <option value="Inactive">Khả dụng</option>
+                <option value="Planted">Đang trồng</option>
+                <option value="Empty">Chưa trồng</option>
+                <option value="Warning">Đang bị bệnh</option>
               </select>
             </div>
             <div className="flex justify-end gap-3 pt-4">
@@ -2306,138 +2163,293 @@ function AutoBedModal({
   open,
   onClose,
   plot,
-  remainingArea,
-  onCreate,
+  crops,
+  onConfirmed,
 }: {
   open: boolean;
   onClose: () => void;
   plot: PlotResponse;
-  remainingArea: number;
-  onCreate: (
-    plotId: string,
-    bedSize: number,
-    cropQuantities: number,
-    prefix: string,
-  ) => void;
+  crops: CropResponse[];
+  onConfirmed: () => Promise<void>;
 }) {
-  const [bedSize, setBedSize] = useState(50);
-  const [cropQuantities, setCropQuantities] = useState(10);
-  const [prefix, setPrefix] = useState("bed");
-  const [autoErrors, setAutoErrors] = useState<AutoBedFormErrors>({});
-  const count = Math.floor(remainingArea / bedSize);
+  const [step, setStep] = useState<"form" | "preview">("form");
+  const [cropId, setCropId] = useState(crops[0]?.cropId ?? "");
+  const [bedWidth, setBedWidth] = useState(1);
+  const [pathWidth, setPathWidth] = useState(0.5);
+  const [rowsPerBed, setRowsPerBed] = useState(2);
+  const [bedNamePrefix, setBedNamePrefix] = useState("Luống");
+  const [preview, setPreview] = useState<AutoAllocatePreviewResponse | null>(
+    null,
+  );
+  const [loadingPreview, setLoadingPreview] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Reset when modal opens
+  useEffect(() => {
+    if (open) {
+      setStep("form");
+      setPreview(null);
+      setError(null);
+      setCropId(crops[0]?.cropId ?? "");
+    }
+  }, [open, crops]);
+
+  const handlePreview = async () => {
+    if (!cropId) {
+      setError("Vui lòng chọn cây trồng");
+      return;
+    }
+    setError(null);
+    setLoadingPreview(true);
+    try {
+      const result = await api.autoAllocatePreview({
+        plotId: plot.plotId,
+        cropId,
+        bedWidth,
+        pathWidth,
+        rowsPerBed,
+        bedNamePrefix,
+      });
+      setPreview(result);
+      setStep("preview");
+    } catch (err) {
+      setError("Xem trước thất bại: " + (err as Error).message);
+    } finally {
+      setLoadingPreview(false);
+    }
+  };
+
+  const handleConfirm = async () => {
+    if (!preview) return;
+    setConfirming(true);
+    try {
+      await api.autoAllocateConfirm({
+        plotId: preview.plotId,
+        cropId: preview.cropId,
+        beds: preview.beds,
+      });
+      await onConfirmed();
+    } catch (err) {
+      setError("Xác nhận thất bại: " + (err as Error).message);
+      setConfirming(false);
+    }
+  };
 
   return (
-    <Dialog.Root open={open} onOpenChange={onClose}>
+    <Dialog.Root
+      open={open}
+      onOpenChange={(o) => {
+        if (!o) onClose();
+      }}
+    >
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-md bg-white rounded-xl shadow-2xl p-6">
-          <div className="flex items-center justify-between mb-6">
-            <Dialog.Title className="text-xl font-semibold text-[#115e59]">
-              Thêm Luống Tự Động
-            </Dialog.Title>
+        <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-lg bg-white rounded-xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+          <div className="flex items-center justify-between px-6 py-5 border-b border-[#e2e8f0]">
+            <div>
+              <Dialog.Title className="text-xl font-semibold text-[#115e59]">
+                Phân Luống Tự Động
+              </Dialog.Title>
+              <p className="text-xs text-[#62748e] mt-0.5">
+                {plot.plotName} ·{" "}
+                {step === "form" ? "Nhập thông số" : "Xem trước kết quả"}
+              </p>
+            </div>
             <Dialog.Close asChild>
               <button className="p-2 text-[#62748e] hover:bg-[#f8fafc] rounded-lg transition-colors">
                 <X className="w-5 h-5" />
               </button>
             </Dialog.Close>
           </div>
-          <div className="mb-4 text-sm text-[#62748e]">
-            Vuông:{" "}
-            <span className="font-medium text-[#115e59]">{plot.plotName}</span>{" "}
-            · Diện tích còn lại (ước tính):{" "}
-            <span className="font-medium text-[#115e59]">
-              {remainingArea} m²
-            </span>
-          </div>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              const errors = validateAutoBedForm(
-                prefix,
-                bedSize,
-                remainingArea,
-              );
-              setAutoErrors(errors);
-              if (Object.keys(errors).length > 0) return;
-              onCreate(plot.plotId, bedSize, cropQuantities, prefix.trim());
-            }}
-            className="space-y-4"
-          >
-            <div>
-              <label className="block text-sm font-medium text-[#115e59] mb-2">
-                Prefix tên luống
-              </label>
-              <input
-                type="text"
-                value={prefix}
-                onChange={(e) => {
-                  setPrefix(e.target.value);
-                  setAutoErrors((p) => ({ ...p, prefix: undefined }));
-                }}
-                placeholder="Ví dụ: west, north"
-                className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] ${autoErrors.prefix ? "border-red-300 bg-red-50" : "border-[#cad5e2]"}`}
-              />
-              {autoErrors.prefix && (
-                <p className="mt-1 text-xs text-red-500">{autoErrors.prefix}</p>
-              )}
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-[#115e59] mb-2">
-                Diện tích mỗi luống (m²)
-              </label>
-              <input
-                type="number"
-                min={1}
-                value={bedSize}
-                onChange={(e) => {
-                  setBedSize(parseFloat(e.target.value) || 0);
-                  setAutoErrors((p) => ({ ...p, bedSize: undefined }));
-                }}
-                className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] ${autoErrors.bedSize ? "border-red-300 bg-red-50" : "border-[#cad5e2]"}`}
-              />
-              {autoErrors.bedSize && (
-                <p className="mt-1 text-xs text-red-500">
-                  {autoErrors.bedSize}
-                </p>
-              )}
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-[#115e59] mb-2">
-                Số lượng cây mỗi luống
-              </label>
-              <input
-                type="number"
-                required
-                min={0}
-                value={cropQuantities}
-                onChange={(e) =>
-                  setCropQuantities(parseInt(e.target.value) || 0)
-                }
-                className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-              />
-            </div>
-            <div className="bg-[#f0fdfa] p-4 rounded-lg">
-              <div className="text-sm text-[#009689] font-medium">
-                Sẽ tạo {count} luống với diện tích {bedSize} m² mỗi luống
+
+          <div className="px-6 py-5 overflow-y-auto flex-1">
+            {error && (
+              <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600">
+                {error}
               </div>
-            </div>
-            <div className="flex justify-end gap-3 pt-4">
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-6 py-2 bg-[#f1f5f9] text-[#314158] rounded-lg hover:bg-[#e2e8f0] transition-colors"
-              >
-                Hủy bỏ
-              </button>
-              <button
-                type="submit"
-                disabled={count === 0}
-                className="px-6 py-2 bg-[#009689] text-white rounded-lg hover:bg-[#007f75] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Thêm Luống
-              </button>
-            </div>
-          </form>
+            )}
+
+            {step === "form" && (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-[#115e59] mb-2">
+                    Cây Trồng <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={cropId}
+                    onChange={(e) => setCropId(e.target.value)}
+                    className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                  >
+                    <option value="">-- Chọn cây trồng --</option>
+                    {crops.map((c) => (
+                      <option key={c.cropId} value={c.cropId}>
+                        {c.cropName}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-[#115e59] mb-2">
+                    Prefix tên luống
+                  </label>
+                  <input
+                    type="text"
+                    value={bedNamePrefix}
+                    onChange={(e) => setBedNamePrefix(e.target.value)}
+                    placeholder="Ví dụ: Luống"
+                    className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                  />
+                </div>
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-[#115e59] mb-2">
+                      Rộng luống (m)
+                    </label>
+                    <input
+                      type="number"
+                      min={0.1}
+                      step={0.1}
+                      value={bedWidth}
+                      onChange={(e) =>
+                        setBedWidth(parseFloat(e.target.value) || 0)
+                      }
+                      className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-[#115e59] mb-2">
+                      Rộng lối đi (m)
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      step={0.1}
+                      value={pathWidth}
+                      onChange={(e) =>
+                        setPathWidth(parseFloat(e.target.value) || 0)
+                      }
+                      className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-[#115e59] mb-2">
+                      Hàng/luống
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      value={rowsPerBed}
+                      onChange={(e) =>
+                        setRowsPerBed(parseInt(e.target.value) || 1)
+                      }
+                      className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {step === "preview" && preview && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="bg-[#f0fdfa] rounded-lg p-3 text-center">
+                    <div className="text-2xl font-bold text-[#009689]">
+                      {preview.bedCount}
+                    </div>
+                    <div className="text-xs text-[#62748e] mt-1">Luống</div>
+                  </div>
+                  <div className="bg-[#f0fdfa] rounded-lg p-3 text-center">
+                    <div className="text-2xl font-bold text-[#009689]">
+                      {preview.plantCount}
+                    </div>
+                    <div className="text-xs text-[#62748e] mt-1">Cây</div>
+                  </div>
+                  <div className="bg-[#f0fdfa] rounded-lg p-3 text-center">
+                    <div className="text-2xl font-bold text-[#009689]">
+                      {preview.bedArea}
+                    </div>
+                    <div className="text-xs text-[#62748e] mt-1">m²/luống</div>
+                  </div>
+                </div>
+                {preview.widthRemain > 0 && (
+                  <div className="px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700">
+                    Còn dư {preview.widthRemain} m chiều rộng chưa sử dụng
+                  </div>
+                )}
+                <div className="border border-[#e2e8f0] rounded-lg overflow-hidden">
+                  <div className="bg-[#f8fafc] px-4 py-2 text-xs font-medium text-[#62748e] uppercase">
+                    Danh sách luống sẽ tạo ({preview.beds.length})
+                  </div>
+                  <div className="max-h-48 overflow-y-auto divide-y divide-[#e2e8f0]">
+                    {preview.beds.map((b, i) => (
+                      <div
+                        key={i}
+                        className="px-4 py-2 flex justify-between text-sm"
+                      >
+                        <span className="font-medium text-[#115e59]">
+                          {b.bedName}
+                        </span>
+                        <span className="text-[#62748e]">
+                          {b.bedLength} × {b.bedWidth} m · {b.plantCount} cây ·{" "}
+                          {b.rowCount} hàng
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="px-6 py-4 border-t border-[#e2e8f0] flex justify-end gap-3">
+            {step === "form" ? (
+              <>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-6 py-2 bg-[#f1f5f9] text-[#314158] rounded-lg hover:bg-[#e2e8f0] transition-colors"
+                >
+                  Hủy bỏ
+                </button>
+                <button
+                  type="button"
+                  onClick={handlePreview}
+                  disabled={loadingPreview || !cropId}
+                  className="px-6 py-2 bg-[#009689] text-white rounded-lg hover:bg-[#007f75] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  {loadingPreview && (
+                    <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  )}
+                  Xem Trước
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStep("form");
+                    setError(null);
+                  }}
+                  className="px-6 py-2 bg-[#f1f5f9] text-[#314158] rounded-lg hover:bg-[#e2e8f0] transition-colors"
+                >
+                  Quay Lại
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirm}
+                  disabled={confirming}
+                  className="px-6 py-2 bg-[#009689] text-white rounded-lg hover:bg-[#007f75] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  {confirming && (
+                    <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  )}
+                  Xác Nhận Tạo
+                </button>
+              </>
+            )}
+          </div>
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

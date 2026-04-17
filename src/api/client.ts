@@ -102,6 +102,7 @@ export interface PlotResponse {
   soilId: string;
   plotName: string;
   plotArea: number;
+  plotMargin: number;
   plotStatus: string;
   bedCreatedAt: string;
   farmName: string;
@@ -114,6 +115,7 @@ export interface PlotRequest {
   soilId: string;
   plotName: string;
   plotArea: number;
+  plotMargin: number;
   plotStatus: string;
 }
 
@@ -122,10 +124,17 @@ export interface BedResponse {
   plotId: string;
   bedName: string;
   bedArea: number;
-  bedStatus: string;
+  bedStatus: string; // "Active" | "Empty" | "Inactive"
   bedCreatedAt: string;
   cropQuantities: number;
+  cropId?: string;
+  bedWidth?: number;
+  bedLength?: number;
+  pathWidth?: number;
+  plantCount?: number;
+  rowCount?: number;
   plotName: string;
+  cropName?: string;
   seasonsDetailsCount: number;
 }
 
@@ -135,6 +144,51 @@ export interface BedRequest {
   bedArea: number;
   bedStatus: string;
   cropQuantities: number;
+  cropId?: string;
+  bedWidth?: number;
+  bedLength?: number;
+  pathWidth?: number;
+  plantCount?: number;
+  rowCount?: number;
+}
+
+// Auto-allocate beds
+export interface AutoAllocatePreviewRequest {
+  plotId: string;
+  cropId: string;
+  bedWidth: number;
+  pathWidth: number;
+  rowsPerBed: number;
+  bedNamePrefix: string;
+}
+
+export interface AutoAllocateBedItem {
+  bedName: string;
+  bedLength: number;
+  bedWidth: number;
+  bedArea: number;
+  pathWidth: number;
+  plantCount: number;
+  rowCount: number;
+  cropId: string;
+}
+
+export interface AutoAllocatePreviewResponse {
+  plotId: string;
+  cropId: string;
+  bedCount: number;
+  bedLength: number;
+  bedWidth: number;
+  bedArea: number;
+  plantCount: number;
+  widthRemain: number;
+  beds: AutoAllocateBedItem[];
+}
+
+export interface AutoAllocateConfirmRequest {
+  plotId: string;
+  cropId: string;
+  beds: AutoAllocateBedItem[];
 }
 
 export interface SoilRequest {
@@ -410,6 +464,33 @@ export interface AiResultParsed {
   isHealthy?: boolean;
 }
 
+// ── IoT Devices ───────────────────────────────────────────────────────────────
+
+export interface IotDeviceResponse {
+  deviceId: string;
+  bedId: string;
+  deviceCode: string;
+  name: string;
+  type: string;
+  status: string;
+  installationDate: string;
+  latitude: number;
+  longitude: number;
+  createdAt: string;
+  lastActiveAt: string;
+}
+
+export interface IotDeviceRequest {
+  bedId: string;
+  deviceCode: string;
+  name: string;
+  type: string;
+  status: string;
+  installationDate: string; // ISO datetime
+  latitude: number;
+  longitude: number;
+}
+
 // ==================== API Methods ====================
 
 export const api = {
@@ -465,6 +546,14 @@ export const api = {
   updateBed: (id: string, body: BedRequest) =>
     request<BedResponse>("PUT", `/api/Beds/${id}`, body),
   deleteBed: (id: string) => request<unknown>("DELETE", `/api/Beds/${id}`),
+  autoAllocatePreview: (body: AutoAllocatePreviewRequest) =>
+    request<AutoAllocatePreviewResponse>(
+      "POST",
+      "/api/Beds/auto-allocate/preview",
+      body,
+    ),
+  autoAllocateConfirm: (body: AutoAllocateConfirmRequest) =>
+    request<unknown>("POST", "/api/Beds/auto-allocate/confirm", body),
 
   // Soils
   getSoils: () => request<SoilResponse[]>("GET", "/api/Soils"),
@@ -585,6 +674,17 @@ export const api = {
     request<unknown>("PUT", `/api/CropGrowthTask/${id}`, body),
   deleteCropGrowthTask: (id: string) =>
     request<unknown>("DELETE", `/api/CropGrowthTask/${id}`),
+
+  // IoT Devices
+  getIotDevices: () => request<IotDeviceResponse[]>("GET", "/api/IotDevices"),
+  getIotDevice: (id: string) =>
+    request<IotDeviceResponse>("GET", `/api/IotDevices/${id}`),
+  createIotDevice: (body: IotDeviceRequest) =>
+    request<IotDeviceResponse>("POST", "/api/IotDevices", body),
+  updateIotDevice: (id: string, body: IotDeviceRequest) =>
+    request<IotDeviceResponse>("PUT", `/api/IotDevices/${id}`, body),
+  deleteIotDevice: (id: string) =>
+    request<unknown>("DELETE", `/api/IotDevices/${id}`),
 
   // Reports
   getReports: () => request<ReportResponse[]>("GET", "/api/Reports"),

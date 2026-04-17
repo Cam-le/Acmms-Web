@@ -8,6 +8,7 @@ import { CropsPage } from "./pages/CropsPage";
 import { FarmPage } from "./pages/FarmPage";
 import { AdvisoryPage } from "./pages/AdvisoryPage";
 import { BillingPage } from "./pages/BillingPage";
+import { IoTPage } from "./pages/IoTPage";
 import { SoilsPage } from "./pages/SoilsPage";
 import { SeasonsPage } from "./pages/SeasonsPage";
 import { PlotsPage } from "./pages/PlotsPage";
@@ -90,6 +91,10 @@ export const router = createBrowserRouter([
       {
         path: "advisory",
         Component: AdvisoryPage,
+      },
+      {
+        path: "iot",
+        Component: IoTPage,
       },
       {
         path: "billing",

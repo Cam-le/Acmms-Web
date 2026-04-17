@@ -22,18 +22,9 @@ import {
   FileText,
   AlertTriangle,
   Check,
-  Database,
 } from "lucide-react";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import * as Collapsible from "@radix-ui/react-collapsible";
-import {
-  Season,
-  SeasonStatus,
-  SeasonCropType as CropType,
-  PlotAssignment,
-  mockSeasons,
-  mockFarms,
-} from "../../data/mockData";
 import {
   api,
   SeasonResponse,
@@ -46,10 +37,56 @@ import {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-/** Per-plot status inside a season (separate from SeasonStatus) */
-type SeasonPlotStatus = "Chưa trồng" | "Đang trồng" | "Đã thu hoạch";
+/**
+ * Real API season status values:
+ *   Planned    → dùng khi phân luống trước khi bắt đầu mùa mới
+ *   On-Going   → đang canh tác
+ *   Harvested  → đã thu hoạch
+ *   Closed     → kết thúc mùa vụ
+ */
+type SeasonStatus =
+  | "Lên kế hoạch"
+  | "Đang canh tác"
+  | "Đã thu hoạch"
+  | "Đã kết thúc";
 
-/** PlotAssignment with the new status type */
+/** Per-plot (bed) status inside a season */
+type SeasonPlotStatus =
+  | "Chưa trồng"
+  | "Đang trồng"
+  | "Đã thu hoạch"
+  | "Cảnh báo";
+
+type CropType = string;
+
+interface PlotAssignment {
+  plotId: string;
+  plotName: string;
+  area: string;
+  crop: CropType;
+  sowingDate: string;
+  harvestDate: string;
+  plannedQuantity: number;
+  actualPlanted: number;
+  harvestQuantity: number;
+  status: SeasonStatus | SeasonPlotStatus | string;
+  [key: string]: any; // _seasonDetailId, _bedId, _cropId
+}
+
+interface Season {
+  id: string;
+  name: string;
+  farm: string;
+  farmId: string;
+  startDate: string;
+  endDate: string;
+  description: string;
+  seasonNotes: string;
+  status: SeasonStatus;
+  plots: PlotAssignment[];
+}
+
+/** PlotAssignment with narrowed plot status type */
 interface PlotAssignmentV2 extends Omit<PlotAssignment, "status"> {
   status: SeasonPlotStatus;
 }
@@ -57,9 +94,10 @@ interface PlotAssignmentV2 extends Omit<PlotAssignment, "status"> {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const seasonStatusConfig: Record<SeasonStatus, string> = {
-  "Đang hoạt động": "bg-[#dcfce7] text-[#008236]",
+  "Lên kế hoạch": "bg-[#dbeafe] text-[#1e40af]",
+  "Đang canh tác": "bg-[#dcfce7] text-[#008236]",
+  "Đã thu hoạch": "bg-[#fef9c3] text-[#854d0e]",
   "Đã kết thúc": "bg-[#f1f5f9] text-[#475569]",
-  "Sắp diễn ra": "bg-[#dbeafe] text-[#1e40af]",
 };
 
 const plotStatusConfig: Record<
@@ -77,6 +115,10 @@ const plotStatusConfig: Record<
   "Đã thu hoạch": {
     badge: "bg-[#dcfce7] text-[#008236] border border-[#86efac]",
     dot: "bg-[#22c55e]",
+  },
+  "Cảnh báo": {
+    badge: "bg-[#fee2e2] text-[#b91c1c] border border-[#fca5a5]",
+    dot: "bg-[#ef4444]",
   },
 };
 
@@ -96,9 +138,14 @@ export function formatPlotName(prefix: string, sequence: number): string {
   return `${prefix}-${String(sequence).padStart(2, "0")}`;
 }
 
-/** Extract trailing numeric part after the last '_' or '-' for natural sort.
- *  e.g. "A2_03" -> 3, "west_01" -> 1, "A-05" -> 5, "plotX" -> Infinity */
+/** Extract leading numeric part from "Luống N_..." pattern, then fallback to
+ *  trailing number after last '_' or '-'.
+ *  e.g. "Luống 05_Vuông 01_Tây Nam" → 5, "A-05" → 5, "plotX" → Infinity */
 function bedSortKey(name: string): number {
+  // Primary: "Luống N" prefix (handles the real API naming convention)
+  const luong = name.match(/^Luống\s+(\d+)/i);
+  if (luong) return parseInt(luong[1], 10);
+  // Fallback: trailing number after last '_' or '-'
   const m = name.match(/[_\-](\d+)$/);
   return m ? parseInt(m[1], 10) : Infinity;
 }
@@ -185,12 +232,21 @@ export function groupByHarvestWeek(
 /** Cast legacy PlotAssignment status to SeasonPlotStatus */
 function toV2(plot: PlotAssignment): PlotAssignmentV2 {
   const legacyMap: Record<string, SeasonPlotStatus> = {
+    // Legacy mock values
     "Đang hoạt động": "Đang trồng",
     "Sắp diễn ra": "Chưa trồng",
-    "Đã kết thúc": "Đã thu hoạch",
+    // New real API season statuses (map to closest plot status)
+    "Lên kế hoạch": "Chưa trồng",
+    "Đang canh tác": "Đang trồng",
+    // Bed statuses from API
+    Planted: "Đang trồng",
+    Empty: "Chưa trồng",
+    Warning: "Cảnh báo",
+    // Already-correct values
     "Chưa trồng": "Chưa trồng",
     "Đang trồng": "Đang trồng",
     "Đã thu hoạch": "Đã thu hoạch",
+    "Đã kết thúc": "Đã thu hoạch",
   };
   return {
     ...plot,
@@ -313,22 +369,25 @@ function FarmSelect({
 // ─── API Status Mapping ───────────────────────────────────────────────────────
 
 /**
- * API trả về status dạng "active" / "Active" / "inactive" / "Inactive" (inconsistent).
+ * API trả về status: "Planned" / "On-Going" / "Harvested" / "Closed"
+ * (có thể lowercase hoặc có dấu gạch ngang khác nhau).
  * Normalize về SeasonStatus (Vietnamese) để dùng trong UI.
  */
 function normalizeSeasonStatus(raw: string | undefined): SeasonStatus {
-  const s = (raw ?? "").toLowerCase().trim();
-  if (s === "active") return "Đang hoạt động";
-  if (s === "inactive" || s === "ended") return "Đã kết thúc";
-  if (s === "upcoming" || s === "planned") return "Sắp diễn ra";
-  return "Sắp diễn ra"; // safe default
+  const s = (raw ?? "").toLowerCase().replace(/[-_\s]/g, "");
+  if (s === "planned") return "Lên kế hoạch";
+  if (s === "ongoing" || s === "active") return "Đang canh tác";
+  if (s === "harvested") return "Đã thu hoạch";
+  if (s === "closed" || s === "inactive" || s === "ended") return "Đã kết thúc";
+  return "Lên kế hoạch"; // safe default
 }
 
 /** Reverse: SeasonStatus → API string */
 function toApiStatus(status: SeasonStatus): string {
-  if (status === "Đang hoạt động") return "Active";
-  if (status === "Đã kết thúc") return "Inactive";
-  return "Upcoming";
+  if (status === "Lên kế hoạch") return "Planned";
+  if (status === "Đang canh tác") return "On-Going";
+  if (status === "Đã thu hoạch") return "Harvested";
+  return "Closed";
 }
 
 /**
@@ -346,6 +405,14 @@ function mapApiSeasonToUi(
 
   const plots: PlotAssignment[] = seasonDetails.map((d) => {
     const bed = beds.find((b) => b.bedId === d.bedId);
+    // Map API bedStatus → SeasonPlotStatus
+    const bedStatusMap: Record<string, string> = {
+      Planted: "Đang trồng",
+      Empty: "Chưa trồng",
+      Warning: "Cảnh báo",
+      Active: "Đang trồng", // legacy fallback
+    };
+    const plotStatus = bedStatusMap[bed?.bedStatus ?? ""] ?? "Chưa trồng";
     return {
       plotId: d.seasonDetailId,
       plotName: d.bedName ?? d.bedId ?? "—",
@@ -354,9 +421,10 @@ function mapApiSeasonToUi(
       sowingDate: d.startDate ?? "",
       harvestDate: d.seasonExpectedHarvestDate ?? "",
       plannedQuantity: d.cropQuantity ?? 0,
-      actualPlanted: d.cropQuantity ?? 0,
+      // actualPlanted comes from bed.cropQuantities (how many plants are in the bed)
+      actualPlanted: bed?.cropQuantities ?? 0,
       harvestQuantity: d.totalHarvestYield ?? 0,
-      status: "Chưa trồng" as any,
+      status: plotStatus as any,
       _seasonDetailId: d.seasonDetailId,
       _bedId: d.bedId,
       _cropId: d.cropId,
@@ -377,22 +445,6 @@ function mapApiSeasonToUi(
   };
 }
 
-// ─── Mock fallback data ───────────────────────────────────────────────────────
-
-const mockBedsForFallback = [
-  { id: "bed-mock-1", name: "A-01", area: "Khu A (Phía Bắc)", size: "50 m²" },
-  { id: "bed-mock-2", name: "A-02", area: "Khu A (Phía Bắc)", size: "45 m²" },
-  { id: "bed-mock-3", name: "B-01", area: "Khu B (Phía Nam)", size: "60 m²" },
-  { id: "bed-mock-4", name: "B-02", area: "Khu B (Phía Nam)", size: "55 m²" },
-  { id: "bed-mock-5", name: "C-01", area: "Khu C", size: "70 m²" },
-];
-
-const mockCropsForFallback: CropResponse[] = [
-  { cropId: "mock-crop-1", cropName: "Bắp Cải Trắng", cropStatus: "Active" },
-  { cropId: "mock-crop-2", cropName: "Bắp Cải Tím", cropStatus: "Active" },
-  { cropId: "mock-crop-3", cropName: "Bắp Cải Xoăn", cropStatus: "Active" },
-];
-
 // ─── Seasons Page (List) ──────────────────────────────────────────────────────
 
 const PAGE_SIZE_LIST = 8;
@@ -403,13 +455,13 @@ export function SeasonsPage() {
   const view = searchParams.get("view") || "list";
   const seasonId = searchParams.get("id");
 
-  const [seasons, setSeasons] = useState<Season[]>(mockSeasons);
+  const [seasons, setSeasons] = useState<Season[]>([]);
   const [farms, setFarms] = useState<FarmResponse[]>([]);
   const [allDetails, setAllDetails] = useState<SeasonDetailResponse[]>([]);
   const [allPlots, setAllPlots] = useState<PlotResponse[]>([]);
   const [beds, setBeds] = useState<BedResponse[]>([]);
   const [crops, setCrops] = useState<CropResponse[]>([]);
-  const [isUsingMock, setIsUsingMock] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -421,6 +473,7 @@ export function SeasonsPage() {
   // ── Load all data ──────────────────────────────────────────────────────────
   const loadData = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const [apiSeasons, apiDetails, apiFarms, apiBeds, apiCrops, apiPlots] =
         await Promise.all([
@@ -436,15 +489,9 @@ export function SeasonsPage() {
       const safeFarms = Array.isArray(apiFarms) ? apiFarms : [];
       const safeBeds = Array.isArray(apiBeds) ? apiBeds : [];
       const safePlots = Array.isArray(apiPlots) ? apiPlots : [];
-      const INACTIVE_STATUSES = [
-        "inactive",
-        "khong hoat dong",
-        "ngưng sử dụng",
-      ];
       const safeCrops = Array.isArray(apiCrops)
         ? apiCrops.filter(
-            (c) =>
-              !INACTIVE_STATUSES.includes((c.cropStatus ?? "").toLowerCase()),
+            (c) => (c.cropStatus ?? "").toLowerCase() !== "inactive",
           )
         : [];
 
@@ -452,29 +499,14 @@ export function SeasonsPage() {
       setAllDetails(safeDetails);
       setBeds(safeBeds);
       setAllPlots(safePlots);
-      setCrops(safeCrops.length > 0 ? safeCrops : mockCropsForFallback);
+      setCrops(safeCrops);
       setSeasons(
         safeSeasons.map((s) =>
           mapApiSeasonToUi(s, safeFarms, safeDetails, safeBeds),
         ),
       );
-      setIsUsingMock(false);
-    } catch {
-      // Fallback: mock data, local state only
-      setSeasons(mockSeasons);
-      setFarms(
-        mockFarms.map((f) => ({
-          farmId: f.id,
-          farmName: f.name,
-          farmLocation: "",
-          farmArea: 0,
-          farmStatus: "Active",
-          farmCreatedAt: "",
-          seasonsCount: 0,
-        })),
-      );
-      setCrops(mockCropsForFallback);
-      setIsUsingMock(true);
+    } catch (err) {
+      setLoadError("Không thể tải dữ liệu. Vui lòng thử lại.");
     } finally {
       setLoading(false);
     }
@@ -515,16 +547,11 @@ export function SeasonsPage() {
 
   const confirmDelete = async () => {
     if (!seasonToDelete) return;
-    if (!isUsingMock) {
-      try {
-        await api.deleteSeason(seasonToDelete.id);
-        await loadData();
-      } catch {
-        // Fallback: xóa local state
-        setSeasons((prev) => prev.filter((s) => s.id !== seasonToDelete.id));
-      }
-    } else {
-      setSeasons((prev) => prev.filter((s) => s.id !== seasonToDelete.id));
+    try {
+      await api.deleteSeason(seasonToDelete.id);
+      await loadData();
+    } catch {
+      setLoadError("Xóa mùa vụ thất bại. Vui lòng thử lại.");
     }
     setSeasonToDelete(null);
     setDeleteDialogOpen(false);
@@ -541,54 +568,36 @@ export function SeasonsPage() {
       harvestDate: string;
     }>,
   ) => {
-    if (!isUsingMock) {
-      try {
-        const farmId =
-          (seasonData as any).farmId ||
-          farms.find((f) => f.farmName === seasonData.farm)?.farmId ||
-          "";
-        const created = await api.createSeason({
-          farmId,
-          seasonName: seasonData.name,
-          seasonStartDate: seasonData.startDate,
-          seasonEndDate: seasonData.endDate,
-          description: seasonData.description,
-          seasonNotes: (seasonData as any).seasonNotes ?? "",
-          status: toApiStatus(seasonData.status),
-        });
-        // Tạo season details (beds) sau khi có seasonId
-        if (created?.seasonId && detailsToCreate.length > 0) {
-          await Promise.allSettled(
-            detailsToCreate.map((d) =>
-              api.createSeasonDetail({
-                seasonId: created.seasonId,
-                bedId: d.bedId,
-                cropId: d.cropId,
-                cropQuantity: d.cropQuantity,
-                startDate: d.startDate,
-                endDate: d.endDate,
-                seasonExpectedHarvestDate: d.harvestDate,
-                totalHarvestYield: 0,
-              }),
-            ),
-          );
-        }
-        await loadData();
-      } catch {
-        // Fallback: mock create
-        const newSeason: Season = {
-          ...seasonData,
-          id: Date.now().toString(),
-        };
-        setSeasons((prev) => [newSeason, ...prev]);
-      }
-    } else {
-      const newSeason: Season = {
-        ...seasonData,
-        id: Date.now().toString(),
-      };
-      setSeasons((prev) => [newSeason, ...prev]);
+    const farmId =
+      (seasonData as any).farmId ||
+      farms.find((f) => f.farmName === seasonData.farm)?.farmId ||
+      "";
+    const created = await api.createSeason({
+      farmId,
+      seasonName: seasonData.name,
+      seasonStartDate: seasonData.startDate,
+      seasonEndDate: seasonData.endDate,
+      description: seasonData.description,
+      seasonNotes: (seasonData as any).seasonNotes ?? "",
+      status: toApiStatus(seasonData.status),
+    });
+    if (created?.seasonId && detailsToCreate.length > 0) {
+      await Promise.allSettled(
+        detailsToCreate.map((d) =>
+          api.createSeasonDetail({
+            seasonId: created.seasonId,
+            bedId: d.bedId,
+            cropId: d.cropId,
+            cropQuantity: d.cropQuantity,
+            startDate: d.startDate || seasonData.startDate,
+            endDate: d.endDate || seasonData.endDate,
+            seasonExpectedHarvestDate: d.harvestDate || seasonData.endDate,
+            totalHarvestYield: 0,
+          }),
+        ),
+      );
     }
+    await loadData();
     setSearchParams({ view: "list" });
   };
 
@@ -612,66 +621,54 @@ export function SeasonsPage() {
         startDate: string;
         endDate: string;
         harvestDate: string;
+        totalHarvestYield: number;
       }>;
     },
   ) => {
-    if (!isUsingMock) {
-      try {
-        const farmId =
-          (updatedSeason as any).farmId ||
-          farms.find((f) => f.farmName === updatedSeason.farm)?.farmId ||
-          farms[0]?.farmId ||
-          "";
-        await api.updateSeason(updatedSeason.id, {
-          farmId,
-          seasonName: updatedSeason.name,
-          seasonStartDate: updatedSeason.startDate,
-          seasonEndDate: updatedSeason.endDate,
-          description: updatedSeason.description,
-          seasonNotes: (updatedSeason as any).seasonNotes ?? "",
-          status: toApiStatus(updatedSeason.status),
-        });
-        // Handle detail CRUD
-        if (detailOps) {
-          await Promise.allSettled([
-            ...detailOps.toDelete.map((id) => api.deleteSeasonDetail(id)),
-            ...detailOps.toAdd.map((d) =>
-              api.createSeasonDetail({
-                seasonId: updatedSeason.id,
-                bedId: d.bedId,
-                cropId: d.cropId,
-                cropQuantity: d.cropQuantity,
-                startDate: d.startDate,
-                endDate: d.endDate,
-                seasonExpectedHarvestDate: d.harvestDate,
-                totalHarvestYield: 0,
-              }),
-            ),
-            ...(detailOps.toUpdate ?? []).map((d) =>
-              api.updateSeasonDetail(d.seasonDetailId, {
-                seasonId: updatedSeason.id,
-                bedId: d.bedId,
-                cropId: d.cropId,
-                cropQuantity: d.cropQuantity,
-                startDate: d.startDate,
-                endDate: d.endDate,
-                seasonExpectedHarvestDate: d.harvestDate,
-                totalHarvestYield: 0,
-              }),
-            ),
-          ]);
-        }
-        await loadData();
-      } catch {
-        setSeasons((prev) =>
-          prev.map((s) => (s.id === updatedSeason.id ? updatedSeason : s)),
-        );
-      }
-    } else {
-      setSeasons((prev) =>
-        prev.map((s) => (s.id === updatedSeason.id ? updatedSeason : s)),
-      );
+    const farmId =
+      (updatedSeason as any).farmId ||
+      farms.find((f) => f.farmName === updatedSeason.farm)?.farmId ||
+      farms[0]?.farmId ||
+      "";
+    await api.updateSeason(updatedSeason.id, {
+      farmId,
+      seasonName: updatedSeason.name,
+      seasonStartDate: updatedSeason.startDate,
+      seasonEndDate: updatedSeason.endDate,
+      description: updatedSeason.description,
+      seasonNotes: (updatedSeason as any).seasonNotes ?? "",
+      status: toApiStatus(updatedSeason.status),
+    });
+    if (detailOps) {
+      await Promise.allSettled([
+        ...detailOps.toDelete.map((id) => api.deleteSeasonDetail(id)),
+        ...detailOps.toAdd.map((d) =>
+          api.createSeasonDetail({
+            seasonId: updatedSeason.id,
+            bedId: d.bedId,
+            cropId: d.cropId,
+            cropQuantity: d.cropQuantity,
+            startDate: d.startDate || updatedSeason.startDate,
+            endDate: d.endDate || updatedSeason.endDate,
+            seasonExpectedHarvestDate: d.harvestDate || updatedSeason.endDate,
+            totalHarvestYield: 0,
+          }),
+        ),
+        ...(detailOps.toUpdate ?? []).map((d) =>
+          api.updateSeasonDetail(d.seasonDetailId, {
+            seasonId: updatedSeason.id,
+            bedId: d.bedId,
+            cropId: d.cropId,
+            cropQuantity: d.cropQuantity,
+            startDate: d.startDate || updatedSeason.startDate,
+            endDate: d.endDate || updatedSeason.endDate,
+            seasonExpectedHarvestDate: d.harvestDate || updatedSeason.endDate,
+            totalHarvestYield: d.totalHarvestYield,
+          }),
+        ),
+      ]);
     }
+    await loadData();
     setSearchParams({ view: "list" });
   };
 
@@ -684,10 +681,6 @@ export function SeasonsPage() {
       setSelectedSeason(null);
       return;
     }
-    if (isUsingMock) {
-      setSelectedSeason(seasons.find((s) => s.id === seasonId) ?? null);
-      return;
-    }
     setSelectedSeasonLoading(true);
     Promise.all([api.getSeason(seasonId), api.getSeasonsDetails()])
       .then(([apiSeason, apiDetails]) => {
@@ -697,10 +690,11 @@ export function SeasonsPage() {
         );
       })
       .catch(() => {
+        // Fall back to already-loaded list data if detail fetch fails
         setSelectedSeason(seasons.find((s) => s.id === seasonId) ?? null);
       })
       .finally(() => setSelectedSeasonLoading(false));
-  }, [seasonId, view, isUsingMock, farms, seasons]);
+  }, [seasonId, view, farms, seasons, beds]);
 
   if (view === "create")
     return (
@@ -709,7 +703,6 @@ export function SeasonsPage() {
         beds={beds}
         plots={allPlots}
         crops={crops}
-        isUsingMock={isUsingMock}
         onCreate={handleCreate}
       />
     );
@@ -737,7 +730,6 @@ export function SeasonsPage() {
         beds={beds}
         plots={allPlots}
         crops={crops}
-        isUsingMock={isUsingMock}
         onUpdate={handleUpdate}
       />
     );
@@ -750,11 +742,6 @@ export function SeasonsPage() {
           <h1 className="text-[#115e59] text-2xl font-semibold">
             Quản Lý Mùa Vụ
           </h1>
-          {isUsingMock && (
-            <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-700 border border-amber-200">
-              <Database className="w-3 h-3" /> Dữ liệu mẫu
-            </span>
-          )}
         </div>
         <Link
           to="/seasons?view=create"
@@ -763,6 +750,22 @@ export function SeasonsPage() {
           <Plus className="w-4 h-4" /> Mùa vụ mới
         </Link>
       </div>
+
+      {loadError && (
+        <div className="flex items-center gap-2 px-4 py-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          <span>{loadError}</span>
+          <button
+            onClick={() => {
+              setLoadError(null);
+              loadData();
+            }}
+            className="ml-auto text-red-600 hover:text-red-800 font-medium underline"
+          >
+            Thử lại
+          </button>
+        </div>
+      )}
 
       {/* Search & Filters */}
       <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-4">
@@ -777,8 +780,16 @@ export function SeasonsPage() {
               className="w-full pl-10 pr-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
             />
           </div>
-          <div className="flex gap-2">
-            {(["all", "Đang hoạt động", "Đã kết thúc"] as const).map((s) => (
+          <div className="flex gap-2 flex-wrap">
+            {(
+              [
+                "all",
+                "Lên kế hoạch",
+                "Đang canh tác",
+                "Đã thu hoạch",
+                "Đã kết thúc",
+              ] as const
+            ).map((s) => (
               <button
                 key={s}
                 onClick={() => setFilterStatus(s)}
@@ -1279,14 +1290,12 @@ function CreateSeasonView({
   beds,
   crops,
   plots,
-  isUsingMock,
   onCreate,
 }: {
   farms: FarmResponse[];
   beds: BedResponse[];
   plots: PlotResponse[];
   crops: CropResponse[];
-  isUsingMock: boolean;
   onCreate: (
     season: Omit<Season, "id">,
     detailsToCreate: Array<{
@@ -1311,7 +1320,7 @@ function CreateSeasonView({
     endDate: "",
     description: "",
     seasonNotes: "",
-    status: "Sắp diễn ra" as SeasonStatus,
+    status: "Lên kế hoạch" as SeasonStatus,
     plots: [] as PlotAssignment[],
   });
   const [selectedPlots, setSelectedPlots] = useState<string[]>([]);
@@ -1336,18 +1345,14 @@ function CreateSeasonView({
       })
     : beds;
 
-  // Beds từ API hoặc fallback mock
+  // Beds filtered by selected farm
   const availableBeds = sortBeds(
-    bedsForFarm.length > 0
-      ? bedsForFarm.map((b) => ({
-          id: b.bedId,
-          name: b.bedName,
-          area: b.plotName ?? "Không rõ khu",
-          size: b.bedArea ? `${b.bedArea} m²` : "—",
-        }))
-      : beds.length > 0
-        ? [] // farm đã chọn nhưng không có bed nào
-        : mockBedsForFallback,
+    bedsForFarm.map((b) => ({
+      id: b.bedId,
+      name: b.bedName,
+      area: b.plotName ?? "Không rõ khu",
+      size: b.bedArea ? `${b.bedArea} m²` : "—",
+    })),
   );
 
   // Dùng crops từ API; mỗi option có cropId thực
@@ -1384,21 +1389,43 @@ function CreateSeasonView({
       const details = plotDetails[plotId] || defaultDetail;
       return {
         bedId: plotId,
-        cropId: details.cropId,
+        cropId: details.cropId || firstCropId,
         cropQuantity: details.cropQuantity,
         startDate: details.sowingDate || formData.startDate,
         endDate: formData.endDate,
-        harvestDate: details.harvestDate,
+        harvestDate: details.harvestDate || formData.endDate,
       };
     });
 
     onCreate({ ...formData, plots }, detailsToCreate);
   };
 
-  const togglePlot = (id: string) =>
-    setSelectedPlots((p) =>
-      p.includes(id) ? p.filter((x) => x !== id) : [...p, id],
-    );
+  const togglePlot = async (id: string) => {
+    if (selectedPlots.includes(id)) {
+      setSelectedPlots((p) => p.filter((x) => x !== id));
+      return;
+    }
+    setSelectedPlots((p) => [...p, id]);
+    // Fetch real cropQuantities from API when bed is selected
+    try {
+      const bed = await api.getBed(id);
+      if (
+        bed &&
+        typeof bed.cropQuantities === "number" &&
+        bed.cropQuantities > 0
+      ) {
+        setPlotDetails((p) => ({
+          ...p,
+          [id]: {
+            ...(p[id] || defaultDetail),
+            cropQuantity: bed.cropQuantities,
+          },
+        }));
+      }
+    } catch {
+      // silently ignore — user can enter manually
+    }
+  };
   const updatePlotDetail = (
     id: string,
     field: keyof typeof defaultDetail,
@@ -1557,8 +1584,9 @@ function CreateSeasonView({
                 }
                 className="w-full px-3 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] bg-white"
               >
-                <option value="Sắp diễn ra">Sắp diễn ra</option>
-                <option value="Đang hoạt động">Đang hoạt động</option>
+                <option value="Lên kế hoạch">Lên kế hoạch</option>
+                <option value="Đang canh tác">Đang canh tác</option>
+                <option value="Đã thu hoạch">Đã thu hoạch</option>
                 <option value="Đã kết thúc">Đã kết thúc</option>
               </select>
             </div>
@@ -1631,10 +1659,12 @@ function CreateSeasonView({
           <h3 className="text-sm font-bold text-[#62748e] uppercase mb-2 flex items-center gap-2">
             <Sprout className="w-4 h-4" /> Chọn luống
           </h3>
-          {isUsingMock && (
+          {availableBeds.length === 0 && (
             <div className="mb-4 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700 flex items-center gap-2">
-              <Database className="w-3.5 h-3.5 shrink-0" />
-              Đang dùng dữ liệu luống mẫu — kết nối API để xem luống thực tế
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+              {formData.farmId
+                ? "Trang trại này chưa có luống nào. Vui lòng tạo luống trong trang Quản lý Khu đất."
+                : "Vui lòng chọn trang trại ở bước 1 để xem danh sách luống."}
             </div>
           )}
 
@@ -1799,7 +1829,6 @@ function EditSeasonView({
   beds,
   plots: allPlots,
   crops,
-  isUsingMock,
   onUpdate,
 }: {
   season: Season;
@@ -1807,7 +1836,6 @@ function EditSeasonView({
   beds: BedResponse[];
   plots: PlotResponse[];
   crops: CropResponse[];
-  isUsingMock: boolean;
   onUpdate: (
     s: Season,
     detailOps?: {
@@ -1828,6 +1856,7 @@ function EditSeasonView({
         startDate: string;
         endDate: string;
         harvestDate: string;
+        totalHarvestYield: number;
       }>;
     },
   ) => void;
@@ -1845,39 +1874,14 @@ function EditSeasonView({
       })
     : beds;
 
-  // Use filtered beds or fallback mock
+  // Beds for this season's farm
   const availablePlotsForFarm = sortBeds(
-    bedsForFarm.length > 0
-      ? bedsForFarm.map((b) => ({
-          id: b.bedId,
-          name: b.bedName,
-          area: b.plotName ?? "Không rõ khu",
-          size: b.bedArea ? `${b.bedArea} m²` : "—",
-        }))
-      : beds.length > 0
-        ? []
-        : [
-            {
-              id: "A-03",
-              name: "A-03",
-              area: "Khu A (Phía Bắc)",
-              size: "50 m²",
-            },
-            {
-              id: "A-04",
-              name: "A-04",
-              area: "Khu A (Phía Bắc)",
-              size: "45 m²",
-            },
-            {
-              id: "B-02",
-              name: "B-02",
-              area: "Khu B (Phía Nam)",
-              size: "60 m²",
-            },
-            { id: "C-02", name: "C-02", area: "Khu C", size: "55 m²" },
-            { id: "D-01", name: "D-01", area: "Khu D", size: "70 m²" },
-          ],
+    bedsForFarm.map((b) => ({
+      id: b.bedId,
+      name: b.bedName,
+      area: b.plotName ?? "Không rõ khu",
+      size: b.bedArea ? `${b.bedArea} m²` : "—",
+    })),
   );
 
   const [formData, setFormData] = useState({
@@ -1934,7 +1938,8 @@ function EditSeasonView({
     setSubmitAttempted(false);
   }, [season.id]);
 
-  const isSeasonEnded = formData.status === "Đã kết thúc";
+  const isSeasonEnded =
+    formData.status === "Đã kết thúc" || formData.status === "Đã thu hoạch";
 
   const toDate = (s: string) => (s ? new Date(s) : null);
 
@@ -1951,12 +1956,12 @@ function EditSeasonView({
     if (!data.endDate) errors.endDate = "Vui lòng chọn ngày kết thúc";
     else if (start && end && end <= start)
       errors.endDate = "Ngày kết thúc phải sau ngày bắt đầu";
-    if (data.status === "Đang hoạt động" && start && start > today)
+    if (data.status === "Đang canh tác" && start && start > today)
       errors.startDate =
-        "Mùa đang hoạt động: ngày bắt đầu không thể ở tương lai";
-    if (data.status === "Sắp diễn ra" && start && start < today)
+        "Mùa đang canh tác: ngày bắt đầu không thể ở tương lai";
+    if (data.status === "Lên kế hoạch" && start && start < today)
       errors.status =
-        'Ngày bắt đầu đã qua — không thể để trạng thái "Sắp diễn ra"';
+        'Ngày bắt đầu đã qua — không thể để trạng thái "Lên kế hoạch"';
     if (data.status === "Đã kết thúc" && end && end > today)
       errors.status =
         'Ngày kết thúc chưa đến — không thể đánh dấu "Đã kết thúc"';
@@ -2020,11 +2025,11 @@ function EditSeasonView({
         .filter((p) => !(p as any)._seasonDetailId)
         .map((p) => ({
           bedId: (p as any)._bedId ?? p.plotId,
-          cropId: (p as any)._cropId ?? "",
+          cropId: (p as any)._cropId || "",
           cropQuantity: p.plannedQuantity ?? 0,
           startDate: p.sowingDate || formData.startDate,
           endDate: formData.endDate,
-          harvestDate: p.harvestDate,
+          harvestDate: p.harvestDate || formData.endDate,
         }));
       const toUpdate = plots
         .filter((p) => {
@@ -2039,15 +2044,20 @@ function EditSeasonView({
             (p as any)._cropId !== (orig as any)._cropId
           );
         })
-        .map((p) => ({
-          seasonDetailId: (p as any)._seasonDetailId as string,
-          bedId: (p as any)._bedId ?? p.plotId,
-          cropId: (p as any)._cropId ?? "",
-          cropQuantity: p.plannedQuantity ?? 0,
-          startDate: p.sowingDate || formData.startDate,
-          endDate: formData.endDate,
-          harvestDate: p.harvestDate,
-        }));
+        .map((p) => {
+          const orig = originalPlotMap.get((p as any)._seasonDetailId)!;
+          return {
+            seasonDetailId: (p as any)._seasonDetailId as string,
+            bedId: (p as any)._bedId ?? p.plotId,
+            cropId: (p as any)._cropId || "",
+            cropQuantity: p.plannedQuantity ?? 0,
+            startDate: p.sowingDate || formData.startDate,
+            endDate: formData.endDate,
+            harvestDate: p.harvestDate || formData.endDate,
+            // Preserve existing harvest yield — never reset to 0 on update
+            totalHarvestYield: (orig as any).harvestQuantity ?? 0,
+          };
+        });
 
       onUpdate(
         {
@@ -2073,6 +2083,61 @@ function EditSeasonView({
       const { errors, pErrors } = validateForm(formData, next);
       setFormErrors(errors);
       setPlotErrors(pErrors);
+    }
+  };
+
+  /**
+   * Maps SeasonPlotStatus → API bedStatus value and calls PUT /api/Beds/{id}.
+   * Silently ignores failures — UI state is already updated optimistically.
+   */
+  const updateBedStatus = async (
+    plot: PlotAssignmentV2,
+    newStatus: SeasonPlotStatus,
+  ) => {
+    const bedId = (plot as any)._bedId ?? plot.plotId;
+    if (!bedId) return;
+    const bedStatusMap: Record<SeasonPlotStatus, string> = {
+      "Chưa trồng": "Empty",
+      "Đang trồng": "Planted",
+      "Đã thu hoạch": "Planted", // Bed API has no Harvested — keep Planted
+      "Cảnh báo": "Warning",
+    };
+    try {
+      const current = await api.getBed(bedId);
+      await api.updateBed(bedId, {
+        plotId: current.plotId,
+        bedName: current.bedName,
+        bedArea: current.bedArea,
+        bedStatus: bedStatusMap[newStatus],
+        // preserve current cropQuantities from plot state, not from re-fetched bed
+        cropQuantities: plot.actualPlanted ?? current.cropQuantities,
+      });
+    } catch {
+      // silent — UI already reflects the change
+    }
+  };
+
+  /**
+   * Persists actualPlanted changes to PUT /api/Beds/{id} (cropQuantities field).
+   * Called on blur of the SL thực tế input. Silently ignores failures.
+   */
+  const updateBedCropQuantities = async (
+    plot: PlotAssignmentV2,
+    qty: number,
+  ) => {
+    const bedId = (plot as any)._bedId ?? plot.plotId;
+    if (!bedId) return;
+    try {
+      const current = await api.getBed(bedId);
+      await api.updateBed(bedId, {
+        plotId: current.plotId,
+        bedName: current.bedName,
+        bedArea: current.bedArea,
+        bedStatus: current.bedStatus,
+        cropQuantities: qty,
+      });
+    } catch {
+      // silent — UI already reflects the change
     }
   };
 
@@ -2263,7 +2328,7 @@ function EditSeasonView({
             <div>
               <label className="block text-sm font-medium text-[#115e59] mb-2">
                 Ngày bắt đầu
-                {formData.status === "Đang hoạt động" && (
+                {formData.status === "Đang canh tác" && (
                   <span className="ml-2 text-xs font-normal text-amber-600">
                     (Mùa đang chạy — thận trọng)
                   </span>
@@ -2308,8 +2373,9 @@ function EditSeasonView({
                 onChange={(e) => updateField("status", e.target.value)}
                 className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] bg-white ${formErrors.status ? "border-red-400 bg-red-50" : "border-[#cad5e2]"}`}
               >
-                <option value="Sắp diễn ra">Sắp diễn ra</option>
-                <option value="Đang hoạt động">Đang hoạt động</option>
+                <option value="Lên kế hoạch">Lên kế hoạch</option>
+                <option value="Đang canh tác">Đang canh tác</option>
+                <option value="Đã thu hoạch">Đã thu hoạch</option>
                 <option value="Đã kết thúc">Đã kết thúc</option>
               </select>
               {formErrors.status && (
@@ -2471,14 +2537,16 @@ function EditSeasonView({
                                           />
                                           <select
                                             value={plot.status}
-                                            onChange={(e) =>
+                                            onChange={(e) => {
+                                              const newStatus = e.target
+                                                .value as SeasonPlotStatus;
                                               updatePlot(
                                                 plot.plotId,
                                                 "status",
-                                                e.target
-                                                  .value as SeasonPlotStatus,
-                                              )
-                                            }
+                                                newStatus,
+                                              );
+                                              updateBedStatus(plot, newStatus);
+                                            }}
                                             disabled={isSeasonEnded}
                                             className={`text-xs font-medium rounded-full px-2 py-0.5 border focus:outline-none focus:ring-2 focus:ring-[#009689] disabled:cursor-not-allowed appearance-none cursor-pointer pr-5 ${plotStatusConfig[plot.status].badge}`}
                                             style={{
@@ -2498,6 +2566,9 @@ function EditSeasonView({
                                             </option>
                                             <option value="Đã thu hoạch">
                                               Đã thu hoạch
+                                            </option>
+                                            <option value="Cảnh báo">
+                                              Cảnh báo
                                             </option>
                                           </select>
                                         </div>
@@ -2637,6 +2708,12 @@ function EditSeasonView({
                                             updatePlot(
                                               plot.plotId,
                                               "actualPlanted",
+                                              parseInt(e.target.value) || 0,
+                                            )
+                                          }
+                                          onBlur={(e) =>
+                                            updateBedCropQuantities(
+                                              plot,
                                               parseInt(e.target.value) || 0,
                                             )
                                           }

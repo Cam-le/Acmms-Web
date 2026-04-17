@@ -62,6 +62,22 @@ function isoDate(iso: string): string {
   return `${d}/${m}/${y}`;
 }
 
+/**
+ * Sort beds by the leading number in their name.
+ * "Luống 08_Vuông 01_Tây Nam" → key = 8
+ * Falls back to full string comparison for names that don't match.
+ */
+function bedSortKey(bedName: string): number {
+  const m = bedName.match(/(\d+)/);
+  return m ? parseInt(m[1], 10) : Infinity;
+}
+function sortBeds<T extends { bedName: string }>(beds: T[]): T[] {
+  return [...beds].sort((a, b) => {
+    const diff = bedSortKey(a.bedName) - bedSortKey(b.bedName);
+    return diff !== 0 ? diff : a.bedName.localeCompare(b.bedName);
+  });
+}
+
 const DAY_LABELS = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"];
 const HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0"));
 const MINUTES = Array.from({ length: 12 }, (_, i) =>
@@ -1206,6 +1222,9 @@ export function TasksPage() {
     selectedPlotIds: string[];
   } | null>(null);
 
+  // Whether the "Lịch bận" schedule panel is expanded in the edit modal
+  const [editShowSchedule, setEditShowSchedule] = useState(false);
+
   const openEditDetail = (detail: TaskDetailResponse) => {
     const dateStr = detail.startDate.slice(0, 10);
     const startH = detail.startDate.slice(11, 13);
@@ -1269,7 +1288,6 @@ export function TasksPage() {
         startDate: startISO,
         endDate: endISO,
         notes: editDetail.notes,
-        status: editDetail.status,
       });
       await loadAllData();
     } catch (err) {
@@ -1284,9 +1302,8 @@ export function TasksPage() {
 
   // ── All-tasks derived data ─────────────────────────────────────────────────
   const STATUS_SORT_ORDER: Record<string, number> = {
-    Active: 0,
-    Pending: 1,
-    Completed: 2,
+    Pending: 0,
+    Completed: 1,
   };
 
   const allTasksFiltered = (() => {
@@ -1651,9 +1668,8 @@ export function TasksPage() {
               className="px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#009689] w-48"
             >
               <option value="">Tất cả trạng thái</option>
-              <option value="Active">Đang thực hiện</option>
-              <option value="Pending">Chờ thực hiện</option>
-              <option value="Completed">Hoàn thành</option>
+              <option value="Pending">Đang làm</option>
+              <option value="Completed">Đã hoàn thành</option>
             </select>
           </div>
 
@@ -1729,16 +1745,12 @@ export function TasksPage() {
                         string,
                         { label: string; cls: string }
                       > = {
-                        Active: {
-                          label: "Đang thực hiện",
-                          cls: "bg-blue-50 text-blue-700",
-                        },
                         Pending: {
-                          label: "Chờ thực hiện",
+                          label: "Đang làm",
                           cls: "bg-[#fef3c7] text-[#92400e]",
                         },
                         Completed: {
-                          label: "Hoàn thành",
+                          label: "Đã hoàn thành",
                           cls: "bg-[#d1fae5] text-[#065f46]",
                         },
                       };
@@ -2306,45 +2318,43 @@ export function TasksPage() {
                         </button>
                       </div>
                       <div className="flex flex-wrap gap-1.5 p-3 bg-[#f8fafc] rounded-lg border border-[#e2e8f0]">
-                        {getBedsForPlot(bulkForm.seasonId, bulkForm.plotId).map(
-                          (bed) => {
-                            const sel = bulkForm.bedIds.includes(bed.bedId);
-                            return (
-                              <button
-                                key={bed.bedId}
-                                onClick={() =>
-                                  setBulkForm((p) => ({
-                                    ...p,
-                                    bedIds: sel
-                                      ? p.bedIds.filter(
-                                          (id) => id !== bed.bedId,
-                                        )
-                                      : [...p.bedIds, bed.bedId],
-                                  }))
-                                }
-                                className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all"
-                                style={
-                                  sel
-                                    ? {
-                                        background: "#009689",
-                                        color: "#fff",
-                                        borderColor: "#009689",
-                                      }
-                                    : {
-                                        background: "#fff",
-                                        color: "#475569",
-                                        borderColor: "#e2e8f0",
-                                      }
-                                }
-                              >
-                                {bed.bedName}
-                                {sel && (
-                                  <CheckCircle2 className="w-3 h-3 shrink-0" />
-                                )}
-                              </button>
-                            );
-                          },
-                        )}
+                        {sortBeds(
+                          getBedsForPlot(bulkForm.seasonId, bulkForm.plotId),
+                        ).map((bed) => {
+                          const sel = bulkForm.bedIds.includes(bed.bedId);
+                          return (
+                            <button
+                              key={bed.bedId}
+                              onClick={() =>
+                                setBulkForm((p) => ({
+                                  ...p,
+                                  bedIds: sel
+                                    ? p.bedIds.filter((id) => id !== bed.bedId)
+                                    : [...p.bedIds, bed.bedId],
+                                }))
+                              }
+                              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all"
+                              style={
+                                sel
+                                  ? {
+                                      background: "#009689",
+                                      color: "#fff",
+                                      borderColor: "#009689",
+                                    }
+                                  : {
+                                      background: "#fff",
+                                      color: "#475569",
+                                      borderColor: "#e2e8f0",
+                                    }
+                              }
+                            >
+                              {bed.bedName}
+                              {sel && (
+                                <CheckCircle2 className="w-3 h-3 shrink-0" />
+                              )}
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
                   )}
@@ -2742,9 +2752,11 @@ export function TasksPage() {
                         </button>
                       </div>
                       <div className="flex flex-wrap gap-1.5 p-3 bg-[#f8fafc] rounded-lg border border-[#e2e8f0]">
-                        {getBedsForPlot(
-                          singleForm.seasonId,
-                          singleForm.plotId,
+                        {sortBeds(
+                          getBedsForPlot(
+                            singleForm.seasonId,
+                            singleForm.plotId,
+                          ),
                         ).map((bed) => {
                           const sel = singleForm.bedIds.includes(bed.bedId);
                           return (
@@ -3093,11 +3105,14 @@ export function TasksPage() {
                 const worker = staffList.find(
                   (s) => s.userId === selectedDetail.assignedToWorkerIds[0],
                 );
-                const beds = selectedDetail.bedIds
-                  .map(
-                    (id) => allBeds.find((b) => b.bedId === id)?.bedName ?? id,
+                const beds =
+                  sortBeds(
+                    selectedDetail.bedIds
+                      .map((id) => allBeds.find((b) => b.bedId === id))
+                      .filter((b): b is NonNullable<typeof b> => !!b),
                   )
-                  .join(", ");
+                    .map((b) => b.bedName)
+                    .join(", ") || selectedDetail.bedIds.join(", ");
                 const plots = selectedDetail.plotIds
                   .map(
                     (id) =>
@@ -3114,20 +3129,17 @@ export function TasksPage() {
                   : isoDate(selectedDetail.startDate);
                 const timeStr = `${isoTime(selectedDetail.startDate)} – ${isoTime(selectedDetail.endDate)}`;
                 const statusColor =
-                  selectedDetail.status === "Active" ||
                   selectedDetail.status === "Pending"
-                    ? "bg-[#d1fae5] text-[#065f46]"
+                    ? "bg-[#fef3c7] text-[#92400e]"
                     : selectedDetail.status === "Completed"
-                      ? "bg-[#f1f5f9] text-[#64748b]"
-                      : "bg-[#fef3c7] text-[#92400e]";
+                      ? "bg-[#d1fae5] text-[#065f46]"
+                      : "bg-[#f1f5f9] text-[#64748b]";
                 const statusLabel =
-                  selectedDetail.status === "Active"
-                    ? "Đang thực hiện"
-                    : selectedDetail.status === "Pending"
-                      ? "Chờ thực hiện"
-                      : selectedDetail.status === "Completed"
-                        ? "Hoàn thành"
-                        : (selectedDetail.status ?? "—");
+                  selectedDetail.status === "Pending"
+                    ? "Đang làm"
+                    : selectedDetail.status === "Completed"
+                      ? "Đã hoàn thành"
+                      : (selectedDetail.status ?? "—");
                 return (
                   <div className="space-y-4">
                     {/* Task header */}
@@ -3243,6 +3255,7 @@ export function TasksPage() {
           setIsEditDetailOpen(o);
           if (!o) {
             setEditDetail(null);
+            setEditShowSchedule(false);
           }
         }}
       >
@@ -3265,6 +3278,19 @@ export function TasksPage() {
             {editDetail &&
               selectedDetail &&
               (() => {
+                // ── Constraint helpers ────────────────────────────────────
+                const isCompleted = selectedDetail.status === "Completed";
+                // Start-time is locked if Pending and the assignment time is already in the past
+                const assignmentStart = selectedDetail.startDate
+                  ? new Date(
+                      `${selectedDetail.startDate.slice(0, 10)}T${selectedDetail.startDate.slice(11, 16)}:00`,
+                    ).getTime()
+                  : null;
+                const isPastPending =
+                  selectedDetail.status === "Pending" &&
+                  assignmentStart !== null &&
+                  assignmentStart < Date.now();
+
                 // Derived values for season-related sections
                 const editSeason = seasons.find(
                   (s) => s.seasonId === editDetail.seasonId,
@@ -3289,6 +3315,16 @@ export function TasksPage() {
                 })();
                 return (
                   <div className="overflow-y-auto flex-1 px-6 py-5 space-y-6">
+                    {/* ── Completed lock banner ── */}
+                    {isCompleted && (
+                      <div className="flex items-center gap-2 px-3 py-2.5 bg-[#f1f5f9] border border-[#e2e8f0] rounded-lg text-xs text-[#64748b]">
+                        <CheckCircle2 className="w-4 h-4 text-[#009689] shrink-0" />
+                        <span>
+                          Lịch trình này đã hoàn thành và không thể chỉnh sửa.
+                        </span>
+                      </div>
+                    )}
+
                     {/* ── 1. Công việc ── */}
                     <section>
                       <h3 className="text-xs font-bold text-[#009689] uppercase tracking-widest mb-3 flex items-center gap-1.5">
@@ -3299,6 +3335,7 @@ export function TasksPage() {
                       </h3>
                       <select
                         value={editDetail.taskId}
+                        disabled={isCompleted}
                         onChange={(e) =>
                           setEditDetail((p) =>
                             p ? { ...p, taskId: e.target.value } : p,
@@ -3315,7 +3352,7 @@ export function TasksPage() {
                       </select>
                     </section>
 
-                    {/* ── 2. Mùa vụ ── */}
+                    {/* ── 2. Mùa vụ (read-only) ── */}
                     <section>
                       <h3 className="text-xs font-bold text-[#009689] uppercase tracking-widest mb-3 flex items-center gap-1.5">
                         <span className="w-5 h-5 rounded-full bg-[#009689] text-white text-[10px] flex items-center justify-center font-bold">
@@ -3323,40 +3360,24 @@ export function TasksPage() {
                         </span>
                         Mùa vụ
                       </h3>
-                      <select
-                        value={editDetail.seasonId}
-                        onChange={(e) => {
-                          const sid = e.target.value;
-                          setEditDetail((p) =>
-                            p
-                              ? {
-                                  ...p,
-                                  seasonId: sid,
-                                  bedIds: [],
-                                  plotIds: [],
-                                  selectedPlotIds: [],
-                                }
-                              : p,
-                          );
-                        }}
-                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                      >
-                        <option value="">-- Chọn mùa vụ --</option>
-                        {seasons.map((s) => (
-                          <option key={s.seasonId} value={s.seasonId}>
-                            {s.seasonName}
-                            {s.status === "Active"
-                              ? " (Đang hoạt động)"
-                              : s.status === "Completed"
-                                ? " (Đã kết thúc)"
-                                : " (Sắp diễn ra)"}
-                          </option>
-                        ))}
-                      </select>
-                      {editDetail.seasonId && editSeason && (
-                        <div className="mt-2 space-y-1.5">
-                          <div className="flex items-center justify-between px-3 py-2 bg-[#f8fafc] rounded-lg border border-[#e2e8f0] text-xs">
-                            <span className="text-[#64748b]">
+                      {editSeason ? (
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between px-3 py-2.5 bg-[#f8fafc] rounded-lg border border-[#e2e8f0] text-sm">
+                            <span className="font-medium text-[#1e293b]">
+                              {editSeason.seasonName}
+                            </span>
+                            <span
+                              className={`text-xs font-medium px-2 py-0.5 rounded-full ${editSeason.status === "Active" ? "bg-[#d1fae5] text-[#065f46]" : editSeason.status === "Completed" ? "bg-[#f1f5f9] text-[#64748b]" : "bg-[#fef3c7] text-[#92400e]"}`}
+                            >
+                              {editSeason.status === "Active"
+                                ? "Đang hoạt động"
+                                : editSeason.status === "Completed"
+                                  ? "Đã kết thúc"
+                                  : "Sắp diễn ra"}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 px-3 py-1.5 text-xs text-[#64748b]">
+                            <span>
                               {editSeason.seasonStartDate
                                 .split("-")
                                 .reverse()
@@ -3367,24 +3388,20 @@ export function TasksPage() {
                                 .reverse()
                                 .join("/")}
                             </span>
-                            <span
-                              className={`font-medium px-2 py-0.5 rounded-full ${editSeason.status === "Active" ? "bg-[#d1fae5] text-[#065f46]" : editSeason.status === "Completed" ? "bg-[#f1f5f9] text-[#64748b]" : "bg-[#fef3c7] text-[#92400e]"}`}
-                            >
-                              {editSeason.status === "Active"
-                                ? "Đang hoạt động"
-                                : editSeason.status === "Completed"
-                                  ? "Đã kết thúc"
-                                  : "Sắp diễn ra"}
-                            </span>
+                            {editFarmName && (
+                              <>
+                                <span className="text-[#e2e8f0]">·</span>
+                                <MapPin className="w-3 h-3 text-[#009689] shrink-0" />
+                                <span className="text-[#0f766e] font-medium">
+                                  {editFarmName}
+                                </span>
+                              </>
+                            )}
                           </div>
-                          {editFarmName && (
-                            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[#f0fdfa] rounded-lg border border-[#ccfbf1] text-xs text-[#0f766e]">
-                              <MapPin className="w-3 h-3 shrink-0" />
-                              <span className="font-medium">
-                                {editFarmName}
-                              </span>
-                            </div>
-                          )}
+                        </div>
+                      ) : (
+                        <div className="px-3 py-2.5 bg-[#f8fafc] rounded-lg border border-[#e2e8f0] text-xs text-[#94a3b8] italic">
+                          Không xác định được mùa vụ
                         </div>
                       )}
                     </section>
@@ -3406,52 +3423,71 @@ export function TasksPage() {
                           <input
                             type="date"
                             value={editDetail.date}
+                            disabled={isCompleted || isPastPending}
                             onChange={(e) =>
                               setEditDetail((p) =>
                                 p ? { ...p, date: e.target.value } : p,
                               )
                             }
-                            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] disabled:bg-[#f8fafc] disabled:text-[#94a3b8] disabled:cursor-not-allowed"
                           />
+                          {isPastPending && (
+                            <p className="mt-1 text-[11px] text-amber-600">
+                              Thời gian đã qua — không thể thay đổi ngày/giờ bắt
+                              đầu.
+                            </p>
+                          )}
                         </div>
                         <div>
                           <label className="block text-xs font-medium text-slate-500 mb-1.5">
                             Khung giờ
                           </label>
-                          <InlineTimeRange
-                            startHour={editDetail.startHour}
-                            startMinute={editDetail.startMinute}
-                            endHour={editDetail.endHour}
-                            endMinute={editDetail.endMinute}
-                            onChange={(sh, sm, eh, em) =>
-                              setEditDetail((p) =>
-                                p
-                                  ? {
-                                      ...p,
-                                      startHour: sh,
-                                      startMinute: sm,
-                                      endHour: eh,
-                                      endMinute: em,
-                                    }
-                                  : p,
-                              )
-                            }
-                          />
-                          {(() => {
-                            const sm =
-                              parseInt(editDetail.startHour) * 60 +
-                              parseInt(editDetail.startMinute);
-                            const em =
-                              parseInt(editDetail.endHour) * 60 +
-                              parseInt(editDetail.endMinute);
-                            if (em <= sm)
-                              return (
-                                <p className="mt-1.5 text-xs text-red-500">
-                                  Giờ kết thúc phải sau giờ bắt đầu.
-                                </p>
-                              );
-                            return null;
-                          })()}
+                          {isPastPending || isCompleted ? (
+                            <div className="flex items-center gap-2 px-3 py-2 bg-[#f8fafc] border border-[#e2e8f0] rounded-lg text-sm text-[#64748b]">
+                              <Clock className="w-4 h-4 text-[#94a3b8] shrink-0" />
+                              <span>
+                                {editDetail.startHour}:{editDetail.startMinute}{" "}
+                                – {editDetail.endHour}:{editDetail.endMinute}
+                              </span>
+                            </div>
+                          ) : (
+                            <>
+                              <InlineTimeRange
+                                startHour={editDetail.startHour}
+                                startMinute={editDetail.startMinute}
+                                endHour={editDetail.endHour}
+                                endMinute={editDetail.endMinute}
+                                onChange={(sh, sm, eh, em) =>
+                                  setEditDetail((p) =>
+                                    p
+                                      ? {
+                                          ...p,
+                                          startHour: sh,
+                                          startMinute: sm,
+                                          endHour: eh,
+                                          endMinute: em,
+                                        }
+                                      : p,
+                                  )
+                                }
+                              />
+                              {(() => {
+                                const sm =
+                                  parseInt(editDetail.startHour) * 60 +
+                                  parseInt(editDetail.startMinute);
+                                const em =
+                                  parseInt(editDetail.endHour) * 60 +
+                                  parseInt(editDetail.endMinute);
+                                if (em <= sm)
+                                  return (
+                                    <p className="mt-1.5 text-xs text-red-500">
+                                      Giờ kết thúc phải sau giờ bắt đầu.
+                                    </p>
+                                  );
+                                return null;
+                              })()}
+                            </>
+                          )}
                         </div>
                       </div>
                     </section>
@@ -3493,6 +3529,7 @@ export function TasksPage() {
                                 return (
                                   <button
                                     key={plot.plotId}
+                                    disabled={isCompleted}
                                     onClick={() => {
                                       const next = isSel
                                         ? editDetail.selectedPlotIds.filter(
@@ -3521,7 +3558,7 @@ export function TasksPage() {
                                           : p,
                                       );
                                     }}
-                                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all"
+                                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                                     style={
                                       isSel
                                         ? {
@@ -3555,11 +3592,11 @@ export function TasksPage() {
                                 plot: editSeasonPlots.find(
                                   (p) => p.plotId === plotId,
                                 ),
-                                plotBeds: editSeasonBeds
-                                  .filter((b) => b.plotId === plotId)
-                                  .sort((a, b) =>
-                                    a.bedName.localeCompare(b.bedName),
+                                plotBeds: sortBeds(
+                                  editSeasonBeds.filter(
+                                    (b) => b.plotId === plotId,
                                   ),
+                                ),
                               }))
                               .filter((g) => g.plot && g.plotBeds.length > 0);
                             if (groups.length === 0) return null;
@@ -3594,36 +3631,38 @@ export function TasksPage() {
                                             </span>
                                           )}
                                         </span>
-                                        <button
-                                          onClick={() => {
-                                            const ids = plotBeds.map(
-                                              (b) => b.bedId,
-                                            );
-                                            setEditDetail((p) =>
-                                              p
-                                                ? {
-                                                    ...p,
-                                                    bedIds: allSel
-                                                      ? p.bedIds.filter(
-                                                          (id) =>
-                                                            !ids.includes(id),
-                                                        )
-                                                      : [
-                                                          ...new Set([
-                                                            ...p.bedIds,
-                                                            ...ids,
-                                                          ]),
-                                                        ],
-                                                  }
-                                                : p,
-                                            );
-                                          }}
-                                          className="text-[11px] font-medium text-[#009689] hover:underline"
-                                        >
-                                          {allSel
-                                            ? "Bỏ chọn tất cả"
-                                            : `Chọn tất cả (${plotBeds.length})`}
-                                        </button>
+                                        {!isCompleted && (
+                                          <button
+                                            onClick={() => {
+                                              const ids = plotBeds.map(
+                                                (b) => b.bedId,
+                                              );
+                                              setEditDetail((p) =>
+                                                p
+                                                  ? {
+                                                      ...p,
+                                                      bedIds: allSel
+                                                        ? p.bedIds.filter(
+                                                            (id) =>
+                                                              !ids.includes(id),
+                                                          )
+                                                        : [
+                                                            ...new Set([
+                                                              ...p.bedIds,
+                                                              ...ids,
+                                                            ]),
+                                                          ],
+                                                    }
+                                                  : p,
+                                              );
+                                            }}
+                                            className="text-[11px] font-medium text-[#009689] hover:underline"
+                                          >
+                                            {allSel
+                                              ? "Bỏ chọn tất cả"
+                                              : `Chọn tất cả (${plotBeds.length})`}
+                                          </button>
+                                        )}
                                       </div>
                                       <div className="flex flex-wrap gap-1.5">
                                         {plotBeds.map((bed) => {
@@ -3634,6 +3673,7 @@ export function TasksPage() {
                                           return (
                                             <button
                                               key={bed.bedId}
+                                              disabled={isCompleted}
                                               onClick={() =>
                                                 setEditDetail((p) =>
                                                   p
@@ -3653,7 +3693,7 @@ export function TasksPage() {
                                                     : p,
                                                 )
                                               }
-                                              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all"
+                                              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                                               style={
                                                 isSel
                                                   ? {
@@ -3683,29 +3723,49 @@ export function TasksPage() {
                             );
                           })()}
 
-                        {/* Nhân viên */}
+                        {/* Nhân viên phụ trách */}
                         <div>
-                          <label className="block text-xs font-semibold text-[#475569] uppercase tracking-wide mb-1.5">
-                            Nhân viên phụ trách{" "}
-                            <span className="text-red-500">*</span>
-                          </label>
+                          <div className="flex items-center justify-between mb-1.5">
+                            <label className="text-xs font-semibold text-[#475569] uppercase tracking-wide">
+                              Nhân viên phụ trách{" "}
+                              {!isCompleted && (
+                                <span className="text-red-500 normal-case font-normal">
+                                  *
+                                </span>
+                              )}
+                            </label>
+                            {!isCompleted && (
+                              <button
+                                onClick={() => setEditShowSchedule((v) => !v)}
+                                className="flex items-center gap-1 text-[11px] text-[#009689] hover:underline"
+                              >
+                                <Calendar className="w-3 h-3" />
+                                {editShowSchedule
+                                  ? "Ẩn lịch bận"
+                                  : "Xem lịch bận"}
+                              </button>
+                            )}
+                          </div>
+                          {/* Worker chips */}
                           <div className="flex flex-wrap gap-1.5">
                             {staffList
                               .filter((s) => s.roleName === "Worker")
                               .map((s) => {
-                                const isDisabled =
+                                const isInactive =
                                   (s.status ?? "").toLowerCase() === "inactive";
                                 const sel = editDetail.workerId === s.userId;
+                                const chipDisabled = isCompleted || isInactive;
                                 return (
                                   <button
                                     key={s.userId}
-                                    disabled={isDisabled}
-                                    onClick={() =>
+                                    disabled={chipDisabled}
+                                    onClick={() => {
                                       setEditDetail((p) =>
                                         p ? { ...p, workerId: s.userId } : p,
-                                      )
-                                    }
-                                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border transition-all"
+                                      );
+                                      setEditShowSchedule(true);
+                                    }}
+                                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                                     style={
                                       sel
                                         ? {
@@ -3713,13 +3773,11 @@ export function TasksPage() {
                                             color: "#fff",
                                             borderColor: "#009689",
                                           }
-                                        : isDisabled
+                                        : chipDisabled
                                           ? {
                                               background: "#f1f5f9",
                                               color: "#94a3b8",
                                               borderColor: "#e2e8f0",
-                                              opacity: 0.5,
-                                              cursor: "not-allowed",
                                             }
                                           : {
                                               background: "#f8fafc",
@@ -3747,50 +3805,46 @@ export function TasksPage() {
                                 );
                               })}
                           </div>
+                          {/* Schedule preview — shown when a worker is selected and panel is open */}
+                          {editShowSchedule &&
+                            editDetail.workerId &&
+                            editDetail.date && (
+                              <div className="mt-3">
+                                <WorkerSchedulePreview
+                                  workerId={editDetail.workerId}
+                                  fromDate={editDetail.date}
+                                  toDate={editDetail.date}
+                                  taskDetails={taskDetails.filter(
+                                    (d) =>
+                                      d.taskDetailId !==
+                                      selectedDetail.taskDetailId,
+                                  )}
+                                  staffList={staffList}
+                                />
+                              </div>
+                            )}
                         </div>
                       </div>
                     </section>
 
-                    {/* ── 5. Trạng thái ── */}
+                    {/* ── 5. Ghi chú ── */}
                     <section>
                       <h3 className="text-xs font-bold text-[#009689] uppercase tracking-widest mb-3 flex items-center gap-1.5">
                         <span className="w-5 h-5 rounded-full bg-[#009689] text-white text-[10px] flex items-center justify-center font-bold">
                           5
                         </span>
-                        Trạng thái
-                      </h3>
-                      <select
-                        value={editDetail.status}
-                        onChange={(e) =>
-                          setEditDetail((p) =>
-                            p ? { ...p, status: e.target.value } : p,
-                          )
-                        }
-                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                      >
-                        <option value="Pending">Chờ thực hiện</option>
-                        <option value="Active">Đang thực hiện</option>
-                        <option value="Completed">Hoàn thành</option>
-                      </select>
-                    </section>
-
-                    {/* ── 6. Ghi chú ── */}
-                    <section>
-                      <h3 className="text-xs font-bold text-[#009689] uppercase tracking-widest mb-3 flex items-center gap-1.5">
-                        <span className="w-5 h-5 rounded-full bg-[#009689] text-white text-[10px] flex items-center justify-center font-bold">
-                          6
-                        </span>
                         Ghi chú
                       </h3>
                       <textarea
                         rows={3}
+                        disabled={isCompleted}
                         value={editDetail.notes}
                         onChange={(e) =>
                           setEditDetail((p) =>
                             p ? { ...p, notes: e.target.value } : p,
                           )
                         }
-                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] resize-none"
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] resize-none disabled:bg-[#f8fafc] disabled:text-[#94a3b8] disabled:cursor-not-allowed"
                       />
                     </section>
                   </div>
@@ -3803,21 +3857,24 @@ export function TasksPage() {
                 onClick={() => {
                   setIsEditDetailOpen(false);
                   setEditDetail(null);
+                  setEditShowSchedule(false);
                 }}
                 className="px-4 py-2 rounded-lg text-sm font-medium text-slate-700 border border-[#e2e8f0] hover:bg-slate-50 transition-colors"
               >
-                Hủy
+                {selectedDetail?.status === "Completed" ? "Đóng" : "Hủy"}
               </button>
-              <button
-                onClick={handleUpdateAssignment}
-                disabled={
-                  !editDetail?.date || !editDetail?.workerId || isSaving
-                }
-                className="px-4 py-2 rounded-lg text-sm font-medium bg-[#009689] text-white hover:bg-[#007f73] disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
-              >
-                <CheckCircle2 className="w-4 h-4" />
-                {isSaving ? "Đang lưu..." : "Lưu thay đổi"}
-              </button>
+              {selectedDetail?.status !== "Completed" && (
+                <button
+                  onClick={handleUpdateAssignment}
+                  disabled={
+                    !editDetail?.date || !editDetail?.workerId || isSaving
+                  }
+                  className="px-4 py-2 rounded-lg text-sm font-medium bg-[#009689] text-white hover:bg-[#007f73] disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  {isSaving ? "Đang lưu..." : "Lưu thay đổi"}
+                </button>
+              )}
             </div>
           </Dialog.Content>
         </Dialog.Portal>
