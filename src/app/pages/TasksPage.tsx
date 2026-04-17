@@ -1083,9 +1083,9 @@ export function TasksPage() {
     setEditTpl(null);
   };
 
-  // ── NEW: Mock submit handlers for bulk + single assign ────────────────────
+  // ── Submit handlers for bulk + single assign ─────────────────────────────
 
-  const handleSubmitBulk = () => {
+  const handleSubmitBulk = async () => {
     const {
       workerId,
       taskId,
@@ -1119,42 +1119,47 @@ export function TasksPage() {
           .filter(Boolean) as string[],
       ),
     );
-    const season = seasons.find((s) => s.seasonId === seasonId);
     const farmId =
-      allPlots.find((p) => p.farmId === season?.farmId)?.farmId ?? "";
-    const task = tasks.find((t) => t.taskId === taskId);
-    const cycleLabel = selectedDays.join("+");
+      allPlots.find((p) => plotIds.includes(p.plotId))?.farmId ?? "";
 
-    const newDetails: TaskDetailResponse[] = [];
+    // Collect all matching dates in the range
+    const dates: string[] = [];
     const cur = new Date(fromDate);
     const end = new Date(toDate);
     while (cur <= end) {
-      if (selSet.has(cur.getDay())) {
-        const dateStr = cur.toISOString().slice(0, 10);
-        newDetails.push({
-          taskDetailId: `mock-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          taskId,
-          taskTitle: task?.taskTitle ?? "",
-          seasonId,
-          farmId,
-          assignedToWorkerIds: [workerId],
-          bedIds,
-          plotIds,
-          startDate: `${dateStr}T${startHour}:${startMinute}:00.000`,
-          endDate: `${dateStr}T${endHour}:${endMinute}:00.000`,
-          notes,
-          status: "Pending",
-          cycle: cycleLabel,
-        } as TaskDetailResponse & { cycle?: string });
-      }
+      if (selSet.has(cur.getDay())) dates.push(cur.toISOString().slice(0, 10));
       cur.setDate(cur.getDate() + 1);
     }
-    setTaskDetails((prev) => [...prev, ...newDetails]);
-    resetAssignModal();
-    setIsAssignOpen(false);
+
+    setIsSaving(true);
+    try {
+      await Promise.all(
+        dates.map((dateStr) =>
+          api.createTaskDetail({
+            taskId,
+            seasonId,
+            farmId,
+            assignedToWorkerIds: [workerId],
+            bedIds,
+            plotIds,
+            startDate: `${dateStr}T${startHour}:${startMinute}:00.000Z`,
+            endDate: `${dateStr}T${endHour}:${endMinute}:00.000Z`,
+            notes,
+            status: "Pending",
+          }),
+        ),
+      );
+      await loadAllData();
+      resetAssignModal();
+      setIsAssignOpen(false);
+    } catch (err) {
+      console.error("Failed to create bulk task details:", err);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  const handleSubmitSingle = () => {
+  const handleSubmitSingle = async () => {
     const {
       workerId,
       taskId,
@@ -1176,30 +1181,31 @@ export function TasksPage() {
           .filter(Boolean) as string[],
       ),
     );
-    const season = seasons.find((s) => s.seasonId === seasonId);
     const farmId =
-      allPlots.find((p) => p.farmId === season?.farmId)?.farmId ?? "";
-    const task = tasks.find((t) => t.taskId === taskId);
+      allPlots.find((p) => plotIds.includes(p.plotId))?.farmId ?? "";
 
-    const newDetail = {
-      taskDetailId: `mock-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      taskId,
-      taskTitle: task?.taskTitle ?? "",
-      seasonId,
-      farmId,
-      assignedToWorkerIds: [workerId],
-      bedIds,
-      plotIds,
-      startDate: `${date}T${startHour}:${startMinute}:00.000`,
-      endDate: `${date}T${endHour}:${endMinute}:00.000`,
-      notes,
-      status: "Pending",
-      cycle: "Đột xuất",
-    } as TaskDetailResponse & { cycle?: string };
-
-    setTaskDetails((prev) => [...prev, newDetail]);
-    resetAssignModal();
-    setIsAssignOpen(false);
+    setIsSaving(true);
+    try {
+      await api.createTaskDetail({
+        taskId,
+        seasonId,
+        farmId,
+        assignedToWorkerIds: [workerId],
+        bedIds,
+        plotIds,
+        startDate: `${date}T${startHour}:${startMinute}:00.000Z`,
+        endDate: `${date}T${endHour}:${endMinute}:00.000Z`,
+        notes,
+        status: "Pending",
+      });
+      await loadAllData();
+      resetAssignModal();
+      setIsAssignOpen(false);
+    } catch (err) {
+      console.error("Failed to create task detail:", err);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleDeleteAssignment = async () => {
@@ -1277,12 +1283,6 @@ export function TasksPage() {
     try {
       const startISO = `${editDetail.date}T${editDetail.startHour}:${editDetail.startMinute}:00.000`;
       const endISO = `${editDetail.date}T${editDetail.endHour}:${editDetail.endMinute}:00.000`;
-      const farmId =
-        allPlots.find(
-          (p) =>
-            p.farmId ===
-            seasons.find((s) => s.seasonId === editDetail.seasonId)?.farmId,
-        )?.farmId ?? "";
       // Derive plotIds from selected beds
       const plotIds = Array.from(
         new Set(
@@ -1291,6 +1291,8 @@ export function TasksPage() {
             .filter(Boolean) as string[],
         ),
       );
+      const farmId =
+        allPlots.find((p) => plotIds.includes(p.plotId))?.farmId ?? "";
       await api.updateTaskDetail(selectedDetail.taskDetailId, {
         taskId: editDetail.taskId,
         seasonId: editDetail.seasonId,
