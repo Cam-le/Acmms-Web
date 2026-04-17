@@ -483,9 +483,9 @@ function CalendarDayCard({
 // ─── Worker Schedule Preview ──────────────────────────────────────────────────
 
 /**
- * Compact busy-schedule widget shown inside the assign modal.
- * Renders a scrollable grid: one row per week, one cell per day.
- * Each cell shows hour-bars for existing tasks in that worker's schedule.
+ * Shows a worker's existing task schedule as a weekly grid.
+ * Each day cell lists task time blocks as simple labelled pills.
+ * Uses raw ISO digit slices throughout — never Date() — to avoid UTC shifts.
  */
 function WorkerSchedulePreview({
   workerId,
@@ -500,93 +500,64 @@ function WorkerSchedulePreview({
   taskDetails: TaskDetailResponse[];
   staffList: UserResponse[];
 }) {
-  // Working-hours window rendered in the timeline
-  const HOUR_START = 6; // 06:00
-  const HOUR_END = 20; // 20:00 (exclusive top boundary)
-  const TOTAL_MINS = (HOUR_END - HOUR_START) * 60; // 840 min
-  const CELL_H = 72; // px height of each day's timeline track
+  const DAY_HDRS = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"];
 
-  // Hour-tick labels shown on the left axis — every 2 hours
-  const AXIS_TICKS = [6, 8, 10, 12, 14, 16, 18, 20];
+  // Safe date iteration using string arithmetic (avoids UTC midnight shift).
+  const addOneDayStr = (dateStr: string) => {
+    const d = new Date(`${dateStr}T12:00:00`);
+    d.setDate(d.getDate() + 1);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  };
 
-  // Build days array (max 42)
-  const days: Date[] = [];
-  const start = new Date(fromDate);
-  const end = new Date(toDate);
-  const cursor = new Date(start);
-  while (cursor <= end && days.length < 42) {
-    days.push(new Date(cursor));
-    cursor.setDate(cursor.getDate() + 1);
+  // Build ordered list of YYYY-MM-DD strings in [fromDate, toDate] (max 42).
+  const days: string[] = [];
+  let cur = fromDate;
+  while (cur <= toDate && days.length < 42) {
+    days.push(cur);
+    cur = addOneDayStr(cur);
   }
 
-  // Filter + group tasks for this worker by date.
-  // Multi-day tasks are expanded into every day they span.
-  // Use noon-based Date to avoid UTC/DST midnight shift.
-  const addDays = (dateStr: string, n: number) => {
-    const d = new Date(`${dateStr}T12:00:00`);
-    d.setDate(d.getDate() + n);
-    return d.toISOString().slice(0, 10);
-  };
+  // Group tasks by every day they cover (raw string range check).
   const byDate: Record<string, TaskDetailResponse[]> = {};
   taskDetails
     .filter((d) => d.assignedToWorkerIds.includes(workerId))
     .forEach((d) => {
       if (!d.startDate) return;
-      const startKey = d.startDate.slice(0, 10);
-      const endKey = (d.endDate ?? d.startDate).slice(0, 10);
-      let cur = startKey;
-      while (cur <= endKey) {
-        if (!byDate[cur]) byDate[cur] = [];
-        if (!byDate[cur].find((x) => x.taskDetailId === d.taskDetailId))
-          byDate[cur].push(d);
-        cur = addDays(cur, 1);
+      const s = d.startDate.slice(0, 10);
+      const e = (d.endDate ?? d.startDate).slice(0, 10);
+      let c = s;
+      while (c <= e) {
+        if (!byDate[c]) byDate[c] = [];
+        if (!byDate[c].find((x) => x.taskDetailId === d.taskDetailId))
+          byDate[c].push(d);
+        c = addOneDayStr(c);
       }
     });
 
-  // Pad to Monday-aligned weeks
-  const dow0 = start.getDay();
+  // Pad to Monday-aligned week grid.
+  // Compute day-of-week for fromDate without Date() ambiguity.
+  const firstDate = new Date(`${fromDate}T12:00:00`);
+  const dow0 = firstDate.getDay(); // 0=Sun
   const padBefore = dow0 === 0 ? 6 : dow0 - 1;
-  const padded: (Date | null)[] = [...Array(padBefore).fill(null), ...days];
+  const padded: (string | null)[] = [...Array(padBefore).fill(null), ...days];
   while (padded.length % 7 !== 0) padded.push(null);
-  const weeks: (Date | null)[][] = [];
+  const weeks: (string | null)[][] = [];
   for (let i = 0; i < padded.length; i += 7) weeks.push(padded.slice(i, i + 7));
 
   const workerName =
     staffList.find((s) => s.userId === workerId)?.fullname ?? "";
-  const todayKey = new Date().toISOString().slice(0, 10);
-  const DAY_HDRS = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"];
+  const todayKey = (() => {
+    const n = new Date();
+    return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}-${String(n.getDate()).padStart(2, "0")}`;
+  })();
 
-  const busyCount = days.filter((d) => {
-    const k = d.toISOString().slice(0, 10);
-    return (byDate[k]?.length ?? 0) > 0;
-  }).length;
+  const busyDays = days.filter((d) => (byDate[d]?.length ?? 0) > 0).length;
 
-  // Convert hh:mm string to minutes-since-midnight
-  const toMins = (iso: string) => {
-    const h = parseInt(iso.slice(11, 13), 10);
-    const m = parseInt(iso.slice(14, 16), 10);
-    return h * 60 + m;
-  };
-
-  // Map a minute value to a % position inside the CELL_H track
-  const toTop = (mins: number) =>
-    Math.max(0, Math.min(100, ((mins - HOUR_START * 60) / TOTAL_MINS) * 100));
-  const toHeight = (startMins: number, endMins: number) =>
-    Math.max(
-      6,
-      ((Math.min(endMins, HOUR_END * 60) -
-        Math.max(startMins, HOUR_START * 60)) /
-        TOTAL_MINS) *
-        100,
-    );
-
-  // Colour palette for overlapping tasks — cycles so adjacent bars are distinct
-  const BAR_COLORS = [
-    { bg: "rgba(245,158,11,0.18)", border: "#f59e0b", text: "#92400e" },
-    { bg: "rgba(239,68,68,0.14)", border: "#ef4444", text: "#991b1b" },
-    { bg: "rgba(99,102,241,0.14)", border: "#6366f1", text: "#3730a3" },
-    { bg: "rgba(16,185,129,0.14)", border: "#10b981", text: "#065f46" },
-  ];
+  // Format raw ISO digits to HH:MM label.
+  const fmtTime = (iso: string) => `${iso.slice(11, 13)}:${iso.slice(14, 16)}`;
 
   return (
     <div className="rounded-lg border border-[#e2e8f0] overflow-hidden bg-white">
@@ -594,13 +565,10 @@ function WorkerSchedulePreview({
       <div className="flex items-center justify-between px-3 py-2 bg-[#f8fafc] border-b border-[#e2e8f0]">
         <span className="text-xs font-semibold text-[#475569]">
           Lịch bận của <span className="text-[#009689]">{workerName}</span>
-          <span className="ml-2 font-normal text-[#94a3b8]">
-            ({HOUR_START}:00 – {HOUR_END}:00)
-          </span>
         </span>
-        {busyCount > 0 ? (
+        {busyDays > 0 ? (
           <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 font-medium">
-            {busyCount} ngày bận
+            {busyDays} ngày bận
           </span>
         ) : (
           <span className="text-[11px] px-2 py-0.5 rounded-full bg-[#f0fdfa] text-[#009689] border border-[#009689]/20 font-medium">
@@ -610,177 +578,77 @@ function WorkerSchedulePreview({
       </div>
 
       {/* Day-of-week header */}
-      <div className="flex border-b border-[#e2e8f0]">
-        {/* Axis gutter */}
-        <div className="w-7 shrink-0" />
-        <div className="flex-1 grid grid-cols-7">
-          {DAY_HDRS.map((h) => (
-            <div
-              key={h}
-              className="py-1 text-center text-[10px] font-bold uppercase tracking-wider text-[#94a3b8]"
-            >
-              {h}
-            </div>
-          ))}
-        </div>
+      <div className="grid grid-cols-7 border-b border-[#e2e8f0]">
+        {DAY_HDRS.map((h) => (
+          <div
+            key={h}
+            className="py-1 text-center text-[10px] font-bold uppercase tracking-wider text-[#94a3b8]"
+          >
+            {h}
+          </div>
+        ))}
       </div>
 
-      {/* Scrollable week rows */}
-      <div className="max-h-[300px] overflow-y-auto">
+      {/* Week rows */}
+      <div className="max-h-[280px] overflow-y-auto">
         {weeks.map((week, wi) => (
           <div
             key={wi}
-            className="flex border-b border-[#f1f5f9] last:border-b-0"
+            className="grid grid-cols-7 border-b border-[#f1f5f9] last:border-b-0"
           >
-            {/* Hour axis — shared for the whole row */}
-            <div
-              className="w-7 shrink-0 relative border-r border-[#f1f5f9]"
-              style={{ height: CELL_H + 20 }}
-            >
-              {/* date number placeholder at top */}
-              <div style={{ height: 20 }} />
-              <div className="relative" style={{ height: CELL_H }}>
-                {AXIS_TICKS.map((h) => (
-                  <div
-                    key={h}
-                    className="absolute right-1 text-[8px] text-[#cbd5e1] leading-none"
-                    style={{
-                      top: `${toTop(h * 60)}%`,
-                      transform: "translateY(-50%)",
-                    }}
-                  >
-                    {h}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Day cells */}
-            <div className="flex-1 grid grid-cols-7">
-              {week.map((day, di) => {
-                if (!day) {
-                  return (
-                    <div
-                      key={di}
-                      style={{ height: CELL_H + 20 }}
-                      className="bg-[#fafafa] border-r border-[#f1f5f9] last:border-r-0"
-                    />
-                  );
-                }
-
-                const key = day.toISOString().slice(0, 10);
-                const dayTasks = byDate[key] ?? [];
-                const isToday = key === todayKey;
-                const isBusy = dayTasks.length > 0;
-
+            {week.map((dayStr, di) => {
+              if (!dayStr) {
                 return (
                   <div
                     key={di}
-                    className={`border-r border-[#f1f5f9] last:border-r-0 ${isBusy ? "bg-amber-50/40" : ""}`}
-                    style={{ height: CELL_H + 20 }}
-                  >
-                    {/* Date number row */}
-                    <div className="h-5 flex items-center justify-center">
-                      <span
-                        className="text-[10px] font-semibold w-5 h-5 flex items-center justify-center rounded-full leading-none"
-                        style={
-                          isToday
-                            ? { background: "#009689", color: "#fff" }
-                            : isBusy
-                              ? { color: "#92400e" }
-                              : { color: "#cbd5e1" }
-                        }
-                      >
-                        {day.getDate()}
-                      </span>
-                    </div>
-
-                    {/* Timeline track */}
-                    <div className="relative mx-0.5" style={{ height: CELL_H }}>
-                      {/* Hour-grid lines */}
-                      {AXIS_TICKS.map((h) => (
-                        <div
-                          key={h}
-                          className="absolute inset-x-0 border-t border-dashed border-[#f1f5f9]"
-                          style={{ top: `${toTop(h * 60)}%` }}
-                        />
-                      ))}
-
-                      {/* Task bars */}
-                      {dayTasks.map((t, ti) => {
-                        if (!t.startDate || !t.endDate) return null;
-                        // Always compare raw YYYY-MM-DD slices — never use Date() parsing
-                        // to avoid UTC/timezone shifts turning 17:00 → next day.
-                        const taskStartDay = t.startDate.slice(0, 10);
-                        const taskEndDay = t.endDate.slice(0, 10);
-                        const isMultiDayTask = taskEndDay !== taskStartDay;
-                        // For a multi-day task on a continuation day, clamp the bar
-                        // to the cell's working-hours boundaries.
-                        // For same-day tasks (or the first/last day of a span) use
-                        // the actual stored hour:minute digits directly.
-                        const rawStartH = parseInt(
-                          t.startDate.slice(11, 13),
-                          10,
-                        );
-                        const rawStartM = parseInt(
-                          t.startDate.slice(14, 16),
-                          10,
-                        );
-                        const rawEndH = parseInt(t.endDate.slice(11, 13), 10);
-                        const rawEndM = parseInt(t.endDate.slice(14, 16), 10);
-                        const sm =
-                          isMultiDayTask && key > taskStartDay
-                            ? HOUR_START * 60
-                            : rawStartH * 60 + rawStartM;
-                        const em =
-                          isMultiDayTask && key < taskEndDay
-                            ? HOUR_END * 60
-                            : rawEndH * 60 + rawEndM;
-                        const top = toTop(sm);
-                        const ht = toHeight(sm, em);
-                        const col = BAR_COLORS[ti % BAR_COLORS.length];
-                        const sh =
-                          isMultiDayTask && key > taskStartDay
-                            ? `${String(HOUR_START).padStart(2, "0")}:00`
-                            : `${String(rawStartH).padStart(2, "0")}:${String(rawStartM).padStart(2, "0")}`;
-                        const eh =
-                          isMultiDayTask && key < taskEndDay
-                            ? `${String(HOUR_END).padStart(2, "0")}:00`
-                            : `${String(rawEndH).padStart(2, "0")}:${String(rawEndM).padStart(2, "0")}`;
-                        // Bar is tall enough to show text if >= ~20% of cell
-                        const showLabel = ht >= 18;
-
-                        return (
-                          <div
-                            key={t.taskDetailId}
-                            title={`${t.taskTitle ?? "Công việc"} · ${sh}–${eh}`}
-                            className="absolute inset-x-0 rounded overflow-hidden"
-                            style={{
-                              top: `${top}%`,
-                              height: `${ht}%`,
-                              background: col.bg,
-                              borderLeft: `2px solid ${col.border}`,
-                              minHeight: 4,
-                            }}
-                          >
-                            {showLabel && (
-                              <div
-                                className="absolute inset-0 flex items-center justify-center px-0.5"
-                                style={{ color: col.text }}
-                              >
-                                <span className="text-[8px] font-bold leading-none truncate">
-                                  {sh}–{eh}
-                                </span>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
+                    className="min-h-[64px] bg-[#fafafa] border-r border-[#f1f5f9] last:border-r-0"
+                  />
                 );
-              })}
-            </div>
+              }
+              const tasks = byDate[dayStr] ?? [];
+              const isBusy = tasks.length > 0;
+              const isToday = dayStr === todayKey;
+              const dayNum = parseInt(dayStr.slice(8), 10);
+
+              return (
+                <div
+                  key={di}
+                  className={`min-h-[64px] border-r border-[#f1f5f9] last:border-r-0 p-1 flex flex-col gap-1 ${isBusy ? "bg-amber-50/40" : ""}`}
+                >
+                  {/* Day number */}
+                  <div className="flex justify-center">
+                    <span
+                      className="text-[10px] font-semibold w-5 h-5 flex items-center justify-center rounded-full leading-none"
+                      style={
+                        isToday
+                          ? { background: "#009689", color: "#fff" }
+                          : isBusy
+                            ? { color: "#92400e" }
+                            : { color: "#cbd5e1" }
+                      }
+                    >
+                      {dayNum}
+                    </span>
+                  </div>
+
+                  {/* Task pills */}
+                  {tasks.map((t) => (
+                    <div
+                      key={t.taskDetailId}
+                      title={t.taskTitle ?? "Công việc"}
+                      className="rounded px-1 py-0.5 text-[9px] font-semibold text-center leading-tight truncate"
+                      style={{
+                        background: "rgba(245,158,11,0.15)",
+                        border: "1px solid #f59e0b",
+                        color: "#92400e",
+                      }}
+                    >
+                      {fmtTime(t.startDate)}–{fmtTime(t.endDate)}
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
           </div>
         ))}
       </div>
@@ -2279,14 +2147,14 @@ export function TasksPage() {
                   className={`py-2.5 flex items-center justify-center gap-2 transition-colors ${assignMode === "bulk" ? "bg-[#009689] text-white" : "bg-white text-[#64748b] hover:bg-[#f8fafc]"}`}
                 >
                   <Calendar className="w-3.5 h-3.5" />
-                  Định kỳ (nhiều ngày)
+                  Định kỳ
                 </button>
                 <button
                   onClick={() => setAssignMode("single")}
                   className={`py-2.5 flex items-center justify-center gap-2 transition-colors ${assignMode === "single" ? "bg-[#009689] text-white" : "bg-white text-[#64748b] hover:bg-[#f8fafc]"}`}
                 >
                   <Clock className="w-3.5 h-3.5" />
-                  Đột xuất (1 ngày)
+                  Đột xuất
                 </button>
               </div>
             </div>
@@ -2733,15 +2601,29 @@ export function TasksPage() {
                   )}
 
                   {/* Worker schedule preview */}
-                  {singleForm.workerId && singleForm.date && (
-                    <WorkerSchedulePreview
-                      workerId={singleForm.workerId}
-                      fromDate={singleForm.date}
-                      toDate={singleForm.date}
-                      taskDetails={taskDetails}
-                      staffList={staffList}
-                    />
-                  )}
+                  {singleForm.workerId &&
+                    (singleForm.isMultiDay
+                      ? singleForm.multiStartDate &&
+                        singleForm.multiEndDate &&
+                        singleForm.multiEndDate >=
+                          singleForm.multiStartDate && (
+                          <WorkerSchedulePreview
+                            workerId={singleForm.workerId}
+                            fromDate={singleForm.multiStartDate}
+                            toDate={singleForm.multiEndDate}
+                            taskDetails={taskDetails}
+                            staffList={staffList}
+                          />
+                        )
+                      : singleForm.date && (
+                          <WorkerSchedulePreview
+                            workerId={singleForm.workerId}
+                            fromDate={singleForm.date}
+                            toDate={singleForm.date}
+                            taskDetails={taskDetails}
+                            staffList={staffList}
+                          />
+                        ))}
 
                   {/* Row 2: Task + Season */}
                   <div className="grid grid-cols-2 gap-4">
@@ -2979,10 +2861,7 @@ export function TasksPage() {
                   {/* Multi-day date + time range */}
                   {singleForm.isMultiDay && (
                     <div className="space-y-3 p-3 bg-[#f0fdfa] border border-[#009689]/20 rounded-lg">
-                      <p className="text-[11px] text-[#0f766e] font-medium">
-                        Giao 1 task detail duy nhất kéo dài từ ngày bắt đầu đến
-                        ngày kết thúc.
-                      </p>
+                      <p className="text-[11px] text-[#0f766e] font-medium"></p>
                       <div className="grid grid-cols-2 gap-3">
                         <div>
                           <label className="block text-[10px] font-semibold text-[#475569] uppercase tracking-wide mb-1">
