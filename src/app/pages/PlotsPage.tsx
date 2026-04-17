@@ -1580,26 +1580,56 @@ function CreateBedModal({
     bedArea: 0,
     bedStatus: "Empty",
     cropQuantities: 0,
-    cropId: crops[0]?.cropId ?? "",
+    cropId: undefined,
     bedWidth: undefined,
     bedLength: undefined,
     pathWidth: undefined,
     plantCount: undefined,
     rowCount: undefined,
   });
+
   const [formData, setFormData] = useState<BedRequest>(emptyForm());
   const [formErrors, setFormErrors] = useState<BedFormErrors>({});
+  const [loadingCrop, setLoadingCrop] = useState(false);
 
   useEffect(() => {
     if (open) {
-      setFormData({
-        ...emptyForm(),
-        cropId: crops[0]?.cropId ?? "",
-      });
+      setFormData(emptyForm());
       setFormErrors({});
+      setLoadingCrop(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, plot, crops]);
+  }, [open, plot]);
+
+  // Fetch crop defaults when a crop is selected; auto-fill bedWidth, pathWidth, rowCount
+  const handleCropChange = async (newCropId: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      cropId: newCropId || undefined,
+      // Clear auto-filled fields so stale values don't persist if user switches crop
+      bedWidth: undefined,
+      pathWidth: undefined,
+      rowCount: undefined,
+    }));
+
+    if (!newCropId) return;
+
+    setLoadingCrop(true);
+    try {
+      const crop = await api.getCrop(newCropId);
+      setFormData((prev) => ({
+        ...prev,
+        cropId: newCropId,
+        bedWidth: crop.bedWidthDefault ?? prev.bedWidth,
+        pathWidth: crop.pathWidthDefault ?? prev.pathWidth,
+        rowCount: crop.rowsPerBed ?? prev.rowCount,
+      }));
+    } catch {
+      // Crop fetch failed — user can still enter values manually
+    } finally {
+      setLoadingCrop(false);
+    }
+  };
 
   return (
     <Dialog.Root open={open} onOpenChange={onClose}>
@@ -1630,6 +1660,7 @@ function CreateBedModal({
             }}
             className="space-y-4"
           >
+            {/* Tên luống — always manual */}
             <div>
               <label className="block text-sm font-medium text-[#115e59] mb-2">
                 Tên Luống <span className="text-red-500">*</span>
@@ -1649,30 +1680,34 @@ function CreateBedModal({
                 </p>
               )}
             </div>
+
+            {/* Cây trồng — triggers auto-fill of bedWidth / pathWidth / rowCount */}
             {crops.length > 0 && (
               <div>
                 <label className="block text-sm font-medium text-[#115e59] mb-2">
                   Cây Trồng
                 </label>
-                <select
-                  value={formData.cropId ?? ""}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      cropId: e.target.value || undefined,
-                    })
-                  }
-                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                >
-                  <option value="">-- Không chọn --</option>
-                  {crops.map((c) => (
-                    <option key={c.cropId} value={c.cropId}>
-                      {c.cropName}
-                    </option>
-                  ))}
-                </select>
+                <div className="relative">
+                  <select
+                    value={formData.cropId ?? ""}
+                    onChange={(e) => handleCropChange(e.target.value)}
+                    className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                  >
+                    <option value="">-- Không chọn --</option>
+                    {crops.map((c) => (
+                      <option key={c.cropId} value={c.cropId}>
+                        {c.cropName}
+                      </option>
+                    ))}
+                  </select>
+                  {loadingCrop && (
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-[#009689] border-t-transparent rounded-full animate-spin" />
+                  )}
+                </div>
               </div>
             )}
+
+            {/* Diện tích + Số lượng cây — always manual */}
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-[#115e59] mb-2">
@@ -1716,28 +1751,37 @@ function CreateBedModal({
                 />
               </div>
             </div>
+
+            {/* Chiều dài — always manual */}
+            <div>
+              <label className="block text-sm font-medium text-[#115e59] mb-2">
+                Chiều Dài (m)
+              </label>
+              <input
+                type="number"
+                min={0}
+                step={0.01}
+                value={formData.bedLength ?? ""}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    bedLength: parseFloat(e.target.value) || undefined,
+                  })
+                }
+                className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+              />
+            </div>
+
+            {/* Chiều rộng + Lối đi + Số hàng — auto-filled from crop, still editable */}
             <div className="grid grid-cols-3 gap-4">
               <div>
                 <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Chiều Dài (m)
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  step={0.01}
-                  value={formData.bedLength ?? ""}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      bedLength: parseFloat(e.target.value) || undefined,
-                    })
-                  }
-                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-[#115e59] mb-2">
                   Chiều Rộng (m)
+                  {formData.cropId && (
+                    <span className="ml-1 text-xs text-[#009689] font-normal">
+                      (tự động)
+                    </span>
+                  )}
                 </label>
                 <input
                   type="number"
@@ -1756,6 +1800,11 @@ function CreateBedModal({
               <div>
                 <label className="block text-sm font-medium text-[#115e59] mb-2">
                   Lối Đi (m)
+                  {formData.cropId && (
+                    <span className="ml-1 text-xs text-[#009689] font-normal">
+                      (tự động)
+                    </span>
+                  )}
                 </label>
                 <input
                   type="number"
@@ -1771,11 +1820,14 @@ function CreateBedModal({
                   className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
                 />
               </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-[#115e59] mb-2">
                   Số Hàng
+                  {formData.cropId && (
+                    <span className="ml-1 text-xs text-[#009689] font-normal">
+                      (tự động)
+                    </span>
+                  )}
                 </label>
                 <input
                   type="number"
@@ -1790,24 +1842,28 @@ function CreateBedModal({
                   className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Số Cây
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  value={formData.plantCount ?? ""}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      plantCount: parseInt(e.target.value) || undefined,
-                    })
-                  }
-                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                />
-              </div>
             </div>
+
+            {/* Số cây — always manual */}
+            <div>
+              <label className="block text-sm font-medium text-[#115e59] mb-2">
+                Số Cây
+              </label>
+              <input
+                type="number"
+                min={0}
+                value={formData.plantCount ?? ""}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    plantCount: parseInt(e.target.value) || undefined,
+                  })
+                }
+                className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+              />
+            </div>
+
+            {/* Trạng thái — always manual */}
             <div>
               <label className="block text-sm font-medium text-[#115e59] mb-2">
                 Trạng Thái
@@ -1824,6 +1880,7 @@ function CreateBedModal({
                 <option value="Warning">Đang bị bệnh</option>
               </select>
             </div>
+
             <div className="flex justify-end gap-3 pt-4">
               <button
                 type="button"
