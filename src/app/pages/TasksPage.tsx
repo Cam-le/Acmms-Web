@@ -210,89 +210,159 @@ function DrumPicker({ items, value, onChange, label }: DrumPickerProps) {
   );
 }
 
-// ─── Time Picker Popover ──────────────────────────────────────────────────────
+// ─── Inline Time Range Input ─────────────────────────────────────────────────
+// Two native <input type="time"> for direct keyboard entry, plus an optional
+// drum-picker overlay toggled by the clock icon button.
 
-interface TimePickerProps {
+interface InlineTimeRangeProps {
   startHour: string;
   startMinute: string;
   endHour: string;
   endMinute: string;
   onChange: (sh: string, sm: string, eh: string, em: string) => void;
-  onClose: () => void;
 }
 
-function TimePickerSheet({
+function InlineTimeRange({
   startHour,
   startMinute,
   endHour,
   endMinute,
   onChange,
-  onClose,
-}: TimePickerProps) {
-  const [sh, setSh] = useState(startHour || "07");
-  const [sm, setSm] = useState(startMinute || "00");
-  const [eh, setEh] = useState(endHour || "09");
-  const [em, setEm] = useState(endMinute || "00");
+}: InlineTimeRangeProps) {
+  const [drumOpen, setDrumOpen] = useState(false);
+  const [sh, setSh] = useState(startHour);
+  const [sm, setSm] = useState(startMinute);
+  const [eh, setEh] = useState(endHour);
+  const [em, setEm] = useState(endMinute);
+
+  const openDrum = () => {
+    setSh(startHour);
+    setSm(startMinute);
+    setEh(endHour);
+    setEm(endMinute);
+    setDrumOpen(true);
+  };
+
+  const parseTimeInput = (val: string) => {
+    const [h = "00", m = "00"] = val.split(":");
+    return { h: h.padStart(2, "0"), m: m.padStart(2, "0") };
+  };
 
   return (
-    <div className="mt-2 bg-white rounded-xl border border-[#e2e8f0] shadow-lg overflow-hidden">
-      {/* Compact two-column layout: start | end */}
-      <div className="grid grid-cols-2 divide-x divide-[#f1f5f9]">
-        <div className="px-3 py-3">
-          <p className="text-[10px] font-bold text-[#009689] uppercase tracking-widest mb-2 text-center">
+    <div>
+      <div className="flex items-center gap-2">
+        <div className="flex-1">
+          <p className="text-[10px] font-semibold text-[#64748b] uppercase tracking-wider mb-1">
             Bắt đầu
           </p>
-          <div className="flex items-center justify-center gap-1">
-            <DrumPicker items={HOURS} value={sh} onChange={setSh} label="Giờ" />
-            <span className="text-xl font-bold text-[#1e293b] mt-4">:</span>
-            <DrumPicker
-              items={MINUTES}
-              value={sm}
-              onChange={setSm}
-              label="Phút"
-            />
-          </div>
+          <input
+            type="time"
+            value={`${startHour}:${startMinute}`}
+            onChange={(e) => {
+              const { h, m } = parseTimeInput(e.target.value);
+              onChange(h, m, endHour, endMinute);
+            }}
+            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689]"
+          />
         </div>
-        <div className="px-3 py-3">
-          <p className="text-[10px] font-bold text-[#64748b] uppercase tracking-widest mb-2 text-center">
+        <span className="text-[#94a3b8] font-bold mt-5">–</span>
+        <div className="flex-1">
+          <p className="text-[10px] font-semibold text-[#64748b] uppercase tracking-wider mb-1">
             Kết thúc
           </p>
-          <div className="flex items-center justify-center gap-1">
-            <DrumPicker items={HOURS} value={eh} onChange={setEh} label="Giờ" />
-            <span className="text-xl font-bold text-[#1e293b] mt-4">:</span>
-            <DrumPicker
-              items={MINUTES}
-              value={em}
-              onChange={setEm}
-              label="Phút"
-            />
+          <input
+            type="time"
+            value={`${endHour}:${endMinute}`}
+            onChange={(e) => {
+              const { h, m } = parseTimeInput(e.target.value);
+              onChange(startHour, startMinute, h, m);
+            }}
+            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689]"
+          />
+        </div>
+        <button
+          type="button"
+          title="Mở bộ chọn cuộn"
+          onClick={drumOpen ? () => setDrumOpen(false) : openDrum}
+          className={`mt-5 p-2 rounded-lg border transition-colors ${
+            drumOpen
+              ? "bg-[#009689] border-[#009689] text-white"
+              : "border-[#e2e8f0] text-[#64748b] hover:border-[#009689] hover:text-[#009689]"
+          }`}
+        >
+          <Clock className="w-4 h-4" />
+        </button>
+      </div>
+
+      {drumOpen && (
+        <div className="mt-2 bg-white rounded-xl border border-[#e2e8f0] shadow-lg overflow-hidden">
+          <div className="grid grid-cols-2 divide-x divide-[#f1f5f9]">
+            <div className="px-3 py-3">
+              <p className="text-[10px] font-bold text-[#009689] uppercase tracking-widest mb-2 text-center">
+                Bắt đầu
+              </p>
+              <div className="flex items-center justify-center gap-1">
+                <DrumPicker
+                  items={HOURS}
+                  value={sh}
+                  onChange={setSh}
+                  label="Giờ"
+                />
+                <span className="text-xl font-bold text-[#1e293b] mt-4">:</span>
+                <DrumPicker
+                  items={MINUTES}
+                  value={sm}
+                  onChange={setSm}
+                  label="Phút"
+                />
+              </div>
+            </div>
+            <div className="px-3 py-3">
+              <p className="text-[10px] font-bold text-[#64748b] uppercase tracking-widest mb-2 text-center">
+                Kết thúc
+              </p>
+              <div className="flex items-center justify-center gap-1">
+                <DrumPicker
+                  items={HOURS}
+                  value={eh}
+                  onChange={setEh}
+                  label="Giờ"
+                />
+                <span className="text-xl font-bold text-[#1e293b] mt-4">:</span>
+                <DrumPicker
+                  items={MINUTES}
+                  value={em}
+                  onChange={setEm}
+                  label="Phút"
+                />
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center justify-between px-3 py-2 bg-[#f8fafc] border-t border-[#f1f5f9]">
+            <span className="text-sm font-bold text-[#009689] flex items-center gap-1.5">
+              <Clock className="w-3.5 h-3.5" />
+              {sh}:{sm} – {eh}:{em}
+            </span>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setDrumOpen(false)}
+                className="px-3 py-1 rounded-lg text-xs font-medium text-[#64748b] hover:bg-[#e2e8f0] transition-colors"
+              >
+                Hủy
+              </button>
+              <button
+                onClick={() => {
+                  onChange(sh, sm, eh, em);
+                  setDrumOpen(false);
+                }}
+                className="px-3 py-1 rounded-lg text-xs font-medium bg-[#009689] text-white hover:bg-[#007f73] transition-colors"
+              >
+                Xong
+              </button>
+            </div>
           </div>
         </div>
-      </div>
-      {/* Footer */}
-      <div className="flex items-center justify-between px-3 py-2 bg-[#f8fafc] border-t border-[#f1f5f9]">
-        <span className="text-sm font-bold text-[#009689] flex items-center gap-1.5">
-          <Clock className="w-3.5 h-3.5" />
-          {sh}:{sm} – {eh}:{em}
-        </span>
-        <div className="flex gap-2">
-          <button
-            onClick={onClose}
-            className="px-3 py-1 rounded-lg text-xs font-medium text-[#64748b] hover:bg-[#e2e8f0] transition-colors"
-          >
-            Hủy
-          </button>
-          <button
-            onClick={() => {
-              onChange(sh, sm, eh, em);
-              onClose();
-            }}
-            className="px-3 py-1 rounded-lg text-xs font-medium bg-[#009689] text-white hover:bg-[#007f73] transition-colors"
-          >
-            Xong
-          </button>
-        </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -873,8 +943,6 @@ export function TasksPage() {
     notes: "",
   });
   const [singleConflict, setSingleConflict] = useState<string[]>([]);
-  const [isSingleTimerOpen, setIsSingleTimerOpen] = useState(false);
-  const [isBulkTimerOpen, setIsBulkTimerOpen] = useState(false);
 
   // Derived: beds available for a given seasonId + plotId
   const getBedsForPlot = (seasonId: string, plotId: string) => {
@@ -975,8 +1043,6 @@ export function TasksPage() {
     });
     setSingleConflict([]);
     setAssignMode("bulk");
-    setIsBulkTimerOpen(false);
-    setIsSingleTimerOpen(false);
   };
 
   // ── Data loading ──────────────────────────────────────────────────────────
@@ -1131,6 +1197,11 @@ export function TasksPage() {
       cur.setDate(cur.getDate() + 1);
     }
 
+    const bulkStartMins = parseInt(startHour) * 60 + parseInt(startMinute);
+    const bulkEndMins = parseInt(endHour) * 60 + parseInt(endMinute);
+    if (bulkEndMins <= bulkStartMins) return;
+    if (fromDate > toDate) return;
+
     setIsSaving(true);
     try {
       await Promise.all(
@@ -1183,6 +1254,10 @@ export function TasksPage() {
     );
     const farmId =
       allPlots.find((p) => plotIds.includes(p.plotId))?.farmId ?? "";
+
+    const singleStartMins = parseInt(startHour) * 60 + parseInt(startMinute);
+    const singleEndMins = parseInt(endHour) * 60 + parseInt(endMinute);
+    if (singleEndMins <= singleStartMins) return;
 
     setIsSaving(true);
     try {
@@ -1243,7 +1318,6 @@ export function TasksPage() {
     plotIds: string[];
     selectedPlotIds: string[];
   } | null>(null);
-  const [isEditTimePickerOpen, setIsEditTimePickerOpen] = useState(false);
 
   const openEditDetail = (detail: TaskDetailResponse) => {
     const dateStr = detail.startDate.slice(0, 10);
@@ -1279,6 +1353,11 @@ export function TasksPage() {
 
   const handleUpdateAssignment = async () => {
     if (!selectedDetail || !editDetail) return;
+    const editStartMins =
+      parseInt(editDetail.startHour) * 60 + parseInt(editDetail.startMinute);
+    const editEndMins =
+      parseInt(editDetail.endHour) * 60 + parseInt(editDetail.endMinute);
+    if (editEndMins <= editStartMins) return;
     setIsSaving(true);
     try {
       const startISO = `${editDetail.date}T${editDetail.startHour}:${editDetail.startMinute}:00.000`;
@@ -2471,34 +2550,46 @@ export function TasksPage() {
                     <label className="block text-xs font-medium text-[#475569] mb-1.5">
                       Khung giờ
                     </label>
-                    <button
-                      onClick={() => setIsBulkTimerOpen((p) => !p)}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-left flex items-center gap-2 hover:border-[#009689] transition-colors"
-                    >
-                      <Clock className="w-4 h-4 text-[#009689] shrink-0" />
-                      <span className="text-[#1e293b]">
-                        {bulkForm.startHour}:{bulkForm.startMinute} –{" "}
-                        {bulkForm.endHour}:{bulkForm.endMinute}
-                      </span>
-                    </button>
-                    {isBulkTimerOpen && (
-                      <TimePickerSheet
-                        startHour={bulkForm.startHour}
-                        startMinute={bulkForm.startMinute}
-                        endHour={bulkForm.endHour}
-                        endMinute={bulkForm.endMinute}
-                        onChange={(sh, sm, eh, em) =>
-                          setBulkForm((p) => ({
-                            ...p,
-                            startHour: sh,
-                            startMinute: sm,
-                            endHour: eh,
-                            endMinute: em,
-                          }))
-                        }
-                        onClose={() => setIsBulkTimerOpen(false)}
-                      />
-                    )}
+                    <InlineTimeRange
+                      startHour={bulkForm.startHour}
+                      startMinute={bulkForm.startMinute}
+                      endHour={bulkForm.endHour}
+                      endMinute={bulkForm.endMinute}
+                      onChange={(sh, sm, eh, em) =>
+                        setBulkForm((p) => ({
+                          ...p,
+                          startHour: sh,
+                          startMinute: sm,
+                          endHour: eh,
+                          endMinute: em,
+                        }))
+                      }
+                    />
+                    {(() => {
+                      const sm =
+                        parseInt(bulkForm.startHour) * 60 +
+                        parseInt(bulkForm.startMinute);
+                      const em =
+                        parseInt(bulkForm.endHour) * 60 +
+                        parseInt(bulkForm.endMinute);
+                      if (
+                        bulkForm.fromDate &&
+                        bulkForm.toDate &&
+                        bulkForm.fromDate > bulkForm.toDate
+                      )
+                        return (
+                          <p className="mt-1.5 text-xs text-red-500">
+                            Ngày kết thúc phải sau ngày bắt đầu.
+                          </p>
+                        );
+                      if (em <= sm)
+                        return (
+                          <p className="mt-1.5 text-xs text-red-500">
+                            Giờ kết thúc phải sau giờ bắt đầu.
+                          </p>
+                        );
+                      return null;
+                    })()}
                   </div>
 
                   {/* Notes */}
@@ -2784,42 +2875,44 @@ export function TasksPage() {
                     <label className="block text-xs font-medium text-[#475569] mb-1.5">
                       Khung giờ
                     </label>
-                    <button
-                      onClick={() => setIsSingleTimerOpen((p) => !p)}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-left flex items-center gap-2 hover:border-[#009689] transition-colors"
-                    >
-                      <Clock className="w-4 h-4 text-[#009689] shrink-0" />
-                      <span className="text-[#1e293b]">
-                        {singleForm.startHour}:{singleForm.startMinute} –{" "}
-                        {singleForm.endHour}:{singleForm.endMinute}
-                      </span>
-                    </button>
-                    {isSingleTimerOpen && (
-                      <TimePickerSheet
-                        startHour={singleForm.startHour}
-                        startMinute={singleForm.startMinute}
-                        endHour={singleForm.endHour}
-                        endMinute={singleForm.endMinute}
-                        onChange={(sh, sm, eh, em) => {
-                          setSingleForm((p) => ({
-                            ...p,
-                            startHour: sh,
-                            startMinute: sm,
-                            endHour: eh,
-                            endMinute: em,
-                          }));
-                          checkSingleConflict(
-                            singleForm.workerId,
-                            singleForm.date,
-                            sh,
-                            sm,
-                            eh,
-                            em,
-                          );
-                        }}
-                        onClose={() => setIsSingleTimerOpen(false)}
-                      />
-                    )}
+                    <InlineTimeRange
+                      startHour={singleForm.startHour}
+                      startMinute={singleForm.startMinute}
+                      endHour={singleForm.endHour}
+                      endMinute={singleForm.endMinute}
+                      onChange={(sh, sm, eh, em) => {
+                        setSingleForm((p) => ({
+                          ...p,
+                          startHour: sh,
+                          startMinute: sm,
+                          endHour: eh,
+                          endMinute: em,
+                        }));
+                        checkSingleConflict(
+                          singleForm.workerId,
+                          singleForm.date,
+                          sh,
+                          sm,
+                          eh,
+                          em,
+                        );
+                      }}
+                    />
+                    {(() => {
+                      const sm =
+                        parseInt(singleForm.startHour) * 60 +
+                        parseInt(singleForm.startMinute);
+                      const em =
+                        parseInt(singleForm.endHour) * 60 +
+                        parseInt(singleForm.endMinute);
+                      if (em <= sm)
+                        return (
+                          <p className="mt-1.5 text-xs text-red-500">
+                            Giờ kết thúc phải sau giờ bắt đầu.
+                          </p>
+                        );
+                      return null;
+                    })()}
                   </div>
 
                   {/* Notes */}
@@ -2857,19 +2950,29 @@ export function TasksPage() {
                   assignMode === "bulk" ? handleSubmitBulk : handleSubmitSingle
                 }
                 disabled={
-                  assignMode === "bulk"
+                  isSaving ||
+                  (assignMode === "bulk"
                     ? !bulkForm.workerId ||
                       !bulkForm.taskId ||
                       !bulkForm.seasonId ||
                       !bulkForm.bedIds.length ||
                       !bulkForm.fromDate ||
                       !bulkForm.toDate ||
-                      !bulkForm.selectedDays.length
+                      !bulkForm.selectedDays.length ||
+                      bulkForm.fromDate > bulkForm.toDate ||
+                      parseInt(bulkForm.endHour) * 60 +
+                        parseInt(bulkForm.endMinute) <=
+                        parseInt(bulkForm.startHour) * 60 +
+                          parseInt(bulkForm.startMinute)
                     : !singleForm.workerId ||
                       !singleForm.taskId ||
                       !singleForm.seasonId ||
                       !singleForm.bedIds.length ||
-                      !singleForm.date
+                      !singleForm.date ||
+                      parseInt(singleForm.endHour) * 60 +
+                        parseInt(singleForm.endMinute) <=
+                        parseInt(singleForm.startHour) * 60 +
+                          parseInt(singleForm.startMinute))
                 }
                 className="flex-1 px-4 py-2 rounded-lg text-sm font-medium bg-[#009689] text-white hover:bg-[#007f73] disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
               >
@@ -3057,7 +3160,7 @@ export function TasksPage() {
           setIsEditDetailOpen(o);
           if (!o) {
             setEditDetail(null);
-            setIsEditTimePickerOpen(false);
+            setIsTimePickerOpen(false);
           }
         }}
       >
@@ -3233,38 +3336,40 @@ export function TasksPage() {
                           <label className="block text-xs font-medium text-slate-500 mb-1.5">
                             Khung giờ
                           </label>
-                          <button
-                            onClick={() => setIsEditTimePickerOpen((p) => !p)}
-                            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-left flex items-center gap-2 hover:border-[#009689] focus:outline-none focus:ring-2 focus:ring-[#009689] transition-colors"
-                          >
-                            <Clock className="w-4 h-4 text-[#009689] shrink-0" />
-                            <span className="text-[#1e293b]">
-                              {editDetail.startHour}:{editDetail.startMinute} –{" "}
-                              {editDetail.endHour}:{editDetail.endMinute}
-                            </span>
-                          </button>
-                          {isEditTimePickerOpen && (
-                            <TimePickerSheet
-                              startHour={editDetail.startHour}
-                              startMinute={editDetail.startMinute}
-                              endHour={editDetail.endHour}
-                              endMinute={editDetail.endMinute}
-                              onChange={(sh, sm, eh, em) =>
-                                setEditDetail((p) =>
-                                  p
-                                    ? {
-                                        ...p,
-                                        startHour: sh,
-                                        startMinute: sm,
-                                        endHour: eh,
-                                        endMinute: em,
-                                      }
-                                    : p,
-                                )
-                              }
-                              onClose={() => setIsEditTimePickerOpen(false)}
-                            />
-                          )}
+                          <InlineTimeRange
+                            startHour={editDetail.startHour}
+                            startMinute={editDetail.startMinute}
+                            endHour={editDetail.endHour}
+                            endMinute={editDetail.endMinute}
+                            onChange={(sh, sm, eh, em) =>
+                              setEditDetail((p) =>
+                                p
+                                  ? {
+                                      ...p,
+                                      startHour: sh,
+                                      startMinute: sm,
+                                      endHour: eh,
+                                      endMinute: em,
+                                    }
+                                  : p,
+                              )
+                            }
+                          />
+                          {(() => {
+                            const sm =
+                              parseInt(editDetail.startHour) * 60 +
+                              parseInt(editDetail.startMinute);
+                            const em =
+                              parseInt(editDetail.endHour) * 60 +
+                              parseInt(editDetail.endMinute);
+                            if (em <= sm)
+                              return (
+                                <p className="mt-1.5 text-xs text-red-500">
+                                  Giờ kết thúc phải sau giờ bắt đầu.
+                                </p>
+                              );
+                            return null;
+                          })()}
                         </div>
                       </div>
                     </section>
