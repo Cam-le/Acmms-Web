@@ -211,8 +211,7 @@ function DrumPicker({ items, value, onChange, label }: DrumPickerProps) {
 }
 
 // ─── Inline Time Range Input ─────────────────────────────────────────────────
-// Two native <input type="time"> for direct keyboard entry, plus an optional
-// drum-picker overlay toggled by the clock icon button.
+// Two native <input type="time"> for direct keyboard entry.
 
 interface InlineTimeRangeProps {
   startHour: string;
@@ -229,140 +228,42 @@ function InlineTimeRange({
   endMinute,
   onChange,
 }: InlineTimeRangeProps) {
-  const [drumOpen, setDrumOpen] = useState(false);
-  const [sh, setSh] = useState(startHour);
-  const [sm, setSm] = useState(startMinute);
-  const [eh, setEh] = useState(endHour);
-  const [em, setEm] = useState(endMinute);
-
-  const openDrum = () => {
-    setSh(startHour);
-    setSm(startMinute);
-    setEh(endHour);
-    setEm(endMinute);
-    setDrumOpen(true);
-  };
-
   const parseTimeInput = (val: string) => {
     const [h = "00", m = "00"] = val.split(":");
     return { h: h.padStart(2, "0"), m: m.padStart(2, "0") };
   };
 
   return (
-    <div>
-      <div className="flex items-center gap-2">
-        <div className="flex-1">
-          <p className="text-[10px] font-semibold text-[#64748b] uppercase tracking-wider mb-1">
-            Bắt đầu
-          </p>
-          <input
-            type="time"
-            value={`${startHour}:${startMinute}`}
-            onChange={(e) => {
-              const { h, m } = parseTimeInput(e.target.value);
-              onChange(h, m, endHour, endMinute);
-            }}
-            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689]"
-          />
-        </div>
-        <span className="text-[#94a3b8] font-bold mt-5">–</span>
-        <div className="flex-1">
-          <p className="text-[10px] font-semibold text-[#64748b] uppercase tracking-wider mb-1">
-            Kết thúc
-          </p>
-          <input
-            type="time"
-            value={`${endHour}:${endMinute}`}
-            onChange={(e) => {
-              const { h, m } = parseTimeInput(e.target.value);
-              onChange(startHour, startMinute, h, m);
-            }}
-            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689]"
-          />
-        </div>
-        <button
-          type="button"
-          title="Mở bộ chọn cuộn"
-          onClick={drumOpen ? () => setDrumOpen(false) : openDrum}
-          className={`mt-5 p-2 rounded-lg border transition-colors ${
-            drumOpen
-              ? "bg-[#009689] border-[#009689] text-white"
-              : "border-[#e2e8f0] text-[#64748b] hover:border-[#009689] hover:text-[#009689]"
-          }`}
-        >
-          <Clock className="w-4 h-4" />
-        </button>
+    <div className="flex items-center gap-2">
+      <div className="flex-1">
+        <p className="text-[10px] font-semibold text-[#64748b] uppercase tracking-wider mb-1">
+          Bắt đầu
+        </p>
+        <input
+          type="time"
+          value={`${startHour}:${startMinute}`}
+          onChange={(e) => {
+            const { h, m } = parseTimeInput(e.target.value);
+            onChange(h, m, endHour, endMinute);
+          }}
+          className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689]"
+        />
       </div>
-
-      {drumOpen && (
-        <div className="mt-2 bg-white rounded-xl border border-[#e2e8f0] shadow-lg overflow-hidden">
-          <div className="grid grid-cols-2 divide-x divide-[#f1f5f9]">
-            <div className="px-3 py-3">
-              <p className="text-[10px] font-bold text-[#009689] uppercase tracking-widest mb-2 text-center">
-                Bắt đầu
-              </p>
-              <div className="flex items-center justify-center gap-1">
-                <DrumPicker
-                  items={HOURS}
-                  value={sh}
-                  onChange={setSh}
-                  label="Giờ"
-                />
-                <span className="text-xl font-bold text-[#1e293b] mt-4">:</span>
-                <DrumPicker
-                  items={MINUTES}
-                  value={sm}
-                  onChange={setSm}
-                  label="Phút"
-                />
-              </div>
-            </div>
-            <div className="px-3 py-3">
-              <p className="text-[10px] font-bold text-[#64748b] uppercase tracking-widest mb-2 text-center">
-                Kết thúc
-              </p>
-              <div className="flex items-center justify-center gap-1">
-                <DrumPicker
-                  items={HOURS}
-                  value={eh}
-                  onChange={setEh}
-                  label="Giờ"
-                />
-                <span className="text-xl font-bold text-[#1e293b] mt-4">:</span>
-                <DrumPicker
-                  items={MINUTES}
-                  value={em}
-                  onChange={setEm}
-                  label="Phút"
-                />
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center justify-between px-3 py-2 bg-[#f8fafc] border-t border-[#f1f5f9]">
-            <span className="text-sm font-bold text-[#009689] flex items-center gap-1.5">
-              <Clock className="w-3.5 h-3.5" />
-              {sh}:{sm} – {eh}:{em}
-            </span>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setDrumOpen(false)}
-                className="px-3 py-1 rounded-lg text-xs font-medium text-[#64748b] hover:bg-[#e2e8f0] transition-colors"
-              >
-                Hủy
-              </button>
-              <button
-                onClick={() => {
-                  onChange(sh, sm, eh, em);
-                  setDrumOpen(false);
-                }}
-                className="px-3 py-1 rounded-lg text-xs font-medium bg-[#009689] text-white hover:bg-[#007f73] transition-colors"
-              >
-                Xong
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <span className="text-[#94a3b8] font-bold mt-5">–</span>
+      <div className="flex-1">
+        <p className="text-[10px] font-semibold text-[#64748b] uppercase tracking-wider mb-1">
+          Kết thúc
+        </p>
+        <input
+          type="time"
+          value={`${endHour}:${endMinute}`}
+          onChange={(e) => {
+            const { h, m } = parseTimeInput(e.target.value);
+            onChange(startHour, startMinute, h, m);
+          }}
+          className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689]"
+        />
+      </div>
     </div>
   );
 }
@@ -391,6 +292,8 @@ function CalendarDayCard({
   style?: React.CSSProperties;
 }) {
   const [showAll, setShowAll] = useState(false);
+  // Raw YYYY-MM-DD for this cell — used for multi-day span detection
+  const cellDay = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`;
   const MAX_VISIBLE = 3;
   const visible = showAll ? assignments : assignments.slice(0, MAX_VISIBLE);
   const overflow = assignments.length - MAX_VISIBLE;
@@ -443,19 +346,43 @@ function CalendarDayCard({
       {/* Task cards */}
       <div className="flex-1 p-1.5 space-y-1.5 overflow-y-auto">
         {visible.map((a) => {
+          const taskStartDay = a.startDate?.slice(0, 10) ?? "";
+          const taskEndDay = a.endDate?.slice(0, 10) ?? taskStartDay;
+          const isMultiDay = taskEndDay !== taskStartDay;
+          const isFirstDay = cellDay === taskStartDay;
+          const isLastDay = cellDay === taskEndDay;
+          const isMidDay = isMultiDay && !isFirstDay && !isLastDay;
           const timeStr = isoTime(a.startDate);
+          const spanBadge = isMultiDay
+            ? isFirstDay
+              ? `→ ${isoDate(a.endDate)}`
+              : isLastDay
+                ? `← ${isoDate(a.startDate)}`
+                : `${isoDate(a.startDate)} → ${isoDate(a.endDate)}`
+            : null;
+          const borderColor = isEditMode
+            ? "#f59e0b"
+            : isMultiDay && !isFirstDay
+              ? "#7c3aed"
+              : "#009689";
+
           if (isEditMode) {
             return (
               <div
                 key={a.taskDetailId}
                 className="w-full rounded-lg overflow-hidden shadow-sm"
-                style={{ borderLeft: "3px solid #f59e0b" }}
+                style={{ borderLeft: `3px solid ${borderColor}` }}
               >
                 <div className="bg-white px-2 py-1.5">
                   <p className="text-[11px] font-semibold text-[#1e293b] line-clamp-2 leading-tight mb-1.5">
                     {a.taskTitle}
                   </p>
-                  {timeStr && (
+                  {spanBadge && (
+                    <p className="text-[9px] text-[#7c3aed] font-medium mb-1">
+                      {spanBadge}
+                    </p>
+                  )}
+                  {timeStr && isFirstDay && (
                     <div className="flex items-center gap-1 mb-1.5">
                       <Clock className="w-2.5 h-2.5 text-[#94a3b8] shrink-0" />
                       <span className="text-[10px] text-[#64748b]">
@@ -488,13 +415,20 @@ function CalendarDayCard({
               key={a.taskDetailId}
               onClick={() => onTaskClick(a)}
               className="w-full text-left rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-all"
-              style={{ borderLeft: "3px solid #009689" }}
+              style={{ borderLeft: `3px solid ${borderColor}` }}
             >
-              <div className="bg-white px-2 py-1.5">
+              <div
+                className={`px-2 py-1.5 ${isMidDay ? "bg-[#faf5ff]" : "bg-white"}`}
+              >
                 <p className="text-[11px] font-semibold text-[#1e293b] line-clamp-2 leading-tight">
                   {a.taskTitle}
                 </p>
-                {timeStr && (
+                {spanBadge && (
+                  <p className="text-[9px] text-[#7c3aed] font-medium mt-0.5">
+                    {spanBadge}
+                  </p>
+                )}
+                {timeStr && isFirstDay && (
                   <div className="flex items-center gap-1 mt-1">
                     <Clock className="w-2.5 h-2.5 text-[#94a3b8] shrink-0" />
                     <span className="text-[10px] text-[#64748b]">
@@ -502,7 +436,7 @@ function CalendarDayCard({
                     </span>
                   </div>
                 )}
-                {a.bedIds.length > 0 && (
+                {a.bedIds.length > 0 && isFirstDay && (
                   <div className="flex items-center gap-1 mt-0.5">
                     <MapPin className="w-2.5 h-2.5 text-[#94a3b8] shrink-0" />
                     <span className="text-[10px] text-[#64748b] truncate">
@@ -510,7 +444,7 @@ function CalendarDayCard({
                     </span>
                   </div>
                 )}
-                {a.assignedToWorkerIds.length > 0 && (
+                {a.assignedToWorkerIds.length > 0 && isFirstDay && (
                   <div className="flex items-center gap-1 mt-0.5">
                     <User className="w-2.5 h-2.5 text-[#94a3b8] shrink-0" />
                     <span className="text-[10px] text-[#64748b] truncate">
@@ -585,15 +519,28 @@ function WorkerSchedulePreview({
     cursor.setDate(cursor.getDate() + 1);
   }
 
-  // Filter + group tasks for this worker by date
+  // Filter + group tasks for this worker by date.
+  // Multi-day tasks are expanded into every day they span.
+  // Use noon-based Date to avoid UTC/DST midnight shift.
+  const addDays = (dateStr: string, n: number) => {
+    const d = new Date(`${dateStr}T12:00:00`);
+    d.setDate(d.getDate() + n);
+    return d.toISOString().slice(0, 10);
+  };
   const byDate: Record<string, TaskDetailResponse[]> = {};
   taskDetails
     .filter((d) => d.assignedToWorkerIds.includes(workerId))
     .forEach((d) => {
       if (!d.startDate) return;
-      const key = d.startDate.slice(0, 10);
-      if (!byDate[key]) byDate[key] = [];
-      byDate[key].push(d);
+      const startKey = d.startDate.slice(0, 10);
+      const endKey = (d.endDate ?? d.startDate).slice(0, 10);
+      let cur = startKey;
+      while (cur <= endKey) {
+        if (!byDate[cur]) byDate[cur] = [];
+        if (!byDate[cur].find((x) => x.taskDetailId === d.taskDetailId))
+          byDate[cur].push(d);
+        cur = addDays(cur, 1);
+      }
     });
 
   // Pad to Monday-aligned weeks
@@ -762,13 +709,44 @@ function WorkerSchedulePreview({
                       {/* Task bars */}
                       {dayTasks.map((t, ti) => {
                         if (!t.startDate || !t.endDate) return null;
-                        const sm = toMins(t.startDate);
-                        const em = toMins(t.endDate);
+                        // Always compare raw YYYY-MM-DD slices — never use Date() parsing
+                        // to avoid UTC/timezone shifts turning 17:00 → next day.
+                        const taskStartDay = t.startDate.slice(0, 10);
+                        const taskEndDay = t.endDate.slice(0, 10);
+                        const isMultiDayTask = taskEndDay !== taskStartDay;
+                        // For a multi-day task on a continuation day, clamp the bar
+                        // to the cell's working-hours boundaries.
+                        // For same-day tasks (or the first/last day of a span) use
+                        // the actual stored hour:minute digits directly.
+                        const rawStartH = parseInt(
+                          t.startDate.slice(11, 13),
+                          10,
+                        );
+                        const rawStartM = parseInt(
+                          t.startDate.slice(14, 16),
+                          10,
+                        );
+                        const rawEndH = parseInt(t.endDate.slice(11, 13), 10);
+                        const rawEndM = parseInt(t.endDate.slice(14, 16), 10);
+                        const sm =
+                          isMultiDayTask && key > taskStartDay
+                            ? HOUR_START * 60
+                            : rawStartH * 60 + rawStartM;
+                        const em =
+                          isMultiDayTask && key < taskEndDay
+                            ? HOUR_END * 60
+                            : rawEndH * 60 + rawEndM;
                         const top = toTop(sm);
                         const ht = toHeight(sm, em);
                         const col = BAR_COLORS[ti % BAR_COLORS.length];
-                        const sh = t.startDate.slice(11, 16);
-                        const eh = t.endDate.slice(11, 16);
+                        const sh =
+                          isMultiDayTask && key > taskStartDay
+                            ? `${String(HOUR_START).padStart(2, "0")}:00`
+                            : `${String(rawStartH).padStart(2, "0")}:${String(rawStartM).padStart(2, "0")}`;
+                        const eh =
+                          isMultiDayTask && key < taskEndDay
+                            ? `${String(HOUR_END).padStart(2, "0")}:00`
+                            : `${String(rawEndH).padStart(2, "0")}:${String(rawEndM).padStart(2, "0")}`;
                         // Bar is tall enough to show text if >= ~20% of cell
                         const showLabel = ht >= 18;
 
@@ -861,7 +839,6 @@ export function TasksPage() {
   const [isViewOpen, setIsViewOpen] = useState(false);
   const [isEditDetailOpen, setIsEditDetailOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
-  const [isTimePickerOpen, setIsTimePickerOpen] = useState(false);
   const [selectedDetail, setSelectedDetail] =
     useState<TaskDetailResponse | null>(null);
   const [detailToDelete, setDetailToDelete] =
@@ -935,12 +912,21 @@ export function TasksPage() {
     seasonId: "",
     plotId: "",
     bedIds: [] as string[],
+    // used in same-day mode
     date: "",
     startHour: "07",
     startMinute: "00",
     endHour: "09",
     endMinute: "00",
     notes: "",
+    // multi-day mode
+    isMultiDay: false,
+    multiStartDate: "",
+    multiStartHour: "07",
+    multiStartMinute: "00",
+    multiEndDate: "",
+    multiEndHour: "17",
+    multiEndMinute: "00",
   });
   const [singleConflict, setSingleConflict] = useState<string[]>([]);
 
@@ -1040,6 +1026,13 @@ export function TasksPage() {
       endHour: "09",
       endMinute: "00",
       notes: "",
+      isMultiDay: false,
+      multiStartDate: "",
+      multiStartHour: "07",
+      multiStartMinute: "00",
+      multiEndDate: "",
+      multiEndHour: "17",
+      multiEndMinute: "00",
     });
     setSingleConflict([]);
     setAssignMode("bulk");
@@ -1236,14 +1229,21 @@ export function TasksPage() {
       taskId,
       seasonId,
       bedIds,
+      notes,
+      isMultiDay,
       date,
       startHour,
       startMinute,
       endHour,
       endMinute,
-      notes,
+      multiStartDate,
+      multiStartHour,
+      multiStartMinute,
+      multiEndDate,
+      multiEndHour,
+      multiEndMinute,
     } = singleForm;
-    if (!workerId || !taskId || !seasonId || !bedIds.length || !date) return;
+    if (!workerId || !taskId || !seasonId || !bedIds.length) return;
 
     const plotIds = Array.from(
       new Set(
@@ -1255,9 +1255,28 @@ export function TasksPage() {
     const farmId =
       allPlots.find((p) => plotIds.includes(p.plotId))?.farmId ?? "";
 
-    const singleStartMins = parseInt(startHour) * 60 + parseInt(startMinute);
-    const singleEndMins = parseInt(endHour) * 60 + parseInt(endMinute);
-    if (singleEndMins <= singleStartMins) return;
+    let startISO: string;
+    let endISO: string;
+
+    if (isMultiDay) {
+      if (!multiStartDate || !multiEndDate) return;
+      if (multiEndDate < multiStartDate) return;
+      if (
+        multiEndDate === multiStartDate &&
+        parseInt(multiEndHour) * 60 + parseInt(multiEndMinute) <=
+          parseInt(multiStartHour) * 60 + parseInt(multiStartMinute)
+      )
+        return;
+      startISO = `${multiStartDate}T${multiStartHour}:${multiStartMinute}:00.000Z`;
+      endISO = `${multiEndDate}T${multiEndHour}:${multiEndMinute}:00.000Z`;
+    } else {
+      if (!date) return;
+      const singleStartMins = parseInt(startHour) * 60 + parseInt(startMinute);
+      const singleEndMins = parseInt(endHour) * 60 + parseInt(endMinute);
+      if (singleEndMins <= singleStartMins) return;
+      startISO = `${date}T${startHour}:${startMinute}:00.000Z`;
+      endISO = `${date}T${endHour}:${endMinute}:00.000Z`;
+    }
 
     setIsSaving(true);
     try {
@@ -1268,8 +1287,8 @@ export function TasksPage() {
         assignedToWorkerIds: [workerId],
         bedIds,
         plotIds,
-        startDate: `${date}T${startHour}:${startMinute}:00.000Z`,
-        endDate: `${date}T${endHour}:${endMinute}:00.000Z`,
+        startDate: startISO,
+        endDate: endISO,
         notes,
         status: "Pending",
       });
@@ -1626,25 +1645,27 @@ export function TasksPage() {
                 d.assignedToWorkerIds.includes(calWorkerFilter),
               );
 
-              const getAssignmentsForDay = (date: Date) =>
-                workerDetails.filter((d) => {
-                  if (!d.startDate) return false;
-                  const isoDay = d.startDate.slice(0, 10);
-                  const y = date.getFullYear();
-                  const m = String(date.getMonth() + 1).padStart(2, "0");
-                  const day = String(date.getDate()).padStart(2, "0");
-                  return isoDay === `${y}-${m}-${day}`;
+              const getAssignmentsForDay = (date: Date) => {
+                const y = date.getFullYear();
+                const m = String(date.getMonth() + 1).padStart(2, "0");
+                const d = String(date.getDate()).padStart(2, "0");
+                const key = `${y}-${m}-${d}`;
+                return workerDetails.filter((t) => {
+                  if (!t.startDate) return false;
+                  const start = t.startDate.slice(0, 10);
+                  const end = (t.endDate ?? t.startDate).slice(0, 10);
+                  return key >= start && key <= end;
                 });
+              };
 
               const selectedWorker = staffList.find(
                 (s) => s.userId === calWorkerFilter,
               );
               const totalInRange = workerDetails.filter((d) => {
                 if (!d.startDate) return false;
-                return (
-                  d.startDate.slice(0, 10) >= calFromDate &&
-                  d.startDate.slice(0, 10) <= calToDate
-                );
+                const start = d.startDate.slice(0, 10);
+                const end = (d.endDate ?? d.startDate).slice(0, 10);
+                return start <= calToDate && end >= calFromDate;
               }).length;
 
               return (
@@ -1824,7 +1845,14 @@ export function TasksPage() {
                         )
                         .join(", ");
                       const locationLabel = plotNames || "—";
-                      const dateLabel = isoDate(detail.startDate);
+                      const isMultiDayRow =
+                        detail.startDate &&
+                        detail.endDate &&
+                        detail.startDate.slice(0, 10) !==
+                          detail.endDate.slice(0, 10);
+                      const dateLabel = isMultiDayRow
+                        ? `${isoDate(detail.startDate)} – ${isoDate(detail.endDate)}`
+                        : isoDate(detail.startDate);
                       const timeLabel =
                         detail.startDate && detail.endDate
                           ? `${isoTime(detail.startDate)} – ${isoTime(detail.endDate)}`
@@ -2630,7 +2658,7 @@ export function TasksPage() {
                     thông thường.
                   </p>
 
-                  {/* Row 1: Worker + Date */}
+                  {/* Row 1: Worker + Date (same-day only) */}
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-medium text-[#475569] mb-1.5">
@@ -2664,11 +2692,15 @@ export function TasksPage() {
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-[#475569] mb-1.5">
-                        Ngày thực hiện <span className="text-red-500">*</span>
+                        Ngày thực hiện
+                        {!singleForm.isMultiDay && (
+                          <span className="text-red-500"> *</span>
+                        )}
                       </label>
                       <input
                         type="date"
-                        value={singleForm.date}
+                        disabled={singleForm.isMultiDay}
+                        value={singleForm.isMultiDay ? "" : singleForm.date}
                         onChange={(e) => {
                           const d = e.target.value;
                           setSingleForm((p) => ({ ...p, date: d }));
@@ -2870,50 +2902,203 @@ export function TasksPage() {
                     </div>
                   )}
 
-                  {/* Time range */}
-                  <div>
-                    <label className="block text-xs font-medium text-[#475569] mb-1.5">
-                      Khung giờ
-                    </label>
-                    <InlineTimeRange
-                      startHour={singleForm.startHour}
-                      startMinute={singleForm.startMinute}
-                      endHour={singleForm.endHour}
-                      endMinute={singleForm.endMinute}
-                      onChange={(sh, sm, eh, em) => {
+                  {/* Multi-day toggle */}
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
                         setSingleForm((p) => ({
                           ...p,
-                          startHour: sh,
-                          startMinute: sm,
-                          endHour: eh,
-                          endMinute: em,
-                        }));
-                        checkSingleConflict(
-                          singleForm.workerId,
-                          singleForm.date,
-                          sh,
-                          sm,
-                          eh,
-                          em,
-                        );
-                      }}
-                    />
-                    {(() => {
-                      const sm =
-                        parseInt(singleForm.startHour) * 60 +
-                        parseInt(singleForm.startMinute);
-                      const em =
-                        parseInt(singleForm.endHour) * 60 +
-                        parseInt(singleForm.endMinute);
-                      if (em <= sm)
+                          isMultiDay: !p.isMultiDay,
+                        }))
+                      }
+                      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none ${
+                        singleForm.isMultiDay ? "bg-[#009689]" : "bg-[#e2e8f0]"
+                      }`}
+                    >
+                      <span
+                        className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${
+                          singleForm.isMultiDay
+                            ? "translate-x-4"
+                            : "translate-x-0"
+                        }`}
+                      />
+                    </button>
+                    <span className="text-xs font-medium text-[#475569]">
+                      Công việc kéo dài nhiều ngày
+                    </span>
+                  </div>
+
+                  {/* Same-day time range */}
+                  {!singleForm.isMultiDay && (
+                    <div>
+                      <label className="block text-xs font-medium text-[#475569] mb-1.5">
+                        Khung giờ
+                      </label>
+                      <InlineTimeRange
+                        startHour={singleForm.startHour}
+                        startMinute={singleForm.startMinute}
+                        endHour={singleForm.endHour}
+                        endMinute={singleForm.endMinute}
+                        onChange={(sh, sm, eh, em) => {
+                          setSingleForm((p) => ({
+                            ...p,
+                            startHour: sh,
+                            startMinute: sm,
+                            endHour: eh,
+                            endMinute: em,
+                          }));
+                          checkSingleConflict(
+                            singleForm.workerId,
+                            singleForm.date,
+                            sh,
+                            sm,
+                            eh,
+                            em,
+                          );
+                        }}
+                      />
+                      {(() => {
+                        const sm =
+                          parseInt(singleForm.startHour) * 60 +
+                          parseInt(singleForm.startMinute);
+                        const em =
+                          parseInt(singleForm.endHour) * 60 +
+                          parseInt(singleForm.endMinute);
+                        if (em <= sm)
+                          return (
+                            <p className="mt-1.5 text-xs text-red-500">
+                              Giờ kết thúc phải sau giờ bắt đầu.
+                            </p>
+                          );
+                        return null;
+                      })()}
+                    </div>
+                  )}
+
+                  {/* Multi-day date + time range */}
+                  {singleForm.isMultiDay && (
+                    <div className="space-y-3 p-3 bg-[#f0fdfa] border border-[#009689]/20 rounded-lg">
+                      <p className="text-[11px] text-[#0f766e] font-medium">
+                        Giao 1 task detail duy nhất kéo dài từ ngày bắt đầu đến
+                        ngày kết thúc.
+                      </p>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[10px] font-semibold text-[#475569] uppercase tracking-wide mb-1">
+                            Ngày bắt đầu <span className="text-red-500">*</span>
+                          </label>
+                          <input
+                            type="date"
+                            value={singleForm.multiStartDate}
+                            onChange={(e) =>
+                              setSingleForm((p) => ({
+                                ...p,
+                                multiStartDate: e.target.value,
+                              }))
+                            }
+                            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-semibold text-[#475569] uppercase tracking-wide mb-1">
+                            Ngày kết thúc{" "}
+                            <span className="text-red-500">*</span>
+                          </label>
+                          <input
+                            type="date"
+                            value={singleForm.multiEndDate}
+                            onChange={(e) =>
+                              setSingleForm((p) => ({
+                                ...p,
+                                multiEndDate: e.target.value,
+                              }))
+                            }
+                            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                          />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[10px] font-semibold text-[#475569] uppercase tracking-wide mb-1">
+                            Giờ bắt đầu
+                          </label>
+                          <input
+                            type="time"
+                            value={`${singleForm.multiStartHour}:${singleForm.multiStartMinute}`}
+                            onChange={(e) => {
+                              const [h = "07", m = "00"] =
+                                e.target.value.split(":");
+                              setSingleForm((p) => ({
+                                ...p,
+                                multiStartHour: h.padStart(2, "0"),
+                                multiStartMinute: m.padStart(2, "0"),
+                              }));
+                            }}
+                            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-semibold text-[#475569] uppercase tracking-wide mb-1">
+                            Giờ kết thúc
+                          </label>
+                          <input
+                            type="time"
+                            value={`${singleForm.multiEndHour}:${singleForm.multiEndMinute}`}
+                            onChange={(e) => {
+                              const [h = "17", m = "00"] =
+                                e.target.value.split(":");
+                              setSingleForm((p) => ({
+                                ...p,
+                                multiEndHour: h.padStart(2, "0"),
+                                multiEndMinute: m.padStart(2, "0"),
+                              }));
+                            }}
+                            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                          />
+                        </div>
+                      </div>
+                      {(() => {
+                        if (
+                          !singleForm.multiStartDate ||
+                          !singleForm.multiEndDate
+                        )
+                          return null;
+                        if (singleForm.multiEndDate < singleForm.multiStartDate)
+                          return (
+                            <p className="text-xs text-red-500">
+                              Ngày kết thúc phải sau ngày bắt đầu.
+                            </p>
+                          );
+                        if (
+                          singleForm.multiEndDate ===
+                            singleForm.multiStartDate &&
+                          parseInt(singleForm.multiEndHour) * 60 +
+                            parseInt(singleForm.multiEndMinute) <=
+                            parseInt(singleForm.multiStartHour) * 60 +
+                              parseInt(singleForm.multiStartMinute)
+                        )
+                          return (
+                            <p className="text-xs text-red-500">
+                              Giờ kết thúc phải sau giờ bắt đầu.
+                            </p>
+                          );
+                        const d1 = new Date(singleForm.multiStartDate);
+                        const d2 = new Date(singleForm.multiEndDate);
+                        const days =
+                          Math.round((d2.getTime() - d1.getTime()) / 86400000) +
+                          1;
                         return (
-                          <p className="mt-1.5 text-xs text-red-500">
-                            Giờ kết thúc phải sau giờ bắt đầu.
+                          <p className="text-xs text-[#0f766e] font-medium">
+                            Kéo dài{" "}
+                            <span className="font-bold">{days} ngày</span> (
+                            {singleForm.multiStartDate} →{" "}
+                            {singleForm.multiEndDate})
                           </p>
                         );
-                      return null;
-                    })()}
-                  </div>
+                      })()}
+                    </div>
+                  )}
 
                   {/* Notes */}
                   <div>
@@ -2968,11 +3153,21 @@ export function TasksPage() {
                       !singleForm.taskId ||
                       !singleForm.seasonId ||
                       !singleForm.bedIds.length ||
-                      !singleForm.date ||
-                      parseInt(singleForm.endHour) * 60 +
-                        parseInt(singleForm.endMinute) <=
-                        parseInt(singleForm.startHour) * 60 +
-                          parseInt(singleForm.startMinute))
+                      (singleForm.isMultiDay
+                        ? !singleForm.multiStartDate ||
+                          !singleForm.multiEndDate ||
+                          singleForm.multiEndDate < singleForm.multiStartDate ||
+                          (singleForm.multiEndDate ===
+                            singleForm.multiStartDate &&
+                            parseInt(singleForm.multiEndHour) * 60 +
+                              parseInt(singleForm.multiEndMinute) <=
+                              parseInt(singleForm.multiStartHour) * 60 +
+                                parseInt(singleForm.multiStartMinute))
+                        : !singleForm.date ||
+                          parseInt(singleForm.endHour) * 60 +
+                            parseInt(singleForm.endMinute) <=
+                            parseInt(singleForm.startHour) * 60 +
+                              parseInt(singleForm.startMinute)))
                 }
                 className="flex-1 px-4 py-2 rounded-lg text-sm font-medium bg-[#009689] text-white hover:bg-[#007f73] disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
               >
@@ -3030,7 +3225,14 @@ export function TasksPage() {
                       allPlots.find((p) => p.plotId === id)?.plotName ?? id,
                   )
                   .join(", ");
-                const displayDate = isoDate(selectedDetail.startDate);
+                const detailStartDay =
+                  selectedDetail.startDate?.slice(0, 10) ?? "";
+                const detailEndDay =
+                  selectedDetail.endDate?.slice(0, 10) ?? detailStartDay;
+                const isMultiDayDetail = detailEndDay !== detailStartDay;
+                const displayDate = isMultiDayDetail
+                  ? `${isoDate(selectedDetail.startDate)} – ${isoDate(selectedDetail.endDate)}`
+                  : isoDate(selectedDetail.startDate);
                 const timeStr = `${isoTime(selectedDetail.startDate)} – ${isoTime(selectedDetail.endDate)}`;
                 const statusColor =
                   selectedDetail.status === "Active" ||
@@ -3098,7 +3300,9 @@ export function TasksPage() {
                       </div>
                       <div>
                         <p className="text-xs text-[#64748b] mb-0.5">
-                          Ngày thực hiện
+                          {isMultiDayDetail
+                            ? "Thời gian thực hiện"
+                            : "Ngày thực hiện"}
                         </p>
                         <p className="font-medium text-[#1e293b]">
                           {displayDate}
@@ -3160,7 +3364,6 @@ export function TasksPage() {
           setIsEditDetailOpen(o);
           if (!o) {
             setEditDetail(null);
-            setIsTimePickerOpen(false);
           }
         }}
       >
