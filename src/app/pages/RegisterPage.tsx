@@ -11,6 +11,7 @@ export function RegisterPage() {
     confirmPassword: "",
     fullname: "",
     phoneNumber: "",
+    targetRole: "Worker",
   });
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
@@ -56,6 +57,7 @@ export function RegisterPage() {
         password: form.password.trim(),
         fullname: form.fullname.trim(),
         phoneNumber: form.phoneNumber.trim(),
+        targetRole: form.targetRole,
       });
 
       if (res.success) {
@@ -138,6 +140,23 @@ export function RegisterPage() {
               placeholder="0909998877"
               disabled={loading}
             />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-[#45556c] mb-1">
+              Vai trò
+            </label>
+            <select
+              value={form.targetRole}
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, targetRole: e.target.value }))
+              }
+              disabled={loading}
+              className="w-full px-4 py-3 rounded-[10px] border border-[#cbd5e1] focus:outline-none focus:ring-2 focus:ring-[#009689] focus:border-transparent transition-all text-[#334155] bg-white appearance-none cursor-pointer"
+            >
+              <option value="Worker">Nhân viên</option>
+              <option value="Specialist">Chuyên gia nông nghiệp</option>
+            </select>
           </div>
 
           <div>

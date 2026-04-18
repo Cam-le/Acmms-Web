@@ -481,9 +481,6 @@ export function DashboardPage() {
                   <th className="text-left px-4 py-3 text-xs font-semibold text-[#94a3b8] uppercase tracking-wider">
                     Tháng
                   </th>
-                  <th className="text-right px-4 py-3 text-xs font-semibold text-[#94a3b8] uppercase tracking-wider">
-                    Số tiền
-                  </th>
                   <th className="px-4 py-3" />
                 </tr>
               </thead>
@@ -502,9 +499,6 @@ export function DashboardPage() {
                     </td>
                     <td className="px-4 py-3.5 text-[#64748b]">
                       {formatMonth(b.month)}
-                    </td>
-                    <td className="px-4 py-3.5 text-right font-bold text-[#d97706]">
-                      {formatVND(b.totalAmount)}
                     </td>
                     <td className="px-4 py-3.5">
                       <span className="inline-flex px-2.5 py-1 rounded-full text-xs font-semibold bg-[#fee2e2] text-[#991b1b]">

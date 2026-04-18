@@ -14,10 +14,18 @@ import {
   ChevronRight,
   ArrowUpDown,
   AlertCircle,
+  UserCheck,
+  CheckCircle,
+  Clock,
 } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
-import { api, UserResponse, RoleResponse } from "../../api/client";
+import {
+  api,
+  UserResponse,
+  RoleResponse,
+  UnassignedStaff,
+} from "../../api/client";
 
 // Local row type — status matches API values directly ("Active" | "Inactive")
 type WorkerStatus = "Active" | "Inactive";
@@ -134,6 +142,19 @@ export function WorkersPage() {
     status: "Active" as WorkerStatus,
   });
 
+  // ── Pending accounts tab ──
+  const [activeTab, setActiveTab] = useState<"staff" | "pending">("staff");
+  const [pending, setPending] = useState<UnassignedStaff[]>([]);
+  const [pendingLoading, setPendingLoading] = useState(false);
+  const [approvingId, setApprovingId] = useState<string | null>(null);
+  const [rejectTarget, setRejectTarget] = useState<UnassignedStaff | null>(
+    null,
+  );
+  const [rejectSubmitting, setRejectSubmitting] = useState(false);
+  const [pendingRowError, setPendingRowError] = useState<
+    Record<string, string>
+  >({});
+
   const availableRoleNames: string[] = apiRoles.map((r) => r.roleName);
 
   // ── Load roles ──
@@ -162,10 +183,24 @@ export function WorkersPage() {
     }
   }, []);
 
+  // ── Load pending ──
+  const loadPending = useCallback(async () => {
+    setPendingLoading(true);
+    try {
+      const data = await api.getUnassignedStaffs();
+      setPending(data ?? []);
+    } catch {
+      setPending([]);
+    } finally {
+      setPendingLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     loadRoles();
     loadWorkers();
-  }, [loadRoles, loadWorkers]);
+    loadPending();
+  }, [loadRoles, loadWorkers, loadPending]);
 
   // ── Helpers ──
   const getRoleId = (roleName: string): string | undefined => {
@@ -356,6 +391,54 @@ export function WorkersPage() {
     setIsDeleteDialogOpen(true);
   };
 
+  // ── Pending: approve ──
+  const handleApprovePending = async (staff: UnassignedStaff) => {
+    if (!staff.requestedRole) {
+      setPendingRowError((p) => ({
+        ...p,
+        [staff.userId]: "Chưa có vai trò đăng ký",
+      }));
+      return;
+    }
+    setApprovingId(staff.userId);
+    setPendingRowError((p) => {
+      const n = { ...p };
+      delete n[staff.userId];
+      return n;
+    });
+    try {
+      await api.assignStaffRole(staff.userId, staff.requestedRole);
+      await Promise.all([loadPending(), loadWorkers()]);
+    } catch (err) {
+      setPendingRowError((p) => ({
+        ...p,
+        [staff.userId]:
+          err instanceof Error ? err.message : "Cấp quyền thất bại",
+      }));
+    } finally {
+      setApprovingId(null);
+    }
+  };
+
+  // ── Pending: reject ──
+  const handleRejectPending = async () => {
+    if (!rejectTarget) return;
+    setRejectSubmitting(true);
+    try {
+      await api.deleteStaff(rejectTarget.userId);
+      await loadPending();
+    } catch (err) {
+      setPendingRowError((p) => ({
+        ...p,
+        [rejectTarget.userId]:
+          err instanceof Error ? err.message : "Xóa thất bại",
+      }));
+    } finally {
+      setRejectSubmitting(false);
+      setRejectTarget(null);
+    }
+  };
+
   // ==================== RENDER ====================
   return (
     <div className="p-6 flex flex-col gap-6">
@@ -383,53 +466,246 @@ export function WorkersPage() {
         </button>
       </div>
 
+      {/* Tabs */}
+      <div className="flex gap-1 bg-[#f1f5f9] p-1 rounded-lg w-fit">
+        <button
+          onClick={() => setActiveTab("staff")}
+          className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+            activeTab === "staff"
+              ? "bg-white text-[#115e59] shadow-sm"
+              : "text-[#62748e] hover:text-[#334155]"
+          }`}
+        >
+          <Users className="w-4 h-4" />
+          Nhân viên
+        </button>
+        <button
+          onClick={() => setActiveTab("pending")}
+          className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+            activeTab === "pending"
+              ? "bg-white text-[#115e59] shadow-sm"
+              : "text-[#62748e] hover:text-[#334155]"
+          }`}
+        >
+          <UserCheck className="w-4 h-4" />
+          Chờ duyệt
+          {pending.length > 0 && (
+            <span className="ml-0.5 px-1.5 py-0.5 bg-[#009689] text-white text-xs rounded-full leading-none">
+              {pending.length}
+            </span>
+          )}
+        </button>
+      </div>
+
       {/* Table + Filters */}
-      <div className="flex flex-col gap-0">
-        <div className="flex items-center gap-3 mb-3">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#94a3b8]" />
-            <input
-              value={searchTerm}
+      {activeTab === "staff" ? (
+        <div className="flex flex-col gap-0">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#94a3b8]" />
+              <input
+                value={searchTerm}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  setPage(1);
+                }}
+                placeholder="Tìm kiếm nhân viên..."
+                className="w-full pl-9 pr-4 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689]"
+              />
+            </div>
+            <select
+              value={filterRole}
               onChange={(e) => {
-                setSearchTerm(e.target.value);
+                setFilterRole(e.target.value);
                 setPage(1);
               }}
-              placeholder="Tìm kiếm nhân viên..."
-              className="w-full pl-9 pr-4 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689]"
-            />
+              className="px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] bg-white text-[#334155] shrink-0"
+            >
+              <option value="all">Tất cả vai trò</option>
+              {availableRoleNames.map((r) => (
+                <option key={r} value={r}>
+                  {r}
+                </option>
+              ))}
+            </select>
           </div>
-          <select
-            value={filterRole}
-            onChange={(e) => {
-              setFilterRole(e.target.value);
-              setPage(1);
-            }}
-            className="px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] bg-white text-[#334155] shrink-0"
-          >
-            <option value="all">Tất cả vai trò</option>
-            {availableRoleNames.map((r) => (
-              <option key={r} value={r}>
-                {r}
-              </option>
-            ))}
-          </select>
-        </div>
 
-        {/* Table */}
+          {/* Table */}
+          <div className="bg-white rounded-xl border border-[#e2e8f0] shadow-sm overflow-hidden">
+            {loading ? (
+              <div className="flex items-center justify-center py-16">
+                <Loader2 className="w-6 h-6 animate-spin text-[#009689]" />
+              </div>
+            ) : filteredWorkers.length === 0 ? (
+              <div className="text-center py-16 text-[#62748e]">
+                Không tìm thấy nhân viên nào
+              </div>
+            ) : (
+              <table className="w-full">
+                <thead className="bg-[#f8fafc] border-b border-[#e2e8f0]">
+                  <tr>
+                    {["Nhân viên", "Email", "SĐT", "Vai trò"].map((h) => (
+                      <th
+                        key={h}
+                        className="px-6 py-4 text-left text-xs font-bold text-[#62748e] uppercase tracking-wider"
+                      >
+                        {h}
+                      </th>
+                    ))}
+                    <th className="px-6 py-4 text-left text-xs font-bold text-[#62748e] uppercase tracking-wider">
+                      <button
+                        onClick={() => handleSort("dateJoined")}
+                        className="flex items-center gap-1 hover:text-[#009689]"
+                      >
+                        Ngày tham gia{" "}
+                        {sortField !== "dateJoined" ? (
+                          <ArrowUpDown className="w-3.5 h-3.5 text-[#94a3b8]" />
+                        ) : sortDirection === "asc" ? (
+                          <ChevronUp className="w-3.5 h-3.5 text-[#009689]" />
+                        ) : (
+                          <ChevronDown className="w-3.5 h-3.5 text-[#009689]" />
+                        )}
+                      </button>
+                    </th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-[#62748e] uppercase tracking-wider">
+                      <button
+                        onClick={() => handleSort("status")}
+                        className="flex items-center gap-1 hover:text-[#009689]"
+                      >
+                        Trạng thái{" "}
+                        {sortField !== "status" ? (
+                          <ArrowUpDown className="w-3.5 h-3.5 text-[#94a3b8]" />
+                        ) : sortDirection === "asc" ? (
+                          <ChevronUp className="w-3.5 h-3.5 text-[#009689]" />
+                        ) : (
+                          <ChevronDown className="w-3.5 h-3.5 text-[#009689]" />
+                        )}
+                      </button>
+                    </th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-[#62748e] uppercase tracking-wider">
+                      Thao tác
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#e2e8f0]">
+                  {pagedWorkers.map((worker) => (
+                    <tr
+                      key={worker.id}
+                      className="hover:bg-[#f8fafc] transition-colors"
+                    >
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 bg-[#009689] rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0">
+                            {worker.name.charAt(0).toUpperCase()}
+                          </div>
+                          <span className="font-medium text-[#115e59] text-sm">
+                            {worker.name}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-sm text-[#62748e]">
+                        {worker.email}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-[#62748e]">
+                        {worker.phone}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-[#62748e]">
+                        {worker.role}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-[#62748e]">
+                        {worker.dateJoined}
+                      </td>
+                      <td className="px-6 py-4">
+                        <span
+                          className={`px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap ${getStatusBadgeColor(worker.status)}`}
+                        >
+                          {worker.status}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => openViewModal(worker)}
+                            className="p-1.5 text-[#62748e] hover:text-[#009689] hover:bg-[#f0fdf9] rounded transition-colors"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => openEditModal(worker)}
+                            className="p-1.5 text-[#62748e] hover:text-[#009689] hover:bg-[#f0fdf9] rounded transition-colors"
+                          >
+                            <Edit className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => openDeleteDialog(worker)}
+                            className="p-1.5 text-[#62748e] hover:text-red-500 hover:bg-red-50 rounded transition-colors"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            {/* pagination */}
+            <div className="flex items-center justify-end px-5 py-4 border-t border-[#e2e8f0]">
+              <div className="flex items-center gap-1">
+                <PaginationBtn
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </PaginationBtn>
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map(
+                  (p) => (
+                    <button
+                      key={p}
+                      onClick={() => setPage(p)}
+                      className={`w-8 h-8 text-sm rounded-lg transition-colors ${
+                        p === currentPage
+                          ? "bg-[#009689] text-white font-semibold"
+                          : "text-[#62748e] hover:bg-[#f1f5f9]"
+                      }`}
+                    >
+                      {p}
+                    </button>
+                  ),
+                )}
+                <PaginationBtn
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </PaginationBtn>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        /* ===== PENDING ACCOUNTS TAB ===== */
         <div className="bg-white rounded-xl border border-[#e2e8f0] shadow-sm overflow-hidden">
-          {loading ? (
+          {pendingLoading ? (
             <div className="flex items-center justify-center py-16">
               <Loader2 className="w-6 h-6 animate-spin text-[#009689]" />
             </div>
-          ) : filteredWorkers.length === 0 ? (
-            <div className="text-center py-16 text-[#62748e]">
-              Không tìm thấy nhân viên nào
+          ) : pending.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 text-[#94a3b8] gap-2">
+              <CheckCircle className="w-10 h-10 text-[#009689] opacity-30" />
+              <p className="text-sm">Không có tài khoản nào đang chờ duyệt</p>
             </div>
           ) : (
             <table className="w-full">
               <thead className="bg-[#f8fafc] border-b border-[#e2e8f0]">
                 <tr>
-                  {["Nhân viên", "Email", "SĐT", "Vai trò"].map((h) => (
+                  {[
+                    "Họ và tên",
+                    "Email",
+                    "SĐT",
+                    "Vai trò đăng ký",
+                    "Ngày đăng ký",
+                  ].map((h) => (
                     <th
                       key={h}
                       className="px-6 py-4 text-left text-xs font-bold text-[#62748e] uppercase tracking-wider"
@@ -438,94 +714,90 @@ export function WorkersPage() {
                     </th>
                   ))}
                   <th className="px-6 py-4 text-left text-xs font-bold text-[#62748e] uppercase tracking-wider">
-                    <button
-                      onClick={() => handleSort("dateJoined")}
-                      className="flex items-center gap-1 hover:text-[#009689]"
-                    >
-                      Ngày tham gia{" "}
-                      {sortField !== "dateJoined" ? (
-                        <ArrowUpDown className="w-3.5 h-3.5 text-[#94a3b8]" />
-                      ) : sortDirection === "asc" ? (
-                        <ChevronUp className="w-3.5 h-3.5 text-[#009689]" />
-                      ) : (
-                        <ChevronDown className="w-3.5 h-3.5 text-[#009689]" />
-                      )}
-                    </button>
-                  </th>
-                  <th className="px-6 py-4 text-left text-xs font-bold text-[#62748e] uppercase tracking-wider">
-                    <button
-                      onClick={() => handleSort("status")}
-                      className="flex items-center gap-1 hover:text-[#009689]"
-                    >
-                      Trạng thái{" "}
-                      {sortField !== "status" ? (
-                        <ArrowUpDown className="w-3.5 h-3.5 text-[#94a3b8]" />
-                      ) : sortDirection === "asc" ? (
-                        <ChevronUp className="w-3.5 h-3.5 text-[#009689]" />
-                      ) : (
-                        <ChevronDown className="w-3.5 h-3.5 text-[#009689]" />
-                      )}
-                    </button>
-                  </th>
-                  <th className="px-6 py-4 text-left text-xs font-bold text-[#62748e] uppercase tracking-wider">
                     Thao tác
                   </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#e2e8f0]">
-                {pagedWorkers.map((worker) => (
+                {pending.map((s) => (
                   <tr
-                    key={worker.id}
+                    key={s.userId}
                     className="hover:bg-[#f8fafc] transition-colors"
                   >
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
                         <div className="w-9 h-9 bg-[#009689] rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0">
-                          {worker.name.charAt(0).toUpperCase()}
+                          {(s.fullname || s.email).charAt(0).toUpperCase()}
                         </div>
                         <span className="font-medium text-[#115e59] text-sm">
-                          {worker.name}
+                          {s.fullname || "—"}
                         </span>
                       </div>
                     </td>
                     <td className="px-6 py-4 text-sm text-[#62748e]">
-                      {worker.email}
+                      {s.email}
                     </td>
                     <td className="px-6 py-4 text-sm text-[#62748e]">
-                      {worker.phone}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-[#62748e]">
-                      {worker.role}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-[#62748e]">
-                      {worker.dateJoined}
+                      {s.phoneNumber || "—"}
                     </td>
                     <td className="px-6 py-4">
-                      <span
-                        className={`px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap ${getStatusBadgeColor(worker.status)}`}
-                      >
-                        {worker.status}
-                      </span>
+                      {s.requestedRole ? (
+                        <span
+                          className={`px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap ${
+                            s.requestedRole === "Specialist"
+                              ? "bg-[#ede9fe] text-[#5b21b6]"
+                              : "bg-[#dcfce7] text-[#008236]"
+                          }`}
+                        >
+                          {s.requestedRole}
+                        </span>
+                      ) : (
+                        <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-[#f1f5f9] text-[#94a3b8]">
+                          Chưa xác định
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-[#62748e]">
+                      <div className="flex items-center gap-1">
+                        <Clock className="w-3.5 h-3.5 shrink-0" />
+                        {s.createdAt
+                          ? new Date(s.createdAt).toLocaleDateString("vi-VN")
+                          : "—"}
+                      </div>
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-2">
+                        {pendingRowError[s.userId] && (
+                          <span className="text-xs text-red-500 max-w-[120px] leading-tight">
+                            {pendingRowError[s.userId]}
+                          </span>
+                        )}
                         <button
-                          onClick={() => openViewModal(worker)}
-                          className="p-1.5 text-[#62748e] hover:text-[#009689] hover:bg-[#f0fdf9] rounded transition-colors"
+                          onClick={() => handleApprovePending(s)}
+                          disabled={
+                            approvingId === s.userId || !s.requestedRole
+                          }
+                          title={
+                            !s.requestedRole
+                              ? "Chưa có vai trò đăng ký"
+                              : `Duyệt vai trò ${s.requestedRole}`
+                          }
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-[#009689] text-white rounded-lg text-xs font-medium hover:bg-[#007f75] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                          <Eye className="w-4 h-4" />
+                          {approvingId === s.userId ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <CheckCircle className="w-3.5 h-3.5" />
+                          )}
+                          Duyệt
                         </button>
                         <button
-                          onClick={() => openEditModal(worker)}
-                          className="p-1.5 text-[#62748e] hover:text-[#009689] hover:bg-[#f0fdf9] rounded transition-colors"
+                          onClick={() => setRejectTarget(s)}
+                          disabled={approvingId === s.userId}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-red-300 text-red-500 rounded-lg text-xs font-medium hover:bg-red-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                          <Edit className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => openDeleteDialog(worker)}
-                          className="p-1.5 text-[#62748e] hover:text-red-500 hover:bg-red-50 rounded transition-colors"
-                        >
-                          <Trash2 className="w-4 h-4" />
+                          <Trash2 className="w-3.5 h-3.5" />
+                          Từ chối
                         </button>
                       </div>
                     </td>
@@ -534,39 +806,13 @@ export function WorkersPage() {
               </tbody>
             </table>
           )}
-          {/* pagination */}
-          <div className="flex items-center justify-end px-5 py-4 border-t border-[#e2e8f0]">
-            <div className="flex items-center gap-1">
-              <PaginationBtn
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </PaginationBtn>
-              {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
-                <button
-                  key={p}
-                  onClick={() => setPage(p)}
-                  className={`w-8 h-8 text-sm rounded-lg transition-colors ${
-                    p === currentPage
-                      ? "bg-[#009689] text-white font-semibold"
-                      : "text-[#62748e] hover:bg-[#f1f5f9]"
-                  }`}
-                >
-                  {p}
-                </button>
-              ))}
-              <PaginationBtn
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                disabled={currentPage === totalPages}
-              >
-                <ChevronRight className="w-4 h-4" />
-              </PaginationBtn>
+          {!pendingLoading && pending.length > 0 && (
+            <div className="px-6 py-3 border-t border-[#e2e8f0] text-xs text-[#94a3b8]">
+              {pending.length} tài khoản đang chờ duyệt
             </div>
-          </div>
+          )}
         </div>
-      </div>
-      {/* end filters+table wrapper */}
+      )}
 
       {/* ===== VIEW MODAL ===== */}
       <Dialog.Root open={isViewModalOpen} onOpenChange={setIsViewModalOpen}>
@@ -772,6 +1018,42 @@ export function WorkersPage() {
               >
                 {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
                 Xóa
+              </AlertDialog.Action>
+            </div>
+          </AlertDialog.Content>
+        </AlertDialog.Portal>
+      </AlertDialog.Root>
+
+      {/* ===== REJECT PENDING DIALOG ===== */}
+      <AlertDialog.Root
+        open={!!rejectTarget}
+        onOpenChange={(o: boolean) => {
+          if (!o) setRejectTarget(null);
+        }}
+      >
+        <AlertDialog.Portal>
+          <AlertDialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
+          <AlertDialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-xl shadow-xl w-full max-w-sm z-50 p-6">
+            <AlertDialog.Title className="text-lg font-bold text-[#115e59] mb-2">
+              Từ chối tài khoản
+            </AlertDialog.Title>
+            <AlertDialog.Description className="text-sm text-[#62748e] mb-6">
+              Bạn có chắc muốn từ chối và xóa tài khoản của{" "}
+              <strong>{rejectTarget?.fullname || rejectTarget?.email}</strong>?{" "}
+              Hành động này không thể hoàn tác.
+            </AlertDialog.Description>
+            <div className="flex justify-end gap-3">
+              <AlertDialog.Cancel className="px-4 py-2 text-sm text-[#62748e] hover:text-[#334155] transition-colors">
+                Hủy
+              </AlertDialog.Cancel>
+              <AlertDialog.Action
+                onClick={handleRejectPending}
+                className="px-4 py-2 bg-red-500 text-white text-sm rounded-lg hover:bg-red-600 transition-colors flex items-center gap-2"
+              >
+                {rejectSubmitting && (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                )}
+                Xóa tài khoản
               </AlertDialog.Action>
             </div>
           </AlertDialog.Content>
