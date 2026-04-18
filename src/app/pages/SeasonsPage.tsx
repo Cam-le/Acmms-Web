@@ -21,6 +21,11 @@ import {
   FileText,
   AlertTriangle,
   Check,
+  Thermometer,
+  Droplets,
+  Sun,
+  CloudRain,
+  Cpu,
 } from "lucide-react";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import * as Collapsible from "@radix-ui/react-collapsible";
@@ -32,6 +37,8 @@ import {
   PlotResponse,
   BedResponse,
   CropResponse,
+  IotDataResponse,
+  IotDeviceResponse,
 } from "../../api/client";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -945,9 +952,103 @@ export function SeasonsPage() {
 
 // ─── Detail View ──────────────────────────────────────────────────────────────
 
+/** Shape of one merged IoT row: latest reading + device info */
+interface IotRow {
+  sensorDataId: string;
+  deviceId: string;
+  deviceCode: string;
+  deviceName: string;
+  bedId: string;
+  bedName: string | null;
+  recordedAt: string;
+  temperature: number;
+  humidity: number;
+  soilMoisture: number;
+  light: number;
+  isRaining: boolean;
+  isAlert: boolean;
+}
+
 function DetailSeasonView({ season }: { season: Season }) {
   const plots = season.plots.map(toV2);
 
+  // ── IoT sensor data ────────────────────────────────────────────────────────
+  const [iotRows, setIotRows] = useState<IotRow[]>([]);
+  const [iotLoading, setIotLoading] = useState(true);
+  const [iotError, setIotError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadIot() {
+      setIotLoading(true);
+      setIotError(null);
+      try {
+        const allData = await api.getIotDatas();
+        const seasonData = (Array.isArray(allData) ? allData : []).filter(
+          (d) => d.seasonId === season.id,
+        );
+
+        // Keep only the most recent reading per device
+        const latestByDevice: Record<string, IotDataResponse> = {};
+        for (const d of seasonData) {
+          const prev = latestByDevice[d.deviceId];
+          if (!prev || d.recordedAt > prev.recordedAt) {
+            latestByDevice[d.deviceId] = d;
+          }
+        }
+
+        // Fetch device details for each unique deviceId (in parallel)
+        const deviceIds = Object.keys(latestByDevice);
+        const deviceResults = await Promise.allSettled(
+          deviceIds.map((id) => api.getIotDevice(id)),
+        );
+
+        if (cancelled) return;
+
+        const rows: IotRow[] = deviceIds.map((deviceId, i) => {
+          const reading = latestByDevice[deviceId];
+          const deviceResult = deviceResults[i];
+          const device: IotDeviceResponse | null =
+            deviceResult.status === "fulfilled" ? deviceResult.value : null;
+
+          // Find bed name from season plots using bedId
+          const bedId = device?.bedId ?? null;
+          const matchedPlot = bedId
+            ? season.plots.find((p) => p._bedId === bedId)
+            : null;
+          const bedName = matchedPlot?.plotName ?? null;
+
+          return {
+            sensorDataId: reading.sensorDataId,
+            deviceId,
+            deviceCode: device?.deviceCode ?? deviceId.slice(0, 8),
+            deviceName: device?.name ?? "—",
+            bedId: bedId ?? "",
+            bedName,
+            recordedAt: reading.recordedAt,
+            temperature: reading.temperature,
+            humidity: reading.humidity,
+            soilMoisture: reading.soilMoisture,
+            light: reading.light,
+            isRaining: reading.isRaining,
+            isAlert: reading.isAlert,
+          };
+        });
+
+        setIotRows(rows);
+      } catch {
+        if (!cancelled) setIotError("Không thể tải dữ liệu cảm biến IoT.");
+      } finally {
+        if (!cancelled) setIotLoading(false);
+      }
+    }
+    loadIot();
+    return () => {
+      cancelled = true;
+    };
+  }, [season.id]);
+
+  // ── Harvest groups ─────────────────────────────────────────────────────────
   // Group by exact harvest date (ISO string), sorted earliest first
   const byHarvestDate = plots.reduce(
     (acc, p) => {
@@ -1146,11 +1247,149 @@ function DetailSeasonView({ season }: { season: Season }) {
           </div>
         )}
       </div>
+      {/* IoT Sensor Data */}
+      <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm overflow-hidden">
+        <div className="px-6 py-4 border-b border-[#e2e8f0] flex items-center justify-between">
+          <h3 className="text-sm font-bold text-[#62748e] uppercase flex items-center gap-2">
+            <Cpu className="w-4 h-4" /> Dữ liệu cảm biến IoT
+            {iotRows.length > 0 && (
+              <span className="font-normal normal-case text-[#009689]">
+                · {iotRows.length} thiết bị
+              </span>
+            )}
+          </h3>
+          {iotRows.some((r) => r.isAlert) && (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-red-50 border border-red-200 rounded-full text-xs font-medium text-red-600">
+              <AlertTriangle className="w-3 h-3" /> Có cảnh báo
+            </span>
+          )}
+        </div>
+
+        {iotLoading ? (
+          <div className="flex items-center justify-center py-10 text-[#62748e] gap-2">
+            <div className="w-5 h-5 border-2 border-[#009689] border-t-transparent rounded-full animate-spin" />
+            Đang tải dữ liệu cảm biến...
+          </div>
+        ) : iotError ? (
+          <div className="flex items-center gap-2 px-6 py-4 text-sm text-red-600">
+            <AlertTriangle className="w-4 h-4 shrink-0" />
+            {iotError}
+          </div>
+        ) : iotRows.length === 0 ? (
+          <div className="text-center py-10 text-[#62748e] text-sm">
+            Chưa có dữ liệu cảm biến cho mùa vụ này
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-[#f8fafc] border-b border-[#e2e8f0]">
+                <tr>
+                  {[
+                    "Thiết bị",
+                    "Luống",
+                    "Thời gian đo",
+                    "Nhiệt độ (°C)",
+                    "Độ ẩm KK (%)",
+                    "Độ ẩm đất (%)",
+                    "Ánh sáng",
+                    "Trạng thái",
+                  ].map((h) => (
+                    <th
+                      key={h}
+                      className="px-4 py-3 text-left text-xs font-semibold text-[#62748e] uppercase tracking-wide whitespace-nowrap"
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#f1f5f9]">
+                {iotRows.map((row) => (
+                  <tr
+                    key={row.sensorDataId}
+                    className={`hover:bg-[#f8fafc] transition-colors ${row.isAlert ? "bg-red-50/40" : ""}`}
+                  >
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <div className="font-mono text-xs font-semibold text-[#115e59]">
+                        {row.deviceCode}
+                      </div>
+                      {row.deviceName !== row.deviceCode && (
+                        <div className="text-xs text-[#90a1b9]">
+                          {row.deviceName}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-[#62748e] whitespace-nowrap">
+                      {row.bedName ? (
+                        <span className="inline-flex items-center gap-1">
+                          <MapPin className="w-3 h-3 text-[#009689]" />
+                          {row.bedName}
+                        </span>
+                      ) : (
+                        <span className="text-[#90a1b9]">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-[#62748e] whitespace-nowrap text-xs">
+                      {new Date(row.recordedAt).toLocaleString("vi-VN", {
+                        day: "2-digit",
+                        month: "2-digit",
+                        year: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <span className="inline-flex items-center gap-1.5 font-medium text-orange-600">
+                        <Thermometer className="w-3.5 h-3.5" />
+                        {row.temperature.toFixed(1)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <span className="inline-flex items-center gap-1.5 font-medium text-blue-600">
+                        <Droplets className="w-3.5 h-3.5" />
+                        {row.humidity}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <span className="inline-flex items-center gap-1.5 font-medium text-[#008236]">
+                        <Droplets className="w-3.5 h-3.5 opacity-60" />
+                        {row.soilMoisture}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <span className="inline-flex items-center gap-1.5 text-[#62748e]">
+                        <Sun className="w-3.5 h-3.5 text-yellow-500" />
+                        {row.light > 0 ? row.light : "—"}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <div className="flex flex-col gap-1">
+                        {row.isRaining && (
+                          <span className="inline-flex items-center gap-1 text-xs text-blue-600">
+                            <CloudRain className="w-3 h-3" /> Đang mưa
+                          </span>
+                        )}
+                        {row.isAlert ? (
+                          <span className="inline-flex items-center gap-1 text-xs font-medium text-red-600">
+                            <AlertTriangle className="w-3 h-3" /> Cảnh báo
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-xs text-[#008236]">
+                            <CheckCircle className="w-3 h-3" /> Bình thường
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
-
-// ─── Create View ──────────────────────────────────────────────────────────────
 
 function CreateSeasonView({
   farms,

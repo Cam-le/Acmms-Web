@@ -502,6 +502,20 @@ export interface IotDeviceRequest {
   longitude: number;
 }
 
+export interface IotDataResponse {
+  sensorDataId: string;
+  deviceId: string;
+  seasonId: string;
+  recordedAt: string;
+  temperature: number;
+  humidity: number;
+  soilMoisture: number;
+  light: number;
+  isRaining: boolean;
+  isAlert: boolean;
+  createdAt: string;
+}
+
 // ==================== API Methods ====================
 
 export const api = {
@@ -685,6 +699,9 @@ export const api = {
     request<unknown>("PUT", `/api/CropGrowthTask/${id}`, body),
   deleteCropGrowthTask: (id: string) =>
     request<unknown>("DELETE", `/api/CropGrowthTask/${id}`),
+
+  // IoT Data
+  getIotDatas: () => request<IotDataResponse[]>("GET", "/api/IotDatas"),
 
   // IoT Devices
   getIotDevices: () => request<IotDeviceResponse[]>("GET", "/api/IotDevices"),
