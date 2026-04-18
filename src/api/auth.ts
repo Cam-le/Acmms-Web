@@ -23,16 +23,18 @@ export interface RegisterRequest {
   password: string;
   fullname: string;
   phoneNumber: string;
+  targetRole: string;
 }
 
-/** Fields decoded from the JWT payload */
-export interface JwtPayload {
-  nameid: string; // userId
+/** Shape of GET /api/Staffs/me response data */
+export interface StaffMeResponse {
+  userId: string;
   email: string;
-  role: string; // "Owner" | "Specialist" | "Worker" | "Admin"
-  exp: number; // expiry unix timestamp
-  iat: number;
-  nbf: number;
+  fullname: string;
+  phoneNumber: string;
+  status: string;
+  createdAt: string;
+  roleName: string;
 }
 
 export interface LoginData {
@@ -49,33 +51,6 @@ export interface AuthApiResponse<T = null> {
 export const ALLOWED_WEB_ROLES = ["Owner", "Specialist"] as const;
 export type AllowedWebRole = (typeof ALLOWED_WEB_ROLES)[number];
 
-// ==================== JWT Helper ====================
-
-/**
- * Decode the payload segment of a JWT without verifying the signature.
- * Signature verification is the backend's responsibility.
- * Returns null if the token is malformed.
- */
-export function decodeJwt(token: string): JwtPayload | null {
-  try {
-    const parts = token.split(".");
-    if (parts.length !== 3) return null;
-
-    // Base64url → Base64 → JSON
-    const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
-    // atob is available in all modern browsers
-    const json = decodeURIComponent(
-      atob(base64)
-        .split("")
-        .map((c) => "%" + c.charCodeAt(0).toString(16).padStart(2, "0"))
-        .join(""),
-    );
-    return JSON.parse(json) as JwtPayload;
-  } catch {
-    return null;
-  }
-}
-
 // ==================== Session Storage ====================
 
 const STORAGE_KEYS = {
@@ -87,49 +62,41 @@ const STORAGE_KEYS = {
   isAuthenticated: "isAuthenticated",
 } as const;
 
-export function saveApiSession(token: string, payload: JwtPayload) {
-  // Store email-derived name as initial fallback; overwritten by fetchAndSaveFullname if successful
-  const displayName = payload.email.split("@")[0];
-
+/** Store only the token immediately after a successful login response. */
+export function saveApiSession(token: string) {
   localStorage.setItem(STORAGE_KEYS.isAuthenticated, "true");
   localStorage.setItem(STORAGE_KEYS.token, token);
-  localStorage.setItem(STORAGE_KEYS.userId, payload.nameid);
-  localStorage.setItem(STORAGE_KEYS.userEmail, payload.email);
-  localStorage.setItem(STORAGE_KEYS.userRole, payload.role);
   localStorage.setItem(STORAGE_KEYS.authMode, "api");
-  localStorage.setItem("userName", displayName);
 }
 
 /**
- * Fetch the user's full name from GET /api/Staffs/{userId} and overwrite
- * the "userName" key in localStorage.
+ * Call GET /api/Staffs/me and persist userId, email, fullname, and role
+ * into localStorage. Must be called after saveApiSession (token must be stored).
  *
- * Must be called AFTER saveApiSession (token must already be stored).
- * Fails silently — login succeeds regardless of whether this call succeeds.
+ * Returns the staff data on success, or null on failure.
+ * Login should be aborted if this call fails — unlike the old fetchAndSaveFullname,
+ * this is not a silent fallback because we need userId and roleName for the app to work.
  */
-export async function fetchAndSaveFullname(userId: string): Promise<void> {
-  try {
-    const token = localStorage.getItem("authToken");
-    if (!token) return;
+export async function fetchAndSaveUserInfo(): Promise<StaffMeResponse | null> {
+  const token = localStorage.getItem(STORAGE_KEYS.token);
+  if (!token) return null;
 
-    const res = await fetch(`${BASE_URL}/api/Staffs/${userId}`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
+  const res = await fetch(`${BASE_URL}/api/Staffs/me`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
 
-    if (!res.ok) return;
+  if (!res.ok) return null;
 
-    const data = await res.json();
+  const body: { success: boolean; data: StaffMeResponse } = await res.json();
+  if (!body.success || !body.data) return null;
 
-    // Response shape: { success, message, data: { fullname, ... } }
-    const fullname: string | undefined = data?.data?.fullname;
-    if (fullname && fullname.trim()) {
-      localStorage.setItem("userName", fullname.trim());
-    }
-  } catch {
-    // Silent failure — the email-derived fallback set by saveApiSession remains
-  }
+  const { userId, email, fullname, roleName } = body.data;
+  localStorage.setItem(STORAGE_KEYS.userId, userId);
+  localStorage.setItem(STORAGE_KEYS.userEmail, email);
+  localStorage.setItem(STORAGE_KEYS.userRole, roleName);
+  localStorage.setItem("userName", fullname.trim() || email.split("@")[0]);
+
+  return body.data;
 }
 
 export function clearSession() {

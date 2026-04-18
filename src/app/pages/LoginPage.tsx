@@ -3,9 +3,8 @@ import { useNavigate, Link } from "react-router";
 import { Eye, EyeOff, Loader2, Wifi } from "lucide-react";
 import {
   apiLogin,
-  decodeJwt,
   saveApiSession,
-  fetchAndSaveFullname,
+  fetchAndSaveUserInfo,
   dashboardByRole,
   ALLOWED_WEB_ROLES,
 } from "../../api/auth";
@@ -42,28 +41,26 @@ export function LoginPage() {
         return;
       }
 
-      const payload = decodeJwt(res.data.token);
-      if (!payload) {
-        setError("Token không hợp lệ. Vui lòng thử lại.");
+      saveApiSession(res.data.token);
+
+      const userInfo = await fetchAndSaveUserInfo();
+      if (!userInfo) {
+        setError("Không thể tải thông tin tài khoản. Vui lòng thử lại.");
         return;
       }
 
       if (
         !ALLOWED_WEB_ROLES.includes(
-          payload.role as (typeof ALLOWED_WEB_ROLES)[number],
+          userInfo.roleName as (typeof ALLOWED_WEB_ROLES)[number],
         )
       ) {
         setError(
-          `Tài khoản "${payload.role}" không được phép đăng nhập vào web. Vui lòng dùng ứng dụng di động.`,
+          `Tài khoản "${userInfo.roleName}" không được phép đăng nhập vào web. Vui lòng dùng ứng dụng di động.`,
         );
         return;
       }
 
-      saveApiSession(res.data.token, payload);
-      // Fetch full name from /api/Staffs/{userId} and overwrite the
-      // email-derived placeholder in localStorage. Fails silently.
-      await fetchAndSaveFullname(payload.nameid);
-      navigate(dashboardByRole(payload.role));
+      navigate(dashboardByRole(userInfo.roleName));
     } catch {
       setError(
         "Không thể kết nối máy chủ. Vui lòng kiểm tra kết nối và thử lại.",
