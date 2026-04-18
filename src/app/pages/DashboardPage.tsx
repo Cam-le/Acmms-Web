@@ -1,373 +1,600 @@
-import { useState } from "react";
-import type { ElementType } from "react";
+import { useState, useEffect } from "react";
+import { useNavigate } from "react-router";
 import {
-  LandPlot,
-  Sprout,
-  Users,
-  TrendingUp,
+  FileText,
+  Receipt,
+  Thermometer,
+  Droplets,
+  Wind,
+  Sun,
+  CloudRain,
   AlertTriangle,
-  Clock,
-  Calendar,
-  Eye,
-  ShieldAlert,
-  Bug,
-  Wrench,
-  Wheat,
-  MapPin,
+  Cpu,
+  ChevronRight,
+  RefreshCw,
 } from "lucide-react";
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-} from "recharts";
-import { yieldData, recentAlerts } from "../../data/mockData";
+import { api } from "../../api/client";
+import type {
+  ReportResponse,
+  IotDeviceResponse,
+  IotDataResponse,
+  SeasonResponse,
+  FarmResponse,
+  PriceSettingResponse,
+} from "../../api/client";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-
-type AlertType = "disease" | "maintenance" | "harvest";
-type AlertSeverity = "CAO" | "TRUNG BÌNH" | "THẤP";
-
-interface Alert {
-  id: string;
-  type: AlertType;
-  title: string;
-  description: string;
-  crop: string;
-  location: string;
-  severity: AlertSeverity;
-  time: string;
+interface DeviceWithData {
+  device: IotDeviceResponse;
+  sensorData: IotDataResponse | null;
+  seasonName: string | null;
+  farmName: string | null;
+  farmId: string | null;
 }
 
-// ─── Config ───────────────────────────────────────────────────────────────────
+interface FarmGroup {
+  farmId: string;
+  farmName: string;
+  seasons: SeasonGroup[];
+}
 
-const alertTypeConfig: Record<
-  AlertType,
-  {
-    icon: ElementType;
-    iconColor: string;
-    iconBg: string;
-    label: string;
-    badgeColor: string;
-  }
-> = {
-  disease: {
-    icon: Bug,
-    iconColor: "text-[#991b1b]",
-    iconBg: "bg-[#fee2e2]",
-    label: "PHÁT HIỆN BỆNH",
-    badgeColor: "bg-[#fee2e2] text-[#991b1b]",
-  },
-  maintenance: {
-    icon: Wrench,
-    iconColor: "text-[#1e40af]",
-    iconBg: "bg-[#dbeafe]",
-    label: "BẢO DƯỠNG",
-    badgeColor: "bg-[#dbeafe] text-[#1e40af]",
-  },
-  harvest: {
-    icon: Wheat,
-    iconColor: "text-[#008236]",
-    iconBg: "bg-[#dcfce7]",
-    label: "THU HOẠCH",
-    badgeColor: "bg-[#dcfce7] text-[#008236]",
-  },
-};
+interface SeasonGroup {
+  seasonId: string | null;
+  seasonName: string;
+  devices: DeviceWithData[];
+}
 
-// Keys match the uppercase severity strings in mockData.ts
-const severityConfig: Record<AlertSeverity, { color: string; dot: string }> = {
-  CAO: { color: "text-[#991b1b]", dot: "bg-[#ef4444]" },
-  "TRUNG BÌNH": { color: "text-[#92400e]", dot: "bg-[#f59e0b]" },
-  THẤP: { color: "text-[#065f46]", dot: "bg-[#10b981]" },
-};
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function formatVND(amount: number) {
+  return new Intl.NumberFormat("vi-VN", {
+    style: "currency",
+    currency: "VND",
+  }).format(amount);
+}
+
+function formatDate(iso: string) {
+  return new Date(iso).toLocaleDateString("vi-VN", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+}
+
+function formatMonth(iso: string) {
+  const d = new Date(iso);
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  return `${mm}/${yyyy}`;
+}
+
+function formatTime(iso: string) {
+  return new Date(iso).toLocaleString("vi-VN", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function DashboardPage() {
-  const [selectedYear, setSelectedYear] = useState("2024");
-  const [selectedSeason, setSelectedSeason] = useState("Vụ Đông Xuân");
+  const navigate = useNavigate();
 
-  const alerts = recentAlerts as Alert[];
-  const diseaseAlerts = alerts.filter((a) => a.type === "disease");
-  const otherAlerts = alerts.filter((a) => a.type !== "disease");
-  const unresolvedCount = diseaseAlerts.length;
+  // ── State ──
+  const [reports, setReports] = useState<ReportResponse[]>([]);
+  const [bills, setBills] = useState<PriceSettingResponse[]>([]);
+  const [farmGroups, setFarmGroups] = useState<FarmGroup[]>([]);
+
+  const [loadingReports, setLoadingReports] = useState(true);
+  const [loadingBills, setLoadingBills] = useState(true);
+  const [loadingIot, setLoadingIot] = useState(true);
+
+  const [reportsMock, setReportsMock] = useState(false);
+  const [billsMock, setBillsMock] = useState(false);
+  const [iotMock, setIotMock] = useState(false);
+
+  // ── Load reports ──
+  useEffect(() => {
+    api
+      .getReports()
+      .then((data) => setReports(data ?? []))
+      .catch(() => setReportsMock(true))
+      .finally(() => setLoadingReports(false));
+  }, []);
+
+  // ── Load bills ──
+  useEffect(() => {
+    api
+      .getPriceSettings()
+      .then((data) => setBills(data ?? []))
+      .catch(() => setBillsMock(true))
+      .finally(() => setLoadingBills(false));
+  }, []);
+
+  // ── Load IoT → sensors → seasons → farms ──
+  useEffect(() => {
+    async function loadIot() {
+      try {
+        const devices = await api.getIotDevices();
+        if (!devices?.length) {
+          setFarmGroups([]);
+          return;
+        }
+
+        // Fetch latest sensor data for each device in parallel
+        const deviceDataPairs: DeviceWithData[] = await Promise.all(
+          devices.map(async (device) => {
+            let sensorData: IotDataResponse | null = null;
+            try {
+              sensorData = await api.getLatestSensorByDevice(device.deviceCode);
+            } catch {
+              // sensor may have no data yet
+            }
+            return {
+              device,
+              sensorData,
+              seasonName: null,
+              farmName: null,
+              farmId: null,
+            };
+          }),
+        );
+
+        // Collect unique seasonIds
+        const seasonIds = [
+          ...new Set(
+            deviceDataPairs
+              .map((d) => d.sensorData?.seasonId)
+              .filter(Boolean) as string[],
+          ),
+        ];
+
+        // Fetch each season to get farmId + seasonName
+        const seasonMap = new Map<string, SeasonResponse>();
+        await Promise.all(
+          seasonIds.map(async (id) => {
+            try {
+              const s = await api.getSeason(id);
+              if (s) seasonMap.set(id, s);
+            } catch {
+              // ignore missing seasons
+            }
+          }),
+        );
+
+        // Collect unique farmIds
+        const farmIds = [
+          ...new Set(
+            [...seasonMap.values()].map((s) => s.farmId).filter(Boolean),
+          ),
+        ];
+
+        const farmMap = new Map<string, FarmResponse>();
+        await Promise.all(
+          farmIds.map(async (id) => {
+            try {
+              const f = await api.getFarm(id);
+              if (f) farmMap.set(id, f);
+            } catch {
+              // ignore missing farms
+            }
+          }),
+        );
+
+        // Enrich each device entry
+        const enriched: DeviceWithData[] = deviceDataPairs.map((entry) => {
+          const season = entry.sensorData?.seasonId
+            ? seasonMap.get(entry.sensorData.seasonId)
+            : undefined;
+          const farm = season ? farmMap.get(season.farmId) : undefined;
+          return {
+            ...entry,
+            seasonName: season?.seasonName ?? null,
+            farmName: farm?.farmName ?? null,
+            farmId: farm?.farmId ?? null,
+          };
+        });
+
+        // Group: farm → season → devices
+        const grouped = new Map<string, FarmGroup>();
+        for (const entry of enriched) {
+          const farmKey = entry.farmId ?? "__unknown__";
+          const farmLabel = entry.farmName ?? "Trang trại không xác định";
+          const seasonKey = entry.sensorData?.seasonId ?? "__no_season__";
+          const seasonLabel = entry.seasonName ?? "Chưa có mùa vụ";
+
+          if (!grouped.has(farmKey)) {
+            grouped.set(farmKey, {
+              farmId: farmKey,
+              farmName: farmLabel,
+              seasons: [],
+            });
+          }
+          const farmGroup = grouped.get(farmKey)!;
+
+          let seasonGroup = farmGroup.seasons.find(
+            (s) => s.seasonId === seasonKey,
+          );
+          if (!seasonGroup) {
+            seasonGroup = {
+              seasonId: seasonKey,
+              seasonName: seasonLabel,
+              devices: [],
+            };
+            farmGroup.seasons.push(seasonGroup);
+          }
+          seasonGroup.devices.push(entry);
+        }
+
+        setFarmGroups([...grouped.values()]);
+      } catch {
+        setIotMock(true);
+      } finally {
+        setLoadingIot(false);
+      }
+    }
+    loadIot();
+  }, []);
+
+  // ── Derived counts ──
+  const sentToOwnerReports = reports.filter(
+    (r) => r.status.toUpperCase() === "SENT_TO_OWNER",
+  );
+  const unpaidBills = bills.filter((b) => !b.isPaid);
+
+  // ─── Render ───────────────────────────────────────────────────────────────
+
+  const today = new Date().toLocaleDateString("vi-VN", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
 
   return (
-    <div className="flex flex-col gap-6 p-6">
-      {/* ── Header ── */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-[#115e59] text-2xl font-semibold">
+    <div className="flex flex-col gap-6 p-6 bg-[#f4f7f6] min-h-screen">
+      {/* ── Page Header ── */}
+      <div>
+        <p className="text-xs font-medium text-[#009689] uppercase tracking-widest mb-1">
+          {today}
+        </p>
+        <h1 className="text-2xl font-bold text-[#0d3330] tracking-tight">
           Tổng quan trang trại
         </h1>
-        <div className="flex gap-3">
-          <select
-            value={selectedYear}
-            onChange={(e) => setSelectedYear(e.target.value)}
-            className="px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] text-sm"
-          >
-            <option value="2024">Năm 2024</option>
-            <option value="2023">Năm 2023</option>
-            <option value="2022">Năm 2022</option>
-          </select>
-          <select
-            value={selectedSeason}
-            onChange={(e) => setSelectedSeason(e.target.value)}
-            className="px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] text-sm"
-          >
-            <option value="Vụ Đông Xuân">Vụ Đông Xuân</option>
-            <option value="Vụ Hè Thu">Vụ Hè Thu</option>
-            <option value="Vụ Thu Đông">Vụ Thu Đông</option>
-          </select>
-          <button className="px-4 py-2 bg-[#009689] text-white rounded-lg hover:bg-[#007f75] transition-colors flex items-center gap-2 text-sm">
-            <Calendar className="w-4 h-4" />
-            Báo cáo
-          </button>
-        </div>
       </div>
 
-      {/* ── Stat Cards ── */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
-        {/* Total Area */}
-        <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-6">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-11 h-11 bg-[#dbeafe] rounded-lg flex items-center justify-center shrink-0">
-              <LandPlot className="w-5 h-5 text-[#1e40af]" />
-            </div>
-            <div className="text-sm text-[#62748e]">Tổng diện tích</div>
-          </div>
-          <div className="text-2xl font-bold text-[#115e59]">
-            120.5{" "}
-            <span className="text-base font-normal text-[#62748e]">ha</span>
-          </div>
-          <div className="mt-2 text-xs text-[#62748e]">
-            Diện tích canh tác thực tế
-          </div>
-        </div>
-
-        {/* Estimated Yield */}
-        <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-6">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-11 h-11 bg-[#dcfce7] rounded-lg flex items-center justify-center shrink-0">
-              <Sprout className="w-5 h-5 text-[#008236]" />
-            </div>
-            <div className="text-sm text-[#62748e]">Sản lượng thu hoạch</div>
-          </div>
-          <div className="text-2xl font-bold text-[#115e59]">
-            850{" "}
-            <span className="text-base font-normal text-[#62748e]">tấn</span>
-          </div>
-          <div className="mt-2 flex items-center gap-1 text-xs text-[#115e59]">
-            Của mùa vụ hiện tại
-          </div>
-        </div>
-
-        {/* Total Staff */}
-        <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-6">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-11 h-11 bg-[#f8f5ff] rounded-lg flex items-center justify-center shrink-0">
-              <Users className="w-5 h-5 text-[#7c3aed]" />
-            </div>
-            <div className="text-sm text-[#62748e]">Tổng nhân viên</div>
-          </div>
-          <div className="text-2xl font-bold text-[#115e59]">
-            24{" "}
-            <span className="text-base font-normal text-[#62748e]">người</span>
-          </div>
-          <div className="mt-2 text-xs text-[#62748e]">Đang hoạt động</div>
-        </div>
-
-        {/* Unresolved AI Detections */}
-        <div
-          className={`rounded-lg border shadow-sm p-6 ${
-            unresolvedCount > 0
-              ? "bg-[#fff7f7] border-[#fecaca]"
-              : "bg-white border-[#e2e8f0]"
-          }`}
+      {/* ── 2 Summary Cards ── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Reports pending action */}
+        <button
+          onClick={() => navigate("/advisory")}
+          className="group relative overflow-hidden bg-white rounded-2xl border border-[#e2e8f0] shadow-sm p-6 text-center hover:shadow-md hover:border-[#009689]/30 transition-all duration-200"
         >
-          <div className="flex items-center gap-3 mb-3">
+          {/* Accent bar */}
+          <div
+            className={`absolute left-0 top-0 bottom-0 w-1 rounded-l-2xl ${sentToOwnerReports.length > 0 ? "bg-[#dc2626]" : "bg-[#009689]"}`}
+          />
+
+          <div className="flex justify-center mb-4">
             <div
-              className={`w-11 h-11 rounded-lg flex items-center justify-center shrink-0 ${
-                unresolvedCount > 0 ? "bg-[#fee2e2]" : "bg-[#f1f5f9]"
-              }`}
+              className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${sentToOwnerReports.length > 0 ? "bg-[#fee2e2]" : "bg-[#ecfdf5]"}`}
             >
-              <ShieldAlert
-                className={`w-5 h-5 ${
-                  unresolvedCount > 0 ? "text-[#dc2626]" : "text-[#64748b]"
-                }`}
+              <FileText
+                className={`w-5 h-5 ${sentToOwnerReports.length > 0 ? "text-[#dc2626]" : "text-[#009689]"}`}
               />
             </div>
-            <div className="text-sm text-[#62748e]">
-              Phát hiện bệnh chưa xử lý
-            </div>
           </div>
+
+          <div className="text-xs font-semibold text-[#64748b] uppercase tracking-wider mb-1">
+            Báo cáo chờ xử lý
+          </div>
+
           <div
-            className={`text-2xl font-bold ${
-              unresolvedCount > 0 ? "text-[#dc2626]" : "text-[#115e59]"
-            }`}
+            className={`text-4xl font-extrabold tracking-tight ${sentToOwnerReports.length > 0 ? "text-[#dc2626]" : "text-[#0d3330]"}`}
           >
-            {unresolvedCount}{" "}
-            <span className="text-base font-normal text-[#62748e]">
-              cảnh báo
-            </span>
+            {loadingReports ? (
+              <span className="text-[#94a3b8] text-2xl font-medium">…</span>
+            ) : (
+              sentToOwnerReports.length
+            )}
           </div>
-          <div className="mt-2 text-xs text-[#62748e]">
-            {unresolvedCount > 0
-              ? "Cần xem xét và xử lý ngay"
-              : "Không có cảnh báo mới"}
+
+          <div className="mt-2 text-xs text-[#94a3b8]">
+            {sentToOwnerReports.length > 0
+              ? "Cần xem xét và phản hồi"
+              : "Không có báo cáo mới"}
           </div>
-        </div>
+          {reportsMock && (
+            <div className="mt-3 flex justify-center">
+              <MockBadge />
+            </div>
+          )}
+        </button>
+
+        {/* Unpaid bills */}
+        <button
+          onClick={() => navigate("/billing")}
+          className="group relative overflow-hidden bg-white rounded-2xl border border-[#e2e8f0] shadow-sm p-6 text-center hover:shadow-md hover:border-[#009689]/30 transition-all duration-200"
+        >
+          <div
+            className={`absolute left-0 top-0 bottom-0 w-1 rounded-l-2xl ${unpaidBills.length > 0 ? "bg-[#d97706]" : "bg-[#009689]"}`}
+          />
+
+          <div className="flex justify-center mb-4">
+            <div
+              className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${unpaidBills.length > 0 ? "bg-[#fef3c7]" : "bg-[#ecfdf5]"}`}
+            >
+              <Receipt
+                className={`w-5 h-5 ${unpaidBills.length > 0 ? "text-[#d97706]" : "text-[#009689]"}`}
+              />
+            </div>
+          </div>
+
+          <div className="text-xs font-semibold text-[#64748b] uppercase tracking-wider mb-1">
+            Hóa đơn chưa thanh toán
+          </div>
+
+          <div
+            className={`text-4xl font-extrabold tracking-tight ${unpaidBills.length > 0 ? "text-[#d97706]" : "text-[#0d3330]"}`}
+          >
+            {loadingBills ? (
+              <span className="text-[#94a3b8] text-2xl font-medium">…</span>
+            ) : (
+              unpaidBills.length
+            )}
+          </div>
+
+          <div className="mt-2 text-xs text-[#94a3b8]">
+            {unpaidBills.length > 0
+              ? "Cần thanh toán cho chuyên gia"
+              : "Tất cả hóa đơn đã thanh toán"}
+          </div>
+          {billsMock && (
+            <div className="mt-3 flex justify-center">
+              <MockBadge />
+            </div>
+          )}
+        </button>
       </div>
 
-      {/* ── Yield Chart ── */}
-      <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-6">
-        <div className="mb-6">
-          <h2 className="text-lg font-bold text-[#115e59] mb-2">
-            Năng suất bắp cải theo mùa vụ và biến thể (tấn/ha)
-          </h2>
-          <div className="flex items-center gap-4 text-sm">
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 bg-[#86efac] rounded" />
-              <span className="text-[#62748e]">Bắp Cải Trắng</span>
+      {/* ── Reports table (SENT_TO_OWNER) ── */}
+      <div className="bg-white rounded-2xl border border-[#e2e8f0] shadow-sm overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#f1f5f9]">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-[#fef3c7] flex items-center justify-center shrink-0">
+              <AlertTriangle className="w-4 h-4 text-[#d97706]" />
             </div>
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 bg-[#14b8a6] rounded" />
-              <span className="text-[#62748e]">Bắp Cải Tím</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 bg-[#115e59] rounded" />
-              <span className="text-[#62748e]">Bắp Cải Xoăn</span>
+            <div>
+              <h2 className="text-sm font-bold text-[#0d3330]">
+                Báo cáo chờ xử lý
+              </h2>
+              <p className="text-xs text-[#94a3b8] mt-0.5">
+                Các báo cáo từ nhân viên đang chờ tư vấn chuyên gia
+              </p>
             </div>
           </div>
-        </div>
-
-        <ResponsiveContainer width="100%" height={380}>
-          <BarChart
-            data={yieldData}
-            margin={{ top: 20, right: 30, left: 20, bottom: 20 }}
+          <button
+            onClick={() => navigate("/advisory")}
+            className="inline-flex items-center gap-1 text-xs font-semibold text-[#009689] hover:text-[#007a6e] transition-colors"
           >
-            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-            <XAxis
-              dataKey="season"
-              tick={{ fill: "#62748e", fontSize: 12 }}
-              axisLine={{ stroke: "#e2e8f0" }}
-            />
-            <YAxis
-              tick={{ fill: "#62748e", fontSize: 12 }}
-              axisLine={{ stroke: "#e2e8f0" }}
-              label={{
-                value: "Tấn/ha",
-                angle: -90,
-                position: "insideLeft",
-                style: { fill: "#62748e", fontSize: 12 },
-              }}
-            />
-            <Tooltip
-              contentStyle={{
-                backgroundColor: "#fff",
-                border: "1px solid #e2e8f0",
-                borderRadius: "8px",
-                fontSize: "12px",
-              }}
-              labelStyle={{ color: "#115e59", fontWeight: "bold" }}
-              formatter={(value, name) => {
-                const labels: Record<string, string> = {
-                  bapcaitrang: "Bắp Cải Trắng",
-                  bapcaitim: "Bắp Cải Tím",
-                  bapcaixoan: "Bắp Cải Xoăn",
-                };
-                return [value, labels[name as string] ?? name];
-              }}
-            />
-            <Bar
-              dataKey="bapcaitrang"
-              name="Bắp Cải Trắng"
-              fill="#86efac"
-              radius={[4, 4, 0, 0]}
-            />
-            <Bar
-              dataKey="bapcaitim"
-              name="Bắp Cải Tím"
-              fill="#14b8a6"
-              radius={[4, 4, 0, 0]}
-            />
-            <Bar
-              dataKey="bapcaixoan"
-              name="Bắp Cải Xoăn"
-              fill="#115e59"
-              radius={[4, 4, 0, 0]}
-            />
-          </BarChart>
-        </ResponsiveContainer>
-
-        <div className="mt-4 flex items-start gap-2 text-sm text-[#62748e] p-4 bg-[#f8fafc] rounded-lg">
-          <span>ℹ️</span>
-          <p>
-            Biểu đồ thể hiện năng suất trung bình trên mỗi hecta của từng biến
-            thể bắp cải theo mùa vụ, giúp đánh giá hiệu quả thực hiện so với kế
-            hoạch.
-          </p>
-        </div>
-      </div>
-
-      {/* ── AI Alerts ── */}
-      <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-6">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h2 className="text-lg font-bold text-[#115e59] mb-1">
-              Báo cáo AI mới nhất
-            </h2>
-            <p className="text-sm text-[#62748e]">
-              Phát hiện bệnh & khuyến nghị xử lý
-            </p>
-          </div>
-          <button className="text-[#009689] text-sm hover:underline font-medium">
-            Xem tất cả →
+            Xem tất cả <ChevronRight className="w-3.5 h-3.5" />
           </button>
         </div>
 
-        {/* Disease alerts — urgent tier */}
-        {diseaseAlerts.length > 0 && (
-          <div className="mb-5">
-            <div className="flex items-center gap-2 mb-3">
-              <AlertTriangle className="w-4 h-4 text-[#dc2626]" />
-              <span className="text-sm font-semibold text-[#dc2626]">
-                Cần xử lý ngay ({diseaseAlerts.length})
-              </span>
-            </div>
-            <div className="space-y-3">
-              {diseaseAlerts.map((alert) => (
-                <AlertRow key={alert.id} alert={alert} urgent />
-              ))}
-            </div>
+        {loadingReports ? (
+          <LoadingRows />
+        ) : sentToOwnerReports.length === 0 ? (
+          <EmptyState text="Không có báo cáo chờ xử lý" />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-[#f8fafc]">
+                  <th className="text-left px-6 py-3 text-xs font-semibold text-[#94a3b8] uppercase tracking-wider">
+                    Mã báo cáo
+                  </th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-[#94a3b8] uppercase tracking-wider">
+                    Tiêu đề
+                  </th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-[#94a3b8] uppercase tracking-wider">
+                    Người tạo
+                  </th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-[#94a3b8] uppercase tracking-wider">
+                    Ngày gửi
+                  </th>
+                  <th className="px-4 py-3" />
+                </tr>
+              </thead>
+              <tbody>
+                {sentToOwnerReports.slice(0, 5).map((r, i) => (
+                  <tr
+                    key={r.reportId}
+                    className={`cursor-pointer hover:bg-[#f0fdf9] transition-colors ${i % 2 === 0 ? "bg-white" : "bg-[#fafafa]"}`}
+                    onClick={() => navigate("/advisory")}
+                  >
+                    <td className="px-6 py-3.5 font-mono text-xs text-[#94a3b8]">
+                      {r.reportNo}
+                    </td>
+                    <td className="px-4 py-3.5 text-[#0d3330] font-semibold max-w-[220px] truncate">
+                      {r.title}
+                    </td>
+                    <td className="px-4 py-3.5 text-[#64748b]">
+                      {r.creatorName}
+                    </td>
+                    <td className="px-4 py-3.5 text-[#64748b]">
+                      {formatDate(r.submitDate)}
+                    </td>
+                    <td className="px-4 py-3.5">
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-[#fef9c3] text-[#854d0e]">
+                        <AlertTriangle className="w-3 h-3" /> Chờ xử lý
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
+      </div>
 
-        {/* Divider */}
-        {diseaseAlerts.length > 0 && otherAlerts.length > 0 && (
-          <div className="flex items-center gap-3 my-4">
-            <div className="flex-1 h-px bg-[#e2e8f0]" />
-            <span className="text-xs text-[#94a3b8] font-medium">
-              THÔNG TIN KHÁC
-            </span>
-            <div className="flex-1 h-px bg-[#e2e8f0]" />
+      {/* ── Unpaid bills table ── */}
+      <div className="bg-white rounded-2xl border border-[#e2e8f0] shadow-sm overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#f1f5f9]">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-[#fef3c7] flex items-center justify-center shrink-0">
+              <Receipt className="w-4 h-4 text-[#d97706]" />
+            </div>
+            <div>
+              <h2 className="text-sm font-bold text-[#0d3330]">
+                Hóa đơn chưa thanh toán
+              </h2>
+              <p className="text-xs text-[#94a3b8] mt-0.5">
+                Phí tư vấn chuyên gia chưa được thanh toán
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => navigate("/billing")}
+            className="inline-flex items-center gap-1 text-xs font-semibold text-[#009689] hover:text-[#007a6e] transition-colors"
+          >
+            Xem tất cả <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        {loadingBills ? (
+          <LoadingRows />
+        ) : unpaidBills.length === 0 ? (
+          <EmptyState text="Tất cả hóa đơn đã được thanh toán" />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-[#f8fafc]">
+                  <th className="text-left px-6 py-3 text-xs font-semibold text-[#94a3b8] uppercase tracking-wider">
+                    Trang trại
+                  </th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-[#94a3b8] uppercase tracking-wider">
+                    Chuyên gia
+                  </th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-[#94a3b8] uppercase tracking-wider">
+                    Tháng
+                  </th>
+                  <th className="text-right px-4 py-3 text-xs font-semibold text-[#94a3b8] uppercase tracking-wider">
+                    Số tiền
+                  </th>
+                  <th className="px-4 py-3" />
+                </tr>
+              </thead>
+              <tbody>
+                {unpaidBills.slice(0, 5).map((b, i) => (
+                  <tr
+                    key={b.priceSettingId}
+                    className={`cursor-pointer hover:bg-[#f0fdf9] transition-colors ${i % 2 === 0 ? "bg-white" : "bg-[#fafafa]"}`}
+                    onClick={() => navigate("/billing")}
+                  >
+                    <td className="px-6 py-3.5 text-[#0d3330] font-semibold">
+                      {b.farmName}
+                    </td>
+                    <td className="px-4 py-3.5 text-[#64748b]">
+                      {b.expertName}
+                    </td>
+                    <td className="px-4 py-3.5 text-[#64748b]">
+                      {formatMonth(b.month)}
+                    </td>
+                    <td className="px-4 py-3.5 text-right font-bold text-[#d97706]">
+                      {formatVND(b.totalAmount)}
+                    </td>
+                    <td className="px-4 py-3.5">
+                      <span className="inline-flex px-2.5 py-1 rounded-full text-xs font-semibold bg-[#fee2e2] text-[#991b1b]">
+                        Chưa thanh toán
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
+        {billsMock && (
+          <div className="px-6 pb-4">
+            <MockBadge />
+          </div>
+        )}
+      </div>
 
-        {/* Maintenance / harvest — informational tier */}
-        {otherAlerts.length > 0 && (
-          <div className="space-y-3">
-            {otherAlerts.map((alert) => (
-              <AlertRow key={alert.id} alert={alert} urgent={false} />
+      {/* ── IoT Environment Section ── */}
+      <div className="bg-white rounded-2xl border border-[#e2e8f0] shadow-sm overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#f1f5f9]">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-[#ecfdf5] flex items-center justify-center shrink-0">
+              <Cpu className="w-4 h-4 text-[#009689]" />
+            </div>
+            <div>
+              <h2 className="text-sm font-bold text-[#0d3330]">
+                Dữ liệu môi trường IoT
+              </h2>
+              <p className="text-xs text-[#94a3b8] mt-0.5">
+                Thông số mới nhất từ các thiết bị cảm biến
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => navigate("/iot")}
+            className="inline-flex items-center gap-1 text-xs font-semibold text-[#009689] hover:text-[#007a6e] transition-colors"
+          >
+            Quản lý thiết bị <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        {loadingIot ? (
+          <LoadingRows />
+        ) : farmGroups.length === 0 ? (
+          <EmptyState text="Không có thiết bị IoT nào được cài đặt" />
+        ) : (
+          <div className="divide-y divide-[#f1f5f9]">
+            {farmGroups.map((farm) => (
+              <div key={farm.farmId} className="px-6 py-5">
+                {/* Farm header */}
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="w-6 h-6 rounded-md bg-[#ecfdf5] flex items-center justify-center">
+                    <Cpu className="w-3.5 h-3.5 text-[#009689]" />
+                  </div>
+                  <h3 className="font-bold text-[#0d3330] text-sm">
+                    {farm.farmName}
+                  </h3>
+                </div>
+
+                {/* Seasons inside this farm */}
+                <div className="space-y-5 pl-8">
+                  {farm.seasons.map((season) => (
+                    <div key={season.seasonId ?? "no-season"}>
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="h-px flex-1 bg-[#f1f5f9]" />
+                        <p className="text-xs font-semibold text-[#94a3b8] uppercase tracking-widest px-2">
+                          {season.seasonName}
+                        </p>
+                        <div className="h-px flex-1 bg-[#f1f5f9]" />
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                        {season.devices.map((entry) => (
+                          <DeviceCard
+                            key={entry.device.deviceId}
+                            entry={entry}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
         )}
-
-        {alerts.length === 0 && (
-          <div className="text-center py-10 text-[#94a3b8] text-sm">
-            Không có báo cáo mới
+        {iotMock && (
+          <div className="px-6 pb-4">
+            <MockBadge />
           </div>
         )}
       </div>
@@ -375,65 +602,128 @@ export function DashboardPage() {
   );
 }
 
-// ─── AlertRow sub-component ───────────────────────────────────────────────────
+// ─── DeviceCard ───────────────────────────────────────────────────────────────
 
-function AlertRow({ alert, urgent }: { alert: Alert; urgent: boolean }) {
-  const config = alertTypeConfig[alert.type];
-  const sev = severityConfig[alert.severity];
+function DeviceCard({ entry }: { entry: DeviceWithData }) {
+  const { device, sensorData } = entry;
+  const isActive = device.status === "Active";
 
   return (
     <div
-      className={`flex items-start gap-4 p-4 rounded-lg transition-colors ${
-        urgent
-          ? "bg-[#fff7f7] border border-[#fecaca] hover:bg-[#fee2e2]"
-          : "bg-[#f8fafc] hover:bg-[#f1f5f9]"
+      className={`rounded-xl border p-4 text-sm transition-opacity ${
+        isActive
+          ? "border-[#d1fae5] bg-[#f0fdf9]"
+          : "border-[#e2e8f0] bg-[#f8fafc] opacity-50"
       }`}
     >
-      <div
-        className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${config.iconBg}`}
-      >
-        <config.icon className={`w-5 h-5 ${config.iconColor}`} />
+      {/* Device header */}
+      <div className="flex items-center justify-between mb-3">
+        <span className="font-bold text-[#0d3330] text-xs truncate">
+          {device.name}
+        </span>
+        <span
+          className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
+            isActive
+              ? "bg-[#dcfce7] text-[#166534]"
+              : "bg-[#f1f5f9] text-[#94a3b8]"
+          }`}
+        >
+          {isActive ? "● Hoạt động" : "○ Tắt"}
+        </span>
       </div>
 
-      <div className="flex-1 min-w-0">
-        <div className="flex items-start justify-between gap-2 mb-1.5">
-          <h3 className="font-semibold text-[#115e59] text-sm">
-            {alert.title}
-          </h3>
-          <span
-            className={`px-2.5 py-0.5 rounded text-xs font-medium shrink-0 ${config.badgeColor}`}
-          >
-            {config.label}
-          </span>
-        </div>
-        <p className="text-sm text-[#62748e] mb-2">{alert.description}</p>
-        <div className="flex items-center flex-wrap gap-x-4 gap-y-1 text-xs text-[#62748e]">
-          <span className="flex items-center gap-1">
-            <Sprout className="w-3.5 h-3.5" /> {alert.crop}
-          </span>
-          <span className="flex items-center gap-1">
-            <MapPin className="w-3.5 h-3.5" /> {alert.location}
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className={`w-1.5 h-1.5 rounded-full ${sev.dot}`} />
-            <span className={sev.color}>Mức độ: {alert.severity}</span>
-          </span>
-          <span className="flex items-center gap-1">
-            <Clock className="w-3.5 h-3.5" /> {alert.time}
-          </span>
-        </div>
-      </div>
+      {sensorData ? (
+        <div className="grid grid-cols-2 gap-y-2 gap-x-3">
+          <SensorItem
+            icon={<Thermometer className="w-3.5 h-3.5 text-[#ef4444]" />}
+            label="Nhiệt độ"
+            value={`${sensorData.temperature}°C`}
+          />
+          <SensorItem
+            icon={<Droplets className="w-3.5 h-3.5 text-[#3b82f6]" />}
+            label="Độ ẩm KK"
+            value={`${sensorData.humidity}%`}
+          />
+          <SensorItem
+            icon={<Wind className="w-3.5 h-3.5 text-[#0891b2]" />}
+            label="Ẩm đất"
+            value={`${sensorData.soilMoisture}%`}
+          />
+          <SensorItem
+            icon={<Sun className="w-3.5 h-3.5 text-[#f59e0b]" />}
+            label="Ánh sáng"
+            value={`${sensorData.light} lux`}
+          />
 
-      <button
-        className={`p-2 rounded-lg transition-colors shrink-0 ${
-          urgent
-            ? "text-[#dc2626] hover:bg-[#fee2e2]"
-            : "text-[#009689] hover:bg-[#f0fdf9]"
-        }`}
-        title="Xem chi tiết"
-      >
-        <Eye className="w-5 h-5" />
-      </button>
+          {(sensorData.isRaining || sensorData.isAlert) && (
+            <div className="col-span-2 flex items-center gap-2 pt-1">
+              {sensorData.isRaining && (
+                <span className="inline-flex items-center gap-1 text-xs font-medium text-[#2563eb] bg-[#eff6ff] px-2 py-0.5 rounded-full">
+                  <CloudRain className="w-3 h-3" /> Đang mưa
+                </span>
+              )}
+              {sensorData.isAlert && (
+                <span className="inline-flex items-center gap-1 text-xs font-medium text-[#dc2626] bg-[#fee2e2] px-2 py-0.5 rounded-full">
+                  <AlertTriangle className="w-3 h-3" /> Cảnh báo
+                </span>
+              )}
+            </div>
+          )}
+
+          <div className="col-span-2 flex items-center gap-1 text-xs text-[#94a3b8] pt-1 border-t border-[#e2e8f0] mt-1">
+            <RefreshCw className="w-3 h-3" />
+            {formatTime(sensorData.recordedAt)}
+          </div>
+        </div>
+      ) : (
+        <p className="text-xs text-[#94a3b8] italic">
+          Chưa có dữ liệu cảm biến
+        </p>
+      )}
     </div>
+  );
+}
+
+function SensorItem({
+  icon,
+  label,
+  value,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="flex items-center gap-1.5">
+      {icon}
+      <span className="text-xs text-[#94a3b8]">{label}:</span>
+      <span className="text-xs font-bold text-[#0d3330]">{value}</span>
+    </div>
+  );
+}
+
+// ─── Shared sub-components ────────────────────────────────────────────────────
+
+function MockBadge() {
+  return (
+    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-600 border border-amber-200 mt-2">
+      <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+      Dữ liệu mẫu
+    </span>
+  );
+}
+
+function LoadingRows() {
+  return (
+    <div className="px-6 py-10 flex items-center justify-center gap-2 text-[#94a3b8] text-sm">
+      <RefreshCw className="w-4 h-4 animate-spin text-[#009689]" />
+      <span>Đang tải...</span>
+    </div>
+  );
+}
+
+function EmptyState({ text }: { text: string }) {
+  return (
+    <div className="px-6 py-10 text-center text-[#94a3b8] text-sm">{text}</div>
   );
 }

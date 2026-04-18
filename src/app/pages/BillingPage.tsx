@@ -416,7 +416,7 @@ function CreatePriceSettingModal({
       onClose();
     } catch (err: unknown) {
       setError(
-        err instanceof Error ? err.message : "Có lỗi xảy ra khi tạo cấu hình.",
+        err instanceof Error ? err.message : "Có lỗi xảy ra khi tạo đơn giá.",
       );
     } finally {
       setSubmitting(false);
@@ -612,7 +612,7 @@ function CreatePriceSettingModal({
                   {submitting && (
                     <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                   )}
-                  Tạo cấu hình
+                  Tạo đơn giá
                 </button>
               </div>
             </>
@@ -921,7 +921,7 @@ export function BillingPage() {
                     className="mt-3 flex items-center gap-2 px-4 py-2 bg-[#009689] text-white rounded-lg text-sm font-medium hover:bg-[#007f75] transition-colors mx-auto"
                   >
                     <Plus className="w-4 h-4" />
-                    Tạo cấu hình đầu tiên
+                    Tạo đơn giá đầu tiên
                   </button>
                 )}
               </div>
