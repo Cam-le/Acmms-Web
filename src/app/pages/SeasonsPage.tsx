@@ -581,21 +581,33 @@ export function SeasonsPage() {
       seasonNotes: (seasonData as any).seasonNotes ?? "",
       status: toApiStatus(seasonData.status),
     });
-    if (created?.seasonId && detailsToCreate.length > 0) {
-      await Promise.allSettled(
-        detailsToCreate.map((d) =>
-          api.createSeasonDetail({
-            seasonId: created.seasonId,
-            bedId: d.bedId,
-            cropId: d.cropId,
-            cropQuantity: d.cropQuantity,
-            startDate: d.startDate || seasonData.startDate,
-            endDate: d.endDate || seasonData.endDate,
-            seasonExpectedHarvestDate: d.harvestDate || seasonData.endDate,
-            totalHarvestYield: 0,
-          }),
-        ),
-      );
+    if (detailsToCreate.length > 0) {
+      const allSeasons = await api.getSeasons();
+      const match = Array.isArray(allSeasons)
+        ? allSeasons.find(
+            (s) =>
+              s.farmId === farmId &&
+              s.seasonName === seasonData.name &&
+              s.seasonStartDate === seasonData.startDate,
+          )
+        : null;
+
+      if (match?.seasonId) {
+        await Promise.allSettled(
+          detailsToCreate.map((d) =>
+            api.createSeasonDetail({
+              seasonId: match.seasonId,
+              bedId: d.bedId,
+              cropId: d.cropId,
+              cropQuantity: d.cropQuantity,
+              startDate: d.startDate || seasonData.startDate,
+              endDate: d.endDate || seasonData.endDate,
+              seasonExpectedHarvestDate: d.harvestDate || seasonData.endDate,
+              totalHarvestYield: 0,
+            }),
+          ),
+        );
+      }
     }
     await loadData();
     setSearchParams({ view: "list" });
@@ -1323,19 +1335,27 @@ function CreateSeasonView({
     status: "Lên kế hoạch" as SeasonStatus,
     plots: [] as PlotAssignment[],
   });
-  const [selectedPlots, setSelectedPlots] = useState<string[]>([]);
-  const [plotDetails, setPlotDetails] = useState<
-    Record<
-      string,
-      {
-        crop: CropType;
-        cropId: string;
-        cropQuantity: number;
-        sowingDate: string;
-        harvestDate: string;
-      }
-    >
-  >({});
+  // ── Harvest-group model ────────────────────────────────────────────────────
+  // Each group has one harvest date + a set of bed IDs assigned to that date.
+  // cropId / cropQuantity are fetched from GET /api/Beds/{id} per bed.
+  interface HarvestGroup {
+    id: string; // local uuid for React key
+    harvestDate: string;
+    bedIds: string[];
+  }
+  interface BedFetchCache {
+    cropId: string;
+    cropName: string;
+    cropQuantity: number;
+  }
+
+  const [harvestGroups, setHarvestGroups] = useState<HarvestGroup[]>([
+    { id: crypto.randomUUID(), harvestDate: "", bedIds: [] },
+  ]);
+  // Cache fetched bed data so we don't re-fetch on every render
+  const [bedCache, setBedCache] = useState<Record<string, BedFetchCache>>({});
+  // Track which bed pickers are open
+  const [openPicker, setOpenPicker] = useState<string | null>(null);
 
   // Filter beds theo farm đang chọn (qua plotId → farmId)
   const bedsForFarm = formData.farmId
@@ -1355,93 +1375,103 @@ function CreateSeasonView({
     })),
   );
 
-  // Dùng crops từ API; mỗi option có cropId thực
-  const firstCropId = crops[0]?.cropId ?? "";
-  const firstCropName = (crops[0]?.cropName ?? "Bắp Cải Trắng") as CropType;
+  // All bed IDs already claimed by any group
+  const allClaimedBedIds = harvestGroups.flatMap((g) => g.bedIds);
 
-  const defaultDetail = {
-    crop: firstCropName,
-    cropId: firstCropId,
-    cropQuantity: 0,
-    sowingDate: "",
-    harvestDate: "",
-  };
-
-  const handleStep2Submit = () => {
-    const plots: PlotAssignment[] = selectedPlots.map((plotId) => {
-      const plot = availableBeds.find((p) => p.id === plotId)!;
-      const details = plotDetails[plotId] || defaultDetail;
-      return {
-        plotId,
-        plotName: plot.name,
-        area: plot.area,
-        crop: details.crop,
-        sowingDate: details.sowingDate,
-        harvestDate: details.harvestDate,
-        plannedQuantity: details.cropQuantity,
-        actualPlanted: 0,
-        harvestQuantity: 0,
-        status: "Chưa trồng" as any,
-      };
-    });
-
-    const detailsToCreate = selectedPlots.map((plotId) => {
-      const details = plotDetails[plotId] || defaultDetail;
-      return {
-        bedId: plotId,
-        cropId: details.cropId || firstCropId,
-        cropQuantity: details.cropQuantity,
-        startDate: details.sowingDate || formData.startDate,
-        endDate: formData.endDate,
-        harvestDate: details.harvestDate || formData.endDate,
-      };
-    });
-
-    onCreate({ ...formData, plots }, detailsToCreate);
-  };
-
-  const togglePlot = async (id: string) => {
-    if (selectedPlots.includes(id)) {
-      setSelectedPlots((p) => p.filter((x) => x !== id));
-      return;
-    }
-    setSelectedPlots((p) => [...p, id]);
-    // Fetch real cropQuantities from API when bed is selected
+  const fetchAndCacheBed = async (bedId: string) => {
+    if (bedCache[bedId]) return;
     try {
-      const bed = await api.getBed(id);
-      if (
-        bed &&
-        typeof bed.cropQuantities === "number" &&
-        bed.cropQuantities > 0
-      ) {
-        setPlotDetails((p) => ({
-          ...p,
-          [id]: {
-            ...(p[id] || defaultDetail),
-            cropQuantity: bed.cropQuantities,
+      const bed = await api.getBed(bedId);
+      if (bed) {
+        setBedCache((prev) => ({
+          ...prev,
+          [bedId]: {
+            cropId: bed.cropId ?? "",
+            cropName: bed.cropName ?? "",
+            cropQuantity:
+              typeof bed.cropQuantities === "number" ? bed.cropQuantities : 0,
           },
         }));
       }
     } catch {
-      // silently ignore — user can enter manually
+      // silently ignore — data will be submitted with empty cropId if missing
     }
   };
-  const updatePlotDetail = (
-    id: string,
-    field: keyof typeof defaultDetail,
-    value: any,
-  ) =>
-    setPlotDetails((p) => ({
-      ...p,
-      [id]: { ...(p[id] || defaultDetail), [field]: value },
-    }));
-  const applyToAll = (sourceId: string) => {
-    const src = plotDetails[sourceId] || defaultDetail;
-    const n: typeof plotDetails = {};
-    selectedPlots.forEach((id) => {
-      n[id] = { ...src };
-    });
-    setPlotDetails(n);
+
+  const toggleBedInGroup = async (groupId: string, bedId: string) => {
+    setHarvestGroups((prev) =>
+      prev.map((g) => {
+        if (g.id !== groupId) return g;
+        const already = g.bedIds.includes(bedId);
+        return {
+          ...g,
+          bedIds: already
+            ? g.bedIds.filter((x) => x !== bedId)
+            : [...g.bedIds, bedId],
+        };
+      }),
+    );
+    // Kick off cache fetch regardless of add/remove so data is ready on submit
+    await fetchAndCacheBed(bedId);
+  };
+
+  const updateGroupHarvestDate = (groupId: string, date: string) => {
+    setHarvestGroups((prev) =>
+      prev.map((g) => (g.id === groupId ? { ...g, harvestDate: date } : g)),
+    );
+  };
+
+  const addHarvestGroup = () => {
+    setHarvestGroups((prev) => [
+      ...prev,
+      { id: crypto.randomUUID(), harvestDate: "", bedIds: [] },
+    ]);
+  };
+
+  const removeHarvestGroup = (groupId: string) => {
+    setHarvestGroups((prev) => prev.filter((g) => g.id !== groupId));
+  };
+
+  const handleStep2Submit = () => {
+    const detailsToCreate: Array<{
+      bedId: string;
+      cropId: string;
+      cropQuantity: number;
+      startDate: string;
+      endDate: string;
+      harvestDate: string;
+    }> = [];
+
+    const uiPlots: PlotAssignment[] = [];
+
+    for (const group of harvestGroups) {
+      for (const bedId of group.bedIds) {
+        const cached = bedCache[bedId];
+        const bed = availableBeds.find((b) => b.id === bedId);
+        detailsToCreate.push({
+          bedId,
+          cropId: cached?.cropId ?? "",
+          cropQuantity: cached?.cropQuantity ?? 0,
+          startDate: formData.startDate,
+          endDate: formData.endDate,
+          harvestDate: group.harvestDate || formData.endDate,
+        });
+        uiPlots.push({
+          plotId: bedId,
+          plotName: bed?.name ?? bedId,
+          area: bed?.area ?? "—",
+          crop: (cached?.cropName ?? "Bắp Cải Trắng") as CropType,
+          sowingDate: formData.startDate,
+          harvestDate: group.harvestDate || formData.endDate,
+          plannedQuantity: cached?.cropQuantity ?? 0,
+          actualPlanted: 0,
+          harvestQuantity: 0,
+          status: "Chưa trồng" as any,
+        });
+      }
+    }
+
+    onCreate({ ...formData, plots: uiPlots }, detailsToCreate);
   };
 
   return (
@@ -1514,8 +1544,10 @@ function CreateSeasonView({
                     }));
                     setSeasonFormErrors((p) => ({ ...p, farmId: "" }));
                     // Reset bed selection khi đổi farm
-                    setSelectedPlots([]);
-                    setPlotDetails({});
+                    setHarvestGroups([
+                      { id: crypto.randomUUID(), harvestDate: "", bedIds: [] },
+                    ]);
+                    setOpenPicker(null);
                   }}
                   farms={farms}
                 />
@@ -1656,9 +1688,23 @@ function CreateSeasonView({
 
       {step === 2 && (
         <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-6">
-          <h3 className="text-sm font-bold text-[#62748e] uppercase mb-2 flex items-center gap-2">
-            <Sprout className="w-4 h-4" /> Chọn luống
-          </h3>
+          {/* Header */}
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-bold text-[#62748e] uppercase flex items-center gap-2">
+              <Sprout className="w-4 h-4" /> Chọn luống theo đợt thu hoạch
+            </h3>
+            <div className="text-xs text-[#62748e] bg-[#f0fdfa] border border-[#99f6e4] rounded-lg px-3 py-1.5">
+              Ngày bắt đầu:{" "}
+              <span className="font-medium text-[#115e59]">
+                {formatDate(formData.startDate)}
+              </span>
+              &nbsp;·&nbsp;Kết thúc:{" "}
+              <span className="font-medium text-[#115e59]">
+                {formatDate(formData.endDate)}
+              </span>
+            </div>
+          </div>
+
           {availableBeds.length === 0 && (
             <div className="mb-4 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700 flex items-center gap-2">
               <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
@@ -1668,131 +1714,176 @@ function CreateSeasonView({
             </div>
           )}
 
-          <div className="space-y-3">
-            {availableBeds.map((plot) => {
-              const isSelected = selectedPlots.includes(plot.id);
-              const details = plotDetails[plot.id] || defaultDetail;
+          {/* Harvest groups */}
+          <div className="space-y-4">
+            {harvestGroups.map((group, groupIdx) => {
+              // Beds already used by OTHER groups
+              const otherGroupBedIds = harvestGroups
+                .filter((g) => g.id !== group.id)
+                .flatMap((g) => g.bedIds);
+              const pickerIsOpen = openPicker === group.id;
+
               return (
                 <div
-                  key={plot.id}
-                  className={`border rounded-lg p-4 ${isSelected ? "border-[#009689] bg-[#f0fdfa]" : "border-[#e2e8f0]"}`}
+                  key={group.id}
+                  className="border border-[#e2e8f0] rounded-xl overflow-hidden"
                 >
-                  <div className="flex items-center gap-3 mb-3">
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      onChange={() => togglePlot(plot.id)}
-                      className="w-4 h-4 accent-[#009689]"
-                    />
-                    <div>
-                      <div className="font-mono font-semibold text-[#115e59]">
-                        {plot.name}
-                      </div>
-                      <div className="text-xs text-[#62748e]">
-                        {plot.area} • {plot.size}
-                      </div>
+                  {/* Group header */}
+                  <div className="flex items-center gap-3 px-4 py-3 bg-[#f8fafc] border-b border-[#e2e8f0]">
+                    <div className="w-6 h-6 rounded-full bg-[#009689] text-white text-xs font-bold flex items-center justify-center shrink-0">
+                      {groupIdx + 1}
                     </div>
+                    <div className="flex items-center gap-2 flex-1">
+                      <label className="text-sm font-medium text-[#115e59] shrink-0">
+                        Ngày thu hoạch dự kiến
+                        <span className="text-red-400 ml-0.5">*</span>
+                      </label>
+                      <input
+                        type="date"
+                        value={group.harvestDate}
+                        min={formData.startDate || undefined}
+                        onChange={(e) =>
+                          updateGroupHarvestDate(group.id, e.target.value)
+                        }
+                        className="px-2 py-1 text-sm border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                      />
+                    </div>
+                    {harvestGroups.length > 1 && (
+                      <button
+                        onClick={() => removeHarvestGroup(group.id)}
+                        className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg transition-colors"
+                        title="Xóa đợt này"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
-                  {isSelected && (
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pl-7">
-                      <div>
-                        <label className="block text-xs text-[#62748e] mb-1">
-                          Cây trồng
-                        </label>
-                        <select
-                          value={details.cropId}
-                          onChange={(e) => {
-                            const selected = crops.find(
-                              (c) => c.cropId === e.target.value,
+
+                  {/* Bed picker body */}
+                  <div className="p-4">
+                    {/* Chosen beds chip list */}
+                    {group.bedIds.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mb-3">
+                        {group.bedIds.map((bedId) => {
+                          const bed = availableBeds.find((b) => b.id === bedId);
+                          return (
+                            <span
+                              key={bedId}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-[#f0fdfa] border border-[#99f6e4] rounded-full text-xs font-medium text-[#115e59]"
+                            >
+                              <span className="w-1.5 h-1.5 rounded-full bg-[#009689] shrink-0" />
+                              {bed?.name ?? bedId}
+                              <span className="text-[#62748e]">
+                                · {bed?.area}
+                              </span>
+                              <button
+                                onClick={() =>
+                                  toggleBedInGroup(group.id, bedId)
+                                }
+                                className="ml-0.5 text-[#90a1b9] hover:text-red-500 transition-colors"
+                              >
+                                ×
+                              </button>
+                            </span>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* Toggle bed picker */}
+                    <button
+                      onClick={() =>
+                        setOpenPicker(pickerIsOpen ? null : group.id)
+                      }
+                      className="flex items-center gap-2 text-sm text-[#009689] hover:text-[#007f75] font-medium transition-colors"
+                    >
+                      <PlusCircle className="w-4 h-4" />
+                      {group.bedIds.length === 0
+                        ? "Chọn luống cho đợt này"
+                        : "Thêm / bớt luống"}
+                      <ChevronDown
+                        className={`w-3.5 h-3.5 transition-transform ${pickerIsOpen ? "rotate-180" : ""}`}
+                      />
+                    </button>
+
+                    {/* Expandable bed list */}
+                    {pickerIsOpen && (
+                      <div className="mt-3 border border-[#e2e8f0] rounded-lg overflow-hidden divide-y divide-[#f1f5f9]">
+                        {availableBeds.length === 0 ? (
+                          <div className="px-4 py-3 text-sm text-[#62748e]">
+                            Không có luống nào
+                          </div>
+                        ) : (
+                          availableBeds.map((bed) => {
+                            const isChecked = group.bedIds.includes(bed.id);
+                            const isTaken = otherGroupBedIds.includes(bed.id);
+                            return (
+                              <label
+                                key={bed.id}
+                                className={`flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-colors ${
+                                  isTaken
+                                    ? "opacity-40 cursor-not-allowed bg-[#f8fafc]"
+                                    : isChecked
+                                      ? "bg-[#f0fdfa]"
+                                      : "hover:bg-[#f8fafc]"
+                                }`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  disabled={isTaken}
+                                  onChange={() => {
+                                    if (!isTaken)
+                                      toggleBedInGroup(group.id, bed.id);
+                                  }}
+                                  className="w-4 h-4 accent-[#009689]"
+                                />
+                                <div className="flex-1 min-w-0">
+                                  <span className="font-mono font-semibold text-sm text-[#115e59]">
+                                    {bed.name}
+                                  </span>
+                                  <span className="ml-2 text-xs text-[#62748e]">
+                                    {bed.area} · {bed.size}
+                                  </span>
+                                </div>
+                                {isTaken && (
+                                  <span className="text-xs text-[#90a1b9] shrink-0">
+                                    Đã chọn ở đợt khác
+                                  </span>
+                                )}
+                                {isChecked && !isTaken && (
+                                  <Check className="w-3.5 h-3.5 text-[#009689] shrink-0" />
+                                )}
+                              </label>
                             );
-                            if (!selected) return;
-                            setPlotDetails((p) => ({
-                              ...p,
-                              [plot.id]: {
-                                ...(p[plot.id] || defaultDetail),
-                                cropId: selected.cropId,
-                                crop: selected.cropName as CropType,
-                              },
-                            }));
-                          }}
-                          className="w-full px-2 py-1.5 text-sm border border-[#cad5e2] rounded focus:outline-none focus:ring-2 focus:ring-[#009689] bg-white"
-                        >
-                          {crops.map((c) => (
-                            <option key={c.cropId} value={c.cropId}>
-                              {c.cropName}
-                            </option>
-                          ))}
-                        </select>
+                          })
+                        )}
                       </div>
-                      <div>
-                        <label className="block text-xs text-[#62748e] mb-1">
-                          Số lượng cây
-                        </label>
-                        <input
-                          type="number"
-                          min={0}
-                          value={details.cropQuantity || ""}
-                          onChange={(e) =>
-                            updatePlotDetail(
-                              plot.id,
-                              "cropQuantity",
-                              parseInt(e.target.value) || 0,
-                            )
-                          }
-                          placeholder="0"
-                          className="w-full px-2 py-1.5 text-sm border border-[#cad5e2] rounded focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-[#62748e] mb-1">
-                          Ngày gieo
-                        </label>
-                        <input
-                          type="date"
-                          value={details.sowingDate}
-                          onChange={(e) =>
-                            updatePlotDetail(
-                              plot.id,
-                              "sowingDate",
-                              e.target.value,
-                            )
-                          }
-                          className="w-full px-2 py-1.5 text-sm border border-[#cad5e2] rounded focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-[#62748e] mb-1">
-                          Ngày thu hoạch
-                        </label>
-                        <input
-                          type="date"
-                          value={details.harvestDate}
-                          onChange={(e) =>
-                            updatePlotDetail(
-                              plot.id,
-                              "harvestDate",
-                              e.target.value,
-                            )
-                          }
-                          className="w-full px-2 py-1.5 text-sm border border-[#cad5e2] rounded focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                        />
-                      </div>
-                      {selectedPlots.length > 1 && (
-                        <div className="col-span-full">
-                          <button
-                            onClick={() => applyToAll(plot.id)}
-                            className="text-xs text-[#009689] hover:underline"
-                          >
-                            Áp dụng cho tất cả luống
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  )}
+                    )}
+
+                    {group.bedIds.length === 0 && !pickerIsOpen && (
+                      <p className="mt-1.5 text-xs text-amber-600">
+                        Đợt này chưa có luống nào được chọn
+                      </p>
+                    )}
+                  </div>
                 </div>
               );
             })}
           </div>
+
+          {/* Add harvest group button */}
+          {availableBeds.length > 0 &&
+            allClaimedBedIds.length < availableBeds.length && (
+              <button
+                onClick={addHarvestGroup}
+                className="mt-4 w-full flex items-center justify-center gap-2 py-2.5 border-2 border-dashed border-[#99f6e4] rounded-xl text-sm text-[#009689] font-medium hover:bg-[#f0fdfa] transition-colors"
+              >
+                <PlusCircle className="w-4 h-4" /> Thêm đợt thu hoạch khác
+              </button>
+            )}
+
+          {/* Footer */}
           <div className="mt-6 flex justify-between items-center">
             <button
               onClick={() => setStep(1)}
@@ -1801,14 +1892,14 @@ function CreateSeasonView({
               <ArrowLeft className="w-4 h-4" /> Quay lại
             </button>
             <div className="flex items-center gap-3">
-              {selectedPlots.length === 0 && (
+              {allClaimedBedIds.length === 0 && (
                 <span className="text-xs text-amber-600">
                   Vui lòng chọn ít nhất 1 luống
                 </span>
               )}
               <button
                 onClick={handleStep2Submit}
-                disabled={selectedPlots.length === 0}
+                disabled={allClaimedBedIds.length === 0}
                 className="px-6 py-2 bg-[#009689] text-white rounded-lg hover:bg-[#007f75] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
               >
                 <CheckCircle className="w-4 h-4" /> Tạo mùa vụ
