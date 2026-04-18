@@ -465,6 +465,16 @@ export interface DiagnosisRequest {
   severityLevel: string; // "LOW" | "MEDIUM" | "HIGH" | "CRITICAL"
 }
 
+export interface PriceSettingResponse {
+  priceSettingId: string;
+  farmName: string;
+  expertName: string;
+  month: string; // ISO date "2026-04-01T00:00:00"
+  pricePerDiagnosis: number;
+  totalDiagnoses: number;
+  totalAmount: number;
+  isPaid: boolean;
+}
 // Parsed shape of ReportResponse.aiResultsJson
 export interface AiResultParsed {
   diseaseName?: string;
@@ -737,4 +747,7 @@ export const api = {
       `/api/Reports/${reportId}/diagnosis`,
       body,
     ),
+  // Payment / Billing
+  getPriceSettings: () =>
+    request<PriceSettingResponse[]>("GET", "/api/payment/price-settings"),
 };
