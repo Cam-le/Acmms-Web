@@ -702,6 +702,11 @@ export const api = {
 
   // IoT Data
   getIotDatas: () => request<IotDataResponse[]>("GET", "/api/IotDatas"),
+  getLatestSensorByDevice: (deviceCode: string) =>
+    request<IotDataResponse>(
+      "GET",
+      `/api/sensors/latest?deviceCode=${encodeURIComponent(deviceCode)}`,
+    ),
 
   // IoT Devices
   getIotDevices: () => request<IotDeviceResponse[]>("GET", "/api/IotDevices"),

@@ -37,8 +37,6 @@ import {
   PlotResponse,
   BedResponse,
   CropResponse,
-  IotDataResponse,
-  IotDeviceResponse,
 } from "../../api/client";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -983,48 +981,40 @@ function DetailSeasonView({ season }: { season: Season }) {
       setIotLoading(true);
       setIotError(null);
       try {
-        const allData = await api.getIotDatas();
-        const seasonData = (Array.isArray(allData) ? allData : []).filter(
-          (d) => d.seasonId === season.id,
+        // Step 1: get all devices, keep only those whose bedId is in this season
+        const seasonBedIds = new Set(
+          season.plots.map((p) => p._bedId as string).filter(Boolean),
         );
+        const allDevices = await api.getIotDevices();
+        const seasonDevices = (
+          Array.isArray(allDevices) ? allDevices : []
+        ).filter((d) => seasonBedIds.has(d.bedId));
 
-        // Keep only the most recent reading per device
-        const latestByDevice: Record<string, IotDataResponse> = {};
-        for (const d of seasonData) {
-          const prev = latestByDevice[d.deviceId];
-          if (!prev || d.recordedAt > prev.recordedAt) {
-            latestByDevice[d.deviceId] = d;
-          }
-        }
+        if (cancelled) return;
 
-        // Fetch device details for each unique deviceId (in parallel)
-        const deviceIds = Object.keys(latestByDevice);
-        const deviceResults = await Promise.allSettled(
-          deviceIds.map((id) => api.getIotDevice(id)),
+        // Step 2: per device fetch latest reading by deviceCode (in parallel)
+        const readingResults = await Promise.allSettled(
+          seasonDevices.map((d) => api.getLatestSensorByDevice(d.deviceCode)),
         );
 
         if (cancelled) return;
 
-        const rows: IotRow[] = deviceIds.map((deviceId, i) => {
-          const reading = latestByDevice[deviceId];
-          const deviceResult = deviceResults[i];
-          const device: IotDeviceResponse | null =
-            deviceResult.status === "fulfilled" ? deviceResult.value : null;
-
-          // Find bed name from season plots using bedId
-          const bedId = device?.bedId ?? null;
-          const matchedPlot = bedId
-            ? season.plots.find((p) => p._bedId === bedId)
-            : null;
-          const bedName = matchedPlot?.plotName ?? null;
-
-          return {
+        const rows: IotRow[] = [];
+        for (let i = 0; i < seasonDevices.length; i++) {
+          const device = seasonDevices[i];
+          const result = readingResults[i];
+          if (result.status !== "fulfilled" || !result.value) continue;
+          const reading = result.value;
+          const matchedPlot = season.plots.find(
+            (p) => p._bedId === device.bedId,
+          );
+          rows.push({
             sensorDataId: reading.sensorDataId,
-            deviceId,
-            deviceCode: device?.deviceCode ?? deviceId.slice(0, 8),
-            deviceName: device?.name ?? "—",
-            bedId: bedId ?? "",
-            bedName,
+            deviceId: device.deviceId,
+            deviceCode: device.deviceCode,
+            deviceName: device.name,
+            bedId: device.bedId,
+            bedName: matchedPlot?.plotName ?? null,
             recordedAt: reading.recordedAt,
             temperature: reading.temperature,
             humidity: reading.humidity,
@@ -1032,8 +1022,8 @@ function DetailSeasonView({ season }: { season: Season }) {
             light: reading.light,
             isRaining: reading.isRaining,
             isAlert: reading.isAlert,
-          };
-        });
+          });
+        }
 
         setIotRows(rows);
       } catch {
