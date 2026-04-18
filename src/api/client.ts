@@ -231,6 +231,16 @@ export interface UserResponse {
   roleName: string;
 }
 
+export interface UnassignedStaff {
+  userId: string;
+  email: string;
+  fullname: string;
+  phoneNumber: string;
+  status: string;
+  createdAt: string;
+  requestedRole?: string;
+}
+
 export interface ReportResponse {
   reportId: string;
   reportNo: string;
@@ -640,6 +650,8 @@ export const api = {
     request<unknown>("DELETE", `/api/seasons-details/${id}`),
 
   // Staffs
+  getUnassignedStaffs: () =>
+    request<UnassignedStaff[]>("GET", "/api/Staffs/unassigned-role"),
   getStaffs: () => request<UserResponse[]>("GET", "/api/Staffs"),
   getStaff: (id: string) => request<UserResponse>("GET", `/api/Staffs/${id}`),
   createStaff: (body: WorkerRequest) =>
