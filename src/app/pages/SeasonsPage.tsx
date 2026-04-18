@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { Link, useSearchParams } from "react-router";
 import {
   Plus,
@@ -16,12 +16,16 @@ import {
   PlusCircle,
   ChevronLeft,
   ChevronRight,
-  CheckSquare,
   Wheat,
   Info,
   FileText,
   AlertTriangle,
   Check,
+  Thermometer,
+  Droplets,
+  Sun,
+  CloudRain,
+  Cpu,
 } from "lucide-react";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import * as Collapsible from "@radix-ui/react-collapsible";
@@ -98,28 +102,6 @@ const seasonStatusConfig: Record<SeasonStatus, string> = {
   "Đang canh tác": "bg-[#dcfce7] text-[#008236]",
   "Đã thu hoạch": "bg-[#fef9c3] text-[#854d0e]",
   "Đã kết thúc": "bg-[#f1f5f9] text-[#475569]",
-};
-
-const plotStatusConfig: Record<
-  SeasonPlotStatus,
-  { badge: string; dot: string }
-> = {
-  "Chưa trồng": {
-    badge: "bg-[#f1f5f9] text-[#475569] border border-[#cbd5e1]",
-    dot: "bg-[#94a3b8]",
-  },
-  "Đang trồng": {
-    badge: "bg-[#fef9c3] text-[#854d0e] border border-[#fde68a]",
-    dot: "bg-[#f59e0b]",
-  },
-  "Đã thu hoạch": {
-    badge: "bg-[#dcfce7] text-[#008236] border border-[#86efac]",
-    dot: "bg-[#22c55e]",
-  },
-  "Cảnh báo": {
-    badge: "bg-[#fee2e2] text-[#b91c1c] border border-[#fca5a5]",
-    dot: "bg-[#ef4444]",
-  },
 };
 
 /**
@@ -448,7 +430,6 @@ function mapApiSeasonToUi(
 // ─── Seasons Page (List) ──────────────────────────────────────────────────────
 
 const PAGE_SIZE_LIST = 8;
-const PAGE_SIZE_DETAIL_PLOTS = 10;
 
 export function SeasonsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -581,21 +562,33 @@ export function SeasonsPage() {
       seasonNotes: (seasonData as any).seasonNotes ?? "",
       status: toApiStatus(seasonData.status),
     });
-    if (created?.seasonId && detailsToCreate.length > 0) {
-      await Promise.allSettled(
-        detailsToCreate.map((d) =>
-          api.createSeasonDetail({
-            seasonId: created.seasonId,
-            bedId: d.bedId,
-            cropId: d.cropId,
-            cropQuantity: d.cropQuantity,
-            startDate: d.startDate || seasonData.startDate,
-            endDate: d.endDate || seasonData.endDate,
-            seasonExpectedHarvestDate: d.harvestDate || seasonData.endDate,
-            totalHarvestYield: 0,
-          }),
-        ),
-      );
+    if (detailsToCreate.length > 0) {
+      const allSeasons = await api.getSeasons();
+      const match = Array.isArray(allSeasons)
+        ? allSeasons.find(
+            (s) =>
+              s.farmId === farmId &&
+              s.seasonName === seasonData.name &&
+              s.seasonStartDate === seasonData.startDate,
+          )
+        : null;
+
+      if (match?.seasonId) {
+        await Promise.allSettled(
+          detailsToCreate.map((d) =>
+            api.createSeasonDetail({
+              seasonId: match.seasonId,
+              bedId: d.bedId,
+              cropId: d.cropId,
+              cropQuantity: d.cropQuantity,
+              startDate: d.startDate || seasonData.startDate,
+              endDate: d.endDate || seasonData.endDate,
+              seasonExpectedHarvestDate: d.harvestDate || seasonData.endDate,
+              totalHarvestYield: 0,
+            }),
+          ),
+        );
+      }
     }
     await loadData();
     setSearchParams({ view: "list" });
@@ -957,24 +950,112 @@ export function SeasonsPage() {
 
 // ─── Detail View ──────────────────────────────────────────────────────────────
 
-function DetailSeasonView({ season }: { season: Season }) {
-  const v2Plots = season.plots.map(toV2);
+/** Shape of one merged IoT row: latest reading + device info */
+interface IotRow {
+  sensorDataId: string;
+  deviceId: string;
+  deviceCode: string;
+  deviceName: string;
+  bedId: string;
+  bedName: string | null;
+  recordedAt: string;
+  temperature: number;
+  humidity: number;
+  soilMoisture: number;
+  light: number;
+  isRaining: boolean;
+  isAlert: boolean;
+}
 
-  // Two-level grouping: khu → harvest week buckets
-  const plotsByArea = v2Plots.reduce(
-    (acc, plot) => {
-      if (!acc[plot.area]) acc[plot.area] = [];
-      acc[plot.area].push(plot);
+function DetailSeasonView({ season }: { season: Season }) {
+  const plots = season.plots.map(toV2);
+
+  // ── IoT sensor data ────────────────────────────────────────────────────────
+  const [iotRows, setIotRows] = useState<IotRow[]>([]);
+  const [iotLoading, setIotLoading] = useState(true);
+  const [iotError, setIotError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadIot() {
+      setIotLoading(true);
+      setIotError(null);
+      try {
+        // Step 1: get all devices, keep only those whose bedId is in this season
+        const seasonBedIds = new Set(
+          season.plots.map((p) => p._bedId as string).filter(Boolean),
+        );
+        const allDevices = await api.getIotDevices();
+        const seasonDevices = (
+          Array.isArray(allDevices) ? allDevices : []
+        ).filter((d) => seasonBedIds.has(d.bedId));
+
+        if (cancelled) return;
+
+        // Step 2: per device fetch latest reading by deviceCode (in parallel)
+        const readingResults = await Promise.allSettled(
+          seasonDevices.map((d) => api.getLatestSensorByDevice(d.deviceCode)),
+        );
+
+        if (cancelled) return;
+
+        const rows: IotRow[] = [];
+        for (let i = 0; i < seasonDevices.length; i++) {
+          const device = seasonDevices[i];
+          const result = readingResults[i];
+          if (result.status !== "fulfilled" || !result.value) continue;
+          const reading = result.value;
+          const matchedPlot = season.plots.find(
+            (p) => p._bedId === device.bedId,
+          );
+          rows.push({
+            sensorDataId: reading.sensorDataId,
+            deviceId: device.deviceId,
+            deviceCode: device.deviceCode,
+            deviceName: device.name,
+            bedId: device.bedId,
+            bedName: matchedPlot?.plotName ?? null,
+            recordedAt: reading.recordedAt,
+            temperature: reading.temperature,
+            humidity: reading.humidity,
+            soilMoisture: reading.soilMoisture,
+            light: reading.light,
+            isRaining: reading.isRaining,
+            isAlert: reading.isAlert,
+          });
+        }
+
+        setIotRows(rows);
+      } catch {
+        if (!cancelled) setIotError("Không thể tải dữ liệu cảm biến IoT.");
+      } finally {
+        if (!cancelled) setIotLoading(false);
+      }
+    }
+    loadIot();
+    return () => {
+      cancelled = true;
+    };
+  }, [season.id]);
+
+  // ── Harvest groups ─────────────────────────────────────────────────────────
+  // Group by exact harvest date (ISO string), sorted earliest first
+  const byHarvestDate = plots.reduce(
+    (acc, p) => {
+      const key = p.harvestDate || "__unset__";
+      if (!acc[key]) acc[key] = [];
+      acc[key].push(p);
       return acc;
     },
     {} as Record<string, PlotAssignmentV2[]>,
   );
+  const harvestGroups = Object.entries(byHarvestDate).sort(([a], [b]) => {
+    if (a === "__unset__") return 1;
+    if (b === "__unset__") return -1;
+    return a < b ? -1 : 1;
+  });
 
-  // Pagination keyed by "area::weekKey"
-  const [areaPages, setAreaPages] = useState<Record<string, number>>({});
-  const getPage = (key: string) => areaPages[key] ?? 1;
-  const setPage = (key: string, page: number) =>
-    setAreaPages((p) => ({ ...p, [key]: page }));
+  const totalKg = plots.reduce((s, p) => s + (p.harvestQuantity ?? 0), 0);
 
   return (
     <div className="flex flex-col gap-6 p-6">
@@ -991,13 +1072,7 @@ function DetailSeasonView({ season }: { season: Season }) {
             <h1 className="text-[#115e59] text-2xl font-semibold">
               {season.name}
             </h1>
-            <div className="flex items-center gap-2 mt-1">
-              <span
-                className={`px-2 py-0.5 rounded text-xs font-medium ${seasonStatusConfig[season.status]}`}
-              >
-                {season.status}
-              </span>
-            </div>
+            <p className="text-sm text-[#62748e] mt-0.5">{season.farm}</p>
           </div>
         </div>
         <Link
@@ -1008,282 +1083,303 @@ function DetailSeasonView({ season }: { season: Season }) {
         </Link>
       </div>
 
-      {/* Info card */}
-      <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-6">
-        <h3 className="text-sm font-bold text-[#62748e] uppercase mb-4 flex items-center gap-2">
-          <Sprout className="w-4 h-4" /> Thông tin chung
-        </h3>
-        <div className="grid grid-cols-3 gap-6">
-          <div className="flex items-start gap-3">
-            <div className="w-10 h-10 bg-[#dbeafe] rounded-lg flex items-center justify-center shrink-0">
-              <MapPin className="w-5 h-5 text-[#1e40af]" />
+      {/* Info strip */}
+      <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-5">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div>
+            <div className="text-xs text-[#62748e] uppercase mb-1">
+              Trang trại
             </div>
-            <div>
-              <div className="text-xs text-[#62748e] mb-1">TRANG TRẠI</div>
-              <div className="font-medium text-[#115e59]">{season.farm}</div>
+            <div className="font-medium text-[#115e59]">{season.farm}</div>
+          </div>
+          <div>
+            <div className="text-xs text-[#62748e] uppercase mb-1">
+              Thời gian
+            </div>
+            <div className="font-medium text-[#115e59]">
+              {formatDate(season.startDate)} – {formatDate(season.endDate)}
             </div>
           </div>
-          <div className="flex items-start gap-3">
-            <div className="w-10 h-10 bg-[#fef3c7] rounded-lg flex items-center justify-center shrink-0">
-              <Calendar className="w-5 h-5 text-[#92400e]" />
+          <div>
+            <div className="text-xs text-[#62748e] uppercase mb-1">
+              Số luống
             </div>
-            <div>
-              <div className="text-xs text-[#62748e] mb-1">THỜI GIAN</div>
-              <div className="font-medium text-[#115e59]">
-                {formatDate(season.startDate)} – {formatDate(season.endDate)}
-              </div>
+            <div className="font-medium text-[#115e59]">{plots.length}</div>
+          </div>
+          <div>
+            <div className="text-xs text-[#62748e] uppercase mb-1">
+              Tổng sản lượng
+            </div>
+            <div className="font-medium text-[#008236] flex items-center gap-1">
+              <Wheat className="w-4 h-4" />
+              {totalKg > 0 ? `${totalKg.toLocaleString("vi-VN")} kg` : "—"}
             </div>
           </div>
-          <div className="flex items-start gap-3">
-            <div className="w-10 h-10 bg-[#dcfce7] rounded-lg flex items-center justify-center shrink-0">
-              <Sprout className="w-5 h-5 text-[#008236]" />
+          {season.description && (
+            <div className="col-span-full">
+              <div className="text-xs text-[#62748e] uppercase mb-1">Mô tả</div>
+              <div className="text-sm text-[#334155]">{season.description}</div>
             </div>
-            <div>
-              <div className="text-xs text-[#62748e] mb-1">MÔ TẢ</div>
-              <div className="font-medium text-[#115e59]">
-                {season.description || "Vụ mùa chính trồng bắp cải."}
-              </div>
-            </div>
-          </div>
+          )}
         </div>
       </div>
 
-      {/* Plots grouped by area */}
-      <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-bold text-[#62748e] uppercase">
-            Thông tin chi tiết luống
+      {/* Beds table — grouped by harvest date */}
+      <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm overflow-hidden">
+        <div className="px-6 py-4 border-b border-[#e2e8f0]">
+          <h3 className="text-sm font-bold text-[#62748e] uppercase flex items-center gap-2">
+            <Sprout className="w-4 h-4" /> Chi tiết luống ({plots.length})
           </h3>
-          {(() => {
-            const totalKg = v2Plots.reduce(
-              (s, p) => s + (p.harvestQuantity ?? 0),
-              0,
-            );
-            const harvestedPlots = v2Plots.filter(
-              (p) => p.status === "Đã thu hoạch",
-            ).length;
-            return (
-              <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[#f0fdfa] border border-[#99f6e4] rounded-lg">
-                <Wheat className="w-4 h-4 text-[#008236]" />
-                <span className="text-xs text-[#62748e]">
-                  Tổng sản lượng thu hoạch:
-                </span>
-                <span className="text-sm font-semibold text-[#008236]">
-                  {totalKg > 0 ? `${totalKg.toLocaleString("vi-VN")} kg` : "—"}
-                </span>
-                {harvestedPlots > 0 && (
-                  <span className="text-xs text-[#62748e]">
-                    ({harvestedPlots}/{v2Plots.length} luống)
-                  </span>
-                )}
-              </div>
-            );
-          })()}
         </div>
 
-        {/* Legend */}
-        <div className="flex items-center gap-4 mb-4 text-xs text-[#62748e]">
-          <span className="flex items-center gap-1.5">
-            <span className="inline-block w-2 h-2 rounded-full bg-[#fbbf24]" />{" "}
-            Đang trồng
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="inline-block w-2 h-2 rounded-full bg-[#22c55e]" />{" "}
-            Đã thu hoạch
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="text-xs">
-              Tên luống: [Khu]-[NN] — ví dụ A-01, B-12
-            </span>
-          </span>
-        </div>
-
-        {Object.entries(plotsByArea).map(([areaLabel, areaPlots]) => {
-          const areaHarvested = areaPlots.filter(
-            (p) => p.status === "Đã thu hoạch",
-          ).length;
-          const weekBuckets = groupByHarvestWeek(areaPlots);
-
-          return (
-            <Collapsible.Root key={areaLabel} defaultOpen className="mb-4">
-              {/* ── Khu header ── */}
-              <Collapsible.Trigger className="flex items-center justify-between w-full py-3 px-4 bg-[#f0fdfa] rounded-lg border border-[#99f6e4] hover:bg-[#ccfbf1] transition-colors">
-                <div className="flex items-center gap-3">
-                  <span className="font-semibold text-[#115e59]">
-                    {areaLabel}
-                  </span>
-                  <span className="text-xs text-[#62748e]">
-                    {areaPlots.length} luống · {areaHarvested}/
-                    {areaPlots.length} đã thu hoạch
-                  </span>
-                </div>
-                <ChevronDown className="w-4 h-4 text-[#62748e]" />
-              </Collapsible.Trigger>
-
-              <Collapsible.Content>
-                <div className="mt-2 space-y-3 pl-3 border-l-2 border-[#99f6e4]">
-                  {weekBuckets.map(([weekKey, weekPlots]) => {
-                    const paginationKey = `${areaLabel}::${weekKey}`;
-                    const page = getPage(paginationKey);
-                    const total = weekPlots.length;
-                    const tPages = Math.max(
-                      1,
-                      Math.ceil(total / PAGE_SIZE_DETAIL_PLOTS),
-                    );
-                    const paged = weekPlots.slice(
-                      (page - 1) * PAGE_SIZE_DETAIL_PLOTS,
-                      page * PAGE_SIZE_DETAIL_PLOTS,
-                    );
-                    const weekHarvested = weekPlots.filter(
-                      (p) => p.status === "Đã thu hoạch",
-                    ).length;
-                    const allDone = weekHarvested === total;
-                    const cropLabels = [
-                      ...new Set(weekPlots.map((p) => p.crop)),
-                    ];
-
-                    return (
-                      <div
-                        key={weekKey}
-                        className="rounded-lg border border-[#e2e8f0] overflow-hidden"
+        {plots.length === 0 ? (
+          <div className="text-center py-12 text-[#62748e]">
+            Chưa có luống nào được gán cho mùa vụ này
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-[#f8fafc] border-b border-[#e2e8f0]">
+                <tr>
+                  {[
+                    "Luống",
+                    "Khu vực",
+                    "Cây trồng",
+                    "Ngày gieo",
+                    "Thu hoạch dự kiến",
+                    "SL dự kiến (cây)",
+                    "SL thực tế (cây)",
+                    "Sản lượng (kg)",
+                  ].map((h) => (
+                    <th
+                      key={h}
+                      className="px-4 py-3 text-left text-xs font-semibold text-[#62748e] uppercase tracking-wide whitespace-nowrap"
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {harvestGroups.map(([harvestKey, groupPlots]) => (
+                  <React.Fragment key={harvestKey}>
+                    {/* Harvest date group header row */}
+                    <tr key={`hdr-${harvestKey}`} className="bg-[#f0fdfa]">
+                      <td
+                        colSpan={8}
+                        className="px-4 py-2 text-xs font-semibold text-[#115e59] border-y border-[#99f6e4]"
                       >
-                        {/* Week sub-header */}
-                        <div className="flex items-center justify-between px-4 py-2 bg-[#f8fafc] border-b border-[#e2e8f0]">
-                          <div className="flex items-center gap-3">
-                            <span className="flex items-center gap-1 text-xs font-semibold text-[#475569]">
-                              <Calendar className="w-3.5 h-3.5" /> Thu hoạch:{" "}
-                              {formatWeekRange(weekKey)}
-                            </span>
-                            <div className="flex gap-1">
-                              {cropLabels.map((c) => (
-                                <span
-                                  key={c}
-                                  className="text-xs px-1.5 py-0.5 bg-white border border-[#e2e8f0] rounded text-[#62748e]"
-                                >
-                                  {c}
+                        <span className="flex items-center gap-2">
+                          <Calendar className="w-3.5 h-3.5 text-[#009689]" />
+                          Thu hoạch dự kiến:{" "}
+                          {harvestKey === "__unset__"
+                            ? "Chưa có ngày"
+                            : formatDate(harvestKey)}
+                          <span className="font-normal text-[#62748e]">
+                            · {groupPlots.length} luống
+                          </span>
+                        </span>
+                      </td>
+                    </tr>
+                    {/* Bed rows */}
+                    {groupPlots.map((plot, idx) => {
+                      const harvestUnlocked = isHarvestUnlocked(
+                        plot.harvestDate,
+                      );
+                      return (
+                        <tr
+                          key={plot.plotId}
+                          className={`border-b border-[#f1f5f9] hover:bg-[#f8fafc] transition-colors ${idx === groupPlots.length - 1 ? "border-b-2 border-[#e2e8f0]" : ""}`}
+                        >
+                          <td className="px-4 py-2.5 font-mono font-semibold text-[#115e59] whitespace-nowrap">
+                            {plot.plotName}
+                          </td>
+                          <td className="px-4 py-2.5 text-[#62748e] whitespace-nowrap">
+                            {plot.area}
+                          </td>
+                          <td className="px-4 py-2.5 text-[#62748e]">
+                            {plot.crop}
+                          </td>
+                          <td className="px-4 py-2.5 text-[#62748e] whitespace-nowrap">
+                            {formatDate(plot.sowingDate) || "—"}
+                          </td>
+                          <td className="px-4 py-2.5 text-[#62748e] whitespace-nowrap">
+                            {formatDate(plot.harvestDate) || "—"}
+                          </td>
+                          <td className="px-4 py-2.5 text-[#62748e] text-right">
+                            {plot.plannedQuantity ?? 0}
+                          </td>
+                          <td className="px-4 py-2.5 text-[#62748e] text-right">
+                            {plot.actualPlanted ?? 0}
+                          </td>
+                          <td className="px-4 py-2.5 text-right">
+                            {harvestUnlocked ? (
+                              plot.harvestQuantity ? (
+                                <span className="font-medium text-[#008236]">
+                                  {plot.harvestQuantity} kg
                                 </span>
-                              ))}
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-[#62748e]">
-                              {weekHarvested}/{total} đã thu
-                            </span>
-                            {allDone && (
-                              <span className="flex items-center gap-1 px-2 py-0.5 text-xs font-medium text-[#008236] bg-[#dcfce7] rounded-full">
-                                <Check className="w-3 h-3" /> Xong
+                              ) : (
+                                <span className="text-[#90a1b9]">—</span>
+                              )
+                            ) : (
+                              <span className="flex items-center justify-end gap-1 text-[#90a1b9]">
+                                <Lock className="w-3 h-3" /> Chưa thu
                               </span>
                             )}
-                          </div>
-                        </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </React.Fragment>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+      {/* IoT Sensor Data */}
+      <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm overflow-hidden">
+        <div className="px-6 py-4 border-b border-[#e2e8f0] flex items-center justify-between">
+          <h3 className="text-sm font-bold text-[#62748e] uppercase flex items-center gap-2">
+            <Cpu className="w-4 h-4" /> Dữ liệu cảm biến IoT
+            {iotRows.length > 0 && (
+              <span className="font-normal normal-case text-[#009689]">
+                · {iotRows.length} thiết bị
+              </span>
+            )}
+          </h3>
+          {iotRows.some((r) => r.isAlert) && (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-red-50 border border-red-200 rounded-full text-xs font-medium text-red-600">
+              <AlertTriangle className="w-3 h-3" /> Có cảnh báo
+            </span>
+          )}
+        </div>
 
-                        {/* Plot table */}
-                        <table className="w-full">
-                          <thead className="bg-[#f8fafc] border-b border-[#e2e8f0]">
-                            <tr>
-                              {[
-                                "Luống",
-                                "Cây trồng",
-                                "Ngày gieo",
-                                "Thu hoạch",
-                                "SL dự kiến",
-                                "SL thực tế",
-                                "Sản lượng (kg)",
-                                "Trạng thái",
-                              ].map((h) => (
-                                <th
-                                  key={h}
-                                  className="px-4 py-2.5 text-left text-xs font-medium text-[#62748e] uppercase"
-                                >
-                                  {h}
-                                </th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-[#e2e8f0]">
-                            {paged.map((plot) => {
-                              const harvestUnlocked = isHarvestUnlocked(
-                                plot.harvestDate,
-                              );
-                              return (
-                                <tr
-                                  key={plot.plotId}
-                                  className="hover:bg-[#f8fafc] transition-colors"
-                                >
-                                  <td className="px-4 py-2.5 text-sm font-mono font-medium text-[#115e59]">
-                                    {plot.plotName}
-                                  </td>
-                                  <td className="px-4 py-2.5 text-sm text-[#62748e]">
-                                    {plot.crop}
-                                  </td>
-                                  <td className="px-4 py-2.5 text-sm text-[#62748e]">
-                                    {formatDate(plot.sowingDate)}
-                                  </td>
-                                  <td className="px-4 py-2.5 text-sm text-[#62748e]">
-                                    {formatDate(plot.harvestDate)}
-                                  </td>
-                                  <td className="px-4 py-2.5 text-sm text-[#62748e]">
-                                    {plot.plannedQuantity ?? 0}
-                                  </td>
-                                  <td className="px-4 py-2.5 text-sm text-[#62748e]">
-                                    {plot.actualPlanted ?? 0}
-                                  </td>
-                                  <td className="px-4 py-2.5 text-sm text-[#62748e]">
-                                    {harvestUnlocked ? (
-                                      plot.harvestQuantity ? (
-                                        `${plot.harvestQuantity} kg`
-                                      ) : (
-                                        <span className="text-[#90a1b9]">
-                                          —
-                                        </span>
-                                      )
-                                    ) : (
-                                      <span className="flex items-center gap-1 text-[#90a1b9]">
-                                        <Lock className="w-3 h-3" /> Chưa thu
-                                      </span>
-                                    )}
-                                  </td>
-                                  <td className="px-4 py-2.5">
-                                    <span
-                                      className={`inline-block px-2 py-1 rounded text-xs font-medium ${plotStatusConfig[plot.status]?.badge ?? ""}`}
-                                    >
-                                      {plot.status}
-                                    </span>
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                        {tPages > 1 && (
-                          <Pagination
-                            currentPage={page}
-                            totalPages={tPages}
-                            onPageChange={(p) => setPage(paginationKey, p)}
-                            totalItems={total}
-                            pageSize={PAGE_SIZE_DETAIL_PLOTS}
-                          />
+        {iotLoading ? (
+          <div className="flex items-center justify-center py-10 text-[#62748e] gap-2">
+            <div className="w-5 h-5 border-2 border-[#009689] border-t-transparent rounded-full animate-spin" />
+            Đang tải dữ liệu cảm biến...
+          </div>
+        ) : iotError ? (
+          <div className="flex items-center gap-2 px-6 py-4 text-sm text-red-600">
+            <AlertTriangle className="w-4 h-4 shrink-0" />
+            {iotError}
+          </div>
+        ) : iotRows.length === 0 ? (
+          <div className="text-center py-10 text-[#62748e] text-sm">
+            Chưa có dữ liệu cảm biến cho mùa vụ này
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-[#f8fafc] border-b border-[#e2e8f0]">
+                <tr>
+                  {[
+                    "Thiết bị",
+                    "Luống",
+                    "Thời gian đo",
+                    "Nhiệt độ (°C)",
+                    "Độ ẩm KK (%)",
+                    "Độ ẩm đất (%)",
+                    "Ánh sáng",
+                    "Trạng thái",
+                  ].map((h) => (
+                    <th
+                      key={h}
+                      className="px-4 py-3 text-left text-xs font-semibold text-[#62748e] uppercase tracking-wide whitespace-nowrap"
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#f1f5f9]">
+                {iotRows.map((row) => (
+                  <tr
+                    key={row.sensorDataId}
+                    className={`hover:bg-[#f8fafc] transition-colors ${row.isAlert ? "bg-red-50/40" : ""}`}
+                  >
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <div className="font-mono text-xs font-semibold text-[#115e59]">
+                        {row.deviceCode}
+                      </div>
+                      {row.deviceName !== row.deviceCode && (
+                        <div className="text-xs text-[#90a1b9]">
+                          {row.deviceName}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-[#62748e] whitespace-nowrap">
+                      {row.bedName ? (
+                        <span className="inline-flex items-center gap-1">
+                          <MapPin className="w-3 h-3 text-[#009689]" />
+                          {row.bedName}
+                        </span>
+                      ) : (
+                        <span className="text-[#90a1b9]">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-[#62748e] whitespace-nowrap text-xs">
+                      {new Date(row.recordedAt).toLocaleString("vi-VN", {
+                        day: "2-digit",
+                        month: "2-digit",
+                        year: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <span className="inline-flex items-center gap-1.5 font-medium text-orange-600">
+                        <Thermometer className="w-3.5 h-3.5" />
+                        {row.temperature.toFixed(1)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <span className="inline-flex items-center gap-1.5 font-medium text-blue-600">
+                        <Droplets className="w-3.5 h-3.5" />
+                        {row.humidity}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <span className="inline-flex items-center gap-1.5 font-medium text-[#008236]">
+                        <Droplets className="w-3.5 h-3.5 opacity-60" />
+                        {row.soilMoisture}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <span className="inline-flex items-center gap-1.5 text-[#62748e]">
+                        <Sun className="w-3.5 h-3.5 text-yellow-500" />
+                        {row.light > 0 ? row.light : "—"}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <div className="flex flex-col gap-1">
+                        {row.isRaining && (
+                          <span className="inline-flex items-center gap-1 text-xs text-blue-600">
+                            <CloudRain className="w-3 h-3" /> Đang mưa
+                          </span>
+                        )}
+                        {row.isAlert ? (
+                          <span className="inline-flex items-center gap-1 text-xs font-medium text-red-600">
+                            <AlertTriangle className="w-3 h-3" /> Cảnh báo
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-xs text-[#008236]">
+                            <CheckCircle className="w-3 h-3" /> Bình thường
+                          </span>
                         )}
                       </div>
-                    );
-                  })}
-                </div>
-              </Collapsible.Content>
-            </Collapsible.Root>
-          );
-        })}
-
-        {season.plots.length === 0 && (
-          <div className="text-center py-8 text-[#62748e]">
-            Chưa có luống nào được gán cho mùa vụ này
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
     </div>
   );
 }
-
-// ─── Create View ──────────────────────────────────────────────────────────────
 
 function CreateSeasonView({
   farms,
@@ -1323,19 +1419,27 @@ function CreateSeasonView({
     status: "Lên kế hoạch" as SeasonStatus,
     plots: [] as PlotAssignment[],
   });
-  const [selectedPlots, setSelectedPlots] = useState<string[]>([]);
-  const [plotDetails, setPlotDetails] = useState<
-    Record<
-      string,
-      {
-        crop: CropType;
-        cropId: string;
-        cropQuantity: number;
-        sowingDate: string;
-        harvestDate: string;
-      }
-    >
-  >({});
+  // ── Harvest-group model ────────────────────────────────────────────────────
+  // Each group has one harvest date + a set of bed IDs assigned to that date.
+  // cropId / cropQuantity are fetched from GET /api/Beds/{id} per bed.
+  interface HarvestGroup {
+    id: string; // local uuid for React key
+    harvestDate: string;
+    bedIds: string[];
+  }
+  interface BedFetchCache {
+    cropId: string;
+    cropName: string;
+    cropQuantity: number;
+  }
+
+  const [harvestGroups, setHarvestGroups] = useState<HarvestGroup[]>([
+    { id: crypto.randomUUID(), harvestDate: "", bedIds: [] },
+  ]);
+  // Cache fetched bed data so we don't re-fetch on every render
+  const [bedCache, setBedCache] = useState<Record<string, BedFetchCache>>({});
+  // Track which bed pickers are open
+  const [openPicker, setOpenPicker] = useState<string | null>(null);
 
   // Filter beds theo farm đang chọn (qua plotId → farmId)
   const bedsForFarm = formData.farmId
@@ -1355,93 +1459,103 @@ function CreateSeasonView({
     })),
   );
 
-  // Dùng crops từ API; mỗi option có cropId thực
-  const firstCropId = crops[0]?.cropId ?? "";
-  const firstCropName = (crops[0]?.cropName ?? "Bắp Cải Trắng") as CropType;
+  // All bed IDs already claimed by any group
+  const allClaimedBedIds = harvestGroups.flatMap((g) => g.bedIds);
 
-  const defaultDetail = {
-    crop: firstCropName,
-    cropId: firstCropId,
-    cropQuantity: 0,
-    sowingDate: "",
-    harvestDate: "",
-  };
-
-  const handleStep2Submit = () => {
-    const plots: PlotAssignment[] = selectedPlots.map((plotId) => {
-      const plot = availableBeds.find((p) => p.id === plotId)!;
-      const details = plotDetails[plotId] || defaultDetail;
-      return {
-        plotId,
-        plotName: plot.name,
-        area: plot.area,
-        crop: details.crop,
-        sowingDate: details.sowingDate,
-        harvestDate: details.harvestDate,
-        plannedQuantity: details.cropQuantity,
-        actualPlanted: 0,
-        harvestQuantity: 0,
-        status: "Chưa trồng" as any,
-      };
-    });
-
-    const detailsToCreate = selectedPlots.map((plotId) => {
-      const details = plotDetails[plotId] || defaultDetail;
-      return {
-        bedId: plotId,
-        cropId: details.cropId || firstCropId,
-        cropQuantity: details.cropQuantity,
-        startDate: details.sowingDate || formData.startDate,
-        endDate: formData.endDate,
-        harvestDate: details.harvestDate || formData.endDate,
-      };
-    });
-
-    onCreate({ ...formData, plots }, detailsToCreate);
-  };
-
-  const togglePlot = async (id: string) => {
-    if (selectedPlots.includes(id)) {
-      setSelectedPlots((p) => p.filter((x) => x !== id));
-      return;
-    }
-    setSelectedPlots((p) => [...p, id]);
-    // Fetch real cropQuantities from API when bed is selected
+  const fetchAndCacheBed = async (bedId: string) => {
+    if (bedCache[bedId]) return;
     try {
-      const bed = await api.getBed(id);
-      if (
-        bed &&
-        typeof bed.cropQuantities === "number" &&
-        bed.cropQuantities > 0
-      ) {
-        setPlotDetails((p) => ({
-          ...p,
-          [id]: {
-            ...(p[id] || defaultDetail),
-            cropQuantity: bed.cropQuantities,
+      const bed = await api.getBed(bedId);
+      if (bed) {
+        setBedCache((prev) => ({
+          ...prev,
+          [bedId]: {
+            cropId: bed.cropId ?? "",
+            cropName: bed.cropName ?? "",
+            cropQuantity:
+              typeof bed.cropQuantities === "number" ? bed.cropQuantities : 0,
           },
         }));
       }
     } catch {
-      // silently ignore — user can enter manually
+      // silently ignore — data will be submitted with empty cropId if missing
     }
   };
-  const updatePlotDetail = (
-    id: string,
-    field: keyof typeof defaultDetail,
-    value: any,
-  ) =>
-    setPlotDetails((p) => ({
-      ...p,
-      [id]: { ...(p[id] || defaultDetail), [field]: value },
-    }));
-  const applyToAll = (sourceId: string) => {
-    const src = plotDetails[sourceId] || defaultDetail;
-    const n: typeof plotDetails = {};
-    selectedPlots.forEach((id) => {
-      n[id] = { ...src };
-    });
-    setPlotDetails(n);
+
+  const toggleBedInGroup = async (groupId: string, bedId: string) => {
+    setHarvestGroups((prev) =>
+      prev.map((g) => {
+        if (g.id !== groupId) return g;
+        const already = g.bedIds.includes(bedId);
+        return {
+          ...g,
+          bedIds: already
+            ? g.bedIds.filter((x) => x !== bedId)
+            : [...g.bedIds, bedId],
+        };
+      }),
+    );
+    // Kick off cache fetch regardless of add/remove so data is ready on submit
+    await fetchAndCacheBed(bedId);
+  };
+
+  const updateGroupHarvestDate = (groupId: string, date: string) => {
+    setHarvestGroups((prev) =>
+      prev.map((g) => (g.id === groupId ? { ...g, harvestDate: date } : g)),
+    );
+  };
+
+  const addHarvestGroup = () => {
+    setHarvestGroups((prev) => [
+      ...prev,
+      { id: crypto.randomUUID(), harvestDate: "", bedIds: [] },
+    ]);
+  };
+
+  const removeHarvestGroup = (groupId: string) => {
+    setHarvestGroups((prev) => prev.filter((g) => g.id !== groupId));
+  };
+
+  const handleStep2Submit = () => {
+    const detailsToCreate: Array<{
+      bedId: string;
+      cropId: string;
+      cropQuantity: number;
+      startDate: string;
+      endDate: string;
+      harvestDate: string;
+    }> = [];
+
+    const uiPlots: PlotAssignment[] = [];
+
+    for (const group of harvestGroups) {
+      for (const bedId of group.bedIds) {
+        const cached = bedCache[bedId];
+        const bed = availableBeds.find((b) => b.id === bedId);
+        detailsToCreate.push({
+          bedId,
+          cropId: cached?.cropId ?? "",
+          cropQuantity: cached?.cropQuantity ?? 0,
+          startDate: formData.startDate,
+          endDate: formData.endDate,
+          harvestDate: group.harvestDate || formData.endDate,
+        });
+        uiPlots.push({
+          plotId: bedId,
+          plotName: bed?.name ?? bedId,
+          area: bed?.area ?? "—",
+          crop: (cached?.cropName ?? "Bắp Cải Trắng") as CropType,
+          sowingDate: formData.startDate,
+          harvestDate: group.harvestDate || formData.endDate,
+          plannedQuantity: cached?.cropQuantity ?? 0,
+          actualPlanted: 0,
+          harvestQuantity: 0,
+          status: "Chưa trồng" as any,
+        });
+      }
+    }
+
+    onCreate({ ...formData, plots: uiPlots }, detailsToCreate);
   };
 
   return (
@@ -1514,8 +1628,10 @@ function CreateSeasonView({
                     }));
                     setSeasonFormErrors((p) => ({ ...p, farmId: "" }));
                     // Reset bed selection khi đổi farm
-                    setSelectedPlots([]);
-                    setPlotDetails({});
+                    setHarvestGroups([
+                      { id: crypto.randomUUID(), harvestDate: "", bedIds: [] },
+                    ]);
+                    setOpenPicker(null);
                   }}
                   farms={farms}
                 />
@@ -1656,9 +1772,23 @@ function CreateSeasonView({
 
       {step === 2 && (
         <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-6">
-          <h3 className="text-sm font-bold text-[#62748e] uppercase mb-2 flex items-center gap-2">
-            <Sprout className="w-4 h-4" /> Chọn luống
-          </h3>
+          {/* Header */}
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-bold text-[#62748e] uppercase flex items-center gap-2">
+              <Sprout className="w-4 h-4" /> Chọn luống theo đợt thu hoạch
+            </h3>
+            <div className="text-xs text-[#62748e] bg-[#f0fdfa] border border-[#99f6e4] rounded-lg px-3 py-1.5">
+              Ngày bắt đầu:{" "}
+              <span className="font-medium text-[#115e59]">
+                {formatDate(formData.startDate)}
+              </span>
+              &nbsp;·&nbsp;Kết thúc:{" "}
+              <span className="font-medium text-[#115e59]">
+                {formatDate(formData.endDate)}
+              </span>
+            </div>
+          </div>
+
           {availableBeds.length === 0 && (
             <div className="mb-4 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700 flex items-center gap-2">
               <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
@@ -1668,131 +1798,176 @@ function CreateSeasonView({
             </div>
           )}
 
-          <div className="space-y-3">
-            {availableBeds.map((plot) => {
-              const isSelected = selectedPlots.includes(plot.id);
-              const details = plotDetails[plot.id] || defaultDetail;
+          {/* Harvest groups */}
+          <div className="space-y-4">
+            {harvestGroups.map((group, groupIdx) => {
+              // Beds already used by OTHER groups
+              const otherGroupBedIds = harvestGroups
+                .filter((g) => g.id !== group.id)
+                .flatMap((g) => g.bedIds);
+              const pickerIsOpen = openPicker === group.id;
+
               return (
                 <div
-                  key={plot.id}
-                  className={`border rounded-lg p-4 ${isSelected ? "border-[#009689] bg-[#f0fdfa]" : "border-[#e2e8f0]"}`}
+                  key={group.id}
+                  className="border border-[#e2e8f0] rounded-xl overflow-hidden"
                 >
-                  <div className="flex items-center gap-3 mb-3">
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      onChange={() => togglePlot(plot.id)}
-                      className="w-4 h-4 accent-[#009689]"
-                    />
-                    <div>
-                      <div className="font-mono font-semibold text-[#115e59]">
-                        {plot.name}
-                      </div>
-                      <div className="text-xs text-[#62748e]">
-                        {plot.area} • {plot.size}
-                      </div>
+                  {/* Group header */}
+                  <div className="flex items-center gap-3 px-4 py-3 bg-[#f8fafc] border-b border-[#e2e8f0]">
+                    <div className="w-6 h-6 rounded-full bg-[#009689] text-white text-xs font-bold flex items-center justify-center shrink-0">
+                      {groupIdx + 1}
                     </div>
+                    <div className="flex items-center gap-2 flex-1">
+                      <label className="text-sm font-medium text-[#115e59] shrink-0">
+                        Ngày thu hoạch dự kiến
+                        <span className="text-red-400 ml-0.5">*</span>
+                      </label>
+                      <input
+                        type="date"
+                        value={group.harvestDate}
+                        min={formData.startDate || undefined}
+                        onChange={(e) =>
+                          updateGroupHarvestDate(group.id, e.target.value)
+                        }
+                        className="px-2 py-1 text-sm border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                      />
+                    </div>
+                    {harvestGroups.length > 1 && (
+                      <button
+                        onClick={() => removeHarvestGroup(group.id)}
+                        className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg transition-colors"
+                        title="Xóa đợt này"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
-                  {isSelected && (
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pl-7">
-                      <div>
-                        <label className="block text-xs text-[#62748e] mb-1">
-                          Cây trồng
-                        </label>
-                        <select
-                          value={details.cropId}
-                          onChange={(e) => {
-                            const selected = crops.find(
-                              (c) => c.cropId === e.target.value,
+
+                  {/* Bed picker body */}
+                  <div className="p-4">
+                    {/* Chosen beds chip list */}
+                    {group.bedIds.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mb-3">
+                        {group.bedIds.map((bedId) => {
+                          const bed = availableBeds.find((b) => b.id === bedId);
+                          return (
+                            <span
+                              key={bedId}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-[#f0fdfa] border border-[#99f6e4] rounded-full text-xs font-medium text-[#115e59]"
+                            >
+                              <span className="w-1.5 h-1.5 rounded-full bg-[#009689] shrink-0" />
+                              {bed?.name ?? bedId}
+                              <span className="text-[#62748e]">
+                                · {bed?.area}
+                              </span>
+                              <button
+                                onClick={() =>
+                                  toggleBedInGroup(group.id, bedId)
+                                }
+                                className="ml-0.5 text-[#90a1b9] hover:text-red-500 transition-colors"
+                              >
+                                ×
+                              </button>
+                            </span>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* Toggle bed picker */}
+                    <button
+                      onClick={() =>
+                        setOpenPicker(pickerIsOpen ? null : group.id)
+                      }
+                      className="flex items-center gap-2 text-sm text-[#009689] hover:text-[#007f75] font-medium transition-colors"
+                    >
+                      <PlusCircle className="w-4 h-4" />
+                      {group.bedIds.length === 0
+                        ? "Chọn luống cho đợt này"
+                        : "Thêm / bớt luống"}
+                      <ChevronDown
+                        className={`w-3.5 h-3.5 transition-transform ${pickerIsOpen ? "rotate-180" : ""}`}
+                      />
+                    </button>
+
+                    {/* Expandable bed list */}
+                    {pickerIsOpen && (
+                      <div className="mt-3 border border-[#e2e8f0] rounded-lg overflow-hidden divide-y divide-[#f1f5f9]">
+                        {availableBeds.length === 0 ? (
+                          <div className="px-4 py-3 text-sm text-[#62748e]">
+                            Không có luống nào
+                          </div>
+                        ) : (
+                          availableBeds.map((bed) => {
+                            const isChecked = group.bedIds.includes(bed.id);
+                            const isTaken = otherGroupBedIds.includes(bed.id);
+                            return (
+                              <label
+                                key={bed.id}
+                                className={`flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-colors ${
+                                  isTaken
+                                    ? "opacity-40 cursor-not-allowed bg-[#f8fafc]"
+                                    : isChecked
+                                      ? "bg-[#f0fdfa]"
+                                      : "hover:bg-[#f8fafc]"
+                                }`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  disabled={isTaken}
+                                  onChange={() => {
+                                    if (!isTaken)
+                                      toggleBedInGroup(group.id, bed.id);
+                                  }}
+                                  className="w-4 h-4 accent-[#009689]"
+                                />
+                                <div className="flex-1 min-w-0">
+                                  <span className="font-mono font-semibold text-sm text-[#115e59]">
+                                    {bed.name}
+                                  </span>
+                                  <span className="ml-2 text-xs text-[#62748e]">
+                                    {bed.area} · {bed.size}
+                                  </span>
+                                </div>
+                                {isTaken && (
+                                  <span className="text-xs text-[#90a1b9] shrink-0">
+                                    Đã chọn ở đợt khác
+                                  </span>
+                                )}
+                                {isChecked && !isTaken && (
+                                  <Check className="w-3.5 h-3.5 text-[#009689] shrink-0" />
+                                )}
+                              </label>
                             );
-                            if (!selected) return;
-                            setPlotDetails((p) => ({
-                              ...p,
-                              [plot.id]: {
-                                ...(p[plot.id] || defaultDetail),
-                                cropId: selected.cropId,
-                                crop: selected.cropName as CropType,
-                              },
-                            }));
-                          }}
-                          className="w-full px-2 py-1.5 text-sm border border-[#cad5e2] rounded focus:outline-none focus:ring-2 focus:ring-[#009689] bg-white"
-                        >
-                          {crops.map((c) => (
-                            <option key={c.cropId} value={c.cropId}>
-                              {c.cropName}
-                            </option>
-                          ))}
-                        </select>
+                          })
+                        )}
                       </div>
-                      <div>
-                        <label className="block text-xs text-[#62748e] mb-1">
-                          Số lượng cây
-                        </label>
-                        <input
-                          type="number"
-                          min={0}
-                          value={details.cropQuantity || ""}
-                          onChange={(e) =>
-                            updatePlotDetail(
-                              plot.id,
-                              "cropQuantity",
-                              parseInt(e.target.value) || 0,
-                            )
-                          }
-                          placeholder="0"
-                          className="w-full px-2 py-1.5 text-sm border border-[#cad5e2] rounded focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-[#62748e] mb-1">
-                          Ngày gieo
-                        </label>
-                        <input
-                          type="date"
-                          value={details.sowingDate}
-                          onChange={(e) =>
-                            updatePlotDetail(
-                              plot.id,
-                              "sowingDate",
-                              e.target.value,
-                            )
-                          }
-                          className="w-full px-2 py-1.5 text-sm border border-[#cad5e2] rounded focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-[#62748e] mb-1">
-                          Ngày thu hoạch
-                        </label>
-                        <input
-                          type="date"
-                          value={details.harvestDate}
-                          onChange={(e) =>
-                            updatePlotDetail(
-                              plot.id,
-                              "harvestDate",
-                              e.target.value,
-                            )
-                          }
-                          className="w-full px-2 py-1.5 text-sm border border-[#cad5e2] rounded focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                        />
-                      </div>
-                      {selectedPlots.length > 1 && (
-                        <div className="col-span-full">
-                          <button
-                            onClick={() => applyToAll(plot.id)}
-                            className="text-xs text-[#009689] hover:underline"
-                          >
-                            Áp dụng cho tất cả luống
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  )}
+                    )}
+
+                    {group.bedIds.length === 0 && !pickerIsOpen && (
+                      <p className="mt-1.5 text-xs text-amber-600">
+                        Đợt này chưa có luống nào được chọn
+                      </p>
+                    )}
+                  </div>
                 </div>
               );
             })}
           </div>
+
+          {/* Add harvest group button */}
+          {availableBeds.length > 0 &&
+            allClaimedBedIds.length < availableBeds.length && (
+              <button
+                onClick={addHarvestGroup}
+                className="mt-4 w-full flex items-center justify-center gap-2 py-2.5 border-2 border-dashed border-[#99f6e4] rounded-xl text-sm text-[#009689] font-medium hover:bg-[#f0fdfa] transition-colors"
+              >
+                <PlusCircle className="w-4 h-4" /> Thêm đợt thu hoạch khác
+              </button>
+            )}
+
+          {/* Footer */}
           <div className="mt-6 flex justify-between items-center">
             <button
               onClick={() => setStep(1)}
@@ -1801,14 +1976,14 @@ function CreateSeasonView({
               <ArrowLeft className="w-4 h-4" /> Quay lại
             </button>
             <div className="flex items-center gap-3">
-              {selectedPlots.length === 0 && (
+              {allClaimedBedIds.length === 0 && (
                 <span className="text-xs text-amber-600">
                   Vui lòng chọn ít nhất 1 luống
                 </span>
               )}
               <button
                 onClick={handleStep2Submit}
-                disabled={selectedPlots.length === 0}
+                disabled={allClaimedBedIds.length === 0}
                 className="px-6 py-2 bg-[#009689] text-white rounded-lg hover:bg-[#007f75] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
               >
                 <CheckCircle className="w-4 h-4" /> Tạo mùa vụ
@@ -1861,9 +2036,6 @@ function EditSeasonView({
     },
   ) => void;
 }) {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
   const seasonFarmId = (season as any).farmId ?? "";
 
   // Filter beds theo farmId của season (qua plotId → farmId)
@@ -1905,21 +2077,68 @@ function EditSeasonView({
   >({});
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const [addPlotOpen, setAddPlotOpen] = useState(false);
-  const [selectedNewPlots, setSelectedNewPlots] = useState<string[]>([]);
-  const [newPlotDetails, setNewPlotDetails] = useState<
-    Record<
-      string,
-      {
-        crop: CropType;
-        cropId: string;
-        sowingDate: string;
-        harvestDate: string;
-      }
-    >
-  >({});
 
-  // Bulk-mark area as harvested
-  const [bulkConfirmArea, setBulkConfirmArea] = useState<string | null>(null);
+  // ── "Thêm luống" uses the same harvest-group model as CreateSeasonView ──────
+  interface AddHarvestGroup {
+    id: string;
+    harvestDate: string;
+    bedIds: string[];
+  }
+  interface AddBedCache {
+    cropId: string;
+    cropName: string;
+    cropQuantity: number;
+  }
+  const [addGroups, setAddGroups] = useState<AddHarvestGroup[]>([
+    { id: crypto.randomUUID(), harvestDate: "", bedIds: [] },
+  ]);
+  const [addBedCache, setAddBedCache] = useState<Record<string, AddBedCache>>(
+    {},
+  );
+  const [addOpenPicker, setAddOpenPicker] = useState<string | null>(null);
+
+  const fetchAndCacheAddBed = async (bedId: string) => {
+    if (addBedCache[bedId]) return;
+    try {
+      const bed = await api.getBed(bedId);
+      if (bed) {
+        setAddBedCache((prev) => ({
+          ...prev,
+          [bedId]: {
+            cropId: bed.cropId ?? "",
+            cropName: bed.cropName ?? "",
+            cropQuantity:
+              typeof bed.cropQuantities === "number" ? bed.cropQuantities : 0,
+          },
+        }));
+      }
+    } catch {
+      // silently ignore
+    }
+  };
+
+  const toggleAddBedInGroup = async (groupId: string, bedId: string) => {
+    setAddGroups((prev) =>
+      prev.map((g) => {
+        if (g.id !== groupId) return g;
+        const already = g.bedIds.includes(bedId);
+        return {
+          ...g,
+          bedIds: already
+            ? g.bedIds.filter((x) => x !== bedId)
+            : [...g.bedIds, bedId],
+        };
+      }),
+    );
+    await fetchAndCacheAddBed(bedId);
+  };
+
+  const resetAddModal = () => {
+    setAddPlotOpen(false);
+    setAddGroups([{ id: crypto.randomUUID(), harvestDate: "", bedIds: [] }]);
+    setAddBedCache({});
+    setAddOpenPicker(null);
+  };
 
   useEffect(() => {
     setFormData({
@@ -1938,9 +2157,6 @@ function EditSeasonView({
     setSubmitAttempted(false);
   }, [season.id]);
 
-  const isSeasonEnded =
-    formData.status === "Đã kết thúc" || formData.status === "Đã thu hoạch";
-
   const toDate = (s: string) => (s ? new Date(s) : null);
 
   const validateForm = (
@@ -1956,15 +2172,6 @@ function EditSeasonView({
     if (!data.endDate) errors.endDate = "Vui lòng chọn ngày kết thúc";
     else if (start && end && end <= start)
       errors.endDate = "Ngày kết thúc phải sau ngày bắt đầu";
-    if (data.status === "Đang canh tác" && start && start > today)
-      errors.startDate =
-        "Mùa đang canh tác: ngày bắt đầu không thể ở tương lai";
-    if (data.status === "Lên kế hoạch" && start && start < today)
-      errors.status =
-        'Ngày bắt đầu đã qua — không thể để trạng thái "Lên kế hoạch"';
-    if (data.status === "Đã kết thúc" && end && end > today)
-      errors.status =
-        'Ngày kết thúc chưa đến — không thể đánh dấu "Đã kết thúc"';
     if (end)
       currentPlots.forEach((plot) => {
         const hd = toDate(plot.harvestDate);
@@ -2087,37 +2294,6 @@ function EditSeasonView({
   };
 
   /**
-   * Maps SeasonPlotStatus → API bedStatus value and calls PUT /api/Beds/{id}.
-   * Silently ignores failures — UI state is already updated optimistically.
-   */
-  const updateBedStatus = async (
-    plot: PlotAssignmentV2,
-    newStatus: SeasonPlotStatus,
-  ) => {
-    const bedId = (plot as any)._bedId ?? plot.plotId;
-    if (!bedId) return;
-    const bedStatusMap: Record<SeasonPlotStatus, string> = {
-      "Chưa trồng": "Empty",
-      "Đang trồng": "Planted",
-      "Đã thu hoạch": "Planted", // Bed API has no Harvested — keep Planted
-      "Cảnh báo": "Warning",
-    };
-    try {
-      const current = await api.getBed(bedId);
-      await api.updateBed(bedId, {
-        plotId: current.plotId,
-        bedName: current.bedName,
-        bedArea: current.bedArea,
-        bedStatus: bedStatusMap[newStatus],
-        // preserve current cropQuantities from plot state, not from re-fetched bed
-        cropQuantities: plot.actualPlanted ?? current.cropQuantities,
-      });
-    } catch {
-      // silent — UI already reflects the change
-    }
-  };
-
-  /**
    * Persists actualPlanted changes to PUT /api/Beds/{id} (cropQuantities field).
    * Called on blur of the SL thực tế input. Silently ignores failures.
    */
@@ -2163,71 +2339,35 @@ function EditSeasonView({
     }
   };
 
-  const toggleNewPlot = (id: string) =>
-    setSelectedNewPlots((p) =>
-      p.includes(id) ? p.filter((x) => x !== id) : [...p, id],
-    );
-  const updateNewPlotDetail = (
-    id: string,
-    field: "crop" | "cropId" | "sowingDate" | "harvestDate",
-    value: any,
-  ) =>
-    setNewPlotDetails((p) => ({
-      ...p,
-      [id]: {
-        ...(p[id] ?? {
-          crop: (crops[0]?.cropName ?? "Bắp Cải Trắng") as CropType,
-          cropId: crops[0]?.cropId ?? "",
-          sowingDate: "",
-          harvestDate: "",
-        }),
-        [field]: value,
-      },
-    }));
-
   const confirmAddPlots = () => {
     const firstCropId = crops[0]?.cropId ?? "";
     const firstCropName = (crops[0]?.cropName ?? "Bắp Cải Trắng") as CropType;
-    const newAssignments: PlotAssignmentV2[] = selectedNewPlots.map(
-      (plotId) => {
-        const meta = availablePlotsForFarm.find((p) => p.id === plotId)!;
-        const details = newPlotDetails[plotId] ?? {
-          crop: firstCropName,
-          cropId: firstCropId,
-          sowingDate: "",
-          harvestDate: "",
-        };
-        return {
-          plotId,
-          plotName: meta.name,
-          area: meta.area,
-          crop: details.crop,
-          sowingDate: details.sowingDate,
-          harvestDate: details.harvestDate,
-          plannedQuantity: 0,
+    const newAssignments: PlotAssignmentV2[] = [];
+
+    for (const group of addGroups) {
+      for (const bedId of group.bedIds) {
+        const meta = availablePlotsForFarm.find((p) => p.id === bedId);
+        const cached = addBedCache[bedId];
+        newAssignments.push({
+          plotId: bedId,
+          plotName: meta?.name ?? bedId,
+          area: meta?.area ?? "—",
+          crop: (cached?.cropName ?? firstCropName) as CropType,
+          sowingDate: formData.startDate,
+          harvestDate: group.harvestDate || formData.endDate,
+          plannedQuantity: cached?.cropQuantity ?? 0,
           actualPlanted: 0,
           harvestQuantity: 0,
           status: "Chưa trồng" as SeasonPlotStatus,
-          _bedId: plotId, // bedId thực để dùng khi submit API
-          _cropId: details.cropId, // cropId thực
-        } as any;
-      },
-    );
-    setPlots((prev) => [...prev, ...newAssignments]);
-    setSelectedNewPlots([]);
-    setNewPlotDetails({});
-    setAddPlotOpen(false);
-  };
+          _bedId: bedId,
+          _cropId: cached?.cropId ?? firstCropId,
+        } as any);
+      }
+    }
 
-  // Two-level grouping: khu → harvest week buckets
-  const plotsByArea = plots.reduce(
-    (acc, plot) => {
-      if (!acc[plot.area]) acc[plot.area] = [];
-      acc[plot.area].push(plot);
-      return acc;
-    },
-    {} as Record<string, PlotAssignmentV2[]>,
-  );
+    setPlots((prev) => [...prev, ...newAssignments]);
+    resetAddModal();
+  };
 
   return (
     <div className="flex flex-col gap-6 p-6">
@@ -2279,24 +2419,6 @@ function EditSeasonView({
             <FileText className="w-4 h-4" /> Thông tin chung
           </h3>
           <div className="space-y-4">
-            {formErrors.plotRemove && (
-              <div className="px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-600 flex items-start gap-2">
-                <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                <span>{formErrors.plotRemove}</span>
-                <button
-                  className="ml-auto text-red-400 hover:text-red-600"
-                  onClick={() =>
-                    setFormErrors((p) => {
-                      const n = { ...p };
-                      delete n.plotRemove;
-                      return n;
-                    })
-                  }
-                >
-                  ×
-                </button>
-              </div>
-            )}
             <div>
               <label className="block text-sm font-medium text-[#115e59] mb-2">
                 Tên mùa vụ
@@ -2338,8 +2460,7 @@ function EditSeasonView({
                 type="date"
                 value={formData.startDate}
                 onChange={(e) => updateField("startDate", e.target.value)}
-                disabled={isSeasonEnded}
-                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] disabled:bg-[#f8fafc] disabled:cursor-not-allowed ${formErrors.startDate ? "border-red-400 bg-red-50" : "border-[#cad5e2]"}`}
+                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] ${formErrors.startDate ? "border-red-400 bg-red-50" : "border-[#cad5e2]"}`}
               />
               {formErrors.startDate && (
                 <p className="text-xs text-red-500 mt-1">
@@ -2408,620 +2529,607 @@ function EditSeasonView({
           </div>
         </div>
 
-        {/* Plots — grouped by area */}
-        <div className="lg:col-span-2 bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-6">
-          <div className="flex items-center justify-between mb-2">
+        {/* Plots — compact harvest-date-grouped table */}
+        <div className="lg:col-span-2 bg-white rounded-lg border border-[#e2e8f0] shadow-sm overflow-hidden flex flex-col">
+          {/* Panel header */}
+          <div className="flex items-center justify-between px-6 py-4 border-b border-[#e2e8f0]">
             <h3 className="text-sm font-bold text-[#62748e] uppercase flex items-center gap-2">
-              <Sprout className="w-4 h-4" /> Luống trong mùa vụ
+              <Sprout className="w-4 h-4" /> Luống trong mùa vụ ({plots.length})
             </h3>
-            <button
-              onClick={() => setAddPlotOpen(true)}
-              disabled={isSeasonEnded}
-              title={isSeasonEnded ? "Mùa vụ đã kết thúc" : "Thêm luống"}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-[#f0fdfa] text-[#009689] border border-[#009689] hover:bg-[#ccfbf1] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              <PlusCircle className="w-4 h-4" /> Thêm luống
-            </button>
+            <div className="flex items-center gap-3">
+              <span className="flex items-center gap-1 text-xs text-[#90a1b9]">
+                <Lock className="w-3 h-3" /> Sản lượng mở khóa khi qua ngày thu
+                hoạch
+              </span>
+              <button
+                onClick={() => setAddPlotOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-[#f0fdfa] text-[#009689] border border-[#009689] hover:bg-[#ccfbf1] transition-colors"
+              >
+                <PlusCircle className="w-4 h-4" /> Thêm luống
+              </button>
+            </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3 mb-4 text-xs text-[#90a1b9]">
-            <span className="flex items-center gap-1">
-              <Lock className="w-3 h-3" /> Sản lượng mở khóa khi qua ngày thu
-              hoạch
-            </span>
-            {isSeasonEnded && (
-              <span className="text-amber-600 font-medium">
-                • Mùa vụ đã kết thúc: không thể chỉnh sửa
-              </span>
-            )}
-          </div>
+          {formErrors.plotRemove && (
+            <div className="mx-6 mt-3 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-600 flex items-start gap-2">
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+              <span>{formErrors.plotRemove}</span>
+              <button
+                className="ml-auto text-red-400 hover:text-red-600"
+                onClick={() =>
+                  setFormErrors((p) => {
+                    const n = { ...p };
+                    delete n.plotRemove;
+                    return n;
+                  })
+                }
+              >
+                ×
+              </button>
+            </div>
+          )}
 
           {plots.length === 0 ? (
-            <div className="text-center py-8 text-[#62748e]">
+            <div className="text-center py-12 text-[#62748e]">
               Chưa có luống — bấm "Thêm luống" để bắt đầu
             </div>
           ) : (
-            <div className="space-y-4">
-              {Object.entries(plotsByArea).map(([areaLabel, areaPlots]) => {
-                const weekBuckets = groupByHarvestWeek(areaPlots);
-                const areaHarvested = areaPlots.filter(
-                  (p) => p.status === "Đã thu hoạch",
-                ).length;
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-[#f8fafc] border-b border-[#e2e8f0] sticky top-0 z-10">
+                  <tr>
+                    {[
+                      "Luống",
+                      "Khu vực",
+                      "Cây trồng",
+                      "Ngày gieo",
+                      "Thu hoạch dự kiến",
+                      "SL thực tế (cây)",
+                      "Sản lượng (kg)",
+                      "",
+                    ].map((h, i) => (
+                      <th
+                        key={i}
+                        className="px-3 py-3 text-left text-xs font-semibold text-[#62748e] uppercase tracking-wide whitespace-nowrap"
+                      >
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {(() => {
+                    // Group by harvest date, sorted earliest first
+                    const byHarvest = plots.reduce(
+                      (acc, p) => {
+                        const key = p.harvestDate || "__unset__";
+                        if (!acc[key]) acc[key] = [];
+                        acc[key].push(p);
+                        return acc;
+                      },
+                      {} as Record<string, PlotAssignmentV2[]>,
+                    );
+                    const sortedGroups = Object.entries(byHarvest).sort(
+                      ([a], [b]) => {
+                        if (a === "__unset__") return 1;
+                        if (b === "__unset__") return -1;
+                        return a < b ? -1 : 1;
+                      },
+                    );
 
-                return (
-                  <div key={areaLabel}>
-                    {/* ── Khu header ── */}
-                    <div className="flex items-center justify-between px-3 py-2 bg-[#f0fdfa] rounded-t-lg border border-[#99f6e4]">
-                      <span className="text-sm font-semibold text-[#115e59]">
-                        {areaLabel}
-                      </span>
-                      <span className="text-xs text-[#62748e]">
-                        {areaHarvested}/{areaPlots.length} đã thu hoạch
-                      </span>
-                    </div>
-
-                    {/* ── Week buckets inside this khu ── */}
-                    <div className="border border-t-0 border-[#99f6e4] rounded-b-lg divide-y divide-[#e2e8f0]">
-                      {weekBuckets.map(([weekKey, weekPlots]) => {
-                        const weekHarvested = weekPlots.filter(
-                          (p) => p.status === "Đã thu hoạch",
-                        ).length;
-                        const allHarvested = weekHarvested === weekPlots.length;
-                        const cropLabels = [
-                          ...new Set(weekPlots.map((p) => p.crop)),
-                        ];
-
-                        return (
-                          <div key={weekKey} className="p-3">
-                            {/* Week sub-header */}
-                            <div className="flex items-start justify-between mb-1.5 gap-3">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className="flex items-center gap-1 text-xs font-semibold text-[#475569]">
-                                  <Calendar className="w-3.5 h-3.5" /> Thu
-                                  hoạch: {formatWeekRange(weekKey)}
+                    return sortedGroups.map(([harvestKey, groupPlots]) => (
+                      <React.Fragment key={harvestKey}>
+                        {/* Harvest-date group header row */}
+                        <tr key={`hdr-${harvestKey}`} className="bg-[#f0fdfa]">
+                          <td
+                            colSpan={8}
+                            className="px-4 py-2 text-xs font-semibold text-[#115e59] border-y border-[#99f6e4]"
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="flex items-center gap-2">
+                                <Calendar className="w-3.5 h-3.5 text-[#009689]" />
+                                Thu hoạch dự kiến:{" "}
+                                {harvestKey === "__unset__"
+                                  ? "Chưa có ngày"
+                                  : formatDate(harvestKey)}
+                                <span className="font-normal text-[#62748e]">
+                                  · {groupPlots.length} luống
                                 </span>
-                                <div className="flex gap-1">
-                                  {cropLabels.map((c) => (
-                                    <span
-                                      key={c}
-                                      className="text-xs px-1.5 py-0.5 bg-white border border-[#e2e8f0] rounded text-[#62748e]"
-                                    >
-                                      {c}
-                                    </span>
-                                  ))}
-                                </div>
+                              </span>
+                              {/* Inline harvest date editor for all beds in group */}
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-normal text-[#62748e]">
+                                  Đổi ngày cho cả đợt:
+                                </span>
+                                <input
+                                  type="date"
+                                  defaultValue={
+                                    harvestKey === "__unset__" ? "" : harvestKey
+                                  }
+                                  min={formData.startDate || undefined}
+                                  max={formData.endDate || undefined}
+                                  onChange={(e) => {
+                                    const newDate = e.target.value;
+                                    setPlots((prev) =>
+                                      prev.map((p) =>
+                                        p.harvestDate ===
+                                        (harvestKey === "__unset__"
+                                          ? ""
+                                          : harvestKey)
+                                          ? { ...p, harvestDate: newDate }
+                                          : p,
+                                      ),
+                                    );
+                                  }}
+                                  className="px-2 py-0.5 text-xs border border-[#cad5e2] rounded focus:outline-none focus:ring-1 focus:ring-[#009689]"
+                                />
                               </div>
-                              {!isSeasonEnded && !allHarvested && (
-                                <button
-                                  onClick={() =>
-                                    setBulkConfirmArea(
-                                      `${areaLabel}::${weekKey}`,
+                            </div>
+                          </td>
+                        </tr>
+                        {/* Bed rows */}
+                        {groupPlots.map((plot, idx) => {
+                          const harvestUnlocked = isHarvestUnlocked(
+                            plot.harvestDate,
+                          );
+                          const pe = plotErrors[plot.plotId] || {};
+                          const hasPlotData = plot.actualPlanted > 0;
+                          return (
+                            <tr
+                              key={plot.plotId}
+                              className={`border-b transition-colors ${
+                                Object.keys(pe).length > 0
+                                  ? "bg-red-50/40 border-red-200"
+                                  : idx === groupPlots.length - 1
+                                    ? "border-b-2 border-[#e2e8f0] hover:bg-[#f8fafc]"
+                                    : "border-[#f1f5f9] hover:bg-[#f8fafc]"
+                              }`}
+                            >
+                              {/* Bed name */}
+                              <td className="px-3 py-2 font-mono font-semibold text-[#115e59] whitespace-nowrap">
+                                {plot.plotName}
+                              </td>
+                              {/* Area */}
+                              <td className="px-3 py-2 text-[#62748e] whitespace-nowrap text-xs">
+                                {plot.area}
+                              </td>
+                              {/* Crop select */}
+                              <td className="px-3 py-2">
+                                <select
+                                  value={
+                                    crops.find((c) => c.cropName === plot.crop)
+                                      ?.cropId ??
+                                    (plot as any)._cropId ??
+                                    ""
+                                  }
+                                  onChange={(e) => {
+                                    const selected = crops.find(
+                                      (c) => c.cropId === e.target.value,
+                                    );
+                                    if (!selected) return;
+                                    updatePlot(
+                                      plot.plotId,
+                                      "crop",
+                                      selected.cropName as CropType,
+                                    );
+                                    setPlots((prev) =>
+                                      prev.map((p) =>
+                                        p.plotId === plot.plotId
+                                          ? ({
+                                              ...p,
+                                              _cropId: selected.cropId,
+                                            } as any)
+                                          : p,
+                                      ),
+                                    );
+                                  }}
+                                  disabled={hasPlotData}
+                                  title={
+                                    hasPlotData
+                                      ? "Không thể thay đổi: đã có dữ liệu trồng thực tế"
+                                      : undefined
+                                  }
+                                  className="px-2 py-1 text-xs border border-[#cad5e2] rounded focus:outline-none focus:ring-1 focus:ring-[#009689] bg-white disabled:bg-[#f8fafc] disabled:text-[#90a1b9] disabled:cursor-not-allowed min-w-[110px]"
+                                >
+                                  {crops.map((c) => (
+                                    <option key={c.cropId} value={c.cropId}>
+                                      {c.cropName}
+                                    </option>
+                                  ))}
+                                </select>
+                              </td>
+                              {/* Sowing date */}
+                              <td className="px-3 py-2">
+                                <input
+                                  type="date"
+                                  value={plot.sowingDate}
+                                  min={formData.startDate || undefined}
+                                  max={formData.endDate || undefined}
+                                  onChange={(e) =>
+                                    updatePlot(
+                                      plot.plotId,
+                                      "sowingDate",
+                                      e.target.value,
                                     )
                                   }
-                                  className="shrink-0 flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-[#008236] bg-[#dcfce7] border border-[#86efac] rounded-lg hover:bg-[#bbf7d0] transition-colors"
+                                  className={`px-2 py-1 text-xs border rounded focus:outline-none focus:ring-1 focus:ring-[#009689] ${pe.sowingDate ? "border-red-400 bg-red-50" : "border-[#cad5e2]"}`}
+                                />
+                                {pe.sowingDate && (
+                                  <p className="text-xs text-red-500 mt-0.5 whitespace-nowrap">
+                                    {pe.sowingDate}
+                                  </p>
+                                )}
+                              </td>
+                              {/* Per-row harvest date override */}
+                              <td className="px-3 py-2">
+                                <input
+                                  type="date"
+                                  value={plot.harvestDate}
+                                  min={
+                                    plot.sowingDate ||
+                                    formData.startDate ||
+                                    undefined
+                                  }
+                                  max={formData.endDate || undefined}
+                                  onChange={(e) =>
+                                    updatePlot(
+                                      plot.plotId,
+                                      "harvestDate",
+                                      e.target.value,
+                                    )
+                                  }
+                                  className={`px-2 py-1 text-xs border rounded focus:outline-none focus:ring-1 focus:ring-[#009689] ${pe.harvestDate ? "border-red-400 bg-red-50" : "border-[#cad5e2]"}`}
+                                />
+                                {pe.harvestDate && (
+                                  <p className="text-xs text-red-500 mt-0.5 whitespace-nowrap">
+                                    {pe.harvestDate}
+                                  </p>
+                                )}
+                              </td>
+                              {/* Actual planted */}
+                              <td className="px-3 py-2">
+                                <input
+                                  type="number"
+                                  value={plot.actualPlanted ?? 0}
+                                  min={0}
+                                  onChange={(e) =>
+                                    updatePlot(
+                                      plot.plotId,
+                                      "actualPlanted",
+                                      parseInt(e.target.value) || 0,
+                                    )
+                                  }
+                                  onBlur={(e) =>
+                                    updateBedCropQuantities(
+                                      plot,
+                                      parseInt(e.target.value) || 0,
+                                    )
+                                  }
+                                  className="w-20 px-2 py-1 text-xs border border-[#cad5e2] rounded focus:outline-none focus:ring-1 focus:ring-[#009689] text-right"
+                                />
+                              </td>
+                              {/* Harvest yield */}
+                              <td className="px-3 py-2">
+                                {harvestUnlocked ? (
+                                  <input
+                                    type="number"
+                                    value={
+                                      plot.harvestQuantity === 0
+                                        ? ""
+                                        : plot.harvestQuantity
+                                    }
+                                    min={0}
+                                    onChange={(e) =>
+                                      updatePlot(
+                                        plot.plotId,
+                                        "harvestQuantity",
+                                        parseInt(e.target.value) || 0,
+                                      )
+                                    }
+                                    placeholder="kg"
+                                    className="w-24 px-2 py-1 text-xs border border-[#009689] rounded focus:outline-none focus:ring-1 focus:ring-[#009689] text-right"
+                                  />
+                                ) : (
+                                  <span className="flex items-center gap-1 text-xs text-[#90a1b9] whitespace-nowrap">
+                                    <Lock className="w-3 h-3 shrink-0" />
+                                    {plot.harvestDate
+                                      ? `từ ${formatDate(plot.harvestDate)}`
+                                      : "Chưa thu"}
+                                  </span>
+                                )}
+                              </td>
+                              {/* Delete */}
+                              <td className="px-3 py-2">
+                                <button
+                                  onClick={() => removePlot(plot.plotId)}
+                                  disabled={hasPlotData}
+                                  title={
+                                    hasPlotData
+                                      ? `Không thể xóa: đã có ${plot.actualPlanted} cây`
+                                      : "Xóa luống"
+                                  }
+                                  className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                                 >
-                                  <CheckSquare className="w-3.5 h-3.5" />
-                                  Đánh dấu tất cả đã thu hoạch
+                                  <Trash2 className="w-3.5 h-3.5" />
                                 </button>
-                              )}
-                              {allHarvested && (
-                                <span className="shrink-0 flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-[#008236] bg-[#dcfce7] border border-[#86efac] rounded-lg">
-                                  <Check className="w-3 h-3" /> Đã thu hoạch
-                                  toàn bộ đợt
-                                </span>
-                              )}
-                            </div>
-
-                            {/* Plot cards in this week bucket */}
-                            <div className="space-y-2">
-                              {weekPlots.map((plot) => {
-                                const harvestUnlocked = isHarvestUnlocked(
-                                  plot.harvestDate,
-                                );
-                                const pe = plotErrors[plot.plotId] || {};
-                                const hasPlotData = plot.actualPlanted > 0;
-                                return (
-                                  <div
-                                    key={plot.plotId}
-                                    className={`border rounded-lg p-3 transition-colors ${Object.keys(pe).length > 0 ? "border-red-300 bg-red-50/30" : "border-[#e2e8f0] bg-white hover:border-[#cad5e2]"}`}
-                                  >
-                                    <div className="flex items-start justify-between mb-2">
-                                      <div className="flex items-center gap-2">
-                                        <span className="font-mono font-semibold text-[#115e59] text-sm">
-                                          {plot.plotName}
-                                        </span>
-                                        {/* Per-plot status — explicit select */}
-                                        <div className="flex items-center gap-1.5">
-                                          <span
-                                            className={`inline-block w-2 h-2 rounded-full ${plotStatusConfig[plot.status].dot}`}
-                                          />
-                                          <select
-                                            value={plot.status}
-                                            onChange={(e) => {
-                                              const newStatus = e.target
-                                                .value as SeasonPlotStatus;
-                                              updatePlot(
-                                                plot.plotId,
-                                                "status",
-                                                newStatus,
-                                              );
-                                              updateBedStatus(plot, newStatus);
-                                            }}
-                                            disabled={isSeasonEnded}
-                                            className={`text-xs font-medium rounded-full px-2 py-0.5 border focus:outline-none focus:ring-2 focus:ring-[#009689] disabled:cursor-not-allowed appearance-none cursor-pointer pr-5 ${plotStatusConfig[plot.status].badge}`}
-                                            style={{
-                                              backgroundImage: isSeasonEnded
-                                                ? "none"
-                                                : `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%2362748e' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E")`,
-                                              backgroundRepeat: "no-repeat",
-                                              backgroundPosition:
-                                                "right 6px center",
-                                            }}
-                                          >
-                                            <option value="Chưa trồng">
-                                              Chưa trồng
-                                            </option>
-                                            <option value="Đang trồng">
-                                              Đang trồng
-                                            </option>
-                                            <option value="Đã thu hoạch">
-                                              Đã thu hoạch
-                                            </option>
-                                            <option value="Cảnh báo">
-                                              Cảnh báo
-                                            </option>
-                                          </select>
-                                        </div>
-                                      </div>
-                                      <button
-                                        onClick={() => removePlot(plot.plotId)}
-                                        disabled={isSeasonEnded || hasPlotData}
-                                        className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                                        title={
-                                          hasPlotData
-                                            ? `Không thể xóa: luống đã có ${plot.actualPlanted} cây`
-                                            : "Xóa luống"
-                                        }
-                                      >
-                                        <Trash2 className="w-4 h-4" />
-                                      </button>
-                                    </div>
-
-                                    <div className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-4">
-                                      <div>
-                                        <label className="block text-xs font-medium text-[#62748e] mb-1">
-                                          Cây trồng
-                                        </label>
-                                        <select
-                                          value={
-                                            crops.find(
-                                              (c) => c.cropName === plot.crop,
-                                            )?.cropId ??
-                                            (plot as any)._cropId ??
-                                            ""
-                                          }
-                                          onChange={(e) => {
-                                            const selected = crops.find(
-                                              (c) =>
-                                                c.cropId === e.target.value,
-                                            );
-                                            if (!selected) return;
-                                            updatePlot(
-                                              plot.plotId,
-                                              "crop",
-                                              selected.cropName as CropType,
-                                            );
-                                            // ghi thêm _cropId để dùng khi submit
-                                            setPlots((prev) =>
-                                              prev.map((p) =>
-                                                p.plotId === plot.plotId
-                                                  ? ({
-                                                      ...p,
-                                                      _cropId: selected.cropId,
-                                                    } as any)
-                                                  : p,
-                                              ),
-                                            );
-                                          }}
-                                          disabled={
-                                            isSeasonEnded || hasPlotData
-                                          }
-                                          title={
-                                            hasPlotData
-                                              ? "Không thể thay đổi: luống đã có dữ liệu trồng thực tế"
-                                              : undefined
-                                          }
-                                          className="w-full px-2 py-1.5 text-sm border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] bg-white disabled:bg-[#f8fafc] disabled:text-[#90a1b9] disabled:cursor-not-allowed"
-                                        >
-                                          {crops.map((c) => (
-                                            <option
-                                              key={c.cropId}
-                                              value={c.cropId}
-                                            >
-                                              {c.cropName}
-                                            </option>
-                                          ))}
-                                        </select>
-                                      </div>
-                                      <div>
-                                        <label className="block text-xs font-medium text-[#62748e] mb-1">
-                                          Ngày gieo
-                                        </label>
-                                        <input
-                                          type="date"
-                                          value={plot.sowingDate}
-                                          min={formData.startDate || undefined}
-                                          max={formData.endDate || undefined}
-                                          onChange={(e) =>
-                                            updatePlot(
-                                              plot.plotId,
-                                              "sowingDate",
-                                              e.target.value,
-                                            )
-                                          }
-                                          disabled={isSeasonEnded}
-                                          className={`w-full px-2 py-1.5 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] disabled:bg-[#f8fafc] disabled:cursor-not-allowed ${pe.sowingDate ? "border-red-400" : "border-[#cad5e2]"}`}
-                                        />
-                                        {pe.sowingDate && (
-                                          <p className="text-xs text-red-500 mt-1">
-                                            {pe.sowingDate}
-                                          </p>
-                                        )}
-                                      </div>
-                                      <div>
-                                        <label className="block text-xs font-medium text-[#62748e] mb-1">
-                                          Ngày thu hoạch
-                                        </label>
-                                        <input
-                                          type="date"
-                                          value={plot.harvestDate}
-                                          min={
-                                            plot.sowingDate ||
-                                            formData.startDate ||
-                                            undefined
-                                          }
-                                          max={formData.endDate || undefined}
-                                          onChange={(e) =>
-                                            updatePlot(
-                                              plot.plotId,
-                                              "harvestDate",
-                                              e.target.value,
-                                            )
-                                          }
-                                          disabled={isSeasonEnded}
-                                          className={`w-full px-2 py-1.5 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] disabled:bg-[#f8fafc] disabled:cursor-not-allowed ${pe.harvestDate ? "border-red-400" : "border-[#cad5e2]"}`}
-                                        />
-                                        {pe.harvestDate && (
-                                          <p className="text-xs text-red-500 mt-1">
-                                            {pe.harvestDate}
-                                          </p>
-                                        )}
-                                      </div>
-                                      <div>
-                                        <label className="block text-xs font-medium text-[#62748e] mb-1">
-                                          SL thực tế (cây)
-                                        </label>
-                                        <input
-                                          type="number"
-                                          value={plot.actualPlanted ?? 0}
-                                          onChange={(e) =>
-                                            updatePlot(
-                                              plot.plotId,
-                                              "actualPlanted",
-                                              parseInt(e.target.value) || 0,
-                                            )
-                                          }
-                                          onBlur={(e) =>
-                                            updateBedCropQuantities(
-                                              plot,
-                                              parseInt(e.target.value) || 0,
-                                            )
-                                          }
-                                          disabled={isSeasonEnded}
-                                          className="w-full px-2 py-1.5 text-sm border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] disabled:bg-[#f8fafc] disabled:cursor-not-allowed"
-                                        />
-                                      </div>
-                                    </div>
-
-                                    <div className="mt-2 pt-2 border-t border-[#e2e8f0]">
-                                      <label className="block text-xs font-medium text-[#62748e] mb-1">
-                                        Sản lượng thu hoạch (kg)
-                                      </label>
-                                      {harvestUnlocked ? (
-                                        <div className="flex items-center gap-2">
-                                          <input
-                                            type="number"
-                                            value={
-                                              plot.harvestQuantity === 0
-                                                ? ""
-                                                : plot.harvestQuantity
-                                            }
-                                            onChange={(e) =>
-                                              updatePlot(
-                                                plot.plotId,
-                                                "harvestQuantity",
-                                                parseInt(e.target.value) || 0,
-                                              )
-                                            }
-                                            placeholder="Nhập sản lượng..."
-                                            className="w-40 px-2 py-1.5 text-sm border border-[#009689] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                                          />
-                                          <span className="flex items-center gap-1 text-xs text-[#009689] font-medium">
-                                            <Check className="w-3 h-3" /> Đã đến
-                                            ngày thu hoạch
-                                          </span>
-                                        </div>
-                                      ) : (
-                                        <div className="flex items-center gap-1.5 text-sm text-[#90a1b9]">
-                                          <Lock className="w-3.5 h-3.5 shrink-0" />
-                                          <span>
-                                            Chưa thu hoạch
-                                            {plot.harvestDate && (
-                                              <span className="ml-1 text-xs">
-                                                (mở khóa từ{" "}
-                                                {formatDate(plot.harvestDate)})
-                                              </span>
-                                            )}
-                                          </span>
-                                        </div>
-                                      )}
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </React.Fragment>
+                    ));
+                  })()}
+                </tbody>
+              </table>
             </div>
           )}
         </div>
       </div>
 
-      {/* Add Plot Panel */}
+      {/* Add Plot Modal — harvest-group model */}
       {addPlotOpen && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col">
+            {/* Modal header */}
             <div className="flex items-center justify-between p-6 border-b border-[#e2e8f0]">
               <div>
                 <h2 className="text-lg font-semibold text-[#115e59]">
                   Thêm luống vào mùa vụ
                 </h2>
                 <p className="text-xs text-[#62748e] mt-0.5">
-                  Tên luống:{" "}
-                  <span className="font-mono font-semibold text-[#009689]">
-                    [Khu]-[NN]
-                  </span>{" "}
-                  — ví dụ A-03, B-02
+                  Chọn ngày thu hoạch dự kiến, rồi chọn luống cho từng đợt
                 </p>
               </div>
               <button
-                onClick={() => {
-                  setAddPlotOpen(false);
-                  setSelectedNewPlots([]);
-                  setNewPlotDetails({});
-                }}
+                onClick={resetAddModal}
                 className="text-[#62748e] hover:text-[#115e59] text-xl font-bold"
               >
                 ×
               </button>
             </div>
-            <div className="overflow-y-auto p-6 space-y-3 flex-1">
-              {availablePlotsForFarm.map((plot) => {
-                const isSelected = selectedNewPlots.includes(plot.id);
-                const alreadyInSeason = existingPlotIds.has(plot.id);
-                const details = newPlotDetails[plot.id] || {
-                  crop: "Bắp Cải Trắng" as CropType,
-                  sowingDate: "",
-                  harvestDate: "",
-                };
+
+            {/* Season date hint */}
+            <div className="px-6 pt-3 pb-0">
+              <div className="text-xs text-[#62748e] bg-[#f0fdfa] border border-[#99f6e4] rounded-lg px-3 py-1.5 inline-flex items-center gap-2">
+                <Calendar className="w-3.5 h-3.5 text-[#009689]" />
+                Mùa vụ:{" "}
+                <span className="font-medium text-[#115e59]">
+                  {formatDate(formData.startDate)}
+                </span>
+                {" → "}
+                <span className="font-medium text-[#115e59]">
+                  {formatDate(formData.endDate)}
+                </span>
+              </div>
+            </div>
+
+            {/* Groups scroll area */}
+            <div className="overflow-y-auto p-6 space-y-4 flex-1">
+              {addGroups.map((group, groupIdx) => {
+                const otherBedIds = addGroups
+                  .filter((g) => g.id !== group.id)
+                  .flatMap((g) => g.bedIds);
+                const pickerOpen = addOpenPicker === group.id;
+                const allClaimedInModal = addGroups.flatMap((g) => g.bedIds);
+
                 return (
                   <div
-                    key={plot.id}
-                    className={`border rounded-lg p-4 transition-colors ${alreadyInSeason ? "border-[#e2e8f0] bg-[#f8fafc] opacity-60" : isSelected ? "border-[#009689] bg-[#f0fdfa]" : "border-[#e2e8f0]"}`}
+                    key={group.id}
+                    className="border border-[#e2e8f0] rounded-xl overflow-hidden"
                   >
-                    <div className="flex items-center gap-3 mb-2">
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        disabled={alreadyInSeason}
-                        onChange={() =>
-                          !alreadyInSeason && toggleNewPlot(plot.id)
+                    {/* Group header */}
+                    <div className="flex items-center gap-3 px-4 py-3 bg-[#f8fafc] border-b border-[#e2e8f0]">
+                      <div className="w-6 h-6 rounded-full bg-[#009689] text-white text-xs font-bold flex items-center justify-center shrink-0">
+                        {groupIdx + 1}
+                      </div>
+                      <div className="flex items-center gap-2 flex-1">
+                        <label className="text-sm font-medium text-[#115e59] shrink-0">
+                          Ngày thu hoạch dự kiến
+                          <span className="text-red-400 ml-0.5">*</span>
+                        </label>
+                        <input
+                          type="date"
+                          value={group.harvestDate}
+                          min={formData.startDate || undefined}
+                          max={formData.endDate || undefined}
+                          onChange={(e) =>
+                            setAddGroups((prev) =>
+                              prev.map((g) =>
+                                g.id === group.id
+                                  ? { ...g, harvestDate: e.target.value }
+                                  : g,
+                              ),
+                            )
+                          }
+                          className="px-2 py-1 text-sm border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+                        />
+                      </div>
+                      {addGroups.length > 1 && (
+                        <button
+                          onClick={() =>
+                            setAddGroups((prev) =>
+                              prev.filter((g) => g.id !== group.id),
+                            )
+                          }
+                          className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg transition-colors"
+                          title="Xóa đợt này"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Bed picker body */}
+                    <div className="p-4">
+                      {/* Chosen bed chips */}
+                      {group.bedIds.length > 0 && (
+                        <div className="flex flex-wrap gap-2 mb-3">
+                          {group.bedIds.map((bedId) => {
+                            const bed = availablePlotsForFarm.find(
+                              (b) => b.id === bedId,
+                            );
+                            return (
+                              <span
+                                key={bedId}
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-[#f0fdfa] border border-[#99f6e4] rounded-full text-xs font-medium text-[#115e59]"
+                              >
+                                <span className="w-1.5 h-1.5 rounded-full bg-[#009689] shrink-0" />
+                                {bed?.name ?? bedId}
+                                <span className="text-[#62748e]">
+                                  · {bed?.area}
+                                </span>
+                                <button
+                                  onClick={() =>
+                                    toggleAddBedInGroup(group.id, bedId)
+                                  }
+                                  className="ml-0.5 text-[#90a1b9] hover:text-red-500 transition-colors"
+                                >
+                                  ×
+                                </button>
+                              </span>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* Toggle picker */}
+                      <button
+                        onClick={() =>
+                          setAddOpenPicker(pickerOpen ? null : group.id)
                         }
-                        className="w-4 h-4 accent-[#009689] disabled:cursor-not-allowed"
-                      />
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono font-semibold text-[#115e59] text-sm">
-                            {plot.name}
-                          </span>
-                          {alreadyInSeason && (
-                            <span className="px-2 py-0.5 rounded text-xs font-medium bg-[#e2e8f0] text-[#62748e]">
-                              Đã có trong mùa vụ
-                            </span>
+                        className="flex items-center gap-2 text-sm text-[#009689] hover:text-[#007f75] font-medium transition-colors"
+                      >
+                        <PlusCircle className="w-4 h-4" />
+                        {group.bedIds.length === 0
+                          ? "Chọn luống cho đợt này"
+                          : "Thêm / bớt luống"}
+                        <ChevronDown
+                          className={`w-3.5 h-3.5 transition-transform ${pickerOpen ? "rotate-180" : ""}`}
+                        />
+                      </button>
+
+                      {/* Expandable bed list */}
+                      {pickerOpen && (
+                        <div className="mt-3 border border-[#e2e8f0] rounded-lg overflow-hidden divide-y divide-[#f1f5f9]">
+                          {availablePlotsForFarm.length === 0 ? (
+                            <div className="px-4 py-3 text-sm text-[#62748e]">
+                              Không có luống nào
+                            </div>
+                          ) : (
+                            availablePlotsForFarm.map((bed) => {
+                              const isChecked = group.bedIds.includes(bed.id);
+                              const alreadyInSeason = existingPlotIds.has(
+                                bed.id,
+                              );
+                              const takenByOther = otherBedIds.includes(bed.id);
+                              const disabled = alreadyInSeason || takenByOther;
+                              return (
+                                <label
+                                  key={bed.id}
+                                  className={`flex items-center gap-3 px-4 py-2.5 transition-colors ${
+                                    disabled
+                                      ? "opacity-40 cursor-not-allowed bg-[#f8fafc]"
+                                      : isChecked
+                                        ? "bg-[#f0fdfa] cursor-pointer"
+                                        : "hover:bg-[#f8fafc] cursor-pointer"
+                                  }`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    disabled={disabled}
+                                    onChange={() => {
+                                      if (!disabled)
+                                        toggleAddBedInGroup(group.id, bed.id);
+                                    }}
+                                    className="w-4 h-4 accent-[#009689]"
+                                  />
+                                  <div className="flex-1 min-w-0">
+                                    <span className="font-mono font-semibold text-sm text-[#115e59]">
+                                      {bed.name}
+                                    </span>
+                                    <span className="ml-2 text-xs text-[#62748e]">
+                                      {bed.area} · {bed.size}
+                                    </span>
+                                  </div>
+                                  {alreadyInSeason && (
+                                    <span className="text-xs text-[#90a1b9] shrink-0">
+                                      Đã có trong mùa vụ
+                                    </span>
+                                  )}
+                                  {takenByOther && !alreadyInSeason && (
+                                    <span className="text-xs text-[#90a1b9] shrink-0">
+                                      Đã chọn ở đợt khác
+                                    </span>
+                                  )}
+                                  {isChecked && !disabled && (
+                                    <Check className="w-3.5 h-3.5 text-[#009689] shrink-0" />
+                                  )}
+                                </label>
+                              );
+                            })
                           )}
                         </div>
-                        <div className="text-xs text-[#62748e]">
-                          {plot.area} • {plot.size}
-                        </div>
-                      </div>
+                      )}
+
+                      {group.bedIds.length === 0 && !pickerOpen && (
+                        <p className="mt-1.5 text-xs text-amber-600">
+                          Đợt này chưa có luống nào được chọn
+                        </p>
+                      )}
                     </div>
-                    {isSelected && !alreadyInSeason && (
-                      <div className="grid grid-cols-3 gap-3 pl-7 mt-3">
-                        <div>
-                          <label className="block text-xs text-[#62748e] mb-1">
-                            Cây trồng
-                          </label>
-                          <select
-                            value={details.cropId ?? crops[0]?.cropId ?? ""}
-                            onChange={(e) => {
-                              const selected = crops.find(
-                                (c) => c.cropId === e.target.value,
-                              );
-                              if (!selected) return;
-                              setNewPlotDetails((p) => ({
-                                ...p,
-                                [plot.id]: {
-                                  ...(p[plot.id] ?? {
-                                    crop: selected.cropName as CropType,
-                                    cropId: selected.cropId,
-                                    sowingDate: "",
-                                    harvestDate: "",
-                                  }),
-                                  cropId: selected.cropId,
-                                  crop: selected.cropName as CropType,
-                                },
-                              }));
-                            }}
-                            className="w-full px-2 py-1.5 text-sm border border-[#cad5e2] rounded focus:outline-none focus:ring-2 focus:ring-[#009689] bg-white"
-                          >
-                            {crops.map((c) => (
-                              <option key={c.cropId} value={c.cropId}>
-                                {c.cropName}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-xs text-[#62748e] mb-1">
-                            Ngày gieo
-                          </label>
-                          <input
-                            type="date"
-                            value={details.sowingDate}
-                            onChange={(e) =>
-                              updateNewPlotDetail(
-                                plot.id,
-                                "sowingDate",
-                                e.target.value,
-                              )
-                            }
-                            className="w-full px-2 py-1.5 text-sm border border-[#cad5e2] rounded focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs text-[#62748e] mb-1">
-                            Ngày thu hoạch
-                          </label>
-                          <input
-                            type="date"
-                            value={details.harvestDate}
-                            onChange={(e) =>
-                              updateNewPlotDetail(
-                                plot.id,
-                                "harvestDate",
-                                e.target.value,
-                              )
-                            }
-                            className="w-full px-2 py-1.5 text-sm border border-[#cad5e2] rounded focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                          />
-                        </div>
-                      </div>
-                    )}
                   </div>
                 );
               })}
+
+              {/* Add another group */}
+              {availablePlotsForFarm.filter(
+                (b) =>
+                  !existingPlotIds.has(b.id) &&
+                  !addGroups.flatMap((g) => g.bedIds).includes(b.id),
+              ).length > 0 && (
+                <button
+                  onClick={() =>
+                    setAddGroups((prev) => [
+                      ...prev,
+                      { id: crypto.randomUUID(), harvestDate: "", bedIds: [] },
+                    ])
+                  }
+                  className="w-full flex items-center justify-center gap-2 py-2.5 border-2 border-dashed border-[#99f6e4] rounded-xl text-sm text-[#009689] font-medium hover:bg-[#f0fdfa] transition-colors"
+                >
+                  <PlusCircle className="w-4 h-4" /> Thêm đợt thu hoạch khác
+                </button>
+              )}
             </div>
+
+            {/* Footer */}
             <div className="flex justify-between items-center p-6 border-t border-[#e2e8f0]">
               <span className="text-sm text-[#62748e]">
-                Đã chọn: {selectedNewPlots.length} luống
+                Đã chọn: {addGroups.reduce((s, g) => s + g.bedIds.length, 0)}{" "}
+                luống
               </span>
               <div className="flex gap-3">
                 <button
-                  onClick={() => {
-                    setAddPlotOpen(false);
-                    setSelectedNewPlots([]);
-                    setNewPlotDetails({});
-                  }}
+                  onClick={resetAddModal}
                   className="px-4 py-2 rounded-lg text-sm font-medium text-[#62748e] hover:bg-[#f1f5f9] transition-colors"
                 >
                   Hủy
                 </button>
                 <button
                   onClick={confirmAddPlots}
-                  disabled={selectedNewPlots.length === 0}
+                  disabled={
+                    addGroups.reduce((s, g) => s + g.bedIds.length, 0) === 0
+                  }
                   className="px-4 py-2 rounded-lg text-sm font-medium bg-[#009689] text-white hover:bg-[#007f75] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                 >
-                  <Plus className="w-4 h-4" /> Thêm{" "}
-                  {selectedNewPlots.length > 0
-                    ? `(${selectedNewPlots.length})`
-                    : ""}
+                  <Plus className="w-4 h-4" /> Thêm (
+                  {addGroups.reduce((s, g) => s + g.bedIds.length, 0)})
                 </button>
               </div>
             </div>
           </div>
         </div>
       )}
-
-      {/* Bulk harvest confirm dialog */}
-      <AlertDialog.Root
-        open={!!bulkConfirmArea}
-        onOpenChange={(open) => !open && setBulkConfirmArea(null)}
-      >
-        <AlertDialog.Portal>
-          <AlertDialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
-          <AlertDialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-sm bg-white rounded-xl shadow-2xl p-6">
-            <AlertDialog.Title className="text-lg font-semibold text-slate-900 mb-2">
-              Đánh dấu cả đợt đã thu hoạch?
-            </AlertDialog.Title>
-            <AlertDialog.Description className="text-sm text-slate-600 mb-6">
-              {bulkConfirmArea &&
-                (() => {
-                  const [area, weekKey] = bulkConfirmArea.split("::");
-                  return (
-                    <>
-                      Tất cả luống trong{" "}
-                      <span className="font-semibold">{area}</span> — đợt thu
-                      hoạch{" "}
-                      <span className="font-semibold">
-                        {formatWeekRange(weekKey)}
-                      </span>{" "}
-                      sẽ được chuyển sang{" "}
-                      <span className="font-semibold text-[#008236]">
-                        Đã thu hoạch
-                      </span>
-                      . Bạn vẫn có thể đổi lại từng luống sau.
-                    </>
-                  );
-                })()}
-            </AlertDialog.Description>
-            <div className="flex gap-3 justify-end">
-              <AlertDialog.Cancel asChild>
-                <button className="px-4 py-2 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-100 transition-colors">
-                  Hủy
-                </button>
-              </AlertDialog.Cancel>
-              <AlertDialog.Action asChild>
-                <button
-                  onClick={() => {
-                    if (!bulkConfirmArea) return;
-                    const [area, weekKey] = bulkConfirmArea.split("::");
-                    setPlots((prev) =>
-                      prev.map((p) => {
-                        if (p.area !== area) return p;
-                        if (getHarvestWeekKey(p.harvestDate) !== weekKey)
-                          return p;
-                        return {
-                          ...p,
-                          status: "Đã thu hoạch" as SeasonPlotStatus,
-                        };
-                      }),
-                    );
-                    setBulkConfirmArea(null);
-                  }}
-                  className="px-4 py-2 rounded-lg text-sm font-medium bg-[#009689] text-white hover:bg-[#007f75] transition-colors"
-                >
-                  Xác nhận
-                </button>
-              </AlertDialog.Action>
-            </div>
-          </AlertDialog.Content>
-        </AlertDialog.Portal>
-      </AlertDialog.Root>
 
       {/* Remove plot dialog */}
       <AlertDialog.Root
