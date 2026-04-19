@@ -485,6 +485,19 @@ export interface PriceSettingResponse {
   totalAmount: number;
   isPaid: boolean;
 }
+
+export interface PriceSettingCreateRequest {
+  farmId: string;
+  expertId: string;
+  month: string;
+  pricePerDiagnosis: number;
+  notes: string;
+}
+
+export interface PaymentCreateRequest {
+  priceSettingId: string;
+  provider: string;
+}
 // Parsed shape of ReportResponse.aiResultsJson
 export interface AiResultParsed {
   diseaseName?: string;
@@ -784,4 +797,8 @@ export const api = {
   // Payment / Billing
   getPriceSettings: () =>
     request<PriceSettingResponse[]>("GET", "/api/payment/price-settings"),
+  createPriceSetting: (body: PriceSettingCreateRequest) =>
+    request<unknown>("POST", "/api/payment/price-setting", body),
+  createPayment: (body: PaymentCreateRequest) =>
+    request<unknown>("POST", "/api/payment/create", body),
 };
