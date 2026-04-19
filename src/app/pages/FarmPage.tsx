@@ -1,4 +1,6 @@
 import { useState, useEffect } from "react";
+import { useToast } from "../components/ui/useToast";
+import { ToastContainer } from "../components/ui/ToastContainer";
 import {
   Plus,
   Eye,
@@ -104,6 +106,7 @@ const plotStatusColor = (status: FarmStatus) =>
     : "bg-[#fee2e2] text-[#991b1b]";
 
 export function FarmPage() {
+  const { toasts, showToast, dismissToast } = useToast();
   const [farms, setFarms] = useState<Farm[]>([]);
   const [loading, setLoading] = useState(true);
   const [usingMock, setUsingMock] = useState(false);
@@ -162,10 +165,11 @@ export function FarmPage() {
       setFarms((prev) => prev.filter((f) => f.id !== farmToDelete.id));
       setDeleteDialogOpen(false);
       setFarmToDelete(null);
+      showToast("Xóa trang trại thành công", "success");
     } catch (err) {
-      alert(
-        "Không thể xóa trang trại: " +
-          (err instanceof Error ? err.message : "Lỗi"),
+      showToast(
+        err instanceof Error ? err.message : "Không thể xóa trang trại",
+        "error",
       );
     } finally {
       setSubmitting(false);
@@ -197,10 +201,11 @@ export function FarmPage() {
         await loadFarms();
       }
       setCreateModalOpen(false);
+      showToast("Tạo trang trại thành công", "success");
     } catch (err) {
-      alert(
-        "Không thể tạo trang trại: " +
-          (err instanceof Error ? err.message : "Lỗi"),
+      showToast(
+        err instanceof Error ? err.message : "Không thể tạo trang trại",
+        "error",
       );
     } finally {
       setSubmitting(false);
@@ -226,10 +231,11 @@ export function FarmPage() {
       }
       setEditModalOpen(false);
       setSelectedFarm(null);
+      showToast("Cập nhật trang trại thành công", "success");
     } catch (err) {
-      alert(
-        "Không thể cập nhật trang trại: " +
-          (err instanceof Error ? err.message : "Lỗi"),
+      showToast(
+        err instanceof Error ? err.message : "Không thể cập nhật trang trại",
+        "error",
       );
     } finally {
       setSubmitting(false);
@@ -365,6 +371,8 @@ export function FarmPage() {
           </AlertDialog.Content>
         </AlertDialog.Portal>
       </AlertDialog.Root>
+
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 }

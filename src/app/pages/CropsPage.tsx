@@ -1,4 +1,6 @@
 import { useState, useEffect } from "react";
+import { useToast } from "../components/ui/useToast";
+import { ToastContainer } from "../components/ui/ToastContainer";
 import {
   Search,
   Plus,
@@ -98,6 +100,7 @@ const getStatusBadgeColor = (status: CropStatus) =>
 const PAGE_SIZE = 8;
 
 export function CropsPage() {
+  const { toasts, showToast, dismissToast } = useToast();
   const [activeTab, setActiveTab] = useState<"list" | "growth">("list");
   const [crops, setCrops] = useState<CropEx[]>([]);
   const [page, setPage] = useState(1);
@@ -185,10 +188,11 @@ export function CropsPage() {
       });
       await loadCrops();
       setCreateModalOpen(false);
+      showToast("Tạo cây trồng thành công", "success");
     } catch (err) {
-      alert(
-        "Không thể tạo cây trồng: " +
-          (err instanceof Error ? err.message : "Lỗi"),
+      showToast(
+        err instanceof Error ? err.message : "Không thể tạo cây trồng",
+        "error",
       );
     } finally {
       setSubmitting(false);
@@ -213,9 +217,11 @@ export function CropsPage() {
       await loadCrops();
       setEditModalOpen(false);
       setSelectedCrop(null);
+      showToast("Cập nhật cây trồng thành công", "success");
     } catch (err) {
-      alert(
-        "Không thể cập nhật: " + (err instanceof Error ? err.message : "Lỗi"),
+      showToast(
+        err instanceof Error ? err.message : "Không thể cập nhật cây trồng",
+        "error",
       );
     } finally {
       setSubmitting(false);
@@ -230,8 +236,12 @@ export function CropsPage() {
       await loadCrops();
       setDeleteDialogOpen(false);
       setCropToDelete(null);
+      showToast("Xóa cây trồng thành công", "success");
     } catch (err) {
-      alert("Không thể xóa: " + (err instanceof Error ? err.message : "Lỗi"));
+      showToast(
+        err instanceof Error ? err.message : "Không thể xóa cây trồng",
+        "error",
+      );
     } finally {
       setSubmitting(false);
     }
@@ -661,6 +671,7 @@ function GrowthStagesTab({
   crops: CropEx[];
   loading: boolean;
 }) {
+  const { toasts, showToast, dismissToast } = useToast();
   const [selectedCropId, setSelectedCropId] = useState<string | null>(null);
 
   // API-driven state
@@ -750,10 +761,11 @@ function GrowthStagesTab({
       });
       setCreateStageOpen(false);
       reloadStages();
+      showToast("Tạo giai đoạn thành công", "success");
     } catch (err) {
-      alert(
-        "Không thể tạo giai đoạn: " +
-          (err instanceof Error ? err.message : "Lỗi"),
+      showToast(
+        err instanceof Error ? err.message : "Không thể tạo giai đoạn",
+        "error",
       );
     } finally {
       setSubmitting(false);
@@ -778,10 +790,11 @@ function GrowthStagesTab({
       setEditStageOpen(false);
       setSelectedStage(null);
       reloadStages();
+      showToast("Cập nhật giai đoạn thành công", "success");
     } catch (err) {
-      alert(
-        "Không thể cập nhật giai đoạn: " +
-          (err instanceof Error ? err.message : "Lỗi"),
+      showToast(
+        err instanceof Error ? err.message : "Không thể cập nhật giai đoạn",
+        "error",
       );
     } finally {
       setSubmitting(false);
@@ -796,10 +809,11 @@ function GrowthStagesTab({
       setDeleteStageOpen(false);
       setSelectedStage(null);
       reloadStages();
+      showToast("Xóa giai đoạn thành công", "success");
     } catch (err) {
-      alert(
-        "Không thể xóa giai đoạn: " +
-          (err instanceof Error ? err.message : "Lỗi"),
+      showToast(
+        err instanceof Error ? err.message : "Không thể xóa giai đoạn",
+        "error",
       );
     } finally {
       setSubmitting(false);
@@ -826,10 +840,11 @@ function GrowthStagesTab({
       });
       setCreateTaskOpen(false);
       reloadStages();
+      showToast("Tạo nhiệm vụ thành công", "success");
     } catch (err) {
-      alert(
-        "Không thể tạo nhiệm vụ: " +
-          (err instanceof Error ? err.message : "Lỗi"),
+      showToast(
+        err instanceof Error ? err.message : "Không thể tạo nhiệm vụ",
+        "error",
       );
     } finally {
       setSubmitting(false);
@@ -857,10 +872,11 @@ function GrowthStagesTab({
       setEditTaskOpen(false);
       setSelectedTask(null);
       reloadStages();
+      showToast("Cập nhật nhiệm vụ thành công", "success");
     } catch (err) {
-      alert(
-        "Không thể cập nhật nhiệm vụ: " +
-          (err instanceof Error ? err.message : "Lỗi"),
+      showToast(
+        err instanceof Error ? err.message : "Không thể cập nhật nhiệm vụ",
+        "error",
       );
     } finally {
       setSubmitting(false);
@@ -875,10 +891,11 @@ function GrowthStagesTab({
       setDeleteTaskOpen(false);
       setSelectedTask(null);
       reloadStages();
+      showToast("Xóa nhiệm vụ thành công", "success");
     } catch (err) {
-      alert(
-        "Không thể xóa nhiệm vụ: " +
-          (err instanceof Error ? err.message : "Lỗi"),
+      showToast(
+        err instanceof Error ? err.message : "Không thể xóa nhiệm vụ",
+        "error",
       );
     } finally {
       setSubmitting(false);
@@ -1146,6 +1163,8 @@ function GrowthStagesTab({
           </AlertDialog.Content>
         </AlertDialog.Portal>
       </AlertDialog.Root>
+
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 }
