@@ -120,24 +120,51 @@ export function formatPlotName(prefix: string, sequence: number): string {
   return `${prefix}-${String(sequence).padStart(2, "0")}`;
 }
 
-/** Extract leading numeric part from "Luống N_..." pattern, then fallback to
- *  trailing number after last '_' or '-'.
- *  e.g. "Luống 05_Vuông 01_Tây Nam" → 5, "A-05" → 5, "plotX" → Infinity */
-function bedSortKey(name: string): number {
-  // Primary: "Luống N" prefix (handles the real API naming convention)
-  const luong = name.match(/^Luống\s+(\d+)/i);
-  if (luong) return parseInt(luong[1], 10);
-  // Fallback: trailing number after last '_' or '-'
-  const m = name.match(/[_\-](\d+)$/);
-  return m ? parseInt(m[1], 10) : Infinity;
+/**
+ * Extract all numeric tokens from a bed/plot name, in segment order.
+ * Works for patterns like:
+ *   "Luống 02_Vuông 01_Tây Nam"  → [2, 1]
+ *   "Luống 09_Vuông 01_Tây Nam"  → [9, 1]
+ *   "A-05"                        → [5]
+ *   "plotX"                       → []
+ *
+ * Strategy: split on whitespace, '_', '-', then collect every token
+ * that is purely numeric, preserving left-to-right order.
+ */
+function bedSortTokens(name: string): number[] {
+  // Normalise separators to spaces, then tokenise
+  const tokens = name.replace(/[_\-]/g, " ").split(/\s+/);
+  return tokens
+    .map((t) => (t.match(/^\d+$/) ? parseInt(t, 10) : null))
+    .filter((n): n is number => n !== null);
 }
 
-/** Sort bed items: primary by area (alphabetical), secondary by numeric suffix of bed name. */
+/**
+ * Compare two beds by their numeric token sequences (lexicographic on number arrays).
+ * e.g. [2, 1] < [9, 1] < [10, 1]
+ * Falls back to locale string compare when no tokens are found.
+ */
+function bedSortKey(name: string): number[] {
+  const tokens = bedSortTokens(name);
+  return tokens.length > 0 ? tokens : [Infinity];
+}
+
+function compareTokenArrays(a: number[], b: number[]): number {
+  const len = Math.max(a.length, b.length);
+  for (let i = 0; i < len; i++) {
+    const av = a[i] ?? Infinity;
+    const bv = b[i] ?? Infinity;
+    if (av !== bv) return av - bv;
+  }
+  return 0;
+}
+
+/** Sort bed items: primary by area (alphabetical), secondary by numeric token sequence of bed name. */
 function sortBeds<T extends { name: string; area: string }>(beds: T[]): T[] {
   return [...beds].sort((a, b) => {
     const areaCmp = a.area.localeCompare(b.area, "vi");
     if (areaCmp !== 0) return areaCmp;
-    return bedSortKey(a.name) - bedSortKey(b.name);
+    return compareTokenArrays(bedSortKey(a.name), bedSortKey(b.name));
   });
 }
 
@@ -968,7 +995,11 @@ interface IotRow {
 }
 
 function DetailSeasonView({ season }: { season: Season }) {
-  const plots = season.plots.map(toV2);
+  const plots = season.plots.map(toV2).sort((a, b) => {
+    const areaCmp = a.area.localeCompare(b.area, "vi");
+    if (areaCmp !== 0) return areaCmp;
+    return compareTokenArrays(bedSortKey(a.plotName), bedSortKey(b.plotName));
+  });
 
   // ── IoT sensor data ────────────────────────────────────────────────────────
   const [iotRows, setIotRows] = useState<IotRow[]>([]);
@@ -1331,25 +1362,27 @@ function DetailSeasonView({ season }: { season: Season }) {
                     <td className="px-4 py-3 whitespace-nowrap">
                       <span className="inline-flex items-center gap-1.5 font-medium text-orange-600">
                         <Thermometer className="w-3.5 h-3.5" />
-                        {row.temperature.toFixed(1)}
+                        {row.temperature != null
+                          ? row.temperature.toFixed(1)
+                          : "—"}
                       </span>
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
                       <span className="inline-flex items-center gap-1.5 font-medium text-blue-600">
                         <Droplets className="w-3.5 h-3.5" />
-                        {row.humidity}
+                        {row.humidity != null ? row.humidity : "—"}
                       </span>
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
                       <span className="inline-flex items-center gap-1.5 font-medium text-[#008236]">
                         <Droplets className="w-3.5 h-3.5 opacity-60" />
-                        {row.soilMoisture}
+                        {row.soilMoisture != null ? row.soilMoisture : "—"}
                       </span>
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
                       <span className="inline-flex items-center gap-1.5 text-[#62748e]">
                         <Sun className="w-3.5 h-3.5 text-yellow-500" />
-                        {row.light > 0 ? row.light : "—"}
+                        {row.light != null && row.light > 0 ? row.light : "—"}
                       </span>
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
