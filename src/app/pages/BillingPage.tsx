@@ -21,42 +21,25 @@ import {
   RefreshCw,
   X,
 } from "lucide-react";
-
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:7093";
+import {
+  api,
+  type PriceSettingResponse,
+  type FarmResponse,
+  type UserResponse,
+  type PriceSettingCreateRequest,
+} from "../../api/client";
 
 // ===================== TYPES =====================
 
-interface PriceSetting {
-  priceSettingId: string;
-  farmName: string;
-  expertName: string;
-  month: string; // ISO date string
-  pricePerDiagnosis: number;
-  totalDiagnoses: number;
-  totalAmount: number;
-  isPaid: boolean;
-}
+// PriceSetting is the local alias for PriceSettingResponse from client.ts
+type PriceSetting = PriceSettingResponse;
 
-interface FarmOption {
-  farmId: string;
-  farmName: string;
-  farmStatus: string;
-}
-
-interface StaffOption {
-  userId: string;
-  fullname: string;
-  roleName: string;
-  status: string;
-}
-
-interface CreatePriceSettingBody {
-  farmId: string;
-  expertId: string;
-  month: string;
-  pricePerDiagnosis: number;
-  notes: string;
-}
+// FarmOption and StaffOption are narrowed views of the client types
+type FarmOption = Pick<FarmResponse, "farmId" | "farmName" | "farmStatus">;
+type StaffOption = Pick<
+  UserResponse,
+  "userId" | "fullname" | "roleName" | "status"
+>;
 
 // ===================== HELPERS =====================
 
@@ -96,23 +79,6 @@ function getPageNumbers(current: number, total: number): (number | "...")[] {
 
 const PAGE_SIZE = 8;
 
-// ===================== API =====================
-
-async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
-  const token = localStorage.getItem("authToken");
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-  const res = await fetch(`${BASE_URL}${path}`, { ...options, headers });
-  const data = await res.json();
-  if (data && typeof data === "object" && "success" in data) {
-    if (!data.success) throw new Error(data.message ?? "API error");
-    return data.data as T;
-  }
-  return data as T;
-}
-
 // ===================== STATUS CONFIG =====================
 
 const STATUS_CONFIG: Record<
@@ -150,12 +116,9 @@ function QrPaymentModal({
   async function handlePay() {
     setStep("processing");
     try {
-      await apiFetch("/api/payment/create", {
-        method: "POST",
-        body: JSON.stringify({
-          priceSettingId: setting.priceSettingId,
-          provider: "Vnpay",
-        }),
+      await api.createPayment({
+        priceSettingId: setting.priceSettingId,
+        provider: "Vnpay",
       });
       setStep("success");
     } catch (err: unknown) {
@@ -365,8 +328,8 @@ function CreatePriceSettingModal({
     async function load() {
       try {
         const [farmsData, staffData] = await Promise.all([
-          apiFetch<FarmOption[]>("/api/Farms"),
-          apiFetch<StaffOption[]>("/api/Staffs"),
+          api.getFarms(),
+          api.getStaffs(),
         ]);
         setFarms(farmsData.filter((f) => f.farmStatus === "Active"));
         setExperts(staffData.filter((s) => s.roleName === "Specialist"));
@@ -401,17 +364,14 @@ function CreatePriceSettingModal({
     setSubmitting(true);
     setError("");
     try {
-      const body: CreatePriceSettingBody = {
+      const body: PriceSettingCreateRequest = {
         farmId: form.farmId,
         expertId: form.expertId,
         month: `${form.month}-01T00:00:00.000Z`,
         pricePerDiagnosis: Math.round(price),
         notes: form.notes,
       };
-      await apiFetch("/api/payment/price-setting", {
-        method: "POST",
-        body: JSON.stringify(body),
-      });
+      await api.createPriceSetting(body);
       onSuccess();
       onClose();
     } catch (err: unknown) {
@@ -714,9 +674,7 @@ export function BillingPage() {
     setError("");
     setIsMockData(false);
     try {
-      const data = await apiFetch<PriceSetting[]>(
-        "/api/payment/price-settings",
-      );
+      const data = await api.getPriceSettings();
       setSettings(data ?? []);
     } catch {
       setIsMockData(true);
