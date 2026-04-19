@@ -119,7 +119,7 @@ export function AppLayout() {
           {!isSidebarCollapsed && (
             <div className="flex-1 min-w-0">
               <h1 className="font-bold text-lg leading-tight tracking-wide">
-                ACMMS
+                CMMS
               </h1>
               <p className="text-xs text-[#ffffffcc] font-medium">
                 {isSpecialist ? "Chuyên gia" : "Quản trị hệ thống"}
