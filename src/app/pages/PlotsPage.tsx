@@ -38,23 +38,15 @@ const plotStatusMap: Record<string, string> = {
   Inactive: "Không hoạt động",
 };
 
-const bedStatusMap: Record<string, string> = {
-  Planted: "Đang trồng",
-  planted: "Đang trồng",
-  Empty: "Chưa trồng",
-  empty: "Chưa trồng",
-  Warning: "Đang bị bệnh",
-  warning: "Đang bị bệnh",
-};
+function bedStatusLabel(status: string): string {
+  return status.toLowerCase() === "active" ? "Hoạt động" : "Không hoạt động";
+}
 
-const bedStatusConfig: Record<string, string> = {
-  Planted: "bg-[#dcfce7] text-[#166534]",
-  planted: "bg-[#dcfce7] text-[#166534]",
-  Empty: "bg-[#f1f5f9] text-[#475569]",
-  empty: "bg-[#f1f5f9] text-[#475569]",
-  Warning: "bg-[#fef9c3] text-[#854d0e]",
-  warning: "bg-[#fef9c3] text-[#854d0e]",
-};
+function bedStatusClass(status: string): string {
+  return status.toLowerCase() === "active"
+    ? "bg-[#dcfce7] text-[#166534]"
+    : "bg-[#fee2e2] text-[#991b1b]";
+}
 
 function formatDate(iso: string) {
   try {
@@ -310,7 +302,7 @@ export function PlotsPage() {
               return a.bedName.localeCompare(b.bedName, "vi");
             });
             const activeBeds = plotBeds.filter(
-              (b) => b.bedStatus === "Planted" || b.bedStatus === "planted",
+              (b) => b.bedStatus.toLowerCase() === "active",
             ).length;
 
             return (
@@ -491,10 +483,9 @@ export function PlotsPage() {
                                   </td>
                                   <td className="px-4 py-3">
                                     <span
-                                      className={`inline-block px-2.5 py-1 rounded text-xs font-medium ${bedStatusConfig[bed.bedStatus] ?? "bg-[#f1f5f9] text-[#475569]"}`}
+                                      className={`inline-block px-2.5 py-1 rounded text-xs font-medium ${bedStatusClass(bed.bedStatus)}`}
                                     >
-                                      {bedStatusMap[bed.bedStatus] ??
-                                        bed.bedStatus}
+                                      {bedStatusLabel(bed.bedStatus)}
                                     </span>
                                   </td>
                                   <td className="px-4 py-3">
@@ -1578,7 +1569,7 @@ function CreateBedModal({
     plotId: plot.plotId,
     bedName: "",
     bedArea: 0,
-    bedStatus: "Empty",
+    bedStatus: "Active",
     cropQuantities: 0, // not sent to API — kept to satisfy BedRequest type
     cropId: undefined,
     bedWidth: undefined,
@@ -1863,24 +1854,6 @@ function CreateBedModal({
               />
             </div>
 
-            {/* Trạng thái — always manual */}
-            <div>
-              <label className="block text-sm font-medium text-[#115e59] mb-2">
-                Trạng Thái
-              </label>
-              <select
-                value={formData.bedStatus}
-                onChange={(e) =>
-                  setFormData({ ...formData, bedStatus: e.target.value })
-                }
-                className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-              >
-                <option value="Planted">Đang trồng</option>
-                <option value="Empty">Chưa trồng</option>
-                <option value="Warning">Đang bị bệnh</option>
-              </select>
-            </div>
-
             <div className="flex justify-end gap-3 pt-4">
               <button
                 type="button"
@@ -2004,9 +1977,9 @@ function ViewBedModal({
               <div className="flex justify-between">
                 <span className="text-sm text-[#62748e]">Trạng thái:</span>
                 <span
-                  className={`inline-block px-2 py-1 rounded text-xs font-medium ${bedStatusConfig[bed.bedStatus] ?? "bg-[#f1f5f9] text-[#475569]"}`}
+                  className={`inline-block px-2 py-1 rounded text-xs font-medium ${bedStatusClass(bed.bedStatus)}`}
                 >
-                  {bedStatusMap[bed.bedStatus] ?? bed.bedStatus}
+                  {bedStatusLabel(bed.bedStatus)}
                 </span>
               </div>
               <div className="flex justify-between">
@@ -2295,9 +2268,8 @@ function EditBedModal({
                 }
                 className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
               >
-                <option value="Planted">Đang trồng</option>
-                <option value="Empty">Chưa trồng</option>
-                <option value="Warning">Đang bị bệnh</option>
+                <option value="Active">Hoạt động</option>
+                <option value="Inactive">Không hoạt động</option>
               </select>
             </div>
             <div className="flex justify-end gap-3 pt-4">
