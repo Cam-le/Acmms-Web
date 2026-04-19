@@ -90,7 +90,7 @@ export function LoginPage() {
               />
             </svg>
           </div>
-          <h1 className="text-2xl font-bold text-[#115e59] mb-1">ACMMS</h1>
+          <h1 className="text-2xl font-bold text-[#115e59] mb-1">CMMS</h1>
           <p className="text-[#64748b] text-sm">Đăng nhập để tiếp tục</p>
         </div>
 

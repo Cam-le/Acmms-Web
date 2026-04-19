@@ -559,6 +559,9 @@ function DetailView({ reportId }: { reportId: string }) {
   const [diagnoses, setDiagnoses] = useState<DiagnosisResponse[]>([]);
   const [diagnosesLoading, setDiagnosesLoading] = useState(false);
 
+  // Report image — fetched from Attachments API once report is loaded
+  const [reportImageUrl, setReportImageUrl] = useState<string | null>(null);
+
   useEffect(() => {
     async function fetchReport() {
       setLoading(true);
@@ -615,6 +618,27 @@ function DetailView({ reportId }: { reportId: string }) {
     }
     fetchDiagnoses();
   }, [report?.status]);
+
+  // Fetch report image from Attachments API once report is loaded
+  useEffect(() => {
+    if (!report) return;
+    async function fetchImage() {
+      try {
+        const attachments = await api.getAttachments(
+          "report",
+          report!.reportId,
+        );
+        const img = attachments.find(
+          (a) => a.attachmentType === "report_image",
+        );
+        if (img) setReportImageUrl(img.secureUrl || img.fileUrl);
+      } catch {
+        // non-critical — AI section renders without image
+        console.error("Failed to fetch report attachments");
+      }
+    }
+    fetchImage();
+  }, [report?.reportId]);
 
   async function handleAssign() {
     if (!report || !selectedSpecialistId) return;
@@ -932,6 +956,15 @@ function DetailView({ reportId }: { reportId: string }) {
           )}
         </div>
         <div className="lg:col-span-3 space-y-4">
+          {reportImageUrl && (
+            <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm overflow-hidden">
+              <img
+                src={reportImageUrl}
+                alt="Hình ảnh báo cáo"
+                className="w-full object-cover max-h-72"
+              />
+            </div>
+          )}
           {ai ? (
             <>
               {/* AI Summary banner */}

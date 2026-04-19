@@ -495,6 +495,21 @@ export interface AiResultParsed {
   isHealthy?: boolean;
 }
 
+// ── Attachments ───────────────────────────────────────────────────────────────
+
+export interface AttachmentResponse {
+  id: string;
+  objectType: string;
+  objectId: string;
+  attachmentType: string; // e.g. "report_image"
+  fileName: string;
+  fileUrl: string;
+  secureUrl: string;
+  mimeType: string;
+  fileSize: number;
+  createdAt: string;
+}
+
 // ── IoT Devices ───────────────────────────────────────────────────────────────
 
 export interface IotDeviceResponse {
@@ -759,6 +774,13 @@ export const api = {
       `/api/Reports/${reportId}/diagnosis`,
       body,
     ),
+  // Attachments
+  getAttachments: (objectType: string, objectId: string) =>
+    request<AttachmentResponse[]>(
+      "GET",
+      `/api/Attachments?objectType=${encodeURIComponent(objectType)}&objectId=${encodeURIComponent(objectId)}`,
+    ),
+
   // Payment / Billing
   getPriceSettings: () =>
     request<PriceSettingResponse[]>("GET", "/api/payment/price-settings"),
