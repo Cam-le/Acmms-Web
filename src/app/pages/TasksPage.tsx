@@ -935,7 +935,13 @@ export function TasksPage() {
           api.getPlots(),
           api.getStaffs(),
         ]);
-      setTasks(tasksRes ?? []);
+      setTasks(
+        (tasksRes ?? []).sort(
+          (a, b) =>
+            new Date(a.taskCreatedAt).getTime() -
+            new Date(b.taskCreatedAt).getTime(),
+        ),
+      );
       setSeasons(seasonsRes ?? []);
       setAllBeds(bedsRes ?? []);
       setAllPlots(plotsRes ?? []);
