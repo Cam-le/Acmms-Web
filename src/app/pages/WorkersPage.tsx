@@ -63,6 +63,17 @@ const getStatusBadgeColor = (status: WorkerStatus) =>
     ? "bg-[#dcfce7] text-[#008236]"
     : "bg-[#fee2e2] text-[#991b1b]";
 
+const STATUS_LABEL: Record<WorkerStatus, string> = {
+  Active: "Hoạt động",
+  Inactive: "Không hoạt động",
+};
+
+const ROLE_LABEL: Record<string, string> = {
+  Worker: "Nhân viên",
+  Specialist: "Chuyên gia",
+};
+const getRoleLabel = (role: string) => ROLE_LABEL[role] ?? role;
+
 const PAGE_SIZE = 5;
 
 // ── Form validation helpers ──────────────────────────────────────────────────
@@ -524,7 +535,7 @@ export function WorkersPage() {
               <option value="all">Tất cả vai trò</option>
               {availableRoleNames.map((r) => (
                 <option key={r} value={r}>
-                  {r}
+                  {getRoleLabel(r)}
                 </option>
               ))}
             </select>
@@ -610,7 +621,7 @@ export function WorkersPage() {
                         {worker.phone}
                       </td>
                       <td className="px-6 py-4 text-sm text-[#62748e]">
-                        {worker.role}
+                        {getRoleLabel(worker.role)}
                       </td>
                       <td className="px-6 py-4 text-sm text-[#62748e]">
                         {worker.dateJoined}
@@ -619,7 +630,7 @@ export function WorkersPage() {
                         <span
                           className={`px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap ${getStatusBadgeColor(worker.status)}`}
                         >
-                          {worker.status}
+                          {STATUS_LABEL[worker.status]}
                         </span>
                       </td>
                       <td className="px-6 py-4">
@@ -749,7 +760,7 @@ export function WorkersPage() {
                               : "bg-[#dcfce7] text-[#008236]"
                           }`}
                         >
-                          {s.requestedRole}
+                          {getRoleLabel(s.requestedRole)}
                         </span>
                       ) : (
                         <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-[#f1f5f9] text-[#94a3b8]">
@@ -780,7 +791,7 @@ export function WorkersPage() {
                           title={
                             !s.requestedRole
                               ? "Chưa có vai trò đăng ký"
-                              : `Duyệt vai trò ${s.requestedRole}`
+                              : `Duyệt vai trò ${getRoleLabel(s.requestedRole)}`
                           }
                           className="flex items-center gap-1.5 px-3 py-1.5 bg-[#009689] text-white rounded-lg text-xs font-medium hover:bg-[#007f75] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         >
@@ -843,14 +854,17 @@ export function WorkersPage() {
                     <span
                       className={`px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${getStatusBadgeColor(selectedWorker.status)}`}
                     >
-                      {selectedWorker.status}
+                      {STATUS_LABEL[selectedWorker.status]}
                     </span>
                   </div>
                 </div>
                 {[
                   { label: "Email", value: selectedWorker.email },
                   { label: "Số điện thoại", value: selectedWorker.phone },
-                  { label: "Vai trò", value: selectedWorker.role },
+                  {
+                    label: "Vai trò",
+                    value: getRoleLabel(selectedWorker.role),
+                  },
                   { label: "Ngày tham gia", value: selectedWorker.dateJoined },
                 ].map(({ label, value }) => (
                   <div
@@ -1155,7 +1169,7 @@ function WorkerForm({
             <option value="">— Chọn vai trò —</option>
             {roleOptions.map((r) => (
               <option key={r} value={r}>
-                {r}
+                {getRoleLabel(r)}
               </option>
             ))}
           </select>
@@ -1179,8 +1193,8 @@ function WorkerForm({
             }
             className="w-full px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] bg-white text-[#334155]"
           >
-            <option value="Active">Active</option>
-            <option value="Inactive">Inactive</option>
+            <option value="Active">Hoạt động</option>
+            <option value="Inactive">Không hoạt động</option>
           </select>
         </div>
       )}

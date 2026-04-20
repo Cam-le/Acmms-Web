@@ -498,6 +498,12 @@ export interface PaymentCreateRequest {
   priceSettingId: string;
   provider: string;
 }
+
+export interface PaymentCreateResponse {
+  checkoutUrl?: string;
+  paymentLinkId?: string;
+  qrCode?: string;
+}
 // Parsed shape of ReportResponse.aiResultsJson
 export interface AiResultParsed {
   diseaseName?: string;
@@ -800,5 +806,8 @@ export const api = {
   createPriceSetting: (body: PriceSettingCreateRequest) =>
     request<unknown>("POST", "/api/payment/price-setting", body),
   createPayment: (body: PaymentCreateRequest) =>
-    request<unknown>("POST", "/api/payment/create", body),
+    request<PaymentCreateResponse>("POST", "/api/payment/create", body),
+  confirmPayosReturn: () =>
+    request<unknown>("GET", "/api/payment/payos-return"),
+  cancelPayos: () => request<unknown>("GET", "/api/payment/payos-cancel"),
 };
