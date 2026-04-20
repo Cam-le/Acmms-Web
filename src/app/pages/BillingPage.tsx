@@ -130,13 +130,10 @@ function QrPaymentModal({
   onSuccess: () => void;
 }) {
   const [step, setStep] = useState<
-    "select" | "confirm" | "processing" | "payos_pending" | "success" | "error"
+    "select" | "confirm" | "processing" | "success" | "error"
   >("select");
   const [provider, setProvider] = useState<PaymentProvider>("payos");
   const [errorMsg, setErrorMsg] = useState("");
-  const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
-  const [returning, setReturning] = useState(false);
-  const [cancelling, setCancelling] = useState(false);
 
   const providerLabel = PROVIDER_CONFIG[provider].label;
 
@@ -148,52 +145,20 @@ function QrPaymentModal({
         provider: provider === "vnpay" ? "Vnpay" : "payos",
       });
       const typedRes = res as PaymentCreateResponse;
-      if (provider === "payos") {
-        if (typedRes?.checkoutUrl) {
-          setCheckoutUrl(typedRes.checkoutUrl);
-          window.open(typedRes.checkoutUrl, "_blank");
-        }
-        setStep("payos_pending");
-      } else {
-        setStep("success");
+      if (typedRes?.paymentUrl) {
+        window.open(typedRes.paymentUrl, "_blank", "noopener,noreferrer");
       }
+      setStep("success");
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : "Có lỗi xảy ra");
       setStep("error");
     }
   }
 
-  async function handlePayosReturn() {
-    setReturning(true);
-    try {
-      await api.confirmPayosReturn();
-    } catch {
-      // endpoint may redirect; ignore errors
-    } finally {
-      setReturning(false);
-    }
-    onSuccess();
-    onClose();
-  }
-
-  async function handlePayosCancel() {
-    setCancelling(true);
-    try {
-      await api.cancelPayos();
-    } catch {
-      // endpoint may redirect; ignore errors
-    } finally {
-      setCancelling(false);
-    }
-    onClose();
-  }
-
   const headerTitle =
     step === "select"
       ? "Chọn phương thức thanh toán"
-      : step === "payos_pending"
-        ? "Chờ xác nhận PayOS"
-        : `Thanh toán ${providerLabel}`;
+      : `Thanh toán ${providerLabel}`;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4 animate-in fade-in duration-200">
@@ -345,7 +310,7 @@ function QrPaymentModal({
             <div className="flex items-start gap-2 text-xs text-[#62748e] bg-[#f8fafc] rounded-lg p-3 border border-[#e2e8f0]">
               <Info className="w-3.5 h-3.5 mt-0.5 shrink-0 text-[#009689]" />
               {provider === "payos"
-                ? "Sau khi xác nhận, hệ thống sẽ tạo đơn PayOS và mở trang thanh toán. Vui lòng hoàn tất trong tab mới."
+                ? "Sau khi xác nhận, bạn sẽ được chuyển đến trang thanh toán PayOS để hoàn tất giao dịch."
                 : "Sau khi xác nhận, hệ thống sẽ khởi tạo giao dịch VNPay. Vui lòng không tắt trang trong quá trình thanh toán."}
             </div>
             <div className="flex gap-3">
@@ -375,60 +340,6 @@ function QrPaymentModal({
           </div>
         )}
 
-        {/* Step: PayOS Pending */}
-        {step === "payos_pending" && (
-          <div className="p-6 space-y-5">
-            <div className="flex flex-col items-center gap-3 text-center">
-              <div className="w-16 h-16 bg-[#f0fdfa] rounded-full flex items-center justify-center">
-                <QrCode className="w-8 h-8 text-[#009689]" />
-              </div>
-              <div className="space-y-1">
-                <h4 className="text-base font-bold text-[#115e59]">
-                  Chờ thanh toán PayOS
-                </h4>
-                <p className="text-sm text-[#62748e]">
-                  {checkoutUrl
-                    ? "Trang thanh toán đã mở trong tab mới. Hoàn tất thanh toán rồi nhấn xác nhận bên dưới."
-                    : "Vui lòng hoàn tất thanh toán trên cổng PayOS, sau đó xác nhận kết quả."}
-                </p>
-              </div>
-            </div>
-
-            {checkoutUrl && (
-              <button
-                onClick={() => window.open(checkoutUrl, "_blank")}
-                className="w-full py-2 rounded-xl border border-[#009689] text-[#009689] text-sm font-medium hover:bg-[#f0fdfa] transition-colors flex items-center justify-center gap-2"
-              >
-                <ArrowLeft className="w-4 h-4 rotate-[135deg]" />
-                Mở lại trang thanh toán
-              </button>
-            )}
-
-            <div className="flex items-start gap-2 text-xs text-[#62748e] bg-[#f8fafc] rounded-lg p-3 border border-[#e2e8f0]">
-              <Info className="w-3.5 h-3.5 mt-0.5 shrink-0 text-[#009689]" />
-              Nhấn &ldquo;Đã thanh toán&rdquo; sau khi hoàn tất giao dịch, hoặc
-              &ldquo;Hủy giao dịch&rdquo; để huỷ.
-            </div>
-
-            <div className="flex gap-3">
-              <button
-                onClick={handlePayosCancel}
-                disabled={cancelling}
-                className="flex-1 py-2.5 rounded-xl border border-[#fca5a5] text-[#dc2626] text-sm font-medium hover:bg-[#fef2f2] transition-colors disabled:opacity-50"
-              >
-                {cancelling ? "Đang huỷ..." : "Hủy giao dịch"}
-              </button>
-              <button
-                onClick={handlePayosReturn}
-                disabled={returning}
-                className="flex-1 py-2.5 rounded-xl bg-[#009689] text-white text-sm font-semibold hover:bg-[#007f75] transition-colors disabled:opacity-50"
-              >
-                {returning ? "Đang xác nhận..." : "Đã thanh toán"}
-              </button>
-            </div>
-          </div>
-        )}
-
         {/* Step: Success */}
         {step === "success" && (
           <div className="p-6 flex flex-col items-center gap-5 text-center">
@@ -437,11 +348,14 @@ function QrPaymentModal({
             </div>
             <div className="space-y-1">
               <h4 className="text-lg font-bold text-[#115e59]">
-                Khởi tạo thành công!
+                {provider === "payos"
+                  ? "Đã mở trang thanh toán!"
+                  : "Khởi tạo thành công!"}
               </h4>
               <p className="text-sm text-[#62748e]">
-                Giao dịch {providerLabel} đã được ghi nhận cho{" "}
-                {formatMonthFromISO(setting.month)}.
+                {provider === "payos"
+                  ? "Vui lòng hoàn tất giao dịch trong tab vừa mở. Trạng thái sẽ được cập nhật sau khi thanh toán thành công."
+                  : `Giao dịch ${providerLabel} đã được ghi nhận cho ${formatMonthFromISO(setting.month)}.`}
               </p>
             </div>
             <div className="flex items-center gap-2 text-xs text-[#166534]">
