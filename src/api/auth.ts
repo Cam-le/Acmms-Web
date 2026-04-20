@@ -9,7 +9,7 @@
  *  4. Reject if role is not Owner | Specialist | Admin
  */
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:7093";
+const BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 // ==================== Types ====================
 
