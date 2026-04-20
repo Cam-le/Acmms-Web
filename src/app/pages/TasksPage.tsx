@@ -1460,7 +1460,7 @@ export function TasksPage() {
               />
             </div>
             <div className="flex items-center gap-2 ml-auto">
-              <button
+              {/* <button
                 onClick={() => setIsCalendarEditMode((p) => !p)}
                 className={`px-3 py-2 rounded-lg text-sm flex items-center gap-1.5 font-medium border transition-colors ${
                   isCalendarEditMode
@@ -1470,7 +1470,7 @@ export function TasksPage() {
               >
                 <Pencil className="w-3.5 h-3.5" />
                 {isCalendarEditMode ? "Thoát chỉnh sửa" : "Chỉnh sửa lịch"}
-              </button>
+              </button> */}
             </div>
           </div>
 
