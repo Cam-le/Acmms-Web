@@ -328,7 +328,7 @@ export function PlotsPage() {
                             {plot.soilName}
                           </span>
                           <span className="text-xs text-[#62748e]">
-                            {activeBeds}/{plotBeds.length} luống đang trồng
+                            {activeBeds}/{plotBeds.length} luống
                           </span>
                         </div>
                       </div>
@@ -396,7 +396,7 @@ export function PlotsPage() {
                           <ChevronDown className="w-5 h-5" />
                         )}
                         <span>
-                          Luống ({activeBeds}/{plotBeds.length} đang trồng)
+                          Luống ({activeBeds}/{plotBeds.length})
                         </span>
                       </Collapsible.Trigger>
                       <button
