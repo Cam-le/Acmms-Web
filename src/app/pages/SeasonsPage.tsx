@@ -989,7 +989,7 @@ interface IotRow {
   temperature: number;
   humidity: number;
   soilMoisture: number;
-  light: number;
+  light?: number;
   isRaining: boolean;
   isAlert: boolean;
 }
@@ -1382,25 +1382,27 @@ function DetailSeasonView({ season }: { season: Season }) {
                     <td className="px-4 py-3 whitespace-nowrap">
                       <span className="inline-flex items-center gap-1.5 text-[#62748e]">
                         <Sun className="w-3.5 h-3.5 text-yellow-500" />
-                        {row.light != null && row.light > 0 ? row.light : "—"}
+                        {row.light != null ? row.light : "-"}
                       </span>
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
                       <div className="flex flex-col gap-1">
-                        {row.isRaining && (
-                          <span className="inline-flex items-center gap-1 text-xs text-blue-600">
-                            <CloudRain className="w-3 h-3" /> Đang mưa
-                          </span>
-                        )}
-                        {row.isAlert ? (
-                          <span className="inline-flex items-center gap-1 text-xs font-medium text-red-600">
-                            <AlertTriangle className="w-3 h-3" /> Cảnh báo
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 text-xs text-[#008236]">
-                            <CheckCircle className="w-3 h-3" /> Bình thường
-                          </span>
-                        )}
+                        <span
+                          className={`inline-flex items-center gap-1 text-xs ${row.isRaining ? "font-medium text-blue-600" : "text-[#62748e]"}`}
+                        >
+                          <CloudRain className="w-3 h-3" />
+                          Mưa: {row.isRaining ? "Có" : "Không"}
+                        </span>
+                        <span
+                          className={`inline-flex items-center gap-1 text-xs ${row.isAlert ? "font-medium text-red-600" : "text-[#008236]"}`}
+                        >
+                          {row.isAlert ? (
+                            <AlertTriangle className="w-3 h-3" />
+                          ) : (
+                            <CheckCircle className="w-3 h-3" />
+                          )}
+                          Sự cố: {row.isAlert ? "Có" : "Không"}
+                        </span>
                       </div>
                     </td>
                   </tr>
