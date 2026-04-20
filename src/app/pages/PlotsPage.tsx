@@ -1724,23 +1724,6 @@ function CreateBedModal({
                   </p>
                 )}
               </div>
-              <div>
-                <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Số Lượng Cây
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  value={formData.cropQuantities}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      cropQuantities: parseInt(e.target.value) || 0,
-                    })
-                  }
-                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                />
-              </div>
             </div>
 
             {/* Chiều dài — always manual */}

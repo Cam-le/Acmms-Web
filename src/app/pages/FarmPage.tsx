@@ -19,14 +19,7 @@ import {
 import * as Dialog from "@radix-ui/react-dialog";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import * as Collapsible from "@radix-ui/react-collapsible";
-import {
-  Farm,
-  FarmStatus,
-  FarmSoilType as SoilType,
-  FarmPlot as Plot,
-  farmSoilTypes as soilTypes,
-  mockFarms,
-} from "../../data/mockData";
+import { Farm, FarmStatus, mockFarms } from "../../data/mockData";
 import { api, FarmResponse } from "../../api/client";
 
 // ===================== MAP PICKER MODAL (Google Maps – coming soon) =====================
@@ -57,11 +50,11 @@ function MapPickerModal({
             Tính năng sắp ra mắt
           </h3>
           <p className="text-sm text-[#62748e] mb-1">
-            Chọn vị trí bằng <span className="font-medium">Google Maps</span>{" "}
+            Chọn địa chỉ bằng <span className="font-medium">Google Maps</span>{" "}
             đang được phát triển.
           </p>
           <p className="text-xs text-[#94a3b8] mb-5">
-            Vui lòng nhập địa chỉ thủ công vào ô vị trí trong thời gian này.
+            Vui lòng nhập địa chỉ thủ công vào ô địa chỉ trong thời gian này.
           </p>
 
           <div className="flex items-center justify-center gap-1.5 text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-5">
@@ -96,11 +89,6 @@ function mapFarm(f: FarmResponse): Farm {
 }
 
 const getStatusBadgeColor = (status: FarmStatus) =>
-  status === "Hoạt động"
-    ? "bg-[#dcfce7] text-[#008236]"
-    : "bg-[#fee2e2] text-[#991b1b]";
-
-const plotStatusColor = (status: FarmStatus) =>
   status === "Hoạt động"
     ? "bg-[#dcfce7] text-[#008236]"
     : "bg-[#fee2e2] text-[#991b1b]";
@@ -240,19 +228,6 @@ export function FarmPage() {
     } finally {
       setSubmitting(false);
     }
-  };
-
-  const handleAddPlot = (farmId: string, plot: Omit<Plot, "id">) => {
-    setFarms((prev) =>
-      prev.map((f) =>
-        f.id === farmId
-          ? {
-              ...f,
-              plots: [...f.plots, { ...plot, id: Date.now().toString() }],
-            }
-          : f,
-      ),
-    );
   };
 
   return (
@@ -448,7 +423,7 @@ function FarmCard({
 
         <Collapsible.Content>
           <div className="border-t border-[#f1f5f9] p-5">
-            <div className="grid grid-cols-3 gap-4 text-sm">
+            <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
                 <div className="text-xs text-[#94a3b8] uppercase mb-1">
                   Diện tích
@@ -463,14 +438,6 @@ function FarmCard({
                 </div>
                 <div className="font-medium text-[#115e59]">
                   {farm.createdAt || "—"}
-                </div>
-              </div>
-              <div>
-                <div className="text-xs text-[#94a3b8] uppercase mb-1">
-                  Khu đất
-                </div>
-                <div className="font-medium text-[#115e59]">
-                  {farm.plots.length} khu
                 </div>
               </div>
             </div>
@@ -502,9 +469,9 @@ function validateFarmForm(formData: {
     errors.name = "Tên trang trại không được quá 255 ký tự";
   }
   if (!formData.location.trim()) {
-    errors.location = "Vui lòng nhập vị trí trang trại";
-  } else if (formData.location.trim().length > 500) {
-    errors.location = "Vị trí không được quá 500 ký tự";
+    errors.location = "Vui lòng nhập địa chỉ trang trại";
+  } else if (formData.location.trim().length > 600) {
+    errors.location = "Địa chỉ không được quá 600 ký tự";
   }
   if (!formData.area.trim()) {
     errors.area = "Vui lòng nhập diện tích";
@@ -557,7 +524,7 @@ function FarmFormFields({
         </div>
         <div>
           <label className="block text-sm font-medium text-[#45556c] mb-1">
-            Vị trí <span className="text-red-400">*</span>
+            Địa chỉ <span className="text-red-400">*</span>
           </label>
           <div className="flex gap-2">
             <input
@@ -664,7 +631,7 @@ function ViewFarmModal({
 
           <div className="space-y-2">
             {[
-              { label: "Vị trí", value: farm.location },
+              { label: "Địa chỉ", value: farm.location },
               { label: "Diện tích", value: `${farm.area.toLocaleString()} m²` },
               { label: "Trạng thái", value: farm.status },
               { label: "Ngày tạo", value: farm.createdAt },
@@ -679,47 +646,6 @@ function ViewFarmModal({
                 </span>
               </div>
             ))}
-
-            {/* Plots summary */}
-            <div className="py-2 border-b border-[#f1f5f9]">
-              <div className="flex justify-between mb-2">
-                <span className="text-sm text-[#62748e]">Số khu đất</span>
-                <span className="text-sm font-medium text-[#115e59]">
-                  {farm.plots.length} khu
-                </span>
-              </div>
-
-              {farm.plots.length > 0 && (
-                <div className="mt-2 space-y-2">
-                  {farm.plots.map((plot) => (
-                    <div
-                      key={plot.id}
-                      className="flex items-center justify-between bg-[#f8fafc] rounded-lg px-3 py-2.5 border border-[#e2e8f0]"
-                    >
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-7 h-7 bg-[#e0f2fe] rounded-md flex items-center justify-center shrink-0">
-                          <Home className="w-3.5 h-3.5 text-[#0369a1]" />
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium text-[#115e59] leading-tight">
-                            {plot.name}
-                          </p>
-                          <p className="text-xs text-[#94a3b8] mt-0.5">
-                            {plot.soilType} • {plot.area.toLocaleString()} m² •{" "}
-                            {plot.plotCount} luống
-                          </p>
-                        </div>
-                      </div>
-                      <span
-                        className={`text-xs px-2 py-0.5 rounded-full font-medium ${plotStatusColor(plot.status)}`}
-                      >
-                        {plot.status}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
           </div>
 
           <div className="mt-5 flex justify-end">
