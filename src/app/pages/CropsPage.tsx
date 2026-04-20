@@ -89,7 +89,7 @@ const getCompatibilityBadgeColor = (compat: string) => {
 const compatibilityLabel = (compat: string) => {
   const c = compat.toLowerCase();
   if (c === "good") return "Cao";
-  if (c === "medium") return "Trung bình";
+  if (c === "average") return "Trung bình";
   return "Thấp";
 };
 const getStatusBadgeColor = (status: CropStatus) =>
