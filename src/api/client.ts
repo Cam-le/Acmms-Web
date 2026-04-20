@@ -559,12 +559,11 @@ export interface IotDeviceRequest {
 export interface IotDataResponse {
   sensorDataId: string;
   deviceId: string;
-  seasonId: string;
   recordedAt: string;
   temperature: number;
   humidity: number;
   soilMoisture: number;
-  light: number;
+  light?: number;
   isRaining: boolean;
   isAlert: boolean;
   createdAt: string;

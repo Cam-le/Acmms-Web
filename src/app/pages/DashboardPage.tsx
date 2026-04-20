@@ -18,8 +18,7 @@ import type {
   ReportResponse,
   IotDeviceResponse,
   IotDataResponse,
-  SeasonResponse,
-  FarmResponse,
+  SeasonDetailResponse,
   PriceSettingResponse,
 } from "../../api/client";
 
@@ -28,18 +27,10 @@ interface DeviceWithData {
   device: IotDeviceResponse;
   sensorData: IotDataResponse | null;
   seasonName: string | null;
-  farmName: string | null;
-  farmId: string | null;
-}
-
-interface FarmGroup {
-  farmId: string;
-  farmName: string;
-  seasons: SeasonGroup[];
+  bedName: string | null;
 }
 
 interface SeasonGroup {
-  seasonId: string | null;
   seasonName: string;
   devices: DeviceWithData[];
 }
@@ -85,7 +76,7 @@ export function DashboardPage() {
   // ── State ──
   const [reports, setReports] = useState<ReportResponse[]>([]);
   const [bills, setBills] = useState<PriceSettingResponse[]>([]);
-  const [farmGroups, setFarmGroups] = useState<FarmGroup[]>([]);
+  const [seasonGroups, setSeasonGroups] = useState<SeasonGroup[]>([]);
 
   const [loadingReports, setLoadingReports] = useState(true);
   const [loadingBills, setLoadingBills] = useState(true);
@@ -93,7 +84,6 @@ export function DashboardPage() {
 
   const [reportsMock, setReportsMock] = useState(false);
   const [billsMock, setBillsMock] = useState(false);
-  const [iotMock, setIotMock] = useState(false);
 
   // ── Load reports ──
   useEffect(() => {
@@ -113,124 +103,66 @@ export function DashboardPage() {
       .finally(() => setLoadingBills(false));
   }, []);
 
-  // ── Load IoT → sensors → seasons → farms ──
+  // ── Load IoT → sensors → seasons-details (bed-based lookup) ──
   useEffect(() => {
     async function loadIot() {
       try {
-        const devices = await api.getIotDevices();
+        const [devices, seasonDetails] = await Promise.all([
+          api.getIotDevices(),
+          api.getSeasonsDetails(),
+        ]);
+
         if (!devices?.length) {
-          setFarmGroups([]);
+          setSeasonGroups([]);
           return;
         }
 
+        // Build bedId → { seasonName, bedName } lookup from seasons-details
+        const bedMap = new Map<
+          string,
+          Pick<SeasonDetailResponse, "seasonName" | "bedName">
+        >();
+        for (const sd of seasonDetails ?? []) {
+          if (sd.bedId)
+            bedMap.set(sd.bedId, {
+              seasonName: sd.seasonName,
+              bedName: sd.bedName,
+            });
+        }
+
         // Fetch latest sensor data for each device in parallel
-        const deviceDataPairs: DeviceWithData[] = await Promise.all(
+        const enriched: DeviceWithData[] = await Promise.all(
           devices.map(async (device) => {
             let sensorData: IotDataResponse | null = null;
             try {
               sensorData = await api.getLatestSensorByDevice(device.deviceCode);
             } catch {
-              // sensor may have no data yet
+              // device may have no readings yet
             }
+            const bedInfo = bedMap.get(device.bedId);
             return {
               device,
               sensorData,
-              seasonName: null,
-              farmName: null,
-              farmId: null,
+              seasonName: bedInfo?.seasonName ?? null,
+              bedName: bedInfo?.bedName ?? null,
             };
           }),
         );
 
-        // Collect unique seasonIds
-        const seasonIds = [
-          ...new Set(
-            deviceDataPairs
-              .map((d) => d.sensorData?.seasonId)
-              .filter(Boolean) as string[],
-          ),
-        ];
-
-        // Fetch each season to get farmId + seasonName
-        const seasonMap = new Map<string, SeasonResponse>();
-        await Promise.all(
-          seasonIds.map(async (id) => {
-            try {
-              const s = await api.getSeason(id);
-              if (s) seasonMap.set(id, s);
-            } catch {
-              // ignore missing seasons
-            }
-          }),
-        );
-
-        // Collect unique farmIds
-        const farmIds = [
-          ...new Set(
-            [...seasonMap.values()].map((s) => s.farmId).filter(Boolean),
-          ),
-        ];
-
-        const farmMap = new Map<string, FarmResponse>();
-        await Promise.all(
-          farmIds.map(async (id) => {
-            try {
-              const f = await api.getFarm(id);
-              if (f) farmMap.set(id, f);
-            } catch {
-              // ignore missing farms
-            }
-          }),
-        );
-
-        // Enrich each device entry
-        const enriched: DeviceWithData[] = deviceDataPairs.map((entry) => {
-          const season = entry.sensorData?.seasonId
-            ? seasonMap.get(entry.sensorData.seasonId)
-            : undefined;
-          const farm = season ? farmMap.get(season.farmId) : undefined;
-          return {
-            ...entry,
-            seasonName: season?.seasonName ?? null,
-            farmName: farm?.farmName ?? null,
-            farmId: farm?.farmId ?? null,
-          };
-        });
-
-        // Group: farm → season → devices
-        const grouped = new Map<string, FarmGroup>();
+        // Group by seasonName
+        const grouped = new Map<string, SeasonGroup>();
         for (const entry of enriched) {
-          const farmKey = entry.farmId ?? "__unknown__";
-          const farmLabel = entry.farmName ?? "Trang trại không xác định";
-          const seasonKey = entry.sensorData?.seasonId ?? "__no_season__";
-          const seasonLabel = entry.seasonName ?? "Chưa có mùa vụ";
-
-          if (!grouped.has(farmKey)) {
-            grouped.set(farmKey, {
-              farmId: farmKey,
-              farmName: farmLabel,
-              seasons: [],
-            });
+          const key = entry.seasonName ?? "Chưa có mùa vụ";
+          if (!grouped.has(key)) {
+            grouped.set(key, { seasonName: key, devices: [] });
           }
-          const farmGroup = grouped.get(farmKey)!;
-
-          let seasonGroup = farmGroup.seasons.find(
-            (s) => s.seasonId === seasonKey,
-          );
-          if (!seasonGroup) {
-            seasonGroup = {
-              seasonId: seasonKey,
-              seasonName: seasonLabel,
-              devices: [],
-            };
-            farmGroup.seasons.push(seasonGroup);
-          }
-          seasonGroup.devices.push(entry);
+          grouped.get(key)!.devices.push(entry);
         }
 
-        setFarmGroups([...grouped.values()]);
+        setSeasonGroups([...grouped.values()]);
       } catch {
-        setIotMock(true);
+        // silently fail — no mock fallback
+        setSeasonGroups([]);
       } finally {
         setLoadingIot(false);
       }
@@ -544,51 +476,27 @@ export function DashboardPage() {
 
         {loadingIot ? (
           <LoadingRows />
-        ) : farmGroups.length === 0 ? (
+        ) : seasonGroups.length === 0 ? (
           <EmptyState text="Không có thiết bị IoT nào được cài đặt" />
         ) : (
           <div className="divide-y divide-[#f1f5f9]">
-            {farmGroups.map((farm) => (
-              <div key={farm.farmId} className="px-6 py-5">
-                {/* Farm header */}
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="w-6 h-6 rounded-md bg-[#ecfdf5] flex items-center justify-center">
-                    <Cpu className="w-3.5 h-3.5 text-[#009689]" />
-                  </div>
-                  <h3 className="font-bold text-[#0d3330] text-sm">
-                    {farm.farmName}
-                  </h3>
+            {seasonGroups.map((season) => (
+              <div key={season.seasonName} className="px-6 py-5">
+                {/* Season header */}
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="h-px flex-1 bg-[#f1f5f9]" />
+                  <p className="text-xs font-semibold text-[#94a3b8] uppercase tracking-widest px-2">
+                    {season.seasonName}
+                  </p>
+                  <div className="h-px flex-1 bg-[#f1f5f9]" />
                 </div>
-
-                {/* Seasons inside this farm */}
-                <div className="space-y-5 pl-8">
-                  {farm.seasons.map((season) => (
-                    <div key={season.seasonId ?? "no-season"}>
-                      <div className="flex items-center gap-2 mb-3">
-                        <div className="h-px flex-1 bg-[#f1f5f9]" />
-                        <p className="text-xs font-semibold text-[#94a3b8] uppercase tracking-widest px-2">
-                          {season.seasonName}
-                        </p>
-                        <div className="h-px flex-1 bg-[#f1f5f9]" />
-                      </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-                        {season.devices.map((entry) => (
-                          <DeviceCard
-                            key={entry.device.deviceId}
-                            entry={entry}
-                          />
-                        ))}
-                      </div>
-                    </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                  {season.devices.map((entry) => (
+                    <DeviceCard key={entry.device.deviceId} entry={entry} />
                   ))}
                 </div>
               </div>
             ))}
-          </div>
-        )}
-        {iotMock && (
-          <div className="px-6 pb-4">
-            <MockBadge />
           </div>
         )}
       </div>
@@ -599,7 +507,7 @@ export function DashboardPage() {
 // ─── DeviceCard ───────────────────────────────────────────────────────────────
 
 function DeviceCard({ entry }: { entry: DeviceWithData }) {
-  const { device, sensorData } = entry;
+  const { device, sensorData, bedName } = entry;
   const isActive = device.status === "Active";
 
   return (
@@ -611,7 +519,7 @@ function DeviceCard({ entry }: { entry: DeviceWithData }) {
       }`}
     >
       {/* Device header */}
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center justify-between mb-1">
         <span className="font-bold text-[#0d3330] text-xs truncate">
           {device.name}
         </span>
@@ -626,43 +534,64 @@ function DeviceCard({ entry }: { entry: DeviceWithData }) {
         </span>
       </div>
 
+      {bedName && (
+        <p className="text-xs text-[#94a3b8] mb-3 truncate">{bedName}</p>
+      )}
+
       {sensorData ? (
         <div className="grid grid-cols-2 gap-y-2 gap-x-3">
           <SensorItem
             icon={<Thermometer className="w-3.5 h-3.5 text-[#ef4444]" />}
             label="Nhiệt độ"
-            value={`${sensorData.temperature}°C`}
+            value={
+              sensorData.temperature != null
+                ? `${sensorData.temperature}°C`
+                : "-"
+            }
           />
           <SensorItem
             icon={<Droplets className="w-3.5 h-3.5 text-[#3b82f6]" />}
             label="Độ ẩm KK"
-            value={`${sensorData.humidity}%`}
+            value={
+              sensorData.humidity != null ? `${sensorData.humidity}%` : "-"
+            }
           />
           <SensorItem
             icon={<Wind className="w-3.5 h-3.5 text-[#0891b2]" />}
             label="Ẩm đất"
-            value={`${sensorData.soilMoisture}%`}
+            value={
+              sensorData.soilMoisture != null
+                ? `${sensorData.soilMoisture}%`
+                : "-"
+            }
           />
           <SensorItem
             icon={<Sun className="w-3.5 h-3.5 text-[#f59e0b]" />}
             label="Ánh sáng"
-            value={`${sensorData.light} lux`}
+            value={sensorData.light != null ? `${sensorData.light} lux` : "-"}
           />
-
-          {(sensorData.isRaining || sensorData.isAlert) && (
-            <div className="col-span-2 flex items-center gap-2 pt-1">
-              {sensorData.isRaining && (
-                <span className="inline-flex items-center gap-1 text-xs font-medium text-[#2563eb] bg-[#eff6ff] px-2 py-0.5 rounded-full">
-                  <CloudRain className="w-3 h-3" /> Đang mưa
-                </span>
-              )}
-              {sensorData.isAlert && (
-                <span className="inline-flex items-center gap-1 text-xs font-medium text-[#dc2626] bg-[#fee2e2] px-2 py-0.5 rounded-full">
-                  <AlertTriangle className="w-3 h-3" /> Cảnh báo
-                </span>
-              )}
-            </div>
-          )}
+          <SensorItem
+            icon={<CloudRain className="w-3.5 h-3.5 text-[#2563eb]" />}
+            label="Mưa"
+            value={
+              sensorData.isRaining != null
+                ? sensorData.isRaining
+                  ? "Có"
+                  : "Không"
+                : "-"
+            }
+          />
+          <SensorItem
+            icon={<AlertTriangle className="w-3.5 h-3.5 text-[#dc2626]" />}
+            label="Sự cố"
+            value={
+              sensorData.isAlert != null
+                ? sensorData.isAlert
+                  ? "Có"
+                  : "Không"
+                : "-"
+            }
+          />
 
           <div className="col-span-2 flex items-center gap-1 text-xs text-[#94a3b8] pt-1 border-t border-[#e2e8f0] mt-1">
             <RefreshCw className="w-3 h-3" />
