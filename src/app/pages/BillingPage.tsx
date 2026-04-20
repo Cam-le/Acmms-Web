@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import {
   Receipt,
   Plus,
@@ -770,6 +770,7 @@ function PriceSettingRow({
 // ===================== MAIN PAGE =====================
 
 export function BillingPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [settings, setSettings] = useState<PriceSetting[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -783,6 +784,25 @@ export function BillingPage() {
 
   const [payingSetting, setPayingSetting] = useState<PriceSetting | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+
+  // PayOS callback banner: set once on mount, then clear params from URL
+  type PayosCallbackResult = "success" | "cancelled" | null;
+  const [payosCallback, setPayosCallback] = useState<PayosCallbackResult>(null);
+
+  useEffect(() => {
+    const status = searchParams.get("status");
+    const cancel = searchParams.get("cancel");
+    const code = searchParams.get("code");
+    if (status || cancel || code) {
+      if (cancel === "true" || status === "CANCELLED") {
+        setPayosCallback("cancelled");
+      } else if (code === "00" && status === "PAID") {
+        setPayosCallback("success");
+      }
+      // Clear PayOS params from URL without triggering a navigation
+      setSearchParams({}, { replace: true });
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchSettings = useCallback(async () => {
     setLoading(true);
@@ -870,6 +890,38 @@ export function BillingPage() {
           </button>
         </div>
       </div>
+
+      {/* PayOS callback banners */}
+      {payosCallback === "cancelled" && (
+        <div className="flex items-center gap-3 px-4 py-3 bg-[#fff7ed] border border-[#fed7aa] rounded-xl text-sm text-[#9a3412]">
+          <XCircle className="w-4 h-4 shrink-0 text-[#ea580c]" />
+          <span>
+            Giao dịch PayOS đã bị <strong>huỷ</strong>. Bạn có thể thử lại bất
+            kỳ lúc nào.
+          </span>
+          <button
+            onClick={() => setPayosCallback(null)}
+            className="ml-auto w-6 h-6 flex items-center justify-center rounded-full hover:bg-[#fed7aa]/60 transition-colors"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+      {payosCallback === "success" && (
+        <div className="flex items-center gap-3 px-4 py-3 bg-[#f0fdf4] border border-[#bbf7d0] rounded-xl text-sm text-[#166534]">
+          <CheckCircle className="w-4 h-4 shrink-0 text-[#16a34a]" />
+          <span>
+            Thanh toán PayOS <strong>thành công</strong>! Trạng thái đơn sẽ được
+            cập nhật.
+          </span>
+          <button
+            onClick={() => setPayosCallback(null)}
+            className="ml-auto w-6 h-6 flex items-center justify-center rounded-full hover:bg-[#bbf7d0]/60 transition-colors"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
       {/* Mock data warning */}
       {isMockData && (
