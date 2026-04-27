@@ -28,6 +28,8 @@ import {
   PlusCircle,
 } from "lucide-react";
 import { api } from "../../api/client";
+import { useToast } from "../components/ui/useToast";
+import { ToastContainer } from "../components/ui/ToastContainer";
 
 // ===================== TYPES =====================
 
@@ -251,34 +253,33 @@ function getPageNumbers(current: number, total: number): (number | "...")[] {
   return pages;
 }
 
-// ===================== STATUS BADGE =====================
+// ===================== BADGE =====================
 
-function StatusBadge({ status }: { status: string }) {
-  const cfg = getStatusConfig(status);
-  const Icon = cfg.icon;
+function Badge({
+  label,
+  color,
+  icon: Icon,
+}: {
+  label: string;
+  color: string;
+  icon: React.ElementType;
+}) {
   return (
     <span
-      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${cfg.color}`}
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${color}`}
     >
       <Icon className="w-3 h-3" />
-      {cfg.label}
+      {label}
     </span>
   );
 }
 
-// ===================== REPORT TYPE BADGE =====================
+function StatusBadge({ status }: { status: string }) {
+  return <Badge {...getStatusConfig(status)} />;
+}
 
 function ReportTypeBadge({ type }: { type: string }) {
-  const cfg = getReportType(type);
-  const Icon = cfg.icon;
-  return (
-    <span
-      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${cfg.color}`}
-    >
-      <Icon className="w-3 h-3" />
-      {cfg.label}
-    </span>
-  );
+  return <Badge {...getReportType(type)} />;
 }
 
 // ===================== LIST VIEW =====================
@@ -292,17 +293,21 @@ function ListView() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("SENT_TO_OWNER");
   const [page, setPage] = useState(1);
+  const { toasts, showToast, dismissToast } = useToast();
 
-  async function fetchReports() {
+  async function fetchReports(): Promise<boolean> {
     setLoading(true);
     setError(null);
     try {
       const data = await api.getReports();
       setReports(data);
+      return true;
     } catch (e) {
-      setError(
-        e instanceof Error ? e.message : "Không thể tải danh sách báo cáo.",
-      );
+      const msg =
+        e instanceof Error ? e.message : "Không thể tải danh sách báo cáo.";
+      setError(msg);
+      showToast(msg, "error");
+      return false;
     } finally {
       setLoading(false);
     }
@@ -335,6 +340,7 @@ function ListView() {
 
   return (
     <div className="flex flex-col gap-4 p-6">
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
@@ -346,7 +352,10 @@ function ListView() {
           </p>
         </div>
         <button
-          onClick={fetchReports}
+          onClick={async () => {
+            const ok = await fetchReports();
+            if (ok) showToast("Đã làm mới danh sách.", "success");
+          }}
           disabled={loading}
           className="flex items-center gap-2 px-3 py-2 border border-[#cad5e2] text-[#62748e] rounded-lg hover:bg-[#f8fafc] transition-colors text-sm disabled:opacity-50"
         >
@@ -547,6 +556,7 @@ function DetailView({ reportId }: { reportId: string }) {
   const [assigning, setAssigning] = useState(false);
   const [assignSuccess, setAssignSuccess] = useState(false);
   const [assignError, setAssignError] = useState<string | null>(null);
+  const { toasts, showToast, dismissToast } = useToast();
 
   // Specialist selection
   const [specialists, setSpecialists] = useState<
@@ -651,10 +661,12 @@ function DetailView({ reportId }: { reportId: string }) {
       });
       setAssignSuccess(true);
       setReport((r) => (r ? { ...r, status: "ASSIGNED" } : r));
+      showToast("Đã gửi báo cáo đến chuyên gia thành công.", "success");
     } catch (e) {
-      setAssignError(
-        e instanceof Error ? e.message : "Không thể gửi đến chuyên gia.",
-      );
+      const msg =
+        e instanceof Error ? e.message : "Không thể gửi đến chuyên gia.";
+      setAssignError(msg);
+      showToast(msg, "error");
     } finally {
       setAssigning(false);
     }
@@ -695,6 +707,7 @@ function DetailView({ reportId }: { reportId: string }) {
 
   return (
     <div className="flex flex-col gap-6 p-6">
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-[#62748e]">
         <Link to="/advisory" className="hover:text-[#009689]">
@@ -942,6 +955,7 @@ function DetailView({ reportId }: { reportId: string }) {
                 <button
                   onClick={() => {
                     const description = diagnoses[0]?.recommendedAction ?? "";
+                    showToast("Đang chuyển đến trang tạo công việc...", "info");
                     navigate(
                       `/tasks?openCreateTask=true&description=${encodeURIComponent(description)}`,
                     );
@@ -958,11 +972,17 @@ function DetailView({ reportId }: { reportId: string }) {
         <div className="lg:col-span-3 space-y-4">
           {reportImageUrl && (
             <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm overflow-hidden">
-              <img
-                src={reportImageUrl}
-                alt="Hình ảnh báo cáo"
-                className="w-full object-cover max-h-72"
-              />
+              {/* Fixed-size container so zoom never breaks the layout */}
+              <div
+                className="w-full"
+                style={{ aspectRatio: "16/9", maxHeight: "288px" }}
+              >
+                <img
+                  src={reportImageUrl}
+                  alt="Hình ảnh báo cáo"
+                  className="w-full h-full object-contain bg-[#f8fafc]"
+                />
+              </div>
             </div>
           )}
           {ai ? (
