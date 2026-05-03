@@ -117,6 +117,71 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+
+  /* ─── ACMMS: Primary teal scale ───────────────────────────────────────
+     Overrides the shadcn --color-primary (near-black) with the app's teal.
+     Usage: bg-primary, text-primary, hover:bg-primary-hover, etc.         */
+  --color-primary: #009689;
+  --color-primary-hover: #007f75;
+  --color-primary-dark: #0f766e;
+  --color-primary-fg: #ffffff;
+  --color-primary-50: #f0fdfa;
+  --color-primary-100: #ccfbf1;
+  --color-primary-200: #99f6e4;
+  --color-primary-700: #115e59;
+  --color-primary-800: #0d3330;
+  --color-primary-900: #0a2522;
+
+  /* ─── ACMMS: Surface / chrome ─────────────────────────────────────────
+     bg-surface, bg-surface-alt, bg-surface-subtle, bg-surface-page        */
+  --color-surface: #ffffff;
+  --color-surface-alt: #f8fafc;
+  --color-surface-subtle: #f1f5f9;
+  --color-surface-page: #f8fafc;
+
+  /* ─── ACMMS: Borders ──────────────────────────────────────────────────
+     border-border (default cards/tables), border-border-strong (inputs)   */
+  --color-border: #e2e8f0;
+  --color-border-strong: #cad5e2;
+
+  /* ─── ACMMS: Text grey / ink scale ───────────────────────────────────
+     text-ink-500 (body), text-ink-700 (strong), text-ink-800 (headings)   */
+  --color-ink: #0f172a;
+  --color-ink-900: #0d3330;
+  --color-ink-800: #115e59;
+  --color-ink-700: #334155;
+  --color-ink-600: #45556c;
+  --color-ink-500: #62748e;
+  --color-ink-400: #94a3b8;
+  --color-ink-300: #cbd5e1;
+
+  /* ─── ACMMS: Status badge colors ─────────────────────────────────────
+     bg-status-success-bg / text-status-success-fg, etc.                   */
+  --color-status-success-bg: #dcfce7;
+  --color-status-success-fg: #008236;
+  --color-status-warning-bg: #fef9c3;
+  --color-status-warning-fg: #854d0e;
+  --color-status-warning-bg-2: #fef3c7;
+  --color-status-warning-fg-2: #92400e;
+  --color-status-danger-bg: #fee2e2;
+  --color-status-danger-fg: #991b1b;
+  --color-status-info-bg: #dbeafe;
+  --color-status-info-fg: #1e40af;
+  --color-status-neutral-bg: #f1f5f9;
+  --color-status-neutral-fg: #475569;
+
+  /* ─── ACMMS: Border radius ────────────────────────────────────────────
+     rounded-card (12px cards), rounded-btn (8px buttons), rounded-pill    */
+  --radius-card: 0.75rem;
+  --radius-modal: 0.75rem;
+  --radius-btn: 0.5rem;
+  --radius-pill: 9999px;
+
+  /* ─── ACMMS: Shadows ──────────────────────────────────────────────────
+     shadow-card, shadow-modal                                              */
+  --shadow-card:
+    0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(15, 23, 42, 0.06);
+  --shadow-modal: 0 20px 40px rgba(15, 23, 42, 0.18);
 }
 
 @layer base {

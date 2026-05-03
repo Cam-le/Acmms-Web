@@ -241,11 +241,34 @@ export interface UnassignedStaff {
   requestedRole?: string;
 }
 
+export interface ReportAttachment {
+  id: string;
+  objectType: string;
+  objectId: string;
+  attachmentType: string; // e.g. "report_image"
+  fileName: string;
+  fileUrl: string;
+  secureUrl: string;
+  mimeType: string;
+  fileSize: number;
+  createdAt: string;
+}
+
+export interface ReportEnvironmentSnapshot {
+  temperature: number;
+  humidity: number;
+  soilMoisture: number;
+  rainfall: number;
+  lightIntensity: number;
+  recordedAt: string;
+  sourceDeviceId: string;
+}
+
 export interface ReportResponse {
   reportId: string;
   reportNo: string;
-  createdBy: string;
-  creatorName: string;
+  workerId: string;
+  workerName: string;
   ownerId: string;
   ownerName: string;
   title: string;
@@ -253,12 +276,14 @@ export interface ReportResponse {
   reportType: string;
   plotId: string;
   bedId: string;
-  seasonId: string;
+  seasonId?: string;
   aiResultsJson?: string;
   status: string;
   createdAt: string;
   submitDate: string;
   updatedAt?: string;
+  attachments: ReportAttachment[];
+  environmentSnapshots: ReportEnvironmentSnapshot[];
 }
 
 // ==================== Request Types ====================
