@@ -593,6 +593,71 @@ export interface IotDataResponse {
   createdAt: string;
 }
 
+// ─── Harvest / HarvestDetail ─────────────────────────────────────────────────
+
+export interface HarvestResponse {
+  harvestId: string;
+  plotId: string;
+  plotName: string;
+  cropId: string;
+  cropName: string;
+  seasonId: string;
+  seasonName: string;
+  expectedDate: string;
+  expectedQuantity: number;
+  status: string;
+  detailsCount: number;
+  recordsCount: number;
+  harvestDetails?: HarvestDetailResponse[];
+  totalHarvestedQuantity?: number;
+  totalSoldQuantity?: number;
+  totalRevenue?: number;
+  createdAt?: string;
+}
+
+export interface HarvestDetailResponse {
+  harvestDetailId: string;
+  harvestId: string;
+  bedId: string;
+  bedName: string;
+  cropQuantity: number;
+  startDate: string;
+  endDate: string;
+  cropId?: string;
+  cropName?: string;
+  plotId?: string;
+  plotName?: string;
+  seasonId?: string;
+  seasonName?: string;
+}
+
+export interface HarvestRequest {
+  plotId: string;
+  seasonId: string;
+  cropId: string;
+  expectedDate: string;
+  expectedQuantity: number;
+  unit?: string;
+  status?: string;
+  notes?: string;
+  startDate?: string;
+  endDate?: string;
+}
+
+export interface HarvestUpdateRequest {
+  expectedDate: string;
+  expectedQuantity: number;
+  unit?: string;
+  status?: string;
+  notes?: string;
+}
+
+export interface HarvestDetailUpdateRequest {
+  cropQuantity: number;
+  startDate: string;
+  endDate: string;
+}
+
 // ==================== API Methods ====================
 
 export const api = {
@@ -828,6 +893,31 @@ export const api = {
     request<PriceSettingResponse[]>("GET", "/api/payment/price-settings"),
   createPriceSetting: (body: PriceSettingCreateRequest) =>
     request<unknown>("POST", "/api/payment/price-setting", body),
-  createPayment: (body: PaymentCreateRequest) =>
-    request<PaymentCreateResponse>("POST", "/api/payment/create", body),
+  // Harvests
+  getHarvests: () => request<HarvestResponse[]>("GET", "/api/harvests"),
+  getHarvest: (id: string) =>
+    request<HarvestResponse>("GET", `/api/harvests/${id}`),
+  getHarvestsBySeason: (seasonId: string) =>
+    request<HarvestResponse[]>("GET", `/api/harvests/season/${seasonId}`),
+  getHarvestsByPlot: (plotId: string) =>
+    request<HarvestResponse[]>("GET", `/api/harvests/plot/${plotId}`),
+  createHarvest: (body: HarvestRequest) =>
+    request<HarvestResponse>("POST", "/api/harvests", body),
+  updateHarvest: (id: string, body: HarvestUpdateRequest) =>
+    request<HarvestResponse>("PUT", `/api/harvests/${id}`, body),
+  deleteHarvest: (id: string) =>
+    request<unknown>("DELETE", `/api/harvests/${id}`),
+
+  // HarvestDetails
+  getHarvestDetailsByHarvest: (harvestId: string) =>
+    request<HarvestDetailResponse[]>(
+      "GET",
+      `/api/harvest-details/harvest/${harvestId}`,
+    ),
+  getHarvestDetail: (id: string) =>
+    request<HarvestDetailResponse>("GET", `/api/harvest-details/${id}`),
+  updateHarvestDetail: (id: string, body: HarvestDetailUpdateRequest) =>
+    request<HarvestDetailResponse>("PUT", `/api/harvest-details/${id}`, body),
+  deleteHarvestDetail: (id: string) =>
+    request<unknown>("DELETE", `/api/harvest-details/${id}`),
 };

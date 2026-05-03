@@ -4,8 +4,6 @@
  * Centralises status normalisation that was previously scattered across pages.
  * Each domain has 2 helpers: `xxxStatusTone()` and `xxxStatusLabel()`.
  *
- * Spec: FRONTEND_REFACTOR_PLAN.md §6.6
- *
  * Convention: backend stores English enum values ("Active"/"Inactive",
  * "SENT_TO_OWNER", etc). This file produces (a) a tone for visual styling
  * and (b) a Vietnamese label for display. Pages should use these — never
