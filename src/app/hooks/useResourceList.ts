@@ -3,23 +3,6 @@ import type { Dispatch, SetStateAction } from "react";
 
 /**
  * useResourceList — fetch a list resource on mount, with reload + manual edit.
- *
- * Replaces ~13 inline patterns of:
- *   const [items, setItems] = useState<T[]>([]);
- *   const [loading, setLoading] = useState(true);
- *   useEffect(() => { load() }, []);
- *   async function load() {
- *     setLoading(true);
- *     try { const data = await api.getX(); setItems(data.map(mapX)); }
- *     catch (err) { showToast(...); }
- *     finally { setLoading(false); }
- *   }
- *
- * Spec: FRONTEND_REFACTOR_PLAN.md §6.3
- *
- * Mock-data fallback is intentionally NOT supported (see Phase 0 cleanup).
- * If fetcher throws, error state is set and onError is called for toast.
- *
  * Usage:
  *   const { items: farms, loading, reload } = useResourceList({
  *     fetcher: api.getFarms,

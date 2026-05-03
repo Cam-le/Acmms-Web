@@ -3,13 +3,6 @@ import { useCallback, useMemo, useState } from "react";
 /**
  * useTableSort — manage column-based sort state for tables.
  *
- * Replaces inline patterns in WorkersPage and CropsPage:
- *   const [sortField, setSortField] = useState<...>(null);
- *   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
- *   const handleSort = (field) => { ... };
- *
- * Spec: FRONTEND_REFACTOR_PLAN.md §6.4
- *
  * Usage:
  *   const sort = useTableSort(filteredWorkers, {
  *     dateJoined: { compare: (a, b) => a.dateJoined.localeCompare(b.dateJoined) },

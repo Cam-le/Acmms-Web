@@ -5,7 +5,6 @@ import { Button } from "./Button";
 
 /**
  * ConfirmDialog — yes/no confirmation, typically for destructive actions.
- *
  * IMPORTANT — async confirmation pattern:
  *   The Confirm button does NOT auto-close the dialog. Caller is responsible
  *   for calling onOpenChange(false) when their async work succeeds. This is

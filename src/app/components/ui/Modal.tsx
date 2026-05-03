@@ -4,7 +4,6 @@ import type { FormEvent, ReactNode } from "react";
 
 /**
  * Modal — wrapper around Radix Dialog with standard header/body/footer.
- *
  * Form pattern:
  *   <Modal title="..." onSubmit={handleSubmit}
  *          footer={<Button type="submit" loading={...}>Save</Button>}>
