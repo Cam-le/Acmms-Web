@@ -854,12 +854,12 @@ function DetailSeasonView({
           </div>
           <div>
             <div className="text-xs text-ink-500 uppercase mb-1">
-              Tổng SL dự kiến
+              Tổng SẢN LƯỢNG DỰ KIẾN
             </div>
             <div className="font-medium text-status-success-fg flex items-center gap-1">
               <Package className="w-4 h-4" />
               {totalExpected > 0
-                ? `${totalExpected.toLocaleString("vi-VN")} cây`
+                ? `${totalExpected.toLocaleString("vi-VN")} kg`
                 : "—"}
             </div>
           </div>
@@ -882,11 +882,11 @@ function DetailSeasonView({
       <div className="bg-surface rounded-card border border-border shadow-card overflow-hidden">
         <div className="px-6 py-4 border-b border-border flex items-center justify-between">
           <h3 className="text-sm font-bold text-ink-500 uppercase flex items-center gap-2">
-            <Wheat className="w-4 h-4" /> Danh sách thu hoạch ({harvests.length}
-            )
+            <Wheat className="w-4 h-4" /> Danh sách vụ thu hoạch (
+            {harvests.length})
           </h3>
           <Button leadingIcon={Plus} size="sm" onClick={openCreateHarvest}>
-            Thêm thu hoạch
+            Thêm mới
           </Button>
         </div>
 
@@ -899,7 +899,7 @@ function DetailSeasonView({
             message="Thêm vụ thu hoạch đầu tiên cho mùa vụ này"
             action={
               <Button leadingIcon={Plus} size="sm" onClick={openCreateHarvest}>
-                Thêm thu hoạch
+                Thêm vụ thu hoạch
               </Button>
             }
           />
@@ -989,7 +989,7 @@ function DetailSeasonView({
                               <tr>
                                 {[
                                   "Luống",
-                                  "SL dự kiến (cây)",
+                                  "Số lượng (cây)",
                                   "Ngày bắt đầu",
                                   "Ngày kết thúc",
                                 ].map((h) => (
@@ -1178,7 +1178,7 @@ function DetailSeasonView({
             setEditHarvest(null);
           }
         }}
-        title={editHarvest ? "Chỉnh sửa thu hoạch" : "Thêm thu hoạch mới"}
+        title={editHarvest ? "Chỉnh sửa vụ thu hoạch" : "Thêm vụ thu mới"}
         size="md"
         onSubmit={handleHarvestSubmit}
         footer={
@@ -1202,7 +1202,7 @@ function DetailSeasonView({
         <div className="space-y-4">
           {/* Plot select */}
           <FormSelect
-            label="Khu đất (Plot)"
+            label="Vuông đất"
             required
             value={harvestForm.plotId}
             onChange={(v) => setHarvestForm((p) => ({ ...p, plotId: v }))}
@@ -1210,7 +1210,7 @@ function DetailSeasonView({
               value: p.plotId,
               label: p.plotName,
             }))}
-            placeholder="Chọn khu đất"
+            placeholder="Chọn vuông đất"
             disabled={!!editHarvest}
           />
 
@@ -1243,7 +1243,7 @@ function DetailSeasonView({
               }}
             />
             <FormField
-              label="Số lượng dự kiến (cây)"
+              label="Sản lượng dự kiến (kg)"
               type="number"
               value={harvestForm.expectedQuantity}
               onChange={(v) =>
@@ -1417,7 +1417,7 @@ function CreateSeasonView({
     );
     if (hasInvalid) {
       localToast(
-        "Mỗi đợt thu hoạch cần có khu đất, cây trồng và ngày dự kiến.",
+        "Mỗi đợt thu hoạch cần có vuông đất, cây trồng và ngày dự kiến.",
         "error",
       );
       return;
@@ -1733,7 +1733,7 @@ function CreateSeasonView({
                 {/* Group body */}
                 <div className="p-4 grid grid-cols-2 gap-4">
                   <FormSelect
-                    label="Khu đất (Plot)"
+                    label="Vuông đất"
                     required
                     value={group.plotId}
                     onChange={(v) =>
@@ -1747,7 +1747,7 @@ function CreateSeasonView({
                       value: p.plotId,
                       label: p.plotName,
                     }))}
-                    placeholder="Chọn khu đất"
+                    placeholder="Chọn vuông đất"
                   />
                   <FormSelect
                     label="Cây trồng"
