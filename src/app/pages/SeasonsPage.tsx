@@ -53,7 +53,12 @@ import { EmptyState } from "../components/ui/EmptyState";
 import { RowActions } from "../components/ui/RowActions";
 import { usePagination } from "../hooks/usePagination";
 import { formatDate } from "../utils/format";
-import { seasonStatusTone, seasonStatusLabel } from "../utils/status";
+import {
+  seasonStatusTone,
+  seasonStatusLabel,
+  harvestStatusTone,
+  harvestStatusLabel,
+} from "../utils/status";
 import { bedSortTokens, compareTokenArrays } from "../utils/sort";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -193,7 +198,15 @@ export function SeasonsPage() {
       setBeds(safeBeds);
       setAllPlots(safePlots);
       setCrops(safeCrops);
-      setSeasons(safeSeasons.map((s) => mapSeasonResponse(s, safeFarms)));
+      setSeasons(
+        [...safeSeasons]
+          .sort((a, b) => {
+            const da = a.seasonStartDate ?? "";
+            const db = b.seasonStartDate ?? "";
+            return db.localeCompare(da); // most recent first
+          })
+          .map((s) => mapSeasonResponse(s, safeFarms)),
+      );
     } catch (err) {
       showToast("Không thể tải dữ liệu. Vui lòng thử lại.", "error");
     } finally {
@@ -577,7 +590,7 @@ function DetailSeasonView({
     cropId: "",
     expectedDate: "",
     expectedQuantity: "",
-    status: "pending",
+    status: "planned",
   });
 
   const loadHarvests = useCallback(async () => {
@@ -636,7 +649,7 @@ function DetailSeasonView({
       cropId: "",
       expectedDate: "",
       expectedQuantity: "",
-      status: "pending",
+      status: "planned",
     });
     setCreateHarvestOpen(true);
     setEditHarvest(null);
@@ -774,8 +787,9 @@ function DetailSeasonView({
   const activeCrops = crops;
 
   const HARVEST_STATUS_OPTIONS = [
-    { value: "pending", label: "Chờ thu hoạch" },
-    { value: "in_progress", label: "Đang thu hoạch" },
+    { value: "planned", label: "Lên kế hoạch" },
+    { value: "growing", label: "Đang trồng" },
+    { value: "harvesting", label: "Đang thu hoạch" },
     { value: "completed", label: "Đã thu hoạch" },
     { value: "cancelled", label: "Đã hủy" },
   ];
@@ -895,31 +909,6 @@ function DetailSeasonView({
               const isExpanded = expandedHarvest === h.harvestId;
               const details = harvestDetails[h.harvestId];
               const isLoadingDetails = detailsLoading[h.harvestId];
-
-              const harvestStatusTone = (s: string) => {
-                switch (s?.toLowerCase()) {
-                  case "completed":
-                    return "success" as const;
-                  case "in_progress":
-                    return "info" as const;
-                  case "cancelled":
-                    return "danger" as const;
-                  default:
-                    return "warning" as const;
-                }
-              };
-              const harvestStatusLabel = (s: string) => {
-                switch (s?.toLowerCase()) {
-                  case "completed":
-                    return "Đã thu hoạch";
-                  case "in_progress":
-                    return "Đang thu hoạch";
-                  case "cancelled":
-                    return "Đã hủy";
-                  default:
-                    return "Chờ thu hoạch";
-                }
-              };
 
               return (
                 <div key={h.harvestId}>
@@ -1392,8 +1381,37 @@ function CreateSeasonView({
     return errors;
   };
 
+  // Bỏ qua: create season only, no harvests, then navigate
+  const handleSkip = async () => {
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      const created = await api.createSeason({
+        farmId: formData.farmId,
+        seasonName: formData.name.trim(),
+        seasonStartDate: formData.startDate,
+        seasonEndDate: formData.endDate,
+        description: formData.description.trim(),
+        seasonNotes: formData.seasonNotes.trim(),
+        status: formData.status,
+      });
+      const msg =
+        (created as any)?.message ||
+        `Đã tạo mùa vụ "${formData.name.trim()}" thành công.`;
+      localToast(msg, "success");
+      setTimeout(onCreated, 800);
+    } catch (err) {
+      localToast(
+        err instanceof Error ? err.message : "Tạo mùa vụ thất bại.",
+        "error",
+      );
+      setSubmitting(false);
+    }
+  };
+
   const handleStep2Submit = async () => {
-    // Validate: each group must have plotId + cropId + expectedDate
+    if (submitting) return; // guard against double-click
+
     const hasInvalid = harvestGroups.some(
       (g) => !g.plotId || !g.cropId || !g.expectedDate,
     );
@@ -1418,10 +1436,9 @@ function CreateSeasonView({
         status: formData.status,
       });
 
-      // Step 2: find the new season id (POST returns the created object)
-      const newSeasonId = (created as any)?.seasonId;
-      if (!newSeasonId) {
-        // fallback: re-fetch to find it
+      // Step 2: resolve seasonId from response or re-fetch
+      let resolvedSeasonId: string | null = (created as any)?.seasonId ?? null;
+      if (!resolvedSeasonId) {
         const allSeasons = await api.getSeasons();
         const match = Array.isArray(allSeasons)
           ? allSeasons.find(
@@ -1431,54 +1448,64 @@ function CreateSeasonView({
                 s.seasonStartDate === formData.startDate,
             )
           : null;
-        if (!match?.seasonId) {
-          localToast(
-            "Tạo mùa vụ thành công nhưng không thể gán thu hoạch. Vui lòng thêm thủ công.",
-            "info",
-          );
-          onCreated();
-          return;
-        }
+        resolvedSeasonId = match?.seasonId ?? null;
       }
 
-      const seasonId =
-        newSeasonId ??
-        (() => {
-          // We already found it in the fallback path above and onCreated was called
-          return "";
-        })();
-
-      if (!seasonId) return;
+      if (!resolvedSeasonId) {
+        localToast(
+          "Tạo mùa vụ thành công nhưng không thể gán thu hoạch. Vui lòng thêm thủ công.",
+          "info",
+        );
+        setTimeout(onCreated, 800);
+        return;
+      }
 
       // Step 3: create harvest records
-      if (harvestGroups.length > 0 && harvestGroups[0].plotId) {
-        await Promise.allSettled(
-          harvestGroups
-            .filter((g) => g.plotId && g.cropId && g.expectedDate)
-            .map((g) =>
-              api.createHarvest({
-                plotId: g.plotId,
-                seasonId,
-                cropId: g.cropId,
-                expectedDate: g.expectedDate,
-                expectedQuantity: parseFloat(g.expectedQuantity) || 0,
-                status: "pending",
-                startDate: formData.startDate,
-                endDate: formData.endDate,
-              }),
-            ),
+      const harvestsToCreate = harvestGroups.filter(
+        (g) => g.plotId && g.cropId && g.expectedDate,
+      );
+
+      if (harvestsToCreate.length > 0) {
+        const results = await Promise.allSettled(
+          harvestsToCreate.map((g) =>
+            api.createHarvest({
+              plotId: g.plotId,
+              seasonId: resolvedSeasonId!,
+              cropId: g.cropId,
+              expectedDate: g.expectedDate,
+              expectedQuantity: parseFloat(g.expectedQuantity) || 0,
+              status: "planned",
+              startDate: formData.startDate,
+              endDate: formData.endDate,
+            }),
+          ),
         );
+        const failed = results.filter((r) => r.status === "rejected").length;
+        if (failed > 0) {
+          localToast(
+            `Tạo mùa vụ thành công. ${failed} đợt thu hoạch tạo thất bại — vui lòng thêm lại trong trang chi tiết.`,
+            "info",
+          );
+        } else {
+          const serverMsg =
+            (created as any)?.message ||
+            `Tạo mùa vụ "${formData.name.trim()}" và ${harvestsToCreate.length} đợt thu hoạch thành công.`;
+          localToast(serverMsg, "success");
+        }
+      } else {
+        const serverMsg =
+          (created as any)?.message ||
+          `Đã tạo mùa vụ "${formData.name.trim()}" thành công.`;
+        localToast(serverMsg, "success");
       }
 
-      localToast("Tạo mùa vụ thành công!", "success");
-      onCreated();
+      setTimeout(onCreated, 900);
     } catch (err) {
       localToast(
         err instanceof Error ? err.message : "Tạo mùa vụ thất bại.",
         "error",
       );
-    } finally {
-      setSubmitting(false);
+      setSubmitting(false); // re-enable only on error so user can retry
     }
   };
 
@@ -1502,7 +1529,7 @@ function CreateSeasonView({
           <div className="flex items-center gap-2 ml-12">
             {[
               { n: 1, label: "Thông tin cơ bản" },
-              { n: 2, label: "Thu hoạch" },
+              { n: 2, label: "Vụ Thu hoạch" },
             ].map((s, i) => (
               <React.Fragment key={s.n}>
                 <div
@@ -1806,7 +1833,7 @@ function CreateSeasonView({
               Quay lại
             </Button>
             <div className="flex items-center gap-3">
-              <Button variant="ghost" onClick={onCreated} disabled={submitting}>
+              <Button variant="ghost" onClick={handleSkip} loading={submitting}>
                 Bỏ qua (tạo sau)
               </Button>
               <Button

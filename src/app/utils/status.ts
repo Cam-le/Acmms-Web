@@ -229,6 +229,43 @@ export function seasonStatusLabel(s: string | null | undefined): string {
   }
 }
 
+// ─── Harvest status ───────────────────────────────────────────────────────
+// Backend values: planned, growing, harvesting, completed, cancelled
+
+export function harvestStatusTone(s: string | null | undefined): BadgeTone {
+  switch (normaliseEnum(s)) {
+    case "planned":
+      return "neutral";
+    case "growing":
+      return "info";
+    case "harvesting":
+      return "warning";
+    case "completed":
+      return "success";
+    case "cancelled":
+      return "danger";
+    default:
+      return "neutral";
+  }
+}
+
+export function harvestStatusLabel(s: string | null | undefined): string {
+  switch (normaliseEnum(s)) {
+    case "planned":
+      return "Lên kế hoạch";
+    case "growing":
+      return "Đang trồng";
+    case "harvesting":
+      return "Đang thu hoạch";
+    case "completed":
+      return "Đã thu hoạch";
+    case "cancelled":
+      return "Đã hủy";
+    default:
+      return s ?? "—";
+  }
+}
+
 // ─── Soil compatibility ───────────────────────────────────────────────────
 // Backend values (per CropsPage): high/medium/low or good/average/poor
 
