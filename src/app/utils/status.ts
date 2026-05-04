@@ -4,8 +4,6 @@
  * Centralises status normalisation that was previously scattered across pages.
  * Each domain has 2 helpers: `xxxStatusTone()` and `xxxStatusLabel()`.
  *
- * Spec: FRONTEND_REFACTOR_PLAN.md §6.6
- *
  * Convention: backend stores English enum values ("Active"/"Inactive",
  * "SENT_TO_OWNER", etc). This file produces (a) a tone for visual styling
  * and (b) a Vietnamese label for display. Pages should use these — never
@@ -226,6 +224,43 @@ export function seasonStatusLabel(s: string | null | undefined): string {
     case "closed":
     case "đã kết thúc":
       return "Đã kết thúc";
+    default:
+      return s ?? "—";
+  }
+}
+
+// ─── Harvest status ───────────────────────────────────────────────────────
+// Backend values: planned, growing, harvesting, completed, cancelled
+
+export function harvestStatusTone(s: string | null | undefined): BadgeTone {
+  switch (normaliseEnum(s)) {
+    case "planned":
+      return "neutral";
+    case "growing":
+      return "info";
+    case "harvesting":
+      return "warning";
+    case "completed":
+      return "success";
+    case "cancelled":
+      return "danger";
+    default:
+      return "neutral";
+  }
+}
+
+export function harvestStatusLabel(s: string | null | undefined): string {
+  switch (normaliseEnum(s)) {
+    case "planned":
+      return "Lên kế hoạch";
+    case "growing":
+      return "Đang trồng";
+    case "harvesting":
+      return "Đang thu hoạch";
+    case "completed":
+      return "Đã thu hoạch";
+    case "cancelled":
+      return "Đã hủy";
     default:
       return s ?? "—";
   }
