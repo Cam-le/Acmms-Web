@@ -1,7 +1,10 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router";
-import { Eye, EyeOff, Loader2, Wifi } from "lucide-react";
+import { Eye, EyeOff, Wifi } from "lucide-react";
 import { apiRegister } from "../../api/auth";
+import { Button } from "../components/ui/Button";
+import { FormField } from "../components/ui/FormField";
+import { FormSelect } from "../components/ui/FormSelect";
 
 export function RegisterPage() {
   const navigate = useNavigate();
@@ -19,10 +22,9 @@ export function RegisterPage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
 
-  const set =
-    (field: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => {
-      setForm((prev) => ({ ...prev, [field]: e.target.value }));
-    };
+  const setField = (field: keyof typeof form) => (value: string) => {
+    setForm((prev) => ({ ...prev, [field]: value }));
+  };
 
   const validate = (): string => {
     if (
@@ -76,11 +78,11 @@ export function RegisterPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#f1f5f9] p-4 font-sans">
-      <div className="bg-white p-8 rounded-[20px] shadow-lg w-full max-w-[420px] border border-[#e2e8f0]">
+    <div className="min-h-screen flex items-center justify-center bg-surface-subtle p-4 font-sans">
+      <div className="bg-surface p-8 rounded-modal shadow-modal w-full max-w-[420px] border border-border">
         {/* Header */}
         <div className="text-center mb-6">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-[#009689] rounded-[16px] mb-4 text-white">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-primary rounded-card mb-4 text-primary-fg">
             <svg
               viewBox="0 0 24 24"
               fill="none"
@@ -95,149 +97,109 @@ export function RegisterPage() {
               />
             </svg>
           </div>
-          <h1 className="text-2xl font-bold text-[#115e59] mb-1">ACMMS</h1>
-          <p className="text-[#64748b] text-sm">Tạo tài khoản mới</p>
+          {/* §10.1 resolved — brand name is CMMS */}
+          <h1 className="text-2xl font-bold text-primary-700 mb-1">CMMS</h1>
+          <p className="text-ink-500 text-sm">Tạo tài khoản mới</p>
         </div>
 
         <form onSubmit={handleRegister} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-[#45556c] mb-1">
-              Họ và tên
-            </label>
-            <input
-              type="text"
-              value={form.fullname}
-              onChange={set("fullname")}
-              className="w-full px-4 py-3 rounded-[10px] border border-[#cbd5e1] focus:outline-none focus:ring-2 focus:ring-[#009689] focus:border-transparent transition-all text-[#334155]"
-              placeholder="Nguyễn Văn A"
-              disabled={loading}
-            />
-          </div>
+          <FormField
+            label="Họ và tên"
+            value={form.fullname}
+            onChange={setField("fullname")}
+            placeholder="Nguyễn Văn A"
+            disabled={loading}
+          />
 
-          <div>
-            <label className="block text-sm font-medium text-[#45556c] mb-1">
-              Email
-            </label>
-            <input
-              type="email"
-              value={form.email}
-              onChange={set("email")}
-              className="w-full px-4 py-3 rounded-[10px] border border-[#cbd5e1] focus:outline-none focus:ring-2 focus:ring-[#009689] focus:border-transparent transition-all text-[#334155]"
-              placeholder="ten@farm.com"
-              disabled={loading}
-            />
-          </div>
+          <FormField
+            label="Email"
+            type="email"
+            value={form.email}
+            onChange={setField("email")}
+            placeholder="ten@farm.com"
+            disabled={loading}
+          />
 
-          <div>
-            <label className="block text-sm font-medium text-[#45556c] mb-1">
-              Số điện thoại
-            </label>
-            <input
-              type="tel"
-              value={form.phoneNumber}
-              onChange={set("phoneNumber")}
-              className="w-full px-4 py-3 rounded-[10px] border border-[#cbd5e1] focus:outline-none focus:ring-2 focus:ring-[#009689] focus:border-transparent transition-all text-[#334155]"
-              placeholder="0909998877"
-              disabled={loading}
-            />
-          </div>
+          <FormField
+            label="Số điện thoại"
+            type="tel"
+            value={form.phoneNumber}
+            onChange={setField("phoneNumber")}
+            placeholder="0909998877"
+            disabled={loading}
+          />
 
-          <div>
-            <label className="block text-sm font-medium text-[#45556c] mb-1">
-              Vai trò
-            </label>
-            <select
-              value={form.targetRole}
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, targetRole: e.target.value }))
-              }
-              disabled={loading}
-              className="w-full px-4 py-3 rounded-[10px] border border-[#cbd5e1] focus:outline-none focus:ring-2 focus:ring-[#009689] focus:border-transparent transition-all text-[#334155] bg-white appearance-none cursor-pointer"
-            >
-              <option value="Worker">Nhân viên</option>
-              <option value="Specialist">Chuyên gia nông nghiệp</option>
-            </select>
-          </div>
+          <FormSelect
+            label="Vai trò"
+            value={form.targetRole}
+            onChange={setField("targetRole")}
+            disabled={loading}
+            options={[
+              { value: "Worker", label: "Nhân viên" },
+              { value: "Specialist", label: "Chuyên gia nông nghiệp" },
+            ]}
+          />
 
-          <div>
-            <label className="block text-sm font-medium text-[#45556c] mb-1">
-              Mật khẩu
-            </label>
-            <div className="relative">
-              <input
-                type={showPassword ? "text" : "password"}
-                value={form.password}
-                onChange={set("password")}
-                className="w-full px-4 py-3 rounded-[10px] border border-[#cbd5e1] focus:outline-none focus:ring-2 focus:ring-[#009689] focus:border-transparent transition-all text-[#334155]"
-                placeholder="••••••••"
-                disabled={loading}
-              />
+          <FormField
+            label="Mật khẩu"
+            type={showPassword ? "text" : "password"}
+            value={form.password}
+            onChange={setField("password")}
+            placeholder="••••••••"
+            disabled={loading}
+            trailingAddon={
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-[#94a3b8] hover:text-[#64748b]"
+                className="h-full px-3 text-ink-400 hover:text-ink-600 flex items-center"
+                tabIndex={-1}
               >
-                {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
-            </div>
-          </div>
+            }
+          />
 
-          <div>
-            <label className="block text-sm font-medium text-[#45556c] mb-1">
-              Xác nhận mật khẩu
-            </label>
-            <div className="relative">
-              <input
-                type={showConfirm ? "text" : "password"}
-                value={form.confirmPassword}
-                onChange={set("confirmPassword")}
-                className="w-full px-4 py-3 rounded-[10px] border border-[#cbd5e1] focus:outline-none focus:ring-2 focus:ring-[#009689] focus:border-transparent transition-all text-[#334155]"
-                placeholder="••••••••"
-                disabled={loading}
-              />
+          <FormField
+            label="Xác nhận mật khẩu"
+            type={showConfirm ? "text" : "password"}
+            value={form.confirmPassword}
+            onChange={setField("confirmPassword")}
+            placeholder="••••••••"
+            disabled={loading}
+            trailingAddon={
               <button
                 type="button"
                 onClick={() => setShowConfirm(!showConfirm)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-[#94a3b8] hover:text-[#64748b]"
+                className="h-full px-3 text-ink-400 hover:text-ink-600 flex items-center"
+                tabIndex={-1}
               >
-                {showConfirm ? <EyeOff size={20} /> : <Eye size={20} />}
+                {showConfirm ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
-            </div>
-          </div>
+            }
+          />
 
           {error && (
-            <div className="p-3 bg-red-50 text-red-600 text-sm rounded-lg">
+            <div className="p-3 bg-status-danger-bg text-status-danger-fg text-sm rounded-btn">
               {error}
             </div>
           )}
 
           {success && (
-            <div className="p-3 bg-green-50 text-green-700 text-sm rounded-lg flex items-center gap-2">
+            <div className="p-3 bg-status-success-bg text-status-success-fg text-sm rounded-btn flex items-center gap-2">
               <Wifi size={16} /> Đăng ký thành công! Đang chuyển hướng...
             </div>
           )}
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-[#009689] hover:bg-[#0f766e] text-white font-medium py-3 rounded-[10px] transition-colors flex items-center justify-center gap-2"
-          >
-            {loading ? (
-              <>
-                <Loader2 className="animate-spin" size={18} />
-                Đang tạo tài khoản...
-              </>
-            ) : (
-              "Đăng ký"
-            )}
-          </button>
+          <Button type="submit" fullWidth loading={loading}>
+            Đăng ký
+          </Button>
         </form>
 
-        <p className="text-center text-sm text-[#64748b] mt-6">
+        <p className="text-center text-sm text-ink-500 mt-6">
           Đã có tài khoản?{" "}
           <Link
             to="/login"
-            className="text-[#009689] hover:underline font-medium"
+            className="text-primary hover:underline font-medium"
           >
             Đăng nhập
           </Link>
