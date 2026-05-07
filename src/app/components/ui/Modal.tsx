@@ -97,7 +97,7 @@ export function Modal({
       <Dialog.Portal>
         <Dialog.Overlay className={`fixed inset-0 bg-black/50 ${overlayZ}`} />
         <Dialog.Content
-          className={`fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-surface rounded-modal shadow-modal w-full ${SIZE_CLASS[size]} ${contentZ} flex flex-col max-h-[90vh] overflow-hidden`}
+          className={`fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-surface rounded-modal shadow-modal w-[calc(100%-2rem)] ${SIZE_CLASS[size]} ${contentZ} flex flex-col max-h-[90vh] overflow-hidden`}
         >
           {/*
             Single sr-only Description — Radix warns if missing. Visible

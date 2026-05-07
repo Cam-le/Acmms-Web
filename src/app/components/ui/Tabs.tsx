@@ -20,7 +20,7 @@ export function Tabs<T extends string>({
 }: TabsProps<T>) {
   return (
     <div
-      className="inline-flex gap-1 bg-surface-subtle p-1 rounded-btn"
+      className="flex flex-wrap gap-1 bg-surface-subtle p-1 rounded-btn w-fit max-w-full"
       role="tablist"
     >
       {tabs.map((tab) => {

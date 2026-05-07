@@ -2540,7 +2540,7 @@ function AutoBedModal({
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-[#115e59] mb-2">
-                          Hàng/luống
+                          Số hàng trên luống
                         </label>
                         <input
                           type="number"
