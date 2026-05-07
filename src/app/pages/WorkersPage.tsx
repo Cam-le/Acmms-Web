@@ -1,25 +1,17 @@
 import { useState, useEffect, useCallback } from "react";
 import {
-  Search,
-  Plus,
-  Eye,
-  Edit,
-  Trash2,
-  X,
-  Loader2,
   Users,
+  Plus,
+  ArrowUpDown,
   ChevronUp,
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-  ArrowUpDown,
   AlertCircle,
   UserCheck,
   CheckCircle,
   Clock,
+  Trash2,
+  Loader2,
 } from "lucide-react";
-import * as Dialog from "@radix-ui/react-dialog";
-import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import {
   api,
   UserResponse,
@@ -27,7 +19,29 @@ import {
   UnassignedStaff,
 } from "../../api/client";
 
-// Local row type — status matches API values directly ("Active" | "Inactive")
+import { useToast } from "../components/ui/useToast";
+import { ToastContainer } from "../components/ui/ToastContainer";
+import { useCrudModals } from "../hooks/useCrudModals";
+import { usePagination } from "../hooks/usePagination";
+import { useTableSort } from "../hooks/useTableSort";
+import { workerStatusTone, workerStatusLabel } from "../utils/status";
+
+import { PageHeader } from "../components/ui/PageHeader";
+import { Button } from "../components/ui/Button";
+import { Tabs } from "../components/ui/Tabs";
+import { SearchInput } from "../components/ui/SearchInput";
+import { FormField } from "../components/ui/FormField";
+import { FormSelect } from "../components/ui/FormSelect";
+import { Modal } from "../components/ui/Modal";
+import { ConfirmDialog } from "../components/ui/ConfirmDialog";
+import { StatusBadge } from "../components/ui/StatusBadge";
+import { Pagination } from "../components/ui/Pagination";
+import { RowActions } from "../components/ui/RowActions";
+import { LoadingState } from "../components/ui/LoadingState";
+import { EmptyState } from "../components/ui/EmptyState";
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
 type WorkerStatus = "Active" | "Inactive";
 
 interface WorkerRow {
@@ -37,10 +51,18 @@ interface WorkerRow {
   phone: string;
   role: string;
   status: WorkerStatus;
-  dateJoined: string;
+  dateJoined: string; // already formatted vi-VN on map
+  dateJoinedRaw: string; // ISO for sort
 }
 
-// Map API UserResponse → local WorkerRow shape
+const PAGE_SIZE = 5;
+
+const ROLE_LABEL: Record<string, string> = {
+  Worker: "Nhân viên",
+  Specialist: "Chuyên gia",
+};
+const getRoleLabel = (role: string) => ROLE_LABEL[role] ?? role;
+
 function mapUser(u: UserResponse): WorkerRow {
   const s =
     u.status?.charAt(0).toUpperCase() +
@@ -55,28 +77,12 @@ function mapUser(u: UserResponse): WorkerRow {
     dateJoined: u.createdAt
       ? new Date(u.createdAt).toLocaleDateString("vi-VN")
       : "",
+    dateJoinedRaw: u.createdAt ?? "",
   };
 }
 
-const getStatusBadgeColor = (status: WorkerStatus) =>
-  status === "Active"
-    ? "bg-[#dcfce7] text-[#008236]"
-    : "bg-[#fee2e2] text-[#991b1b]";
+// ─── Validation ───────────────────────────────────────────────────────────────
 
-const STATUS_LABEL: Record<WorkerStatus, string> = {
-  Active: "Hoạt động",
-  Inactive: "Không hoạt động",
-};
-
-const ROLE_LABEL: Record<string, string> = {
-  Worker: "Nhân viên",
-  Specialist: "Chuyên gia",
-};
-const getRoleLabel = (role: string) => ROLE_LABEL[role] ?? role;
-
-const PAGE_SIZE = 5;
-
-// ── Form validation helpers ──────────────────────────────────────────────────
 interface FormErrors {
   name?: string;
   email?: string;
@@ -89,13 +95,11 @@ function validateForm(
   availableRoles: RoleResponse[],
 ): FormErrors {
   const errors: FormErrors = {};
-
   if (!formData.name.trim()) {
     errors.name = "Vui lòng nhập họ và tên";
   } else if (formData.name.trim().length > 255) {
     errors.name = "Họ và tên không được quá 255 ký tự";
   }
-
   if (!formData.email.trim()) {
     errors.email = "Vui lòng nhập email";
   } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim())) {
@@ -103,13 +107,11 @@ function validateForm(
   } else if (formData.email.trim().length > 255) {
     errors.email = "Email không được quá 255 ký tự";
   }
-
   if (!formData.phone.trim()) {
     errors.phone = "Vui lòng nhập số điện thoại";
   } else if (!/^0\d{9}$/.test(formData.phone.trim())) {
     errors.phone = "Số điện thoại phải gồm 10 chữ số, bắt đầu bằng 0";
   }
-
   if (!formData.role) {
     errors.role = "Vui lòng chọn vai trò";
   } else if (
@@ -118,43 +120,21 @@ function validateForm(
   ) {
     errors.role = "Vai trò không hợp lệ";
   }
-
   return errors;
 }
 
+// ─── Main Component ───────────────────────────────────────────────────────────
+
 export function WorkersPage() {
+  const { toasts, showToast, dismissToast } = useToast();
+
+  // ── Data ──
   const [workers, setWorkers] = useState<WorkerRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [filterRole, setFilterRole] = useState<string>("all");
-  const [sortField, setSortField] = useState<"dateJoined" | "status" | null>(
-    null,
-  );
-  const [page, setPage] = useState(1);
-  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [isViewModalOpen, setIsViewModalOpen] = useState(false);
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [selectedWorker, setSelectedWorker] = useState<WorkerRow | null>(null);
-  const [workerToDelete, setWorkerToDelete] = useState<WorkerRow | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-  const [formErrors, setFormErrors] = useState<FormErrors>({});
-  const [apiError, setApiError] = useState<string | null>(null);
-
   const [apiRoles, setApiRoles] = useState<RoleResponse[]>([]);
   const [rolesLoaded, setRolesLoaded] = useState(false);
 
-  const [formData, setFormData] = useState({
-    name: "",
-    email: "",
-    phone: "",
-    role: "",
-    status: "Active" as WorkerStatus,
-  });
-
-  // ── Pending accounts tab ──
-  const [activeTab, setActiveTab] = useState<"staff" | "pending">("staff");
+  // ── Pending accounts ──
   const [pending, setPending] = useState<UnassignedStaff[]>([]);
   const [pendingLoading, setPendingLoading] = useState(false);
   const [approvingId, setApprovingId] = useState<string | null>(null);
@@ -166,24 +146,38 @@ export function WorkersPage() {
     Record<string, string>
   >({});
 
-  const availableRoleNames: string[] = apiRoles.map((r) => r.roleName);
+  // ── UI state ──
+  const [activeTab, setActiveTab] = useState<"staff" | "pending">("staff");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filterRole, setFilterRole] = useState("all");
+  const [submitting, setSubmitting] = useState(false);
+  const [formErrors, setFormErrors] = useState<FormErrors>({});
+  const [apiError, setApiError] = useState<string | null>(null);
 
-  // ── Load roles ──
+  const modals = useCrudModals<WorkerRow>();
+
+  const [formData, setFormData] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    role: "",
+    status: "Active" as WorkerStatus,
+  });
+
+  // ── Loaders ──
   const loadRoles = useCallback(async () => {
     try {
       const data = await api.getRoles();
-      const nonOwner = (data ?? []).filter(
-        (r) => r.roleName.toLowerCase() !== "owner",
+      setApiRoles(
+        (data ?? []).filter((r) => r.roleName.toLowerCase() !== "owner"),
       );
-      setApiRoles(nonOwner);
     } catch {
-      // roles stay empty; form will show warning
+      // form will show warning
     } finally {
       setRolesLoaded(true);
     }
   }, []);
 
-  // ── Load workers ──
   const loadWorkers = useCallback(async () => {
     setLoading(true);
     try {
@@ -194,7 +188,6 @@ export function WorkersPage() {
     }
   }, []);
 
-  // ── Load pending ──
   const loadPending = useCallback(async () => {
     setPendingLoading(true);
     try {
@@ -213,74 +206,55 @@ export function WorkersPage() {
     loadPending();
   }, [loadRoles, loadWorkers, loadPending]);
 
-  // ── Helpers ──
-  const getRoleId = (roleName: string): string | undefined => {
-    return apiRoles.find((r) => r.roleName === roleName)?.roleId;
-  };
-
-  const handleSort = (field: "dateJoined" | "status") => {
-    if (sortField === field)
-      setSortDirection((d) => (d === "asc" ? "desc" : "asc"));
-    else {
-      setSortField(field);
-      setSortDirection("asc");
-    }
-    setPage(1);
-  };
-
-  const filteredWorkers = workers
-    .filter((w) => {
-      const term = searchTerm.toLowerCase();
-      const matchSearch =
-        w.name.toLowerCase().includes(term) ||
-        w.email.toLowerCase().includes(term) ||
-        w.phone.includes(searchTerm) ||
-        w.role.toLowerCase().includes(term);
-      const matchRole = filterRole === "all" || w.role === filterRole;
-      return matchSearch && matchRole;
-    })
-    .sort((a, b) => {
-      // Parse dd/MM/yyyy → timestamp
-      const parseDate = (d: string) =>
-        d ? new Date(d.split("/").reverse().join("-")).getTime() : 0;
-
-      // When user explicitly sorts by status
-      if (sortField === "status") {
+  // ── Sort ──
+  const sort = useTableSort(workers, {
+    dateJoined: {
+      compare: (a, b) => {
+        const toMs = (d: string) =>
+          d ? new Date(d.split("/").reverse().join("-")).getTime() : 0;
+        return toMs(a.dateJoined) - toMs(b.dateJoined);
+      },
+    },
+    status: {
+      compare: (a, b) => {
         const order: Record<WorkerStatus, number> = { Active: 1, Inactive: 2 };
-        return sortDirection === "asc"
-          ? order[a.status] - order[b.status]
-          : order[b.status] - order[a.status];
-      }
+        return order[a.status] - order[b.status];
+      },
+    },
+  });
 
-      // Default (no explicit sort) or explicit dateJoined sort:
-      // newest at bottom = ascending by date
-      const da = parseDate(a.dateJoined);
-      const db = parseDate(b.dateJoined);
-      const dir = sortField === "dateJoined" ? sortDirection : "asc";
-      return dir === "asc" ? da - db : db - da;
-    });
+  // ── Filter (applied after sort) ──
+  const filteredWorkers = sort.sortedItems.filter((w) => {
+    const term = searchTerm.toLowerCase();
+    const matchSearch =
+      w.name.toLowerCase().includes(term) ||
+      w.email.toLowerCase().includes(term) ||
+      w.phone.includes(searchTerm) ||
+      w.role.toLowerCase().includes(term);
+    const matchRole = filterRole === "all" || w.role === filterRole;
+    return matchSearch && matchRole;
+  });
 
-  const totalPages = Math.max(1, Math.ceil(filteredWorkers.length / PAGE_SIZE));
-  const currentPage = Math.min(page, totalPages);
-  const pagedWorkers = filteredWorkers.slice(
-    (currentPage - 1) * PAGE_SIZE,
-    currentPage * PAGE_SIZE,
-  );
+  const pagination = usePagination(filteredWorkers, PAGE_SIZE);
 
-  const defaultRole = availableRoleNames[0] ?? "";
+  // ── Helpers ──
+  const availableRoleNames = apiRoles.map((r) => r.roleName);
+  const getRoleId = (roleName: string) =>
+    apiRoles.find((r) => r.roleName === roleName)?.roleId;
 
-  const resetForm = () => {
+  const resetForm = useCallback(() => {
     setFormData({
       name: "",
       email: "",
       phone: "",
-      role: defaultRole,
+      role: availableRoleNames[0] ?? "",
       status: "Active",
     });
     setFormErrors({});
     setApiError(null);
-  };
+  }, [availableRoleNames]);
 
+  // ── CRUD handlers ──
   const handleAddWorker = async () => {
     setApiError(null);
     const errors = validateForm(formData, apiRoles);
@@ -292,7 +266,6 @@ export function WorkersPage() {
       const roleId = getRoleId(formData.role);
       if (!roleId) {
         setApiError("Không tìm thấy ID vai trò. Vui lòng thử tải lại trang.");
-        setSubmitting(false);
         return;
       }
       await api.createStaff({
@@ -304,75 +277,12 @@ export function WorkersPage() {
         roleId,
       });
       await loadWorkers();
-      setIsAddModalOpen(false);
+      modals.closeCreate();
       resetForm();
+      showToast("Thêm nhân viên thành công", "success");
     } catch (err) {
-      const msg =
-        err instanceof Error ? err.message : "Đã xảy ra lỗi không xác định";
-      setApiError("Không thể tạo nhân viên: " + msg);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleEditWorker = async () => {
-    if (!selectedWorker) return;
-    setApiError(null);
-    const errors = validateForm(formData, apiRoles);
-    setFormErrors(errors);
-    if (Object.keys(errors).length > 0) return;
-
-    const roleChanged = formData.role !== selectedWorker.role;
-    const infoChanged =
-      formData.name.trim() !== selectedWorker.name ||
-      formData.email.trim() !== selectedWorker.email ||
-      formData.phone.trim() !== selectedWorker.phone ||
-      formData.status !== selectedWorker.status;
-
-    if (!roleChanged && !infoChanged) {
-      setIsEditModalOpen(false);
-      resetForm();
-      return;
-    }
-
-    setSubmitting(true);
-    try {
-      if (infoChanged) {
-        await api.updateStaff(selectedWorker.id, {
-          email: formData.email.trim(),
-          fullname: formData.name.trim(),
-          phoneNumber: formData.phone.trim(),
-          status: formData.status,
-        });
-      }
-
-      if (roleChanged) {
-        await api.assignStaffRole(selectedWorker.id, formData.role);
-      }
-
-      await loadWorkers();
-      setIsEditModalOpen(false);
-      resetForm();
-    } catch (err) {
-      const msg =
-        err instanceof Error ? err.message : "Đã xảy ra lỗi không xác định";
-      setApiError("Không thể cập nhật: " + msg);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleDeleteWorker = async () => {
-    if (!workerToDelete) return;
-    setSubmitting(true);
-    try {
-      await api.deleteStaff(workerToDelete.id);
-      setWorkers((prev) => prev.filter((w) => w.id !== workerToDelete.id));
-      setIsDeleteDialogOpen(false);
-      setWorkerToDelete(null);
-    } catch (err) {
-      alert(
-        "Không thể xóa: " +
+      setApiError(
+        "Không thể tạo nhân viên: " +
           (err instanceof Error ? err.message : "Đã xảy ra lỗi"),
       );
     } finally {
@@ -380,29 +290,73 @@ export function WorkersPage() {
     }
   };
 
-  const openViewModal = (w: WorkerRow) => {
-    setSelectedWorker(w);
-    setIsViewModalOpen(true);
-  };
-  const openEditModal = (w: WorkerRow) => {
-    setSelectedWorker(w);
-    setFormData({
-      name: w.name,
-      email: w.email,
-      phone: w.phone,
-      role: w.role,
-      status: w.status,
-    });
-    setFormErrors({});
+  const handleEditWorker = async () => {
+    if (!modals.editItem) return;
     setApiError(null);
-    setIsEditModalOpen(true);
-  };
-  const openDeleteDialog = (w: WorkerRow) => {
-    setWorkerToDelete(w);
-    setIsDeleteDialogOpen(true);
+    const errors = validateForm(formData, apiRoles);
+    setFormErrors(errors);
+    if (Object.keys(errors).length > 0) return;
+
+    const roleChanged = formData.role !== modals.editItem.role;
+    const infoChanged =
+      formData.name.trim() !== modals.editItem.name ||
+      formData.email.trim() !== modals.editItem.email ||
+      formData.phone.trim() !== modals.editItem.phone ||
+      formData.status !== modals.editItem.status;
+
+    if (!roleChanged && !infoChanged) {
+      modals.closeEdit();
+      resetForm();
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      if (infoChanged) {
+        await api.updateStaff(modals.editItem.id, {
+          email: formData.email.trim(),
+          fullname: formData.name.trim(),
+          phoneNumber: formData.phone.trim(),
+          status: formData.status,
+        });
+      }
+      if (roleChanged) {
+        await api.assignStaffRole(modals.editItem.id, formData.role);
+      }
+      await loadWorkers();
+      modals.closeEdit();
+      resetForm();
+      showToast("Cập nhật nhân viên thành công", "success");
+    } catch (err) {
+      setApiError(
+        "Không thể cập nhật: " +
+          (err instanceof Error ? err.message : "Đã xảy ra lỗi"),
+      );
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  // ── Pending: approve ──
+  const handleDeleteWorker = async () => {
+    if (!modals.deleteItem) return;
+    setSubmitting(true);
+    try {
+      await api.deleteStaff(modals.deleteItem.id);
+      setWorkers((prev) => prev.filter((w) => w.id !== modals.deleteItem!.id));
+      modals.closeDelete();
+      showToast("Xóa nhân viên thành công", "success");
+    } catch (err) {
+      showToast(
+        "Không thể xóa: " +
+          (err instanceof Error ? err.message : "Đã xảy ra lỗi"),
+        "error",
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // ── Pending handlers ──
   const handleApprovePending = async (staff: UnassignedStaff) => {
     if (!staff.requestedRole) {
       setPendingRowError((p) => ({
@@ -420,6 +374,7 @@ export function WorkersPage() {
     try {
       await api.assignStaffRole(staff.userId, staff.requestedRole);
       await Promise.all([loadPending(), loadWorkers()]);
+      showToast("Duyệt tài khoản thành công", "success");
     } catch (err) {
       setPendingRowError((p) => ({
         ...p,
@@ -431,13 +386,13 @@ export function WorkersPage() {
     }
   };
 
-  // ── Pending: reject ──
   const handleRejectPending = async () => {
     if (!rejectTarget) return;
     setRejectSubmitting(true);
     try {
       await api.deleteStaff(rejectTarget.userId);
       await loadPending();
+      showToast("Đã từ chối tài khoản", "success");
     } catch (err) {
       setPendingRowError((p) => ({
         ...p,
@@ -450,208 +405,318 @@ export function WorkersPage() {
     }
   };
 
-  // ==================== RENDER ====================
+  // ── Sort header helper ──
+  type SortKey = "dateJoined" | "status";
+  function SortIcon({ field }: { field: SortKey }) {
+    if (sort.sortField !== field)
+      return <ArrowUpDown className="w-3.5 h-3.5 text-ink-400" />;
+    return sort.sortDirection === "asc" ? (
+      <ChevronUp className="w-3.5 h-3.5 text-primary" />
+    ) : (
+      <ChevronDown className="w-3.5 h-3.5 text-primary" />
+    );
+  }
+
+  // ─── Render ───────────────────────────────────────────────────────────────
+
   return (
     <div className="p-6 flex flex-col gap-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-[#009689] rounded-[10px] flex items-center justify-center">
-            <Users className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold text-[#115e59]">Nhân Viên</h1>
-            <p className="text-sm text-[#62748e]">
-              Quản lý danh sách nhân viên
-            </p>
-          </div>
-        </div>
-        <button
-          onClick={() => {
-            resetForm();
-            setIsAddModalOpen(true);
-          }}
-          className="flex items-center gap-2 px-4 py-2 bg-[#009689] text-white rounded-lg hover:bg-[#007f75] transition-colors text-sm font-medium"
-        >
-          <Plus className="w-4 h-4" /> Thêm nhân viên
-        </button>
-      </div>
+      <PageHeader
+        icon={Users}
+        title="Nhân Viên"
+        subtitle="Quản lý danh sách nhân viên"
+        actions={
+          <Button
+            leadingIcon={Plus}
+            onClick={() => {
+              resetForm();
+              modals.openCreate();
+            }}
+          >
+            Thêm nhân viên
+          </Button>
+        }
+      />
 
       {/* Tabs */}
-      <div className="flex gap-1 bg-[#f1f5f9] p-1 rounded-lg w-fit">
-        <button
-          onClick={() => setActiveTab("staff")}
-          className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-            activeTab === "staff"
-              ? "bg-white text-[#115e59] shadow-sm"
-              : "text-[#62748e] hover:text-[#334155]"
-          }`}
-        >
-          <Users className="w-4 h-4" />
-          Nhân viên
-        </button>
-        <button
-          onClick={() => setActiveTab("pending")}
-          className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-            activeTab === "pending"
-              ? "bg-white text-[#115e59] shadow-sm"
-              : "text-[#62748e] hover:text-[#334155]"
-          }`}
-        >
-          <UserCheck className="w-4 h-4" />
-          Chờ duyệt
-          {pending.length > 0 && (
-            <span className="ml-0.5 px-1.5 py-0.5 bg-[#009689] text-white text-xs rounded-full leading-none">
-              {pending.length}
-            </span>
-          )}
-        </button>
-      </div>
+      <Tabs
+        value={activeTab}
+        onChange={setActiveTab}
+        tabs={[
+          { value: "staff", label: "Nhân viên", icon: Users },
+          {
+            value: "pending",
+            label: "Chờ duyệt",
+            icon: UserCheck,
+            badge: pending.length > 0 ? pending.length : undefined,
+          },
+        ]}
+      />
 
-      {/* Table + Filters */}
+      {/* ===== STAFF TAB ===== */}
       {activeTab === "staff" ? (
-        <div className="flex flex-col gap-0">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#94a3b8]" />
-              <input
-                value={searchTerm}
-                onChange={(e) => {
-                  setSearchTerm(e.target.value);
-                  setPage(1);
-                }}
-                placeholder="Tìm kiếm nhân viên..."
-                className="w-full pl-9 pr-4 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689]"
-              />
-            </div>
-            <select
-              value={filterRole}
-              onChange={(e) => {
-                setFilterRole(e.target.value);
-                setPage(1);
+        <div className="flex flex-col gap-3">
+          {/* Filters — flex-wrap so select drops below search on narrow viewports */}
+          <div className="flex items-center gap-3 flex-wrap">
+            <SearchInput
+              value={searchTerm}
+              onChange={(v) => {
+                setSearchTerm(v);
+                pagination.reset();
               }}
-              className="px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] bg-white text-[#334155] shrink-0"
-            >
-              <option value="all">Tất cả vai trò</option>
-              {availableRoleNames.map((r) => (
-                <option key={r} value={r}>
-                  {getRoleLabel(r)}
-                </option>
-              ))}
-            </select>
+              placeholder="Tìm kiếm nhân viên..."
+              className="flex-1 min-w-[160px]"
+            />
+            <div className="shrink-0">
+              <select
+                value={filterRole}
+                onChange={(e) => {
+                  setFilterRole(e.target.value);
+                  pagination.reset();
+                }}
+                className="h-[42px] pl-3 pr-9 py-2.5 border border-border-strong rounded-btn text-sm text-ink-700 bg-surface focus:outline-none focus:ring-2 focus:ring-primary appearance-none cursor-pointer"
+                style={{
+                  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%2362748e'%3E%3Cpath fill-rule='evenodd' d='M5.23 7.21a.75.75 0 011.06.02L10 11.06l3.71-3.83a.75.75 0 111.08 1.04l-4.25 4.39a.75.75 0 01-1.08 0L5.21 8.27a.75.75 0 01.02-1.06z' clip-rule='evenodd'/%3E%3C/svg%3E")`,
+                  backgroundRepeat: "no-repeat",
+                  backgroundPosition: "right 0.625rem center",
+                  backgroundSize: "1rem 1rem",
+                }}
+              >
+                <option value="all">Tất cả vai trò</option>
+                {availableRoleNames.map((r) => (
+                  <option key={r} value={r}>
+                    {getRoleLabel(r)}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
-          {/* Table */}
-          <div className="bg-white rounded-xl border border-[#e2e8f0] shadow-sm overflow-hidden">
+          {/* Table — overflow-x-auto on inner wrapper so card border-radius is preserved */}
+          <div className="bg-surface rounded-card border border-border shadow-card">
             {loading ? (
-              <div className="flex items-center justify-center py-16">
-                <Loader2 className="w-6 h-6 animate-spin text-[#009689]" />
-              </div>
+              <LoadingState />
             ) : filteredWorkers.length === 0 ? (
-              <div className="text-center py-16 text-[#62748e]">
-                Không tìm thấy nhân viên nào
-              </div>
+              <EmptyState message="Không tìm thấy nhân viên nào" />
             ) : (
-              <table className="w-full">
-                <thead className="bg-[#f8fafc] border-b border-[#e2e8f0]">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[700px]">
+                  <thead className="bg-surface-alt border-b border-border">
+                    <tr>
+                      {["Nhân viên", "Email", "SĐT", "Vai trò"].map((h) => (
+                        <th
+                          key={h}
+                          className="px-6 py-4 text-left text-xs font-bold text-ink-500 uppercase tracking-wider"
+                        >
+                          {h}
+                        </th>
+                      ))}
+                      <th className="px-6 py-4 text-left text-xs font-bold text-ink-500 uppercase tracking-wider">
+                        <button
+                          onClick={() => sort.toggle("dateJoined")}
+                          className="flex items-center gap-1 hover:text-primary"
+                        >
+                          Ngày tham gia <SortIcon field="dateJoined" />
+                        </button>
+                      </th>
+                      <th className="px-6 py-4 text-left text-xs font-bold text-ink-500 uppercase tracking-wider">
+                        <button
+                          onClick={() => sort.toggle("status")}
+                          className="flex items-center gap-1 hover:text-primary"
+                        >
+                          Trạng thái <SortIcon field="status" />
+                        </button>
+                      </th>
+                      <th className="px-6 py-4 text-left text-xs font-bold text-ink-500 uppercase tracking-wider">
+                        Thao tác
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {pagination.pagedItems.map((worker) => (
+                      <tr
+                        key={worker.id}
+                        className="hover:bg-surface-alt transition-colors"
+                      >
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 bg-primary rounded-pill flex items-center justify-center text-primary-fg text-sm font-bold shrink-0">
+                              {worker.name.charAt(0).toUpperCase()}
+                            </div>
+                            <span className="font-medium text-ink-800 text-sm">
+                              {worker.name}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-sm text-ink-500">
+                          {worker.email}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-ink-500">
+                          {worker.phone}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-ink-500">
+                          {getRoleLabel(worker.role)}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-ink-500">
+                          {worker.dateJoined}
+                        </td>
+                        <td className="px-6 py-4">
+                          <StatusBadge
+                            label={workerStatusLabel(worker.status)}
+                            tone={workerStatusTone(worker.status)}
+                          />
+                        </td>
+                        <td className="px-6 py-4">
+                          <RowActions
+                            onView={() => modals.openView(worker)}
+                            onEdit={() => {
+                              setFormData({
+                                name: worker.name,
+                                email: worker.email,
+                                phone: worker.phone,
+                                role: worker.role,
+                                status: worker.status,
+                              });
+                              setFormErrors({});
+                              setApiError(null);
+                              modals.openEdit(worker);
+                            }}
+                            onDelete={() => modals.openDelete(worker)}
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {/* Pagination */}
+            {!loading && filteredWorkers.length > 0 && (
+              <div className="border-t border-border px-5 py-2">
+                <Pagination
+                  currentPage={pagination.page}
+                  totalPages={pagination.totalPages}
+                  onPageChange={pagination.setPage}
+                  showLabel
+                  totalItems={filteredWorkers.length}
+                  pageSize={PAGE_SIZE}
+                  itemLabel="nhân viên"
+                />
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
+        /* ===== PENDING TAB ===== */
+        <div className="bg-surface rounded-card border border-border shadow-card">
+          {pendingLoading ? (
+            <LoadingState />
+          ) : pending.length === 0 ? (
+            <EmptyState
+              icon={CheckCircle}
+              message="Không có tài khoản nào đang chờ duyệt"
+            />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[760px]">
+                <thead className="bg-surface-alt border-b border-border">
                   <tr>
-                    {["Nhân viên", "Email", "SĐT", "Vai trò"].map((h) => (
+                    {[
+                      "Họ và tên",
+                      "Email",
+                      "SĐT",
+                      "Vai trò đăng ký",
+                      "Ngày đăng ký",
+                    ].map((h) => (
                       <th
                         key={h}
-                        className="px-6 py-4 text-left text-xs font-bold text-[#62748e] uppercase tracking-wider"
+                        className="px-6 py-4 text-left text-xs font-bold text-ink-500 uppercase tracking-wider"
                       >
                         {h}
                       </th>
                     ))}
-                    <th className="px-6 py-4 text-left text-xs font-bold text-[#62748e] uppercase tracking-wider">
-                      <button
-                        onClick={() => handleSort("dateJoined")}
-                        className="flex items-center gap-1 hover:text-[#009689]"
-                      >
-                        Ngày tham gia{" "}
-                        {sortField !== "dateJoined" ? (
-                          <ArrowUpDown className="w-3.5 h-3.5 text-[#94a3b8]" />
-                        ) : sortDirection === "asc" ? (
-                          <ChevronUp className="w-3.5 h-3.5 text-[#009689]" />
-                        ) : (
-                          <ChevronDown className="w-3.5 h-3.5 text-[#009689]" />
-                        )}
-                      </button>
-                    </th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-[#62748e] uppercase tracking-wider">
-                      <button
-                        onClick={() => handleSort("status")}
-                        className="flex items-center gap-1 hover:text-[#009689]"
-                      >
-                        Trạng thái{" "}
-                        {sortField !== "status" ? (
-                          <ArrowUpDown className="w-3.5 h-3.5 text-[#94a3b8]" />
-                        ) : sortDirection === "asc" ? (
-                          <ChevronUp className="w-3.5 h-3.5 text-[#009689]" />
-                        ) : (
-                          <ChevronDown className="w-3.5 h-3.5 text-[#009689]" />
-                        )}
-                      </button>
-                    </th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-[#62748e] uppercase tracking-wider">
+                    <th className="px-6 py-4 text-left text-xs font-bold text-ink-500 uppercase tracking-wider">
                       Thao tác
                     </th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[#e2e8f0]">
-                  {pagedWorkers.map((worker) => (
+                <tbody className="divide-y divide-border">
+                  {pending.map((s) => (
                     <tr
-                      key={worker.id}
-                      className="hover:bg-[#f8fafc] transition-colors"
+                      key={s.userId}
+                      className="hover:bg-surface-alt transition-colors"
                     >
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
-                          <div className="w-9 h-9 bg-[#009689] rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0">
-                            {worker.name.charAt(0).toUpperCase()}
+                          <div className="w-9 h-9 bg-primary rounded-pill flex items-center justify-center text-primary-fg text-sm font-bold shrink-0">
+                            {(s.fullname || s.email).charAt(0).toUpperCase()}
                           </div>
-                          <span className="font-medium text-[#115e59] text-sm">
-                            {worker.name}
+                          <span className="font-medium text-ink-800 text-sm">
+                            {s.fullname || "—"}
                           </span>
                         </div>
                       </td>
-                      <td className="px-6 py-4 text-sm text-[#62748e]">
-                        {worker.email}
+                      <td className="px-6 py-4 text-sm text-ink-500">
+                        {s.email}
                       </td>
-                      <td className="px-6 py-4 text-sm text-[#62748e]">
-                        {worker.phone}
-                      </td>
-                      <td className="px-6 py-4 text-sm text-[#62748e]">
-                        {getRoleLabel(worker.role)}
-                      </td>
-                      <td className="px-6 py-4 text-sm text-[#62748e]">
-                        {worker.dateJoined}
+                      <td className="px-6 py-4 text-sm text-ink-500">
+                        {s.phoneNumber || "—"}
                       </td>
                       <td className="px-6 py-4">
-                        <span
-                          className={`px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap ${getStatusBadgeColor(worker.status)}`}
-                        >
-                          {STATUS_LABEL[worker.status]}
-                        </span>
+                        {s.requestedRole ? (
+                          <StatusBadge
+                            label={getRoleLabel(s.requestedRole)}
+                            tone={
+                              s.requestedRole === "Specialist"
+                                ? "info"
+                                : "success"
+                            }
+                          />
+                        ) : (
+                          <StatusBadge label="Chưa xác định" tone="neutral" />
+                        )}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-ink-500">
+                        <div className="flex items-center gap-1">
+                          <Clock className="w-3.5 h-3.5 shrink-0" />
+                          {s.createdAt
+                            ? new Date(s.createdAt).toLocaleDateString("vi-VN")
+                            : "—"}
+                        </div>
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-2">
+                          {pendingRowError[s.userId] && (
+                            <span className="text-xs text-status-danger-fg max-w-[120px] leading-tight">
+                              {pendingRowError[s.userId]}
+                            </span>
+                          )}
                           <button
-                            onClick={() => openViewModal(worker)}
-                            className="p-1.5 text-[#62748e] hover:text-[#009689] hover:bg-[#f0fdf9] rounded transition-colors"
+                            onClick={() => handleApprovePending(s)}
+                            disabled={
+                              approvingId === s.userId || !s.requestedRole
+                            }
+                            title={
+                              !s.requestedRole
+                                ? "Chưa có vai trò đăng ký"
+                                : `Duyệt vai trò ${getRoleLabel(s.requestedRole)}`
+                            }
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-fg rounded-btn text-xs font-medium hover:bg-primary-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                           >
-                            <Eye className="w-4 h-4" />
+                            {approvingId === s.userId ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <CheckCircle className="w-3.5 h-3.5" />
+                            )}
+                            Duyệt
                           </button>
                           <button
-                            onClick={() => openEditModal(worker)}
-                            className="p-1.5 text-[#62748e] hover:text-[#009689] hover:bg-[#f0fdf9] rounded transition-colors"
+                            onClick={() => setRejectTarget(s)}
+                            disabled={approvingId === s.userId}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-surface border border-status-danger-fg/40 text-status-danger-fg rounded-btn text-xs font-medium hover:bg-status-danger-bg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                           >
-                            <Edit className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => openDeleteDialog(worker)}
-                            className="p-1.5 text-[#62748e] hover:text-red-500 hover:bg-red-50 rounded transition-colors"
-                          >
-                            <Trash2 className="w-4 h-4" />
+                            <Trash2 className="w-3.5 h-3.5" />
+                            Từ chối
                           </button>
                         </div>
                       </td>
@@ -659,166 +724,10 @@ export function WorkersPage() {
                   ))}
                 </tbody>
               </table>
-            )}
-            {/* pagination */}
-            <div className="flex items-center justify-end px-5 py-4 border-t border-[#e2e8f0]">
-              <div className="flex items-center gap-1">
-                <PaginationBtn
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  disabled={currentPage === 1}
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                </PaginationBtn>
-                {Array.from({ length: totalPages }, (_, i) => i + 1).map(
-                  (p) => (
-                    <button
-                      key={p}
-                      onClick={() => setPage(p)}
-                      className={`w-8 h-8 text-sm rounded-lg transition-colors ${
-                        p === currentPage
-                          ? "bg-[#009689] text-white font-semibold"
-                          : "text-[#62748e] hover:bg-[#f1f5f9]"
-                      }`}
-                    >
-                      {p}
-                    </button>
-                  ),
-                )}
-                <PaginationBtn
-                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                  disabled={currentPage === totalPages}
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </PaginationBtn>
-              </div>
             </div>
-          </div>
-        </div>
-      ) : (
-        /* ===== PENDING ACCOUNTS TAB ===== */
-        <div className="bg-white rounded-xl border border-[#e2e8f0] shadow-sm overflow-hidden">
-          {pendingLoading ? (
-            <div className="flex items-center justify-center py-16">
-              <Loader2 className="w-6 h-6 animate-spin text-[#009689]" />
-            </div>
-          ) : pending.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-[#94a3b8] gap-2">
-              <CheckCircle className="w-10 h-10 text-[#009689] opacity-30" />
-              <p className="text-sm">Không có tài khoản nào đang chờ duyệt</p>
-            </div>
-          ) : (
-            <table className="w-full">
-              <thead className="bg-[#f8fafc] border-b border-[#e2e8f0]">
-                <tr>
-                  {[
-                    "Họ và tên",
-                    "Email",
-                    "SĐT",
-                    "Vai trò đăng ký",
-                    "Ngày đăng ký",
-                  ].map((h) => (
-                    <th
-                      key={h}
-                      className="px-6 py-4 text-left text-xs font-bold text-[#62748e] uppercase tracking-wider"
-                    >
-                      {h}
-                    </th>
-                  ))}
-                  <th className="px-6 py-4 text-left text-xs font-bold text-[#62748e] uppercase tracking-wider">
-                    Thao tác
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#e2e8f0]">
-                {pending.map((s) => (
-                  <tr
-                    key={s.userId}
-                    className="hover:bg-[#f8fafc] transition-colors"
-                  >
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 bg-[#009689] rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0">
-                          {(s.fullname || s.email).charAt(0).toUpperCase()}
-                        </div>
-                        <span className="font-medium text-[#115e59] text-sm">
-                          {s.fullname || "—"}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-sm text-[#62748e]">
-                      {s.email}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-[#62748e]">
-                      {s.phoneNumber || "—"}
-                    </td>
-                    <td className="px-6 py-4">
-                      {s.requestedRole ? (
-                        <span
-                          className={`px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap ${
-                            s.requestedRole === "Specialist"
-                              ? "bg-[#ede9fe] text-[#5b21b6]"
-                              : "bg-[#dcfce7] text-[#008236]"
-                          }`}
-                        >
-                          {getRoleLabel(s.requestedRole)}
-                        </span>
-                      ) : (
-                        <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-[#f1f5f9] text-[#94a3b8]">
-                          Chưa xác định
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-[#62748e]">
-                      <div className="flex items-center gap-1">
-                        <Clock className="w-3.5 h-3.5 shrink-0" />
-                        {s.createdAt
-                          ? new Date(s.createdAt).toLocaleDateString("vi-VN")
-                          : "—"}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-2">
-                        {pendingRowError[s.userId] && (
-                          <span className="text-xs text-red-500 max-w-[120px] leading-tight">
-                            {pendingRowError[s.userId]}
-                          </span>
-                        )}
-                        <button
-                          onClick={() => handleApprovePending(s)}
-                          disabled={
-                            approvingId === s.userId || !s.requestedRole
-                          }
-                          title={
-                            !s.requestedRole
-                              ? "Chưa có vai trò đăng ký"
-                              : `Duyệt vai trò ${getRoleLabel(s.requestedRole)}`
-                          }
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-[#009689] text-white rounded-lg text-xs font-medium hover:bg-[#007f75] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          {approvingId === s.userId ? (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          ) : (
-                            <CheckCircle className="w-3.5 h-3.5" />
-                          )}
-                          Duyệt
-                        </button>
-                        <button
-                          onClick={() => setRejectTarget(s)}
-                          disabled={approvingId === s.userId}
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-red-300 text-red-500 rounded-lg text-xs font-medium hover:bg-red-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                          Từ chối
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
           )}
           {!pendingLoading && pending.length > 0 && (
-            <div className="px-6 py-3 border-t border-[#e2e8f0] text-xs text-[#94a3b8]">
+            <div className="px-6 py-3 border-t border-border text-xs text-ink-400">
               {pending.length} tài khoản đang chờ duyệt
             </div>
           )}
@@ -826,264 +735,192 @@ export function WorkersPage() {
       )}
 
       {/* ===== VIEW MODAL ===== */}
-      <Dialog.Root open={isViewModalOpen} onOpenChange={setIsViewModalOpen}>
-        <Dialog.Portal>
-          <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
-          <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-xl shadow-xl w-full max-w-md z-50 p-6">
-            <div className="flex items-center justify-between mb-6">
-              <Dialog.Title className="text-lg font-bold text-[#115e59]">
-                Chi tiết nhân viên
-              </Dialog.Title>
-              <Dialog.Close className="text-[#94a3b8] hover:text-[#62748e]">
-                <X className="w-5 h-5" />
-              </Dialog.Close>
-            </div>
-            <Dialog.Description className="sr-only">
-              Thông tin chi tiết nhân viên
-            </Dialog.Description>
-            {selectedWorker && (
-              <div className="space-y-4">
-                <div className="flex items-center gap-4">
-                  <div className="w-14 h-14 bg-[#009689] rounded-full flex items-center justify-center text-white text-xl font-bold">
-                    {selectedWorker.name.charAt(0).toUpperCase()}
-                  </div>
-                  <div>
-                    <div className="font-bold text-[#115e59] text-lg">
-                      {selectedWorker.name}
-                    </div>
-                    <span
-                      className={`px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${getStatusBadgeColor(selectedWorker.status)}`}
-                    >
-                      {STATUS_LABEL[selectedWorker.status]}
-                    </span>
-                  </div>
-                </div>
-                {[
-                  { label: "Email", value: selectedWorker.email },
-                  { label: "Số điện thoại", value: selectedWorker.phone },
-                  {
-                    label: "Vai trò",
-                    value: getRoleLabel(selectedWorker.role),
-                  },
-                  { label: "Ngày tham gia", value: selectedWorker.dateJoined },
-                ].map(({ label, value }) => (
-                  <div
-                    key={label}
-                    className="flex justify-between py-2 border-b border-[#f1f5f9]"
-                  >
-                    <span className="text-sm text-[#62748e]">{label}</span>
-                    <span className="text-sm font-medium text-[#115e59]">
-                      {value || "—"}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Dialog.Content>
-        </Dialog.Portal>
-      </Dialog.Root>
-
-      {/* ===== ADD MODAL ===== */}
-      <Dialog.Root
-        open={isAddModalOpen}
-        onOpenChange={(o: boolean) => {
-          setIsAddModalOpen(o);
-          if (!o) resetForm();
-        }}
+      <Modal
+        open={!!modals.viewItem}
+        onOpenChange={(o) => !o && modals.closeView()}
+        title="Chi tiết nhân viên"
+        size="md"
       >
-        <Dialog.Portal>
-          <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
-          <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-xl shadow-xl w-full max-w-md z-50 p-6">
-            <div className="flex items-center justify-between mb-6">
-              <Dialog.Title className="text-lg font-bold text-[#115e59]">
-                Thêm nhân viên mới
-              </Dialog.Title>
-              <Dialog.Close className="text-[#94a3b8] hover:text-[#62748e]">
-                <X className="w-5 h-5" />
-              </Dialog.Close>
-            </div>
-            <Dialog.Description className="sr-only">
-              Form thêm nhân viên mới
-            </Dialog.Description>
-
-            {apiError && (
-              <div className="flex items-start gap-2 p-3 mb-4 bg-red-50 border border-red-200 rounded-lg">
-                <AlertCircle className="w-4 h-4 text-red-500 mt-0.5 shrink-0" />
-                <p className="text-sm text-red-600">{apiError}</p>
+        {modals.viewItem && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-4">
+              <div className="w-14 h-14 bg-primary rounded-pill flex items-center justify-center text-primary-fg text-xl font-bold">
+                {modals.viewItem.name.charAt(0).toUpperCase()}
               </div>
-            )}
-
-            <WorkerForm
-              formData={formData}
-              setFormData={(updater) => {
-                setFormData(updater);
-                setFormErrors({});
-                setApiError(null);
-              }}
-              errors={formErrors}
-              roleOptions={availableRoleNames}
-              rolesLoading={!rolesLoaded}
-            />
-
-            <p className="mt-3 text-xs text-[#94a3b8]">
-              Mật khẩu mặc định: <span className="font-mono">123456</span> —
-              nhân viên sẽ tự đổi sau khi đăng nhập.
-            </p>
-
-            <div className="flex justify-end gap-3 mt-6">
-              <Dialog.Close className="px-4 py-2 text-sm text-[#62748e] hover:text-[#334155] transition-colors">
-                Hủy
-              </Dialog.Close>
-              <button
-                onClick={handleAddWorker}
-                disabled={submitting}
-                className="px-4 py-2 bg-[#009689] text-white text-sm rounded-lg hover:bg-[#007f75] transition-colors flex items-center gap-2 disabled:opacity-50"
-              >
-                {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                Thêm nhân viên
-              </button>
+              <div>
+                <div className="font-bold text-ink-800 text-lg">
+                  {modals.viewItem.name}
+                </div>
+                <StatusBadge
+                  label={workerStatusLabel(modals.viewItem.status)}
+                  tone={workerStatusTone(modals.viewItem.status)}
+                />
+              </div>
             </div>
-          </Dialog.Content>
-        </Dialog.Portal>
-      </Dialog.Root>
+            {[
+              { label: "Email", value: modals.viewItem.email },
+              { label: "Số điện thoại", value: modals.viewItem.phone },
+              { label: "Vai trò", value: getRoleLabel(modals.viewItem.role) },
+              { label: "Ngày tham gia", value: modals.viewItem.dateJoined },
+            ].map(({ label, value }) => (
+              <div
+                key={label}
+                className="flex justify-between py-2 border-b border-surface-subtle"
+              >
+                <span className="text-sm text-ink-500">{label}</span>
+                <span className="text-sm font-medium text-ink-800">
+                  {value || "—"}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </Modal>
+
+      {/* ===== CREATE MODAL ===== */}
+      <Modal
+        open={modals.createOpen}
+        onOpenChange={(o) => {
+          if (!o) {
+            modals.closeCreate();
+            resetForm();
+          }
+        }}
+        title="Thêm nhân viên mới"
+        size="md"
+        footer={
+          <>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                modals.closeCreate();
+                resetForm();
+              }}
+            >
+              Hủy
+            </Button>
+            <Button onClick={handleAddWorker} loading={submitting}>
+              Thêm nhân viên
+            </Button>
+          </>
+        }
+      >
+        {apiError && (
+          <div className="flex items-start gap-2 p-3 mb-4 bg-status-danger-bg border border-status-danger-fg/20 rounded-btn">
+            <AlertCircle className="w-4 h-4 text-status-danger-fg mt-0.5 shrink-0" />
+            <p className="text-sm text-status-danger-fg">{apiError}</p>
+          </div>
+        )}
+        <WorkerForm
+          formData={formData}
+          setFormData={(updater) => {
+            setFormData(updater);
+            setFormErrors({});
+            setApiError(null);
+          }}
+          errors={formErrors}
+          apiRoles={apiRoles}
+          rolesLoaded={rolesLoaded}
+        />
+        <p className="mt-3 text-xs text-ink-400">
+          Mật khẩu mặc định: <span className="font-mono">123456</span> — nhân
+          viên sẽ tự đổi sau khi đăng nhập.
+        </p>
+      </Modal>
 
       {/* ===== EDIT MODAL ===== */}
-      <Dialog.Root
-        open={isEditModalOpen}
-        onOpenChange={(o: boolean) => {
-          setIsEditModalOpen(o);
-          if (!o) resetForm();
+      <Modal
+        open={!!modals.editItem}
+        onOpenChange={(o) => {
+          if (!o) {
+            modals.closeEdit();
+            resetForm();
+          }
         }}
-      >
-        <Dialog.Portal>
-          <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
-          <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-xl shadow-xl w-full max-w-md z-50 p-6">
-            <div className="flex items-center justify-between mb-6">
-              <Dialog.Title className="text-lg font-bold text-[#115e59]">
-                Chỉnh sửa nhân viên
-              </Dialog.Title>
-              <Dialog.Close className="text-[#94a3b8] hover:text-[#62748e]">
-                <X className="w-5 h-5" />
-              </Dialog.Close>
-            </div>
-            <Dialog.Description className="sr-only">
-              Form chỉnh sửa thông tin nhân viên
-            </Dialog.Description>
-
-            {apiError && (
-              <div className="flex items-start gap-2 p-3 mb-4 bg-red-50 border border-red-200 rounded-lg">
-                <AlertCircle className="w-4 h-4 text-red-500 mt-0.5 shrink-0" />
-                <p className="text-sm text-red-600">{apiError}</p>
-              </div>
-            )}
-
-            <WorkerForm
-              formData={formData}
-              setFormData={(updater) => {
-                setFormData(updater);
-                setFormErrors({});
-                setApiError(null);
+        title="Chỉnh sửa nhân viên"
+        size="md"
+        footer={
+          <>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                modals.closeEdit();
+                resetForm();
               }}
-              errors={formErrors}
-              roleOptions={availableRoleNames}
-              rolesLoading={!rolesLoaded}
-              showStatus
-            />
-
-            <div className="flex justify-end gap-3 mt-6">
-              <Dialog.Close className="px-4 py-2 text-sm text-[#62748e] hover:text-[#334155] transition-colors">
-                Hủy
-              </Dialog.Close>
-              <button
-                onClick={handleEditWorker}
-                disabled={submitting}
-                className="px-4 py-2 bg-[#009689] text-white text-sm rounded-lg hover:bg-[#007f75] transition-colors flex items-center gap-2 disabled:opacity-50"
-              >
-                {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                Lưu thay đổi
-              </button>
-            </div>
-          </Dialog.Content>
-        </Dialog.Portal>
-      </Dialog.Root>
-
-      {/* ===== DELETE DIALOG ===== */}
-      <AlertDialog.Root
-        open={isDeleteDialogOpen}
-        onOpenChange={setIsDeleteDialogOpen}
+            >
+              Hủy
+            </Button>
+            <Button onClick={handleEditWorker} loading={submitting}>
+              Lưu thay đổi
+            </Button>
+          </>
+        }
       >
-        <AlertDialog.Portal>
-          <AlertDialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
-          <AlertDialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-xl shadow-xl w-full max-w-sm z-50 p-6">
-            <AlertDialog.Title className="text-lg font-bold text-[#115e59] mb-2">
-              Xóa nhân viên
-            </AlertDialog.Title>
-            <AlertDialog.Description className="text-sm text-[#62748e] mb-6">
-              Bạn có chắc muốn xóa <strong>{workerToDelete?.name}</strong>? Hành
-              động này không thể hoàn tác.
-            </AlertDialog.Description>
-            <div className="flex justify-end gap-3">
-              <AlertDialog.Cancel className="px-4 py-2 text-sm text-[#62748e] hover:text-[#334155] transition-colors">
-                Hủy
-              </AlertDialog.Cancel>
-              <AlertDialog.Action
-                onClick={handleDeleteWorker}
-                className="px-4 py-2 bg-red-500 text-white text-sm rounded-lg hover:bg-red-600 transition-colors flex items-center gap-2"
-              >
-                {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                Xóa
-              </AlertDialog.Action>
-            </div>
-          </AlertDialog.Content>
-        </AlertDialog.Portal>
-      </AlertDialog.Root>
+        {apiError && (
+          <div className="flex items-start gap-2 p-3 mb-4 bg-status-danger-bg border border-status-danger-fg/20 rounded-btn">
+            <AlertCircle className="w-4 h-4 text-status-danger-fg mt-0.5 shrink-0" />
+            <p className="text-sm text-status-danger-fg">{apiError}</p>
+          </div>
+        )}
+        <WorkerForm
+          formData={formData}
+          setFormData={(updater) => {
+            setFormData(updater);
+            setFormErrors({});
+            setApiError(null);
+          }}
+          errors={formErrors}
+          apiRoles={apiRoles}
+          rolesLoaded={rolesLoaded}
+          showStatus
+        />
+      </Modal>
 
-      {/* ===== REJECT PENDING DIALOG ===== */}
-      <AlertDialog.Root
+      {/* ===== DELETE CONFIRM ===== */}
+      <ConfirmDialog
+        open={!!modals.deleteItem}
+        onOpenChange={(o) => !o && modals.closeDelete()}
+        title="Xóa nhân viên"
+        description={
+          <>
+            Bạn có chắc muốn xóa <strong>{modals.deleteItem?.name}</strong>?
+            Hành động này không thể hoàn tác.
+          </>
+        }
+        loading={submitting}
+        onConfirm={handleDeleteWorker}
+      />
+
+      {/* ===== REJECT PENDING CONFIRM ===== */}
+      <ConfirmDialog
         open={!!rejectTarget}
-        onOpenChange={(o: boolean) => {
-          if (!o) setRejectTarget(null);
-        }}
-      >
-        <AlertDialog.Portal>
-          <AlertDialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
-          <AlertDialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-xl shadow-xl w-full max-w-sm z-50 p-6">
-            <AlertDialog.Title className="text-lg font-bold text-[#115e59] mb-2">
-              Từ chối tài khoản
-            </AlertDialog.Title>
-            <AlertDialog.Description className="text-sm text-[#62748e] mb-6">
-              Bạn có chắc muốn từ chối và xóa tài khoản của{" "}
-              <strong>{rejectTarget?.fullname || rejectTarget?.email}</strong>?{" "}
-              Hành động này không thể hoàn tác.
-            </AlertDialog.Description>
-            <div className="flex justify-end gap-3">
-              <AlertDialog.Cancel className="px-4 py-2 text-sm text-[#62748e] hover:text-[#334155] transition-colors">
-                Hủy
-              </AlertDialog.Cancel>
-              <AlertDialog.Action
-                onClick={handleRejectPending}
-                className="px-4 py-2 bg-red-500 text-white text-sm rounded-lg hover:bg-red-600 transition-colors flex items-center gap-2"
-              >
-                {rejectSubmitting && (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                )}
-                Xóa tài khoản
-              </AlertDialog.Action>
-            </div>
-          </AlertDialog.Content>
-        </AlertDialog.Portal>
-      </AlertDialog.Root>
+        onOpenChange={(o) => !o && setRejectTarget(null)}
+        title="Từ chối tài khoản"
+        description={
+          <>
+            Bạn có chắc muốn từ chối và xóa tài khoản của{" "}
+            <strong>{rejectTarget?.fullname || rejectTarget?.email}</strong>?
+            Hành động này không thể hoàn tác.
+          </>
+        }
+        confirmLabel="Xóa tài khoản"
+        loading={rejectSubmitting}
+        onConfirm={handleRejectPending}
+      />
+
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 }
 
-// ── Shared form component ────────────────────────────────────────────────────
+// ─── WorkerForm ───────────────────────────────────────────────────────────────
+
 function WorkerForm({
   formData,
   setFormData,
   errors,
-  roleOptions,
-  rolesLoading,
+  apiRoles,
+  rolesLoaded,
   showStatus = false,
 }: {
   formData: {
@@ -1095,130 +932,80 @@ function WorkerForm({
   };
   setFormData: React.Dispatch<React.SetStateAction<typeof formData>>;
   errors: FormErrors;
-  roleOptions: string[];
-  rolesLoading: boolean;
+  apiRoles: RoleResponse[];
+  rolesLoaded: boolean;
   showStatus?: boolean;
 }) {
-  const fields: {
-    key: "name" | "email" | "phone";
-    label: string;
-    type?: string;
-    placeholder?: string;
-  }[] = [
-    { key: "name", label: "Họ và tên", placeholder: "Nguyễn Văn A" },
-    {
-      key: "email",
-      label: "Email",
-      type: "email",
-      placeholder: "nhanvien@farm.com",
-    },
-    { key: "phone", label: "Số điện thoại", placeholder: "0901234567" },
-  ];
+  const roleOptions = apiRoles.map((r) => r.roleName);
 
   return (
     <div className="space-y-4">
-      {fields.map(({ key, label, type = "text", placeholder }) => (
-        <div key={key}>
-          <label className="block text-sm font-medium text-[#45556c] mb-1">
-            {label} <span className="text-red-400">*</span>
-          </label>
-          <input
-            type={type}
-            value={formData[key]}
-            onChange={(e) =>
-              setFormData((p) => ({ ...p, [key]: e.target.value }))
-            }
-            placeholder={placeholder}
-            className={`w-full px-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155] ${
-              errors[key as keyof FormErrors]
-                ? "border-red-300 bg-red-50"
-                : "border-[#e2e8f0]"
-            }`}
-          />
-          {errors[key as keyof FormErrors] && (
-            <p className="mt-1 text-xs text-red-500">
-              {errors[key as keyof FormErrors]}
-            </p>
-          )}
+      <FormField
+        label="Họ và tên"
+        required
+        value={formData.name}
+        onChange={(v) => setFormData((p) => ({ ...p, name: v }))}
+        placeholder="Nguyễn Văn A"
+        error={errors.name}
+      />
+      <FormField
+        label="Email"
+        required
+        type="email"
+        value={formData.email}
+        onChange={(v) => setFormData((p) => ({ ...p, email: v }))}
+        placeholder="nhanvien@farm.com"
+        error={errors.email}
+      />
+      <FormField
+        label="Số điện thoại"
+        required
+        type="tel"
+        value={formData.phone}
+        onChange={(v) => setFormData((p) => ({ ...p, phone: v }))}
+        placeholder="0901234567"
+        error={errors.phone}
+      />
+
+      {/* Role field — special handling for loading/error states */}
+      {!rolesLoaded ? (
+        <div className="flex items-center gap-2 px-3 py-2.5 border border-border rounded-btn text-sm text-ink-400">
+          <Loader2 className="w-4 h-4 animate-spin text-primary" />
+          Đang tải vai trò...
         </div>
-      ))}
-      <div>
-        <label className="block text-sm font-medium text-[#45556c] mb-1">
-          Vai trò <span className="text-red-400">*</span>
-        </label>
-        {rolesLoading ? (
-          <div className="flex items-center gap-2 px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm text-[#94a3b8]">
-            <Loader2 className="w-4 h-4 animate-spin" />
-            Đang tải vai trò...
-          </div>
-        ) : roleOptions.length === 0 ? (
-          <div className="flex items-center gap-2 px-3 py-2.5 border border-amber-200 bg-amber-50 rounded-lg text-sm text-amber-600">
-            <AlertCircle className="w-4 h-4" />
-            Không tải được danh sách vai trò
-          </div>
-        ) : (
-          <select
-            value={formData.role}
-            onChange={(e) =>
-              setFormData((p) => ({ ...p, role: e.target.value }))
-            }
-            className={`w-full px-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] bg-white text-[#334155] ${
-              errors.role ? "border-red-300 bg-red-50" : "border-[#e2e8f0]"
-            }`}
-          >
-            <option value="">— Chọn vai trò —</option>
-            {roleOptions.map((r) => (
-              <option key={r} value={r}>
-                {getRoleLabel(r)}
-              </option>
-            ))}
-          </select>
-        )}
-        {errors.role && (
-          <p className="mt-1 text-xs text-red-500">{errors.role}</p>
-        )}
-      </div>
+      ) : roleOptions.length === 0 ? (
+        <div className="flex items-center gap-2 px-3 py-2.5 border border-status-warning-bg-2 bg-status-warning-bg rounded-btn text-sm text-status-warning-fg">
+          <AlertCircle className="w-4 h-4" />
+          Không tải được danh sách vai trò
+        </div>
+      ) : (
+        <FormSelect
+          label="Vai trò"
+          required
+          value={formData.role}
+          onChange={(v) => setFormData((p) => ({ ...p, role: v }))}
+          options={roleOptions.map((r) => ({
+            value: r,
+            label: getRoleLabel(r),
+          }))}
+          placeholder="— Chọn vai trò —"
+          error={errors.role}
+        />
+      )}
+
       {showStatus && (
-        <div>
-          <label className="block text-sm font-medium text-[#45556c] mb-1">
-            Trạng thái
-          </label>
-          <select
-            value={formData.status}
-            onChange={(e) =>
-              setFormData((p) => ({
-                ...p,
-                status: e.target.value as WorkerStatus,
-              }))
-            }
-            className="w-full px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] bg-white text-[#334155]"
-          >
-            <option value="Active">Hoạt động</option>
-            <option value="Inactive">Không hoạt động</option>
-          </select>
-        </div>
+        <FormSelect
+          label="Trạng thái"
+          value={formData.status}
+          onChange={(v) =>
+            setFormData((p) => ({ ...p, status: v as WorkerStatus }))
+          }
+          options={[
+            { value: "Active", label: "Hoạt động" },
+            { value: "Inactive", label: "Không hoạt động" },
+          ]}
+        />
       )}
     </div>
-  );
-}
-
-// ── Pagination Button ─────────────────────────────────────────────────────────
-function PaginationBtn({
-  onClick,
-  disabled,
-  children,
-}: {
-  onClick: () => void;
-  disabled: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      className="w-8 h-8 flex items-center justify-center rounded-lg text-[#62748e] hover:bg-[#f1f5f9] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-    >
-      {children}
-    </button>
   );
 }
