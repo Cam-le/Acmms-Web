@@ -103,7 +103,7 @@ const REPORT_TYPE_MAP: Record<
   DISEASE: {
     label: "Báo cáo bệnh",
     icon: Stethoscope,
-    color: "bg-[#fee2e2] text-status-danger-fg",
+    color: "bg-status-danger-bg text-status-danger-fg",
   },
   PEST: {
     label: "Sâu bệnh",
@@ -113,7 +113,7 @@ const REPORT_TYPE_MAP: Record<
   ENVIRONMENT: {
     label: "Vấn đề môi trường",
     icon: Wind,
-    color: "bg-[#eff6ff] text-[#1e40af]",
+    color: "bg-[#eff6ff] text-status-info-fg",
   },
   IRRIGATION: {
     label: "Tưới tiêu",
@@ -123,12 +123,12 @@ const REPORT_TYPE_MAP: Record<
   NUTRITION: {
     label: "Thiếu dinh dưỡng",
     icon: Sprout,
-    color: "bg-[#f0fdf4] text-[#166534]",
+    color: "bg-[#f0fdf4] text-status-success-fg",
   },
   MANUAL: {
     label: "Báo cáo thủ công",
     icon: ClipboardList,
-    color: "bg-surface-alt text-[#475569]",
+    color: "bg-surface-alt text-ink-700",
   },
   IOT_ALERT: {
     label: "Báo cáo tự động từ IoT",
@@ -138,12 +138,12 @@ const REPORT_TYPE_MAP: Record<
   Diseases: {
     label: "Báo cáo bệnh",
     icon: Stethoscope,
-    color: "bg-[#fee2e2] text-status-danger-fg",
+    color: "bg-status-danger-bg text-status-danger-fg",
   },
   OTHER: {
     label: "Báo cáo khác",
     icon: FileText,
-    color: "bg-surface-alt text-[#475569]",
+    color: "bg-surface-alt text-ink-700",
   },
 };
 
@@ -152,7 +152,7 @@ function getReportType(type: string) {
     REPORT_TYPE_MAP[type] ?? {
       label: type,
       icon: FileText,
-      color: "bg-surface-alt text-[#475569]",
+      color: "bg-surface-alt text-ink-700",
     }
   );
 }
@@ -163,13 +163,13 @@ const SEVERITY_CONFIG: Record<
 > = {
   LOW: {
     label: "Nhẹ",
-    color: "bg-[#dcfce7] text-[#166534]",
-    barColor: "bg-[#16a34a]",
+    color: "bg-status-success-bg text-status-success-fg",
+    barColor: "bg-status-success-fg",
   },
   MEDIUM: {
     label: "Trung bình",
-    color: "bg-[#fef9c3] text-[#854d0e]",
-    barColor: "bg-[#ca8a04]",
+    color: "bg-status-warning-bg text-status-warning-fg",
+    barColor: "bg-status-warning-fg",
   },
   HIGH: {
     label: "Nặng",
@@ -178,8 +178,8 @@ const SEVERITY_CONFIG: Record<
   },
   CRITICAL: {
     label: "Rất nghiêm trọng",
-    color: "bg-[#fee2e2] text-status-danger-fg",
-    barColor: "bg-[#dc2626]",
+    color: "bg-status-danger-bg text-status-danger-fg",
+    barColor: "bg-status-danger-fg",
   },
 };
 
@@ -187,8 +187,8 @@ function getSeverityConfig(level: string) {
   return (
     SEVERITY_CONFIG[level?.toUpperCase()] ?? {
       label: level,
-      color: "bg-surface-subtle text-[#475569]",
-      barColor: "bg-[#94a3b8]",
+      color: "bg-status-neutral-bg text-status-neutral-fg",
+      barColor: "bg-ink-400",
     }
   );
 }
@@ -216,9 +216,9 @@ function ReportTypeBadge({ type }: { type: string }) {
   const { label, color, icon: Icon } = getReportType(type);
   return (
     <span
-      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${color}`}
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap ${color}`}
     >
-      <Icon className="w-3 h-3" />
+      <Icon className="w-3 h-3 shrink-0" />
       {label}
     </span>
   );
@@ -283,7 +283,7 @@ function ListView() {
   }, [search, statusFilter]);
 
   return (
-    <div className="flex flex-col gap-4 p-6">
+    <div className="flex flex-col gap-4 p-4 sm:p-6">
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
 
       <PageHeader
@@ -315,7 +315,7 @@ function ListView() {
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
-          className="px-3 py-2.5 border border-border-strong rounded-btn focus:outline-none focus:ring-2 focus:ring-primary bg-white text-sm text-ink-700"
+          className="px-3 py-2.5 border border-border-strong rounded-btn focus:outline-none focus:ring-2 focus:ring-primary bg-surface text-sm text-ink-700"
         >
           <option value="all">Tất cả trạng thái</option>
           <option value="SENT_TO_OWNER">Chờ xử lý</option>
@@ -330,12 +330,12 @@ function ListView() {
         <LoadingState />
       ) : error ? (
         <div className="flex flex-col items-center justify-center py-16 text-center">
-          <AlertTriangle className="w-10 h-10 text-[#f59e0b] mb-3" />
+          <AlertTriangle className="w-10 h-10 text-status-warning-fg mb-3" />
           <p className="text-sm text-ink-500 mb-4">{error}</p>
           <Button onClick={fetchReports}>Thử lại</Button>
         </div>
       ) : (
-        <div className="bg-white rounded-card border border-border shadow-sm overflow-x-auto">
+        <div className="bg-surface rounded-card border border-border shadow-card overflow-x-auto">
           <table className="w-full min-w-[700px] text-sm">
             <thead className="bg-surface-alt border-b border-border">
               <tr>
@@ -371,7 +371,7 @@ function ListView() {
                   </td>
                   <td className="px-4 py-3 text-ink-700 text-xs">
                     <div className="flex items-center gap-1.5">
-                      <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center text-white text-[10px] font-bold shrink-0">
+                      <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center text-primary-fg text-[10px] font-bold shrink-0">
                         {r.workerName.split(" ").pop()?.[0] ?? "?"}
                       </div>
                       <span className="truncate max-w-[100px]">
@@ -512,7 +512,6 @@ function DetailView({ reportId }: { reportId: string }) {
     fetchDiagnoses();
   }, [report?.status]);
 
-  // Image is already in the report payload — no extra API call needed
   const reportImageUrl = report ? getReportImageUrl(report.attachments) : null;
 
   async function handleAssign() {
@@ -547,13 +546,13 @@ function DetailView({ reportId }: { reportId: string }) {
   if (error || !report) {
     return (
       <div className="flex flex-col items-center justify-center py-20 p-6">
-        <AlertTriangle className="w-10 h-10 text-[#f59e0b] mb-3" />
+        <AlertTriangle className="w-10 h-10 text-status-warning-fg mb-3" />
         <p className="text-sm text-ink-500 mb-4">
           {error ?? "Không tìm thấy báo cáo."}
         </p>
         <Link
           to="/advisory"
-          className="px-4 py-2 bg-primary text-white rounded-btn text-sm hover:bg-primary-hover transition-colors"
+          className="px-4 py-2 bg-primary text-primary-fg rounded-btn text-sm hover:bg-primary-hover transition-colors"
         >
           Quay lại
         </Link>
@@ -564,34 +563,36 @@ function DetailView({ reportId }: { reportId: string }) {
   const ai = parseAiResult(report.aiResultsJson);
 
   return (
-    <div className="flex flex-col gap-4 p-6 max-w-screen-xl">
+    <div className="flex flex-col gap-4 p-4 sm:p-6 max-w-screen-xl">
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
 
       {/* Back + header */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 min-w-0">
         <Link
           to="/advisory"
-          className="p-1.5 text-ink-500 hover:text-primary hover:bg-primary-50 rounded transition-colors"
+          className="p-1.5 text-ink-500 hover:text-primary hover:bg-primary-50 rounded transition-colors shrink-0"
         >
           <ArrowLeft className="w-5 h-5" />
         </Link>
-        <PageHeader
-          icon={ClipboardList}
-          title={report.title}
-          subtitle={`${report.reportNo} · Gửi lúc ${formatDateTime(report.submitDate)}`}
-        >
-          <StatusBadge
-            label={reportStatusLabel(report.status)}
-            tone={reportStatusTone(report.status)}
-          />
-        </PageHeader>
+        <div className="min-w-0 flex-1">
+          <PageHeader
+            icon={ClipboardList}
+            title={report.title}
+            subtitle={`${report.reportNo} · Gửi lúc ${formatDateTime(report.submitDate)}`}
+          >
+            <StatusBadge
+              label={reportStatusLabel(report.status)}
+              tone={reportStatusTone(report.status)}
+            />
+          </PageHeader>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
         {/* Left column */}
         <div className="lg:col-span-2 space-y-4">
           {/* Meta info */}
-          <div className="bg-white rounded-card border border-border shadow-sm p-4 space-y-3">
+          <div className="bg-surface rounded-card border border-border shadow-card p-4 space-y-3">
             <h2 className="text-sm font-semibold text-ink-700 flex items-center gap-2">
               <FileText className="w-4 h-4" /> Thông tin báo cáo
             </h2>
@@ -620,7 +621,7 @@ function DetailView({ reportId }: { reportId: string }) {
           </div>
 
           {/* Description */}
-          <div className="bg-white rounded-card border border-border shadow-sm p-4">
+          <div className="bg-surface rounded-card border border-border shadow-card p-4">
             <h2 className="text-sm font-semibold text-ink-700 flex items-center gap-2 mb-2">
               <ClipboardList className="w-4 h-4" /> Mô tả sự cố
             </h2>
@@ -631,7 +632,7 @@ function DetailView({ reportId }: { reportId: string }) {
 
           {/* Environment snapshots */}
           {report.environmentSnapshots?.length > 0 && (
-            <div className="bg-white rounded-card border border-border shadow-sm p-4">
+            <div className="bg-surface rounded-card border border-border shadow-card p-4">
               <h2 className="text-sm font-semibold text-ink-700 flex items-center gap-2 mb-3">
                 <Thermometer className="w-4 h-4" /> Dữ liệu môi trường
               </h2>
@@ -668,7 +669,7 @@ function DetailView({ reportId }: { reportId: string }) {
 
           {/* Assign panel */}
           {report.status === "SENT_TO_OWNER" && !assignSuccess && (
-            <div className="bg-white rounded-card border border-border shadow-sm p-4 space-y-3">
+            <div className="bg-surface rounded-card border border-border shadow-card p-4 space-y-3">
               <h2 className="text-sm font-semibold text-ink-700 flex items-center gap-2">
                 <Send className="w-4 h-4" /> Gửi đến chuyên gia
               </h2>
@@ -686,7 +687,7 @@ function DetailView({ reportId }: { reportId: string }) {
                   <select
                     value={selectedSpecialistId}
                     onChange={(e) => setSelectedSpecialistId(e.target.value)}
-                    className="w-full px-3 py-2.5 border border-border-strong rounded-btn text-sm text-ink-700 bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+                    className="w-full px-3 py-2.5 border border-border-strong rounded-btn text-sm text-ink-700 bg-surface focus:outline-none focus:ring-2 focus:ring-primary"
                   >
                     {specialists.map((s) => (
                       <option key={s.userId} value={s.userId}>
@@ -714,9 +715,9 @@ function DetailView({ reportId }: { reportId: string }) {
 
           {/* Assigned success */}
           {assignSuccess && report.status !== "DIAGNOSED" && (
-            <div className="bg-[#f0fdf4] border border-[#86efac] rounded-card p-4 flex items-center gap-3">
-              <BadgeCheck className="w-5 h-5 text-[#16a34a] shrink-0" />
-              <p className="text-sm text-[#166534] font-medium">
+            <div className="bg-status-success-bg border border-[#86efac] rounded-card p-4 flex items-center gap-3">
+              <BadgeCheck className="w-5 h-5 text-status-success-fg shrink-0" />
+              <p className="text-sm text-status-success-fg font-medium">
                 Đã gửi đến chuyên gia để chẩn đoán.
               </p>
             </div>
@@ -740,9 +741,9 @@ function DetailView({ reportId }: { reportId: string }) {
                     return (
                       <div
                         key={dx.id}
-                        className="bg-white rounded-card border border-border shadow-sm overflow-hidden"
+                        className="bg-surface rounded-card border border-border shadow-card overflow-hidden"
                       >
-                        <div className="flex items-center justify-between px-4 py-3 bg-surface-alt border-b border-border">
+                        <div className="flex items-center justify-between px-4 py-3 bg-surface-alt border-b border-border flex-wrap gap-2">
                           <div className="flex items-center gap-2">
                             <div className="w-6 h-6 rounded-full bg-primary-50 border border-primary-200 flex items-center justify-center text-ink-800 text-xs font-bold">
                               {idx + 1}
@@ -804,7 +805,7 @@ function DetailView({ reportId }: { reportId: string }) {
                 <Button
                   fullWidth
                   leadingIcon={PlusCircle}
-                  className="bg-[#115e59] hover:bg-[#0f4f4a]"
+                  className="bg-primary-700 hover:bg-primary-800"
                   onClick={() => {
                     const description = diagnoses[0]?.recommendedAction ?? "";
                     showToast("Đang chuyển đến trang tạo công việc...", "info");
@@ -823,7 +824,7 @@ function DetailView({ reportId }: { reportId: string }) {
         {/* Right column — image + AI */}
         <div className="lg:col-span-3 space-y-4">
           {reportImageUrl && (
-            <div className="bg-white rounded-card border border-border shadow-sm overflow-hidden">
+            <div className="bg-surface rounded-card border border-border shadow-card overflow-hidden">
               <div
                 className="w-full"
                 style={{ aspectRatio: "16/9", maxHeight: "288px" }}
@@ -840,11 +841,11 @@ function DetailView({ reportId }: { reportId: string }) {
           {ai ? (
             <>
               <div
-                className={`rounded-card border-l-4 p-4 ${ai.isHealthy ? "bg-[#f0fdf4] border-[#16a34a]" : "bg-[#fff7ed] border-[#f59e0b]"}`}
+                className={`rounded-card border-l-4 p-4 ${ai.isHealthy ? "bg-status-success-bg border-status-success-fg" : "bg-[#fff7ed] border-status-warning-fg"}`}
               >
                 <div className="flex items-start gap-3">
                   <AlertTriangle
-                    className={`w-5 h-5 mt-0.5 shrink-0 ${ai.isHealthy ? "text-[#16a34a]" : "text-[#f59e0b]"}`}
+                    className={`w-5 h-5 mt-0.5 shrink-0 ${ai.isHealthy ? "text-status-success-fg" : "text-status-warning-fg"}`}
                   />
                   <div className="flex-1">
                     <div
@@ -880,7 +881,7 @@ function DetailView({ reportId }: { reportId: string }) {
                           className={`h-2 rounded-full overflow-hidden ${ai.isHealthy ? "bg-[#bbf7d0]" : "bg-[#fde68a]"}`}
                         >
                           <div
-                            className={`h-full rounded-full ${ai.isHealthy ? "bg-[#16a34a]" : "bg-[#f59e0b]"}`}
+                            className={`h-full rounded-full ${ai.isHealthy ? "bg-status-success-fg" : "bg-status-warning-fg"}`}
                             style={{ width: `${ai.confidence * 100}%` }}
                           />
                         </div>
@@ -899,7 +900,7 @@ function DetailView({ reportId }: { reportId: string }) {
               </div>
 
               {ai.symptoms && ai.symptoms.length > 0 && (
-                <div className="bg-white rounded-card border border-border shadow-sm p-4">
+                <div className="bg-surface rounded-card border border-border shadow-card p-4">
                   <h3 className="text-sm font-semibold text-ink-500 flex items-center gap-2 mb-3">
                     <Stethoscope className="w-4 h-4" /> Triệu chứng phát hiện
                   </h3>
@@ -909,7 +910,7 @@ function DetailView({ reportId }: { reportId: string }) {
                         key={i}
                         className="flex items-start gap-2 text-sm text-ink-700"
                       >
-                        <span className="w-5 h-5 rounded-full bg-[#fff7ed] border border-[#f59e0b]/40 flex items-center justify-center text-[#f59e0b] text-[10px] font-bold shrink-0 mt-0.5">
+                        <span className="w-5 h-5 rounded-full bg-[#fff7ed] border border-status-warning-fg/40 flex items-center justify-center text-status-warning-fg text-[10px] font-bold shrink-0 mt-0.5">
                           {i + 1}
                         </span>
                         {s}
@@ -920,7 +921,7 @@ function DetailView({ reportId }: { reportId: string }) {
               )}
 
               {ai.treatment && ai.treatment.length > 0 && (
-                <div className="bg-white rounded-card border border-border shadow-sm p-4">
+                <div className="bg-surface rounded-card border border-border shadow-card p-4">
                   <h3 className="text-sm font-semibold text-ink-500 flex items-center gap-2 mb-3">
                     <FlaskConical className="w-4 h-4" /> Khuyến nghị xử lý (AI)
                   </h3>
@@ -939,7 +940,7 @@ function DetailView({ reportId }: { reportId: string }) {
               )}
             </>
           ) : (
-            <div className="bg-white rounded-card border border-border shadow-sm p-8 text-center">
+            <div className="bg-surface rounded-card border border-border shadow-card p-8 text-center">
               <Cpu className="w-10 h-10 text-ink-300 mx-auto mb-3" />
               <p className="text-sm font-medium text-ink-700 mb-1">
                 Chưa có dữ liệu phân tích AI
