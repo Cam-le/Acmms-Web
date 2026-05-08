@@ -893,6 +893,8 @@ export const api = {
     request<PriceSettingResponse[]>("GET", "/api/payment/price-settings"),
   createPriceSetting: (body: PriceSettingCreateRequest) =>
     request<unknown>("POST", "/api/payment/price-setting", body),
+  createPayment: (body: PaymentCreateRequest) =>
+    request<PaymentCreateResponse>("POST", "/api/payment/create", body),
   // Harvests
   getHarvests: () => request<HarvestResponse[]>("GET", "/api/harvests"),
   getHarvest: (id: string) =>
