@@ -17,7 +17,6 @@ import {
   ClipboardList,
 } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
-import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import * as Tabs from "@radix-ui/react-tabs";
 import { api } from "../../api/client";
 import type {
@@ -28,8 +27,26 @@ import type {
   PlotResponse,
   UserResponse,
 } from "../../api/client";
+import { Modal } from "../components/ui/Modal";
+import { ConfirmDialog } from "../components/ui/ConfirmDialog";
+import { Button } from "../components/ui/Button";
+import { PageHeader } from "../components/ui/PageHeader";
+import { StatusBadge } from "../components/ui/StatusBadge";
+import { Pagination } from "../components/ui/Pagination";
+import { LoadingState } from "../components/ui/LoadingState";
+import { EmptyState } from "../components/ui/EmptyState";
+import { useToast } from "../components/ui/useToast";
+import { ToastContainer } from "../components/ui/ToastContainer";
+import { isoTime, isoDate } from "../utils/format";
+import { sortBedsByBedName } from "../utils/sort";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
+
+const DAY_LABELS = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"];
+const HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0"));
+const MINUTES = Array.from({ length: 12 }, (_, i) =>
+  String(i * 5).padStart(2, "0"),
+);
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -38,56 +55,11 @@ function normaliseTaskStatus(s: string): "active" | "inactive" {
   return s?.toLowerCase() === "inactive" ? "inactive" : "active";
 }
 
-/**
- * Extract HH:MM directly from an ISO datetime string returned by the backend.
- * The backend always stores times as UTC (Z-suffixed) but the values it saves
- * are the literal local times the user entered — so we read the raw digits
- * instead of letting new Date() shift them by the browser timezone offset.
- * "2026-04-13T07:00:00.000Z" → "07:00"
- */
-function isoTime(iso: string): string {
-  if (!iso) return "";
-  const t = iso.indexOf("T");
-  if (t === -1) return "";
-  return iso.slice(t + 1, t + 6);
-}
-
-/**
- * Extract DD/MM/YYYY directly from an ISO datetime string.
- * "2026-04-13T07:00:00.000Z" → "13/04/2026"
- */
-function isoDate(iso: string): string {
-  if (!iso) return "";
-  const [y, m, d] = iso.slice(0, 10).split("-");
-  return `${d}/${m}/${y}`;
-}
-
-/**
- * Sort beds by the leading number in their name.
- * "Luống 08_Vuông 01_Tây Nam" → key = 8
- * Falls back to full string comparison for names that don't match.
- */
-function bedSortKey(bedName: string): number {
-  const m = bedName.match(/(\d+)/);
-  return m ? parseInt(m[1], 10) : Infinity;
-}
-function sortBeds<T extends { bedName: string }>(beds: T[]): T[] {
-  return [...beds].sort((a, b) => {
-    const diff = bedSortKey(a.bedName) - bedSortKey(b.bedName);
-    return diff !== 0 ? diff : a.bedName.localeCompare(b.bedName);
-  });
-}
-
-const DAY_LABELS = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"];
-const HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0"));
-const MINUTES = Array.from({ length: 12 }, (_, i) =>
-  String(i * 5).padStart(2, "0"),
-);
-
 // ─── Drum Picker ──────────────────────────────────────────────────────────────
+// Preserved exactly — unique domain UI
 
 const ITEM_H = 36;
-const VISIBLE = 3; // must be odd
+const VISIBLE = 3;
 
 interface DrumPickerProps {
   items: string[];
@@ -153,7 +125,6 @@ function DrumPicker({ items, value, onChange, label }: DrumPickerProps) {
         {label}
       </p>
       <div className="relative" style={{ width: 60, height: ITEM_H * VISIBLE }}>
-        {/* Selection highlight */}
         <div
           className="absolute left-0 right-0 rounded-xl pointer-events-none z-10"
           style={{
@@ -163,7 +134,6 @@ function DrumPicker({ items, value, onChange, label }: DrumPickerProps) {
             border: "2px solid #009689",
           }}
         />
-        {/* Top fade */}
         <div
           className="absolute inset-x-0 top-0 pointer-events-none z-10 rounded-t-xl"
           style={{
@@ -172,7 +142,6 @@ function DrumPicker({ items, value, onChange, label }: DrumPickerProps) {
               "linear-gradient(to bottom, rgba(255,255,255,0.95), rgba(255,255,255,0))",
           }}
         />
-        {/* Bottom fade */}
         <div
           className="absolute inset-x-0 bottom-0 pointer-events-none z-10 rounded-b-xl"
           style={{
@@ -227,7 +196,7 @@ function DrumPicker({ items, value, onChange, label }: DrumPickerProps) {
 }
 
 // ─── Inline Time Range Input ─────────────────────────────────────────────────
-// Two native <input type="time"> for direct keyboard entry.
+// Preserved exactly — native <input type="time"> for direct keyboard entry
 
 interface InlineTimeRangeProps {
   startHour: string;
@@ -285,6 +254,7 @@ function InlineTimeRange({
 }
 
 // ─── Calendar Day Cell ────────────────────────────────────────────────────────
+// Preserved exactly — unique domain UI with multi-day span detection
 
 function CalendarDayCard({
   day,
@@ -308,7 +278,6 @@ function CalendarDayCard({
   style?: React.CSSProperties;
 }) {
   const [showAll, setShowAll] = useState(false);
-  // Raw YYYY-MM-DD for this cell — used for multi-day span detection
   const cellDay = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`;
   const MAX_VISIBLE = 3;
   const visible = showAll ? assignments : assignments.slice(0, MAX_VISIBLE);
@@ -319,7 +288,6 @@ function CalendarDayCard({
       style={style}
       className={`flex flex-col border-r border-[#f1f5f9] last:border-r-0 min-h-[320px] ${isToday ? "bg-[#f0fdfa]" : "bg-white"}`}
     >
-      {/* Day header */}
       <div
         className={`flex flex-col items-center py-2.5 border-b ${isToday ? "border-[#009689]/20" : "border-[#f1f5f9]"}`}
       >
@@ -359,7 +327,6 @@ function CalendarDayCard({
         )}
       </div>
 
-      {/* Task cards */}
       <div className="flex-1 p-1.5 space-y-1.5 overflow-y-auto">
         {visible.map((a) => {
           const taskStartDay = a.startDate?.slice(0, 10) ?? "";
@@ -497,12 +464,8 @@ function CalendarDayCard({
 }
 
 // ─── Worker Schedule Preview ──────────────────────────────────────────────────
+// Preserved exactly — complex domain logic with raw ISO digit slices
 
-/**
- * Shows a worker's existing task schedule as a weekly grid.
- * Each day cell lists task time blocks as simple labelled pills.
- * Uses raw ISO digit slices throughout — never Date() — to avoid UTC shifts.
- */
 function WorkerSchedulePreview({
   workerId,
   fromDate,
@@ -518,7 +481,6 @@ function WorkerSchedulePreview({
 }) {
   const DAY_HDRS = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"];
 
-  // Safe date iteration using string arithmetic (avoids UTC midnight shift).
   const addOneDayStr = (dateStr: string) => {
     const d = new Date(`${dateStr}T12:00:00`);
     d.setDate(d.getDate() + 1);
@@ -528,7 +490,6 @@ function WorkerSchedulePreview({
     return `${y}-${m}-${day}`;
   };
 
-  // Build ordered list of YYYY-MM-DD strings in [fromDate, toDate] (max 42).
   const days: string[] = [];
   let cur = fromDate;
   while (cur <= toDate && days.length < 42) {
@@ -536,7 +497,6 @@ function WorkerSchedulePreview({
     cur = addOneDayStr(cur);
   }
 
-  // Group tasks by every day they cover (raw string range check).
   const byDate: Record<string, TaskDetailResponse[]> = {};
   taskDetails
     .filter((d) => d.assignedToWorkerIds.includes(workerId))
@@ -553,10 +513,8 @@ function WorkerSchedulePreview({
       }
     });
 
-  // Pad to Monday-aligned week grid.
-  // Compute day-of-week for fromDate without Date() ambiguity.
   const firstDate = new Date(`${fromDate}T12:00:00`);
-  const dow0 = firstDate.getDay(); // 0=Sun
+  const dow0 = firstDate.getDay();
   const padBefore = dow0 === 0 ? 6 : dow0 - 1;
   const padded: (string | null)[] = [...Array(padBefore).fill(null), ...days];
   while (padded.length % 7 !== 0) padded.push(null);
@@ -571,13 +529,10 @@ function WorkerSchedulePreview({
   })();
 
   const busyDays = days.filter((d) => (byDate[d]?.length ?? 0) > 0).length;
-
-  // Format raw ISO digits to HH:MM label.
   const fmtTime = (iso: string) => `${iso.slice(11, 13)}:${iso.slice(14, 16)}`;
 
   return (
     <div className="rounded-lg border border-[#e2e8f0] overflow-hidden bg-white">
-      {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 bg-[#f8fafc] border-b border-[#e2e8f0]">
         <span className="text-xs font-semibold text-[#475569]">
           Lịch bận của <span className="text-[#009689]">{workerName}</span>
@@ -592,8 +547,6 @@ function WorkerSchedulePreview({
           </span>
         )}
       </div>
-
-      {/* Day-of-week header */}
       <div className="grid grid-cols-7 border-b border-[#e2e8f0]">
         {DAY_HDRS.map((h) => (
           <div
@@ -604,8 +557,6 @@ function WorkerSchedulePreview({
           </div>
         ))}
       </div>
-
-      {/* Week rows */}
       <div className="max-h-[280px] overflow-y-auto">
         {weeks.map((week, wi) => (
           <div
@@ -625,13 +576,11 @@ function WorkerSchedulePreview({
               const isBusy = tasks.length > 0;
               const isToday = dayStr === todayKey;
               const dayNum = parseInt(dayStr.slice(8), 10);
-
               return (
                 <div
                   key={di}
                   className={`min-h-[64px] border-r border-[#f1f5f9] last:border-r-0 p-1 flex flex-col gap-1 ${isBusy ? "bg-amber-50/40" : ""}`}
                 >
-                  {/* Day number */}
                   <div className="flex justify-center">
                     <span
                       className="text-[10px] font-semibold w-5 h-5 flex items-center justify-center rounded-full leading-none"
@@ -646,8 +595,6 @@ function WorkerSchedulePreview({
                       {dayNum}
                     </span>
                   </div>
-
-                  {/* Task pills */}
                   {tasks.map((t) => (
                     <div
                       key={t.taskDetailId}
@@ -672,9 +619,29 @@ function WorkerSchedulePreview({
   );
 }
 
+// ─── Task status helpers ──────────────────────────────────────────────────────
+
+const TASK_STATUS_MAP: Record<
+  string,
+  { label: string; tone: "warning-2" | "success" | "neutral" }
+> = {
+  Pending: { label: "Đang làm", tone: "warning-2" },
+  Completed: { label: "Đã hoàn thành", tone: "success" },
+};
+
+function getTaskStatusInfo(status: string | undefined) {
+  return (
+    TASK_STATUS_MAP[status ?? ""] ?? {
+      label: status ?? "—",
+      tone: "neutral" as const,
+    }
+  );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function TasksPage() {
+  const { toasts, showToast, dismissToast } = useToast();
   const [activeTab, setActiveTab] = useState<"schedule" | "allTasks" | "tasks">(
     "schedule",
   );
@@ -688,10 +655,9 @@ export function TasksPage() {
   const [staffList, setStaffList] = useState<UserResponse[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // UI
   const [isCalendarEditMode, setIsCalendarEditMode] = useState(false);
 
-  // Calendar filter (worker + date range)
+  // Calendar filter
   const [calWorkerFilter, setCalWorkerFilter] = useState("");
   const [calFromDate, setCalFromDate] = useState(() => {
     const d = new Date();
@@ -728,8 +694,10 @@ export function TasksPage() {
   const [detailToDelete, setDetailToDelete] =
     useState<TaskDetailResponse | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isDeletingDetail, setIsDeletingDetail] = useState(false);
+  const [isDeletingTpl, setIsDeletingTpl] = useState(false);
 
-  // Auto-open "Thêm công việc" modal when navigated from Advisory page
+  // Auto-open from Advisory page
   const [searchParams, setSearchParams] = useSearchParams();
   useEffect(() => {
     if (searchParams.get("openCreateTask") === "true") {
@@ -741,8 +709,6 @@ export function TasksPage() {
     }
   }, []);
 
-  // ── Handlers ──────────────────────────────────────────────────────────────
-
   // Template table state
   const [tplPage, setTplPage] = useState(1);
   const [viewTplOpen, setViewTplOpen] = useState(false);
@@ -753,17 +719,15 @@ export function TasksPage() {
   const [editTpl, setEditTpl] = useState<TaskResponse | null>(null);
   const TPL_PER_PAGE = 8;
 
-  // New template form
   const [newTemplate, setNewTemplate] = useState({
     name: "",
     type: "",
     description: "",
   });
 
-  // ── Assign modal: mode + shared state ────────────────────────────────────
+  // ── Assign modal ──────────────────────────────────────────────────────────
   const [assignMode, setAssignMode] = useState<"bulk" | "single">("bulk");
 
-  // Bulk form
   const WEEKDAY_MAP: Record<string, number> = {
     T2: 1,
     T3: 2,
@@ -773,6 +737,7 @@ export function TasksPage() {
     T7: 6,
     CN: 0,
   };
+
   const [bulkForm, setBulkForm] = useState({
     workerId: "",
     taskId: "",
@@ -789,21 +754,18 @@ export function TasksPage() {
     notes: "",
   });
 
-  // Single form
   const [singleForm, setSingleForm] = useState({
     workerId: "",
     taskId: "",
     seasonId: "",
     plotId: "",
     bedIds: [] as string[],
-    // used in same-day mode
     date: "",
     startHour: "07",
     startMinute: "00",
     endHour: "09",
     endMinute: "00",
     notes: "",
-    // multi-day mode
     isMultiDay: false,
     multiStartDate: "",
     multiStartHour: "07",
@@ -814,7 +776,6 @@ export function TasksPage() {
   });
   const [singleConflict, setSingleConflict] = useState<string[]>([]);
 
-  // Derived: beds available for a given seasonId + plotId
   const getBedsForPlot = (seasonId: string, plotId: string) => {
     if (!seasonId || !plotId) return [];
     const season = seasons.find((s) => s.seasonId === seasonId);
@@ -836,7 +797,6 @@ export function TasksPage() {
     return allPlots.filter((p) => plotIds.has(p.plotId));
   };
 
-  // Bulk preview count
   const bulkPreviewCount = (() => {
     if (!bulkForm.fromDate || !bulkForm.toDate || !bulkForm.selectedDays.length)
       return 0;
@@ -853,7 +813,6 @@ export function TasksPage() {
     return count;
   })();
 
-  // Single conflict check (against existing mock taskDetails)
   const checkSingleConflict = (
     workerId: string,
     date: string,
@@ -881,7 +840,6 @@ export function TasksPage() {
     setSingleConflict(conflicts);
   };
 
-  // Reset assign modal
   const resetAssignModal = () => {
     setBulkForm({
       workerId: "",
@@ -988,8 +946,9 @@ export function TasksPage() {
         taskNotes: newTemplate.description,
       });
       await loadAllData();
+      showToast("Tạo công việc thành công", "success");
     } catch (err) {
-      console.error("Failed to create task:", err);
+      showToast("Tạo công việc thất bại: " + (err as Error).message, "error");
     } finally {
       setIsSaving(false);
     }
@@ -999,17 +958,18 @@ export function TasksPage() {
 
   const handleDeleteTemplate = async () => {
     if (!tplToDelete) return;
-    setIsSaving(true);
+    setIsDeletingTpl(true);
     try {
       await api.deleteTask(tplToDelete.taskId);
       await loadAllData();
+      setDeleteTplOpen(false);
+      setTplToDelete(null);
+      showToast("Xóa công việc thành công", "success");
     } catch (err) {
-      console.error("Failed to delete task:", err);
+      showToast("Xóa công việc thất bại: " + (err as Error).message, "error");
     } finally {
-      setIsSaving(false);
+      setIsDeletingTpl(false);
     }
-    setDeleteTplOpen(false);
-    setTplToDelete(null);
     setTplPage((p) => Math.max(1, p));
   };
 
@@ -1023,16 +983,18 @@ export function TasksPage() {
         taskNotes: editTpl.taskNotes,
       });
       await loadAllData();
+      showToast("Cập nhật công việc thành công", "success");
     } catch (err) {
-      console.error("Failed to update task:", err);
+      showToast(
+        "Cập nhật công việc thất bại: " + (err as Error).message,
+        "error",
+      );
     } finally {
       setIsSaving(false);
     }
     setEditTplOpen(false);
     setEditTpl(null);
   };
-
-  // ── Submit handlers for bulk + single assign ─────────────────────────────
 
   const handleSubmitBulk = async () => {
     const {
@@ -1071,7 +1033,6 @@ export function TasksPage() {
     const farmId =
       allPlots.find((p) => plotIds.includes(p.plotId))?.farmId ?? "";
 
-    // Collect all matching dates in the range
     const dates: string[] = [];
     const cur = new Date(fromDate);
     const end = new Date(toDate);
@@ -1106,8 +1067,9 @@ export function TasksPage() {
       await loadAllData();
       resetAssignModal();
       setIsAssignOpen(false);
+      showToast(`Đã giao ${dates.length} việc thành công`, "success");
     } catch (err) {
-      console.error("Failed to create bulk task details:", err);
+      showToast("Giao việc thất bại: " + (err as Error).message, "error");
     } finally {
       setIsSaving(false);
     }
@@ -1185,8 +1147,9 @@ export function TasksPage() {
       await loadAllData();
       resetAssignModal();
       setIsAssignOpen(false);
+      showToast("Giao việc thành công", "success");
     } catch (err) {
-      console.error("Failed to create task detail:", err);
+      showToast("Giao việc thất bại: " + (err as Error).message, "error");
     } finally {
       setIsSaving(false);
     }
@@ -1194,20 +1157,23 @@ export function TasksPage() {
 
   const handleDeleteAssignment = async () => {
     if (!detailToDelete) return;
-    setIsSaving(true);
+    setIsDeletingDetail(true);
     try {
       await api.deleteTaskDetail(detailToDelete.taskDetailId);
       await loadAllData();
+      setIsDeleteOpen(false);
+      setDetailToDelete(null);
+      showToast("Đã xóa lịch trình", "success");
     } catch (err) {
-      // Mock fallback: remove from local state
+      // Fallback: remove from local state
       setTaskDetails((prev) =>
         prev.filter((d) => d.taskDetailId !== detailToDelete.taskDetailId),
       );
+      setIsDeleteOpen(false);
+      setDetailToDelete(null);
     } finally {
-      setIsSaving(false);
+      setIsDeletingDetail(false);
     }
-    setIsDeleteOpen(false);
-    setDetailToDelete(null);
   };
 
   // ── Edit task detail ───────────────────────────────────────────────────────
@@ -1228,7 +1194,6 @@ export function TasksPage() {
     selectedPlotIds: string[];
   } | null>(null);
 
-  // Whether the "Lịch bận" schedule panel is expanded in the edit modal
   const [editShowSchedule, setEditShowSchedule] = useState(false);
 
   const openEditDetail = (detail: TaskDetailResponse) => {
@@ -1237,7 +1202,6 @@ export function TasksPage() {
     const startM = detail.startDate.slice(14, 16);
     const endH = detail.endDate.slice(11, 13);
     const endM = detail.endDate.slice(14, 16);
-    // Derive which plots are selected from the bed list
     const plotIdsFromBeds = Array.from(
       new Set(
         detail.bedIds
@@ -1274,7 +1238,6 @@ export function TasksPage() {
     try {
       const startISO = `${editDetail.date}T${editDetail.startHour}:${editDetail.startMinute}:00.000`;
       const endISO = `${editDetail.date}T${editDetail.endHour}:${editDetail.endMinute}:00.000`;
-      // Derive plotIds from selected beds
       const plotIds = Array.from(
         new Set(
           editDetail.bedIds
@@ -1296,8 +1259,9 @@ export function TasksPage() {
         notes: editDetail.notes,
       });
       await loadAllData();
+      showToast("Cập nhật lịch trình thành công", "success");
     } catch (err) {
-      console.error("Failed to update task detail:", err);
+      showToast("Cập nhật thất bại: " + (err as Error).message, "error");
     } finally {
       setIsSaving(false);
     }
@@ -1335,11 +1299,9 @@ export function TasksPage() {
         return true;
       })
       .sort((a, b) => {
-        // Primary: status priority (Active → Pending → Completed → rest)
         const sa = STATUS_SORT_ORDER[a.status ?? ""] ?? 99;
         const sb = STATUS_SORT_ORDER[b.status ?? ""] ?? 99;
         if (sa !== sb) return sa - sb;
-        // Secondary: most recent date first
         return (
           new Date(b.startDate ?? 0).getTime() -
           new Date(a.startDate ?? 0).getTime()
@@ -1357,38 +1319,38 @@ export function TasksPage() {
     allTasksPageClamped * ALL_TASKS_PER_PAGE,
   );
 
+  const tplTotalPages = Math.max(1, Math.ceil(tasks.length / TPL_PER_PAGE));
+
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-[#115e59]">Công việc</h1>
-          <p className="text-sm text-[#64748b] mt-1">
-            Quản lý và phân công công việc tại trang trại
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          {isLoading && (
-            <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-500">
-              Đang tải...
-            </span>
-          )}
-          <button
-            onClick={() => setIsAssignOpen(true)}
-            className="bg-[#009689] text-white px-3 py-1.5 rounded-lg text-sm flex items-center gap-1.5 hover:bg-[#007f73] transition-colors"
-          >
-            <Plus className="w-3.5 h-3.5" /> Giao việc
-          </button>
-        </div>
-      </div>
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
 
-      {/* Tabs */}
+      {/* Header */}
+      <PageHeader
+        icon={ClipboardList}
+        title="Công việc"
+        subtitle="Quản lý và phân công công việc tại trang trại"
+        actions={
+          <>
+            {isLoading && (
+              <span className="px-2.5 py-1 rounded-pill text-xs font-medium bg-surface-subtle text-ink-500">
+                Đang tải...
+              </span>
+            )}
+            <Button leadingIcon={Plus} onClick={() => setIsAssignOpen(true)}>
+              Giao việc
+            </Button>
+          </>
+        }
+      />
+
+      {/* Tabs — preserving Radix Tabs.Root with underline style (different from pill Tabs component) */}
       <Tabs.Root
         value={activeTab}
         onValueChange={(v) => setActiveTab(v as typeof activeTab)}
       >
-        <Tabs.List className="flex gap-6 border-b border-[#e2e8f0]">
+        <Tabs.List className="flex gap-6 border-b border-border">
           {[
             {
               value: "schedule",
@@ -1409,23 +1371,22 @@ export function TasksPage() {
             <Tabs.Trigger
               key={tab.value}
               value={tab.value}
-              className="pb-3 px-1 relative text-sm font-medium text-[#64748b] data-[state=active]:text-[#009689] transition-colors"
+              className="pb-3 px-1 relative text-sm font-medium text-ink-500 data-[state=active]:text-primary transition-colors"
             >
               <div className="flex items-center gap-2">
                 {tab.icon}
                 {tab.label}
               </div>
-              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#009689] opacity-0 data-[state=active]:opacity-100 transition-opacity" />
+              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary opacity-0 data-[state=active]:opacity-100 transition-opacity" />
             </Tabs.Trigger>
           ))}
         </Tabs.List>
 
         {/* ══ TAB: LỊCH THEO NHÂN VIÊN ══ */}
         <Tabs.Content value="schedule" className="mt-6 space-y-4">
-          {/* Filter bar */}
-          <div className="bg-white rounded-[10px] p-4 shadow-sm border border-[#e2e8f0] flex items-end gap-3 flex-wrap">
+          <div className="bg-white rounded-[10px] p-4 shadow-card border border-border flex items-end gap-3 flex-wrap">
             <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-[#64748b]">
+              <label className="text-xs font-medium text-ink-500">
                 Nhân viên
               </label>
               <select
@@ -1444,7 +1405,7 @@ export function TasksPage() {
               </select>
             </div>
             <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-[#64748b]">
+              <label className="text-xs font-medium text-ink-500">
                 Từ ngày
               </label>
               <input
@@ -1455,7 +1416,7 @@ export function TasksPage() {
               />
             </div>
             <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-[#64748b]">
+              <label className="text-xs font-medium text-ink-500">
                 Đến ngày
               </label>
               <input
@@ -1465,26 +1426,14 @@ export function TasksPage() {
                 className="px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689]"
               />
             </div>
-            <div className="flex items-center gap-2 ml-auto">
-              {/* <button
-                onClick={() => setIsCalendarEditMode((p) => !p)}
-                className={`px-3 py-2 rounded-lg text-sm flex items-center gap-1.5 font-medium border transition-colors ${
-                  isCalendarEditMode
-                    ? "bg-amber-500 text-white border-amber-500 hover:bg-amber-600"
-                    : "bg-white text-[#64748b] border-[#e2e8f0] hover:border-amber-400 hover:text-amber-600"
-                }`}
-              >
-                <Pencil className="w-3.5 h-3.5" />
-                {isCalendarEditMode ? "Thoát chỉnh sửa" : "Chỉnh sửa lịch"}
-              </button> */}
-            </div>
           </div>
 
-          {/* Validation / empty prompt */}
           {!calWorkerFilter ? (
-            <div className="bg-white rounded-[10px] shadow-sm border border-[#e2e8f0] py-16 text-center text-[#94a3b8] text-sm">
-              <User className="w-8 h-8 mx-auto mb-2 opacity-30" />
-              Chọn nhân viên và khoảng thời gian để xem lịch làm việc
+            <div className="bg-white rounded-[10px] shadow-card border border-border py-16">
+              <EmptyState
+                icon={User}
+                message="Chọn nhân viên và khoảng thời gian để xem lịch làm việc"
+              />
             </div>
           ) : (
             (() => {
@@ -1492,13 +1441,13 @@ export function TasksPage() {
               const to = calToDate ? new Date(calToDate) : null;
               if (!from || !to)
                 return (
-                  <div className="bg-white rounded-[10px] shadow-sm border border-[#e2e8f0] py-16 text-center text-[#94a3b8] text-sm">
-                    Vui lòng chọn khoảng thời gian để hiển thị lịch
+                  <div className="bg-white rounded-[10px] shadow-card border border-border py-16">
+                    <EmptyState message="Vui lòng chọn khoảng thời gian để hiển thị lịch" />
                   </div>
                 );
               if (from > to)
                 return (
-                  <div className="bg-red-50 rounded-[10px] border border-red-200 py-6 text-center text-red-500 text-sm">
+                  <div className="bg-status-danger-bg rounded-[10px] border border-status-danger-fg/30 py-6 text-center text-status-danger-fg text-sm">
                     Ngày bắt đầu phải trước ngày kết thúc
                   </div>
                 );
@@ -1506,20 +1455,17 @@ export function TasksPage() {
                 Math.round((to.getTime() - from.getTime()) / 86400000) + 1;
               if (diffDays > 42)
                 return (
-                  <div className="bg-amber-50 rounded-[10px] border border-amber-200 py-6 text-center text-amber-600 text-sm">
+                  <div className="bg-status-warning-bg rounded-[10px] border border-status-warning-fg/30 py-6 text-center text-status-warning-fg text-sm">
                     Khoảng thời gian tối đa hiển thị là 6 tuần. Vui lòng thu hẹp
                     phạm vi.
                   </div>
                 );
 
-              // Build calendar days from Monday of the week containing "from"
-              // to Sunday of the week containing "to"
               const calStart = new Date(from);
               const startDow = calStart.getDay();
               calStart.setDate(
                 calStart.getDate() + (startDow === 0 ? -6 : 1 - startDow),
               );
-
               const calEnd = new Date(to);
               const endDow = calEnd.getDay();
               if (endDow !== 0) calEnd.setDate(calEnd.getDate() + (7 - endDow));
@@ -1531,7 +1477,6 @@ export function TasksPage() {
                 cursor.setDate(cursor.getDate() + 1);
               }
 
-              // Filter task details for this worker only
               const workerDetails = taskDetails.filter((d) =>
                 d.assignedToWorkerIds.includes(calWorkerFilter),
               );
@@ -1561,34 +1506,22 @@ export function TasksPage() {
 
               return (
                 <>
-                  {isCalendarEditMode && (
-                    <div className="flex items-center gap-2 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-[10px] text-sm text-amber-700">
-                      <Pencil className="w-4 h-4 shrink-0 text-amber-500" />
-                      <span>
-                        Đang ở chế độ chỉnh sửa — nhấn{" "}
-                        <span className="font-semibold">Sửa</span> hoặc{" "}
-                        <span className="font-semibold">Xoá</span> trực tiếp
-                        trên từng công việc.
-                      </span>
-                    </div>
-                  )}
-                  <p className="text-sm text-[#64748b]">
-                    <span className="font-semibold text-[#1e293b]">
+                  <p className="text-sm text-ink-500">
+                    <span className="font-semibold text-ink-900">
                       {selectedWorker?.fullname ?? calWorkerFilter}
                     </span>{" "}
                     —{" "}
-                    <span className="font-semibold text-[#009689]">
+                    <span className="font-semibold text-primary">
                       {totalInRange}
                     </span>{" "}
                     công việc trong khoảng thời gian đã chọn
                   </p>
-                  {/* Calendar grid */}
-                  <div className="bg-white rounded-[10px] shadow-sm border border-[#e2e8f0] overflow-hidden">
+                  <div className="bg-white rounded-[10px] shadow-card border border-border overflow-hidden">
                     <div className="grid grid-cols-7 divide-x divide-[#f1f5f9]">
                       {DAY_LABELS.map((label) => (
                         <div
                           key={label}
-                          className="py-2 text-center text-[10px] font-bold uppercase tracking-widest text-[#94a3b8] bg-[#f8fafc] border-b border-[#f1f5f9]"
+                          className="py-2 text-center text-[10px] font-bold uppercase tracking-widest text-ink-400 bg-surface-alt border-b border-[#f1f5f9]"
                         >
                           {label}
                         </div>
@@ -1636,7 +1569,6 @@ export function TasksPage() {
 
         {/* ══ TAB: TẤT CẢ CÔNG VIỆC ══ */}
         <Tabs.Content value="allTasks" className="mt-6 space-y-4">
-          {/* Toolbar */}
           <div className="flex items-center gap-3 flex-wrap">
             <input
               type="text"
@@ -1679,11 +1611,10 @@ export function TasksPage() {
             </select>
           </div>
 
-          {/* Table */}
-          <div className="bg-white rounded-[10px] shadow-sm border border-[#e2e8f0] overflow-hidden">
+          <div className="bg-white rounded-[10px] shadow-card border border-border overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-[#f8fafc] border-b border-[#e2e8f0]">
+              <table className="w-full min-w-[700px]">
+                <thead className="bg-surface-alt border-b border-border">
                   <tr>
                     {[
                       "Tên công việc",
@@ -1696,7 +1627,7 @@ export function TasksPage() {
                     ].map((h, i) => (
                       <th
                         key={h}
-                        className={`px-4 py-3 text-xs font-semibold text-[#62748e] uppercase tracking-wide whitespace-nowrap ${i === 6 ? "text-center" : "text-left"}`}
+                        className={`px-4 py-3 text-xs font-semibold text-ink-500 uppercase tracking-wide whitespace-nowrap ${i === 6 ? "text-center" : "text-left"}`}
                       >
                         {h}
                       </th>
@@ -1706,20 +1637,14 @@ export function TasksPage() {
                 <tbody className="divide-y divide-[#f1f5f9]">
                   {isLoading ? (
                     <tr>
-                      <td
-                        colSpan={7}
-                        className="px-4 py-16 text-center text-[#94a3b8] text-sm"
-                      >
-                        Đang tải...
+                      <td colSpan={7} className="px-4 py-16">
+                        <LoadingState />
                       </td>
                     </tr>
                   ) : allTasksSlice.length === 0 ? (
                     <tr>
-                      <td
-                        colSpan={7}
-                        className="px-4 py-16 text-center text-[#94a3b8] text-sm"
-                      >
-                        Không tìm thấy công việc phù hợp
+                      <td colSpan={7} className="px-4 py-16">
+                        <EmptyState message="Không tìm thấy công việc phù hợp" />
                       </td>
                     </tr>
                   ) : (
@@ -1747,29 +1672,13 @@ export function TasksPage() {
                         detail.startDate && detail.endDate
                           ? `${isoTime(detail.startDate)} – ${isoTime(detail.endDate)}`
                           : "—";
-                      const statusMap: Record<
-                        string,
-                        { label: string; cls: string }
-                      > = {
-                        Pending: {
-                          label: "Đang làm",
-                          cls: "bg-[#fef3c7] text-[#92400e]",
-                        },
-                        Completed: {
-                          label: "Đã hoàn thành",
-                          cls: "bg-[#d1fae5] text-[#065f46]",
-                        },
-                      };
-                      const statusInfo = statusMap[detail.status ?? ""] ?? {
-                        label: detail.status ?? "—",
-                        cls: "bg-[#f1f5f9] text-[#64748b]",
-                      };
+                      const statusInfo = getTaskStatusInfo(detail.status);
                       return (
                         <tr
                           key={detail.taskDetailId}
-                          className="hover:bg-[#f8fafc] transition-colors"
+                          className="hover:bg-surface-alt transition-colors"
                         >
-                          <td className="px-4 py-3 text-sm font-medium text-[#1e293b]">
+                          <td className="px-4 py-3 text-sm font-medium text-ink-900">
                             {detail.taskTitle ??
                               tasks.find((t) => t.taskId === detail.taskId)
                                 ?.taskTitle ??
@@ -1778,32 +1687,31 @@ export function TasksPage() {
                           <td className="px-4 py-3">
                             {worker ? (
                               <div className="flex items-center gap-2">
-                                <div className="w-7 h-7 rounded-full bg-[#009689] flex items-center justify-center text-white text-[11px] font-bold shrink-0">
+                                <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center text-primary-fg text-[11px] font-bold shrink-0">
                                   {worker.fullname.charAt(0).toUpperCase()}
                                 </div>
-                                <span className="text-sm text-[#1e293b]">
+                                <span className="text-sm text-ink-900">
                                   {worker.fullname}
                                 </span>
                               </div>
                             ) : (
-                              <span className="text-sm text-[#94a3b8]">—</span>
+                              <span className="text-sm text-ink-400">—</span>
                             )}
                           </td>
-                          <td className="px-4 py-3 text-sm text-[#64748b] max-w-[180px] truncate">
+                          <td className="px-4 py-3 text-sm text-ink-500 max-w-[180px] truncate">
                             {locationLabel}
                           </td>
-                          <td className="px-4 py-3 text-sm text-[#1e293b] whitespace-nowrap">
+                          <td className="px-4 py-3 text-sm text-ink-900 whitespace-nowrap">
                             {dateLabel}
                           </td>
-                          <td className="px-4 py-3 text-sm text-[#64748b] whitespace-nowrap">
+                          <td className="px-4 py-3 text-sm text-ink-500 whitespace-nowrap">
                             {timeLabel}
                           </td>
                           <td className="px-4 py-3">
-                            <span
-                              className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-medium ${statusInfo.cls}`}
-                            >
-                              {statusInfo.label}
-                            </span>
+                            <StatusBadge
+                              label={statusInfo.label}
+                              tone={statusInfo.tone}
+                            />
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex items-center justify-center gap-1">
@@ -1812,7 +1720,7 @@ export function TasksPage() {
                                   setSelectedDetail(detail);
                                   setIsViewOpen(true);
                                 }}
-                                className="p-1.5 text-[#009689] hover:bg-[#f0fdfa] rounded-lg transition-colors"
+                                className="p-1.5 text-ink-500 hover:text-primary hover:bg-primary-50 rounded-btn transition-colors"
                                 title="Xem chi tiết"
                               >
                                 <Eye className="w-4 h-4" />
@@ -1822,7 +1730,7 @@ export function TasksPage() {
                                   setSelectedDetail(detail);
                                   openEditDetail(detail);
                                 }}
-                                className="p-1.5 text-[#64748b] hover:bg-[#f1f5f9] rounded-lg transition-colors"
+                                className="p-1.5 text-ink-500 hover:bg-surface-subtle rounded-btn transition-colors"
                                 title="Chỉnh sửa"
                               >
                                 <Pencil className="w-4 h-4" />
@@ -1832,7 +1740,7 @@ export function TasksPage() {
                                   setDetailToDelete(detail);
                                   setIsDeleteOpen(true);
                                 }}
-                                className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg transition-colors"
+                                className="p-1.5 text-ink-400 hover:text-status-danger-fg hover:bg-status-danger-bg rounded-btn transition-colors"
                                 title="Xoá"
                               >
                                 <Trash2 className="w-4 h-4" />
@@ -1846,67 +1754,42 @@ export function TasksPage() {
                 </tbody>
               </table>
             </div>
-
-            {/* Pagination */}
-            <div className="px-4 py-3 border-t border-[#e2e8f0] flex items-center justify-end gap-1">
-              <button
-                onClick={() => setAllTasksPage((p) => Math.max(1, p - 1))}
-                disabled={allTasksPageClamped === 1}
-                className="p-1.5 border border-[#e2e8f0] rounded-lg hover:bg-[#f8fafc] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-              >
-                <ChevronLeft className="w-4 h-4 text-[#64748b]" />
-              </button>
-              {Array.from({ length: allTasksTotalPages }, (_, i) => (
-                <button
-                  key={i}
-                  onClick={() => setAllTasksPage(i + 1)}
-                  className={`w-7 h-7 rounded-lg text-xs font-medium transition-colors ${
-                    allTasksPageClamped === i + 1
-                      ? "bg-[#009689] text-white"
-                      : "hover:bg-[#f8fafc] text-[#64748b]"
-                  }`}
-                >
-                  {i + 1}
-                </button>
-              ))}
-              <button
-                onClick={() =>
-                  setAllTasksPage((p) => Math.min(allTasksTotalPages, p + 1))
-                }
-                disabled={allTasksPageClamped === allTasksTotalPages}
-                className="p-1.5 border border-[#e2e8f0] rounded-lg hover:bg-[#f8fafc] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-              >
-                <ChevronRight className="w-4 h-4 text-[#64748b]" />
-              </button>
+            <div className="px-4 border-t border-border">
+              <Pagination
+                currentPage={allTasksPageClamped}
+                totalPages={allTasksTotalPages}
+                onPageChange={setAllTasksPage}
+                showLabel
+                totalItems={allTasksFiltered.length}
+                pageSize={ALL_TASKS_PER_PAGE}
+                itemLabel="công việc"
+              />
             </div>
           </div>
         </Tabs.Content>
 
         {/* ══ TAB: MẪU CÔNG VIỆC ══ */}
         <Tabs.Content value="tasks" className="mt-6">
-          <div className="bg-white rounded-[10px] shadow-sm border border-[#e2e8f0] overflow-hidden">
-            {/* Table header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-[#e2e8f0]">
-              <h2 className="text-sm font-bold text-[#1e293b]">
-                Mẫu công việc
-              </h2>
-              <button
+          <div className="bg-white rounded-[10px] shadow-card border border-border overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+              <h2 className="text-sm font-bold text-ink-900">Mẫu công việc</h2>
+              <Button
+                leadingIcon={Plus}
+                size="sm"
                 onClick={() => setIsCreateTemplateOpen(true)}
-                className="bg-[#009689] text-white px-3 py-1.5 rounded-lg text-sm flex items-center gap-1.5 hover:bg-[#007f73] transition-colors"
               >
-                <Plus className="w-3.5 h-3.5" /> Thêm mẫu
-              </button>
+                Thêm mẫu
+              </Button>
             </div>
 
-            {/* Table */}
             <div className="overflow-x-auto">
               <table className="w-full">
-                <thead className="bg-[#f8fafc] border-b border-[#e2e8f0]">
+                <thead className="bg-surface-alt border-b border-border">
                   <tr>
                     {["Công việc", "Hành động"].map((h, i) => (
                       <th
                         key={h}
-                        className={`px-6 py-3 text-xs font-semibold text-[#62748e] uppercase tracking-wide ${i === 1 ? "text-center" : "text-left"}`}
+                        className={`px-6 py-3 text-xs font-semibold text-ink-500 uppercase tracking-wide ${i === 1 ? "text-center" : "text-left"}`}
                       >
                         {h}
                       </th>
@@ -1916,11 +1799,8 @@ export function TasksPage() {
                 <tbody className="divide-y divide-[#f1f5f9]">
                   {isLoading ? (
                     <tr>
-                      <td
-                        colSpan={2}
-                        className="px-6 py-16 text-center text-[#94a3b8] text-sm"
-                      >
-                        Đang tải...
+                      <td colSpan={2} className="px-6 py-16">
+                        <LoadingState />
                       </td>
                     </tr>
                   ) : (
@@ -1932,15 +1812,15 @@ export function TasksPage() {
                       .map((tpl) => (
                         <tr
                           key={tpl.taskId}
-                          className="hover:bg-[#f8fafc] transition-colors group"
+                          className="hover:bg-surface-alt transition-colors group"
                         >
                           <td className="px-6 py-3.5">
                             <div>
-                              <span className="text-sm font-medium text-[#1e293b]">
+                              <span className="text-sm font-medium text-ink-900">
                                 {tpl.taskTitle}
                               </span>
                               {tpl.taskNotes && (
-                                <p className="text-xs text-[#94a3b8] mt-0.5 line-clamp-1">
+                                <p className="text-xs text-ink-400 mt-0.5 line-clamp-1">
                                   {tpl.taskNotes}
                                 </p>
                               )}
@@ -1953,7 +1833,7 @@ export function TasksPage() {
                                   setSelectedTpl(tpl);
                                   setViewTplOpen(true);
                                 }}
-                                className="p-1.5 text-[#009689] hover:bg-[#f0fdfa] rounded-lg transition-colors"
+                                className="p-1.5 text-ink-500 hover:text-primary hover:bg-primary-50 rounded-btn transition-colors"
                                 title="Xem mô tả"
                               >
                                 <Eye className="w-4 h-4" />
@@ -1963,7 +1843,7 @@ export function TasksPage() {
                                   setEditTpl({ ...tpl });
                                   setEditTplOpen(true);
                                 }}
-                                className="p-1.5 text-[#64748b] hover:bg-[#f1f5f9] rounded-lg transition-colors"
+                                className="p-1.5 text-ink-500 hover:bg-surface-subtle rounded-btn transition-colors"
                                 title="Chỉnh sửa"
                               >
                                 <Pencil className="w-4 h-4" />
@@ -1973,7 +1853,7 @@ export function TasksPage() {
                                   setTplToDelete(tpl);
                                   setDeleteTplOpen(true);
                                 }}
-                                className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg transition-colors"
+                                className="p-1.5 text-ink-400 hover:text-status-danger-fg hover:bg-status-danger-bg rounded-btn transition-colors"
                                 title="Xoá"
                               >
                                 <Trash2 className="w-4 h-4" />
@@ -1985,11 +1865,8 @@ export function TasksPage() {
                   )}
                   {!isLoading && tasks.length === 0 && (
                     <tr>
-                      <td
-                        colSpan={2}
-                        className="px-6 py-16 text-center text-[#94a3b8] text-sm"
-                      >
-                        Chưa có mẫu công việc nào. Nhấn "Thêm mẫu" để bắt đầu.
+                      <td colSpan={2} className="px-6 py-16">
+                        <EmptyState message='Chưa có mẫu công việc nào. Nhấn "Thêm mẫu" để bắt đầu.' />
                       </td>
                     </tr>
                   )}
@@ -1997,141 +1874,83 @@ export function TasksPage() {
               </table>
             </div>
 
-            {/* Pagination */}
-            <div className="px-6 py-3 border-t border-[#e2e8f0] flex items-center justify-between">
-              <p className="text-xs text-[#64748b]">
-                {tasks.length === 0
-                  ? "Chưa có mẫu nào"
-                  : `${(tplPage - 1) * TPL_PER_PAGE + 1}–${Math.min(tplPage * TPL_PER_PAGE, tasks.length)} / ${tasks.length} mẫu`}
-              </p>
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={() => setTplPage((p) => Math.max(1, p - 1))}
-                  disabled={tplPage === 1}
-                  className="p-1.5 border border-[#e2e8f0] rounded-lg hover:bg-[#f8fafc] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                >
-                  <ChevronLeft className="w-4 h-4 text-[#64748b]" />
-                </button>
-                {Array.from(
-                  {
-                    length: Math.max(1, Math.ceil(tasks.length / TPL_PER_PAGE)),
-                  },
-                  (_, i) => (
-                    <button
-                      key={i}
-                      onClick={() => setTplPage(i + 1)}
-                      className={`w-7 h-7 rounded-lg text-xs font-medium transition-colors ${tplPage === i + 1 ? "bg-[#009689] text-white" : "hover:bg-[#f8fafc] text-[#64748b]"}`}
-                    >
-                      {i + 1}
-                    </button>
-                  ),
-                )}
-                <button
-                  onClick={() =>
-                    setTplPage((p) =>
-                      Math.min(
-                        Math.max(1, Math.ceil(tasks.length / TPL_PER_PAGE)),
-                        p + 1,
-                      ),
-                    )
-                  }
-                  disabled={
-                    tplPage ===
-                    Math.max(1, Math.ceil(tasks.length / TPL_PER_PAGE))
-                  }
-                  className="p-1.5 border border-[#e2e8f0] rounded-lg hover:bg-[#f8fafc] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                >
-                  <ChevronRight className="w-4 h-4 text-[#64748b]" />
-                </button>
-              </div>
+            <div className="px-4 border-t border-border">
+              <Pagination
+                currentPage={tplPage}
+                totalPages={tplTotalPages}
+                onPageChange={setTplPage}
+                showLabel
+                totalItems={tasks.length}
+                pageSize={TPL_PER_PAGE}
+                itemLabel="mẫu"
+              />
             </div>
           </div>
         </Tabs.Content>
       </Tabs.Root>
 
       {/* ══ MODAL: Thêm công việc ══ */}
-      <Dialog.Root
+      <Modal
         open={isCreateTemplateOpen}
         onOpenChange={setIsCreateTemplateOpen}
+        title="Thêm công việc"
+        size="md"
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              onClick={() => setIsCreateTemplateOpen(false)}
+            >
+              Hủy
+            </Button>
+            <Button
+              leadingIcon={CheckCircle2}
+              onClick={handleCreateTemplate}
+              disabled={!newTemplate.name || isSaving}
+              loading={isSaving}
+            >
+              {isSaving ? "Đang lưu..." : "Lưu công việc"}
+            </Button>
+          </>
+        }
       >
-        <Dialog.Portal>
-          <Dialog.Overlay className="fixed inset-0 bg-black/50 z-40" />
-          <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-md bg-white rounded-xl shadow-2xl max-h-[90vh] flex flex-col">
-            <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-[#f1f5f9] shrink-0">
-              <Dialog.Title className="text-lg font-bold text-[#1e293b]">
-                Thêm công việc
-              </Dialog.Title>
-              <Dialog.Close asChild>
-                <button className="p-1 text-slate-400 hover:text-slate-600 rounded">
-                  <X className="w-5 h-5" />
-                </button>
-              </Dialog.Close>
-            </div>
-            <Dialog.Description className="sr-only">
-              Tạo công việc mới
-            </Dialog.Description>
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">
+              Tên công việc <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              placeholder="VD: Tưới nước buổi sáng"
+              value={newTemplate.name}
+              onChange={(e) =>
+                setNewTemplate((p) => ({ ...p, name: e.target.value }))
+              }
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689]"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">
+              Ghi chú / Mô tả
+            </label>
+            <textarea
+              rows={3}
+              placeholder="VD: Bón phân NPK 5kg/sào, bắp cải trắng khu A..."
+              value={newTemplate.description}
+              onChange={(e) =>
+                setNewTemplate((p) => ({ ...p, description: e.target.value }))
+              }
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] resize-none"
+            />
+            <p className="mt-1 text-xs text-ink-400">
+              Ghi rõ loại phân, thuốc, cây trồng... nếu cần
+            </p>
+          </div>
+        </div>
+      </Modal>
 
-            <div className="overflow-y-auto flex-1 px-6 py-5 space-y-4">
-              {/* Tên — task_title */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                  Tên công việc <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  placeholder="VD: Tưới nước buổi sáng"
-                  value={newTemplate.name}
-                  onChange={(e) =>
-                    setNewTemplate((p) => ({ ...p, name: e.target.value }))
-                  }
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                />
-              </div>
-
-              {/* Ghi chú — task_notes */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                  Ghi chú / Mô tả
-                </label>
-                <textarea
-                  rows={3}
-                  placeholder="VD: Bón phân NPK 5kg/sào, bắp cải trắng khu A..."
-                  value={newTemplate.description}
-                  onChange={(e) =>
-                    setNewTemplate((p) => ({
-                      ...p,
-                      description: e.target.value,
-                    }))
-                  }
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] resize-none"
-                />
-                <p className="mt-1 text-xs text-[#94a3b8]">
-                  Ghi rõ loại phân, thuốc, cây trồng... nếu cần
-                </p>
-              </div>
-            </div>
-
-            <div className="shrink-0 flex gap-3 px-6 py-4 border-t border-[#e2e8f0] bg-white">
-              <button
-                onClick={() => setIsCreateTemplateOpen(false)}
-                className="flex-1 px-4 py-2 rounded-lg text-sm font-medium text-slate-700 border border-[#e2e8f0] hover:bg-slate-50 transition-colors"
-              >
-                Hủy
-              </button>
-              <button
-                onClick={handleCreateTemplate}
-                disabled={!newTemplate.name || isSaving}
-                className="flex-1 px-4 py-2 rounded-lg text-sm font-medium bg-[#009689] text-white hover:bg-[#007f73] disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
-              >
-                <CheckCircle2 className="w-4 h-4" />
-                {isSaving ? "Đang lưu..." : "Lưu công việc"}
-              </button>
-            </div>
-          </Dialog.Content>
-        </Dialog.Portal>
-      </Dialog.Root>
-
-      {/* ══ MODAL: Assign Task (Bulk + Single) ══ */}
+      {/* ══ MODAL: Assign Task ══ */}
+      {/* Uses raw Dialog.Root because of the custom mode-toggle UI and complex scrollable body */}
       <Dialog.Root
         open={isAssignOpen}
         onOpenChange={(open) => {
@@ -2142,7 +1961,6 @@ export function TasksPage() {
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 bg-black/50 z-40" />
           <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-2xl bg-white rounded-xl shadow-2xl max-h-[92vh] flex flex-col">
-            {/* Header */}
             <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-[#f1f5f9] shrink-0">
               <Dialog.Title className="text-lg font-bold text-[#1e293b]">
                 Giao việc
@@ -2177,7 +1995,6 @@ export function TasksPage() {
               </div>
             </div>
 
-            {/* Scrollable body */}
             <div className="overflow-y-auto flex-1 px-6 py-5">
               {/* ══ BULK MODE ══ */}
               {assignMode === "bulk" && (
@@ -2187,7 +2004,6 @@ export function TasksPage() {
                     dài. Hệ thống sẽ tạo lịch tự động theo các ngày được chọn.
                   </p>
 
-                  {/* Row 1: Worker + Task */}
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-medium text-[#475569] mb-1.5">
@@ -2234,7 +2050,6 @@ export function TasksPage() {
                     </div>
                   </div>
 
-                  {/* Row 2: Season + Plot */}
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-medium text-[#475569] mb-1.5">
@@ -2291,7 +2106,6 @@ export function TasksPage() {
                     </div>
                   </div>
 
-                  {/* Bed multi-select */}
                   {bulkForm.plotId && (
                     <div>
                       <div className="flex items-center justify-between mb-1.5">
@@ -2324,7 +2138,7 @@ export function TasksPage() {
                         </button>
                       </div>
                       <div className="flex flex-wrap gap-1.5 p-3 bg-[#f8fafc] rounded-lg border border-[#e2e8f0]">
-                        {sortBeds(
+                        {sortBedsByBedName(
                           getBedsForPlot(bulkForm.seasonId, bulkForm.plotId),
                         ).map((bed) => {
                           const sel = bulkForm.bedIds.includes(bed.bedId);
@@ -2365,7 +2179,6 @@ export function TasksPage() {
                     </div>
                   )}
 
-                  {/* Row 3: Date range */}
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-medium text-[#475569] mb-1.5">
@@ -2398,7 +2211,6 @@ export function TasksPage() {
                     </div>
                   </div>
 
-                  {/* Worker schedule preview — shown once worker + date range are set */}
                   {bulkForm.workerId &&
                     bulkForm.fromDate &&
                     bulkForm.toDate &&
@@ -2413,13 +2225,12 @@ export function TasksPage() {
                       />
                     )}
 
-                  {/* Weekday selector */}
                   <div>
                     <label className="block text-xs font-medium text-[#475569] mb-1.5">
                       Các ngày trong tuần{" "}
                       <span className="text-red-500">*</span>
                     </label>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 flex-wrap">
                       {(
                         ["T2", "T3", "T4", "T5", "T6", "T7", "CN"] as const
                       ).map((d) => {
@@ -2457,7 +2268,6 @@ export function TasksPage() {
                     </div>
                   </div>
 
-                  {/* Time range */}
                   <div>
                     <label className="block text-xs font-medium text-[#475569] mb-1.5">
                       Khung giờ
@@ -2504,7 +2314,6 @@ export function TasksPage() {
                     })()}
                   </div>
 
-                  {/* Notes */}
                   <div>
                     <label className="block text-xs font-medium text-[#475569] mb-1.5">
                       Ghi chú
@@ -2520,7 +2329,6 @@ export function TasksPage() {
                     />
                   </div>
 
-                  {/* Preview */}
                   {bulkPreviewCount > 0 && (
                     <div className="px-3 py-2.5 bg-[#f0fdfa] border border-[#009689]/25 rounded-lg text-sm text-[#0f766e]">
                       Hệ thống sẽ{" "}
@@ -2542,7 +2350,6 @@ export function TasksPage() {
                     thông thường.
                   </p>
 
-                  {/* Row 1: Worker + Date (same-day only) */}
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-medium text-[#475569] mb-1.5">
@@ -2602,7 +2409,6 @@ export function TasksPage() {
                     </div>
                   </div>
 
-                  {/* Conflict warning */}
                   {singleConflict.length > 0 && (
                     <div className="flex items-start gap-2 px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700">
                       <span className="shrink-0 mt-0.5">⚠</span>
@@ -2616,7 +2422,6 @@ export function TasksPage() {
                     </div>
                   )}
 
-                  {/* Worker schedule preview */}
                   {singleForm.workerId &&
                     (singleForm.isMultiDay
                       ? singleForm.multiStartDate &&
@@ -2641,7 +2446,6 @@ export function TasksPage() {
                           />
                         ))}
 
-                  {/* Row 2: Task + Season */}
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-medium text-[#475569] mb-1.5">
@@ -2696,7 +2500,6 @@ export function TasksPage() {
                     </div>
                   </div>
 
-                  {/* Row 3: Plot + Beds */}
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-medium text-[#475569] mb-1.5">
@@ -2725,7 +2528,6 @@ export function TasksPage() {
                     <div />
                   </div>
 
-                  {/* Bed multi-select */}
                   {singleForm.plotId && (
                     <div>
                       <div className="flex items-center justify-between mb-1.5">
@@ -2758,7 +2560,7 @@ export function TasksPage() {
                         </button>
                       </div>
                       <div className="flex flex-wrap gap-1.5 p-3 bg-[#f8fafc] rounded-lg border border-[#e2e8f0]">
-                        {sortBeds(
+                        {sortBedsByBedName(
                           getBedsForPlot(
                             singleForm.seasonId,
                             singleForm.plotId,
@@ -2802,7 +2604,6 @@ export function TasksPage() {
                     </div>
                   )}
 
-                  {/* Multi-day toggle */}
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
@@ -2812,16 +2613,10 @@ export function TasksPage() {
                           isMultiDay: !p.isMultiDay,
                         }))
                       }
-                      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none ${
-                        singleForm.isMultiDay ? "bg-[#009689]" : "bg-[#e2e8f0]"
-                      }`}
+                      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none ${singleForm.isMultiDay ? "bg-[#009689]" : "bg-[#e2e8f0]"}`}
                     >
                       <span
-                        className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${
-                          singleForm.isMultiDay
-                            ? "translate-x-4"
-                            : "translate-x-0"
-                        }`}
+                        className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${singleForm.isMultiDay ? "translate-x-4" : "translate-x-0"}`}
                       />
                     </button>
                     <span className="text-xs font-medium text-[#475569]">
@@ -2829,7 +2624,6 @@ export function TasksPage() {
                     </span>
                   </div>
 
-                  {/* Same-day time range */}
                   {!singleForm.isMultiDay && (
                     <div>
                       <label className="block text-xs font-medium text-[#475569] mb-1.5">
@@ -2876,10 +2670,8 @@ export function TasksPage() {
                     </div>
                   )}
 
-                  {/* Multi-day date + time range */}
                   {singleForm.isMultiDay && (
                     <div className="space-y-3 p-3 bg-[#f0fdfa] border border-[#009689]/20 rounded-lg">
-                      <p className="text-[11px] text-[#0f766e] font-medium"></p>
                       <div className="grid grid-cols-2 gap-3">
                         <div>
                           <label className="block text-[10px] font-semibold text-[#475569] uppercase tracking-wide mb-1">
@@ -2997,7 +2789,6 @@ export function TasksPage() {
                     </div>
                   )}
 
-                  {/* Notes */}
                   <div>
                     <label className="block text-xs font-medium text-[#475569] mb-1.5">
                       Ghi chú
@@ -3016,7 +2807,6 @@ export function TasksPage() {
               )}
             </div>
 
-            {/* Sticky footer */}
             <div className="shrink-0 border-t border-[#e2e8f0] px-6 py-4 flex gap-3 bg-white">
               <button
                 onClick={() => {
@@ -3069,192 +2859,144 @@ export function TasksPage() {
                 className="flex-1 px-4 py-2 rounded-lg text-sm font-medium bg-[#009689] text-white hover:bg-[#007f73] disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
               >
                 <CheckCircle2 className="w-4 h-4" />
-                {assignMode === "bulk"
-                  ? bulkPreviewCount > 0
-                    ? `Xác nhận (${bulkPreviewCount} giao việc)`
-                    : "Xác nhận giao việc"
-                  : "Xác nhận giao việc"}
+                {isSaving
+                  ? "Đang lưu..."
+                  : assignMode === "bulk"
+                    ? bulkPreviewCount > 0
+                      ? `Xác nhận (${bulkPreviewCount} giao việc)`
+                      : "Xác nhận giao việc"
+                    : "Xác nhận giao việc"}
               </button>
             </div>
           </Dialog.Content>
         </Dialog.Portal>
       </Dialog.Root>
+
       {/* ══ MODAL: View Assignment ══ */}
-      <Dialog.Root open={isViewOpen} onOpenChange={setIsViewOpen}>
-        <Dialog.Portal>
-          <Dialog.Overlay className="fixed inset-0 bg-black/50 z-40" />
-          <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-md bg-white rounded-xl shadow-2xl p-6">
-            <div className="flex items-center justify-between mb-5">
-              <Dialog.Title className="text-lg font-bold text-[#1e293b]">
-                Chi tiết lịch trình
-              </Dialog.Title>
-              <Dialog.Close asChild>
-                <button className="p-1 text-slate-400 hover:text-slate-600 rounded">
-                  <X className="w-5 h-5" />
-                </button>
-              </Dialog.Close>
-            </div>
-            <Dialog.Description className="sr-only">
-              Thông tin chi tiết của công việc được giao
-            </Dialog.Description>
-            {selectedDetail &&
-              (() => {
-                const task = tasks.find(
-                  (t) => t.taskId === selectedDetail.taskId,
-                );
-                const season = seasons.find(
-                  (s) => s.seasonId === selectedDetail.seasonId,
-                );
-                const farmName =
-                  allPlots.find((p) => p.farmId === season?.farmId)?.farmName ??
-                  null;
-                const worker = staffList.find(
-                  (s) => s.userId === selectedDetail.assignedToWorkerIds[0],
-                );
-                const beds =
-                  sortBeds(
-                    selectedDetail.bedIds
-                      .map((id) => allBeds.find((b) => b.bedId === id))
-                      .filter((b): b is NonNullable<typeof b> => !!b),
-                  )
-                    .map((b) => b.bedName)
-                    .join(", ") || selectedDetail.bedIds.join(", ");
-                const plots = selectedDetail.plotIds
-                  .map(
-                    (id) =>
-                      allPlots.find((p) => p.plotId === id)?.plotName ?? id,
-                  )
-                  .join(", ");
-                const detailStartDay =
-                  selectedDetail.startDate?.slice(0, 10) ?? "";
-                const detailEndDay =
-                  selectedDetail.endDate?.slice(0, 10) ?? detailStartDay;
-                const isMultiDayDetail = detailEndDay !== detailStartDay;
-                const displayDate = isMultiDayDetail
-                  ? `${isoDate(selectedDetail.startDate)} – ${isoDate(selectedDetail.endDate)}`
-                  : isoDate(selectedDetail.startDate);
-                const timeStr = `${isoTime(selectedDetail.startDate)} – ${isoTime(selectedDetail.endDate)}`;
-                const statusColor =
-                  selectedDetail.status === "Pending"
-                    ? "bg-[#fef3c7] text-[#92400e]"
-                    : selectedDetail.status === "Completed"
-                      ? "bg-[#d1fae5] text-[#065f46]"
-                      : "bg-[#f1f5f9] text-[#64748b]";
-                const statusLabel =
-                  selectedDetail.status === "Pending"
-                    ? "Đang làm"
-                    : selectedDetail.status === "Completed"
-                      ? "Đã hoàn thành"
-                      : (selectedDetail.status ?? "—");
-                return (
-                  <div className="space-y-4">
-                    {/* Task header */}
-                    <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-xl bg-[#f0fdfa] flex items-center justify-center shrink-0">
-                        <ClipboardList className="w-6 h-6 text-[#009689]" />
-                      </div>
-                      <div>
-                        <p className="font-semibold text-[#1e293b]">
-                          {task?.taskTitle ?? selectedDetail.taskTitle ?? "—"}
-                        </p>
-                        <span
-                          className={`inline-block px-2.5 py-0.5 rounded text-xs font-medium ${statusColor}`}
-                        >
-                          {statusLabel}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Meta grid */}
-                    <div className="grid grid-cols-2 gap-3 p-3 bg-[#f8fafc] rounded-lg text-sm">
-                      <div>
-                        <p className="text-xs text-[#64748b] mb-0.5">Mùa vụ</p>
-                        <p className="font-medium text-[#1e293b]">
-                          {season?.seasonName ?? "—"}
-                        </p>
-                      </div>
-                      {farmName && (
-                        <div>
-                          <p className="text-xs text-[#64748b] mb-0.5">
-                            Trang trại
-                          </p>
-                          <p className="font-medium text-[#1e293b]">
-                            {farmName}
-                          </p>
-                        </div>
-                      )}
-                      <div>
-                        <p className="text-xs text-[#64748b] mb-0.5">Vuông</p>
-                        <p className="font-medium text-[#1e293b]">
-                          {plots || "—"}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-[#64748b] mb-0.5">Luống</p>
-                        <p className="font-medium text-[#1e293b]">
-                          {beds || "—"}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-[#64748b] mb-0.5">
-                          {isMultiDayDetail
-                            ? "Thời gian thực hiện"
-                            : "Ngày thực hiện"}
-                        </p>
-                        <p className="font-medium text-[#1e293b]">
-                          {displayDate}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-[#64748b] mb-0.5">
-                          Khung giờ
-                        </p>
-                        <p className="font-medium text-[#1e293b]">{timeStr}</p>
-                      </div>
-                    </div>
-
-                    {/* Assigned worker */}
-                    <div className="p-3 bg-[#f0fdfa] rounded-lg border border-[#009689]/20">
-                      <p className="text-xs font-semibold text-[#64748b] uppercase tracking-wide mb-2 flex items-center gap-1.5">
-                        <User className="w-3.5 h-3.5" /> Nhân viên phụ trách
-                      </p>
-                      {worker ? (
-                        <div className="flex items-center gap-2">
-                          <div className="w-8 h-8 rounded-full bg-[#009689] flex items-center justify-center text-white text-xs font-bold shrink-0">
-                            {worker.fullname.charAt(0).toUpperCase()}
-                          </div>
-                          <span className="text-sm font-semibold text-[#1e293b]">
-                            {worker.fullname}
-                          </span>
-                        </div>
-                      ) : (
-                        <p className="text-sm text-[#94a3b8]">Chưa phân công</p>
-                      )}
-                    </div>
-
-                    {/* Notes */}
-                    {selectedDetail.notes && (
-                      <div className="p-3 bg-[#f8fafc] rounded-lg text-sm text-[#475569] border-l-4 border-[#009689]">
-                        {selectedDetail.notes}
-                      </div>
-                    )}
-
-                    <div className="flex gap-3 pt-1">
-                      <button
-                        onClick={() => setIsViewOpen(false)}
-                        className="w-full px-4 py-2 rounded-lg text-sm font-medium bg-[#009689] text-white hover:bg-[#007f73] transition-colors"
-                      >
-                        Đóng
-                      </button>
-                    </div>
+      <Modal
+        open={isViewOpen}
+        onOpenChange={setIsViewOpen}
+        title="Chi tiết lịch trình"
+        size="md"
+        footer={
+          <Button variant="secondary" onClick={() => setIsViewOpen(false)}>
+            Đóng
+          </Button>
+        }
+      >
+        {selectedDetail &&
+          (() => {
+            const task = tasks.find((t) => t.taskId === selectedDetail.taskId);
+            const season = seasons.find(
+              (s) => s.seasonId === selectedDetail.seasonId,
+            );
+            const farmName =
+              allPlots.find((p) => p.farmId === season?.farmId)?.farmName ??
+              null;
+            const worker = staffList.find(
+              (s) => s.userId === selectedDetail.assignedToWorkerIds[0],
+            );
+            const beds =
+              sortBedsByBedName(
+                selectedDetail.bedIds
+                  .map((id) => allBeds.find((b) => b.bedId === id))
+                  .filter((b): b is NonNullable<typeof b> => !!b),
+              )
+                .map((b) => b.bedName)
+                .join(", ") || selectedDetail.bedIds.join(", ");
+            const plots = selectedDetail.plotIds
+              .map(
+                (id) => allPlots.find((p) => p.plotId === id)?.plotName ?? id,
+              )
+              .join(", ");
+            const detailStartDay = selectedDetail.startDate?.slice(0, 10) ?? "";
+            const detailEndDay =
+              selectedDetail.endDate?.slice(0, 10) ?? detailStartDay;
+            const isMultiDayDetail = detailEndDay !== detailStartDay;
+            const displayDate = isMultiDayDetail
+              ? `${isoDate(selectedDetail.startDate)} – ${isoDate(selectedDetail.endDate)}`
+              : isoDate(selectedDetail.startDate);
+            const timeStr = `${isoTime(selectedDetail.startDate)} – ${isoTime(selectedDetail.endDate)}`;
+            const statusInfo = getTaskStatusInfo(selectedDetail.status);
+            return (
+              <div className="space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-xl bg-primary-50 flex items-center justify-center shrink-0">
+                    <ClipboardList className="w-6 h-6 text-primary" />
                   </div>
-                );
-              })()}
-          </Dialog.Content>
-        </Dialog.Portal>
-      </Dialog.Root>
+                  <div>
+                    <p className="font-semibold text-ink-900">
+                      {task?.taskTitle ?? selectedDetail.taskTitle ?? "—"}
+                    </p>
+                    <StatusBadge
+                      label={statusInfo.label}
+                      tone={statusInfo.tone}
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3 p-3 bg-surface-alt rounded-lg text-sm">
+                  <div>
+                    <p className="text-xs text-ink-500 mb-0.5">Mùa vụ</p>
+                    <p className="font-medium text-ink-900">
+                      {season?.seasonName ?? "—"}
+                    </p>
+                  </div>
+                  {farmName && (
+                    <div>
+                      <p className="text-xs text-ink-500 mb-0.5">Trang trại</p>
+                      <p className="font-medium text-ink-900">{farmName}</p>
+                    </div>
+                  )}
+                  <div>
+                    <p className="text-xs text-ink-500 mb-0.5">Vuông</p>
+                    <p className="font-medium text-ink-900">{plots || "—"}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-ink-500 mb-0.5">Luống</p>
+                    <p className="font-medium text-ink-900">{beds || "—"}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-ink-500 mb-0.5">
+                      {isMultiDayDetail
+                        ? "Thời gian thực hiện"
+                        : "Ngày thực hiện"}
+                    </p>
+                    <p className="font-medium text-ink-900">{displayDate}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-ink-500 mb-0.5">Khung giờ</p>
+                    <p className="font-medium text-ink-900">{timeStr}</p>
+                  </div>
+                </div>
+                <div className="p-3 bg-primary-50 rounded-lg border border-primary/20">
+                  <p className="text-xs font-semibold text-ink-500 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                    <User className="w-3.5 h-3.5" /> Nhân viên phụ trách
+                  </p>
+                  {worker ? (
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-primary-fg text-xs font-bold shrink-0">
+                        {worker.fullname.charAt(0).toUpperCase()}
+                      </div>
+                      <span className="text-sm font-semibold text-ink-900">
+                        {worker.fullname}
+                      </span>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-ink-400">Chưa phân công</p>
+                  )}
+                </div>
+                {selectedDetail.notes && (
+                  <div className="p-3 bg-surface-alt rounded-lg text-sm text-ink-600 border-l-4 border-primary">
+                    {selectedDetail.notes}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+      </Modal>
 
       {/* ══ MODAL: Edit Assignment ══ */}
+      {/* Kept as raw Dialog — very complex sectioned layout, not a standard form */}
       <Dialog.Root
         open={isEditDetailOpen}
         onOpenChange={(o) => {
@@ -3284,9 +3026,7 @@ export function TasksPage() {
             {editDetail &&
               selectedDetail &&
               (() => {
-                // ── Constraint helpers ────────────────────────────────────
                 const isCompleted = selectedDetail.status === "Completed";
-                // Start-time is locked if Pending and the assignment time is already in the past
                 const assignmentStart = selectedDetail.startDate
                   ? new Date(
                       `${selectedDetail.startDate.slice(0, 10)}T${selectedDetail.startDate.slice(11, 16)}:00`,
@@ -3297,7 +3037,6 @@ export function TasksPage() {
                   assignmentStart !== null &&
                   assignmentStart < Date.now();
 
-                // Derived values for season-related sections
                 const editSeason = seasons.find(
                   (s) => s.seasonId === editDetail.seasonId,
                 );
@@ -3319,9 +3058,9 @@ export function TasksPage() {
                   const plotIds = new Set(editSeasonBeds.map((b) => b.plotId));
                   return allPlots.filter((p) => plotIds.has(p.plotId));
                 })();
+
                 return (
                   <div className="overflow-y-auto flex-1 px-6 py-5 space-y-6">
-                    {/* ── Completed lock banner ── */}
                     {isCompleted && (
                       <div className="flex items-center gap-2 px-3 py-2.5 bg-[#f1f5f9] border border-[#e2e8f0] rounded-lg text-xs text-[#64748b]">
                         <CheckCircle2 className="w-4 h-4 text-[#009689] shrink-0" />
@@ -3331,7 +3070,6 @@ export function TasksPage() {
                       </div>
                     )}
 
-                    {/* ── 1. Công việc ── */}
                     <section>
                       <h3 className="text-xs font-bold text-[#009689] uppercase tracking-widest mb-3 flex items-center gap-1.5">
                         <span className="w-5 h-5 rounded-full bg-[#009689] text-white text-[10px] flex items-center justify-center font-bold">
@@ -3358,7 +3096,6 @@ export function TasksPage() {
                       </select>
                     </section>
 
-                    {/* ── 2. Mùa vụ (read-only) ── */}
                     <section>
                       <h3 className="text-xs font-bold text-[#009689] uppercase tracking-widest mb-3 flex items-center gap-1.5">
                         <span className="w-5 h-5 rounded-full bg-[#009689] text-white text-[10px] flex items-center justify-center font-bold">
@@ -3372,15 +3109,23 @@ export function TasksPage() {
                             <span className="font-medium text-[#1e293b]">
                               {editSeason.seasonName}
                             </span>
-                            <span
-                              className={`text-xs font-medium px-2 py-0.5 rounded-full ${editSeason.status === "Active" ? "bg-[#d1fae5] text-[#065f46]" : editSeason.status === "Completed" ? "bg-[#f1f5f9] text-[#64748b]" : "bg-[#fef3c7] text-[#92400e]"}`}
-                            >
-                              {editSeason.status === "Active"
-                                ? "Đang hoạt động"
-                                : editSeason.status === "Completed"
-                                  ? "Đã kết thúc"
-                                  : "Sắp diễn ra"}
-                            </span>
+                            <StatusBadge
+                              label={
+                                editSeason.status === "Active"
+                                  ? "Đang hoạt động"
+                                  : editSeason.status === "Completed"
+                                    ? "Đã kết thúc"
+                                    : "Sắp diễn ra"
+                              }
+                              tone={
+                                editSeason.status === "Active"
+                                  ? "success"
+                                  : editSeason.status === "Completed"
+                                    ? "neutral"
+                                    : "warning"
+                              }
+                              size="sm"
+                            />
                           </div>
                           <div className="flex items-center gap-2 px-3 py-1.5 text-xs text-[#64748b]">
                             <span>
@@ -3412,7 +3157,6 @@ export function TasksPage() {
                       )}
                     </section>
 
-                    {/* ── 3. Ngày & Giờ ── */}
                     <section>
                       <h3 className="text-xs font-bold text-[#009689] uppercase tracking-widest mb-3 flex items-center gap-1.5">
                         <span className="w-5 h-5 rounded-full bg-[#009689] text-white text-[10px] flex items-center justify-center font-bold">
@@ -3498,7 +3242,6 @@ export function TasksPage() {
                       </div>
                     </section>
 
-                    {/* ── 4. Vuông, Luống & Nhân viên ── */}
                     <section>
                       <h3 className="text-xs font-bold text-[#009689] uppercase tracking-widest mb-3 flex items-center gap-1.5">
                         <span className="w-5 h-5 rounded-full bg-[#009689] text-white text-[10px] flex items-center justify-center font-bold">
@@ -3507,7 +3250,6 @@ export function TasksPage() {
                         Vuông, Luống &amp; Nhân viên
                       </h3>
                       <div className="space-y-4">
-                        {/* Vuông */}
                         <div>
                           <label className="block text-xs font-semibold text-[#475569] uppercase tracking-wide mb-1.5">
                             Vuông
@@ -3590,7 +3332,6 @@ export function TasksPage() {
                           )}
                         </div>
 
-                        {/* Luống — grouped by selected plot */}
                         {editDetail.selectedPlotIds.length > 0 &&
                           (() => {
                             const groups = editDetail.selectedPlotIds
@@ -3598,7 +3339,7 @@ export function TasksPage() {
                                 plot: editSeasonPlots.find(
                                   (p) => p.plotId === plotId,
                                 ),
-                                plotBeds: sortBeds(
+                                plotBeds: sortBedsByBedName(
                                   editSeasonBeds.filter(
                                     (b) => b.plotId === plotId,
                                   ),
@@ -3729,7 +3470,6 @@ export function TasksPage() {
                             );
                           })()}
 
-                        {/* Nhân viên phụ trách */}
                         <div>
                           <div className="flex items-center justify-between mb-1.5">
                             <label className="text-xs font-semibold text-[#475569] uppercase tracking-wide">
@@ -3752,7 +3492,6 @@ export function TasksPage() {
                               </button>
                             )}
                           </div>
-                          {/* Worker chips */}
                           <div className="flex flex-wrap gap-1.5">
                             {staffList
                               .filter((s) => s.roleName === "Worker")
@@ -3811,7 +3550,6 @@ export function TasksPage() {
                                 );
                               })}
                           </div>
-                          {/* Schedule preview — shown when a worker is selected and panel is open */}
                           {editShowSchedule &&
                             editDetail.workerId &&
                             editDetail.date && (
@@ -3833,7 +3571,6 @@ export function TasksPage() {
                       </div>
                     </section>
 
-                    {/* ── 5. Ghi chú ── */}
                     <section>
                       <h3 className="text-xs font-bold text-[#009689] uppercase tracking-widest mb-3 flex items-center gap-1.5">
                         <span className="w-5 h-5 rounded-full bg-[#009689] text-white text-[10px] flex items-center justify-center font-bold">
@@ -3857,7 +3594,6 @@ export function TasksPage() {
                 );
               })()}
 
-            {/* Footer */}
             <div className="shrink-0 border-t border-[#e2e8f0] px-6 py-4 flex gap-3 justify-end bg-white">
               <button
                 onClick={() => {
@@ -3887,235 +3623,186 @@ export function TasksPage() {
       </Dialog.Root>
 
       {/* ══ DIALOG: Delete Assignment ══ */}
-      <AlertDialog.Root open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
-        <AlertDialog.Portal>
-          <AlertDialog.Overlay className="fixed inset-0 bg-black/50 z-40" />
-          <AlertDialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-md bg-white rounded-xl shadow-2xl p-6">
-            <AlertDialog.Title className="text-base font-semibold text-slate-900 mb-2">
-              Xác nhận xoá lịch trình
-            </AlertDialog.Title>
-            <AlertDialog.Description className="text-sm text-slate-600 mb-6">
-              Xoá lịch trình công việc{" "}
-              <span className="font-semibold">
-                "
-                {detailToDelete?.taskTitle ??
-                  tasks.find((t) => t.taskId === detailToDelete?.taskId)
-                    ?.taskTitle ??
-                  ""}
-                "
-              </span>
-              ? Hành động này không thể hoàn tác.
-            </AlertDialog.Description>
-            <div className="flex gap-3 justify-end">
-              <AlertDialog.Cancel asChild>
-                <button className="px-4 py-2 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-100 transition-colors">
-                  Hủy bỏ
-                </button>
-              </AlertDialog.Cancel>
-              <AlertDialog.Action asChild>
-                <button
-                  onClick={handleDeleteAssignment}
-                  className="px-4 py-2 rounded-lg text-sm font-medium bg-red-600 text-white hover:bg-red-700 transition-colors"
-                >
-                  Xoá
-                </button>
-              </AlertDialog.Action>
-            </div>
-          </AlertDialog.Content>
-        </AlertDialog.Portal>
-      </AlertDialog.Root>
+      <ConfirmDialog
+        open={isDeleteOpen}
+        onOpenChange={(o) => {
+          if (!o) {
+            setIsDeleteOpen(false);
+            setDetailToDelete(null);
+          }
+        }}
+        title="Xóa lịch trình"
+        description={
+          <>
+            Xoá lịch trình công việc{" "}
+            <strong>
+              "
+              {detailToDelete?.taskTitle ??
+                tasks.find((t) => t.taskId === detailToDelete?.taskId)
+                  ?.taskTitle ??
+                ""}
+              "
+            </strong>
+            ? Hành động này không thể hoàn tác.
+          </>
+        }
+        confirmLabel="Xoá"
+        loading={isDeletingDetail}
+        onConfirm={handleDeleteAssignment}
+      />
 
       {/* ══ MODAL: View Template Description ══ */}
-      <Dialog.Root open={viewTplOpen} onOpenChange={setViewTplOpen}>
-        <Dialog.Portal>
-          <Dialog.Overlay className="fixed inset-0 bg-black/50 z-40" />
-          <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-sm bg-white rounded-xl shadow-2xl p-6">
-            <div className="flex items-center justify-between mb-4">
-              <Dialog.Title className="text-base font-bold text-[#1e293b]">
-                Chi tiết công việc
-              </Dialog.Title>
-              <Dialog.Close asChild>
-                <button className="p-1 text-slate-400 hover:text-slate-600 rounded">
-                  <X className="w-5 h-5" />
-                </button>
-              </Dialog.Close>
-            </div>
-            <Dialog.Description className="sr-only">
-              Mô tả công việc
-            </Dialog.Description>
-            {selectedTpl && (
-              <div className="space-y-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-[#f0fdfa] flex items-center justify-center shrink-0">
-                    <ClipboardList className="w-5 h-5 text-[#009689]" />
-                  </div>
-                  <div>
-                    <p className="font-semibold text-[#1e293b] text-sm">
-                      {selectedTpl.taskTitle}
-                    </p>
-                    <span
-                      className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-medium ${
-                        normaliseTaskStatus(selectedTpl.taskStatus) === "active"
-                          ? "bg-[#d1fae5] text-[#065f46]"
-                          : "bg-[#f1f5f9] text-[#64748b]"
-                      }`}
-                    >
-                      {normaliseTaskStatus(selectedTpl.taskStatus) === "active"
-                        ? "Đang hoạt động"
-                        : "Không hoạt động"}
-                    </span>
-                  </div>
-                </div>
-                <div className="p-3 bg-[#f8fafc] rounded-lg border border-[#e2e8f0] min-h-[60px]">
-                  <p className="text-sm text-[#475569] leading-relaxed whitespace-pre-wrap">
-                    {selectedTpl.taskNotes || (
-                      <span className="text-[#94a3b8] italic">
-                        Không có ghi chú
-                      </span>
-                    )}
-                  </p>
-                </div>
-                <button
-                  onClick={() => setViewTplOpen(false)}
-                  className="w-full px-4 py-2 rounded-lg text-sm font-medium bg-[#009689] text-white hover:bg-[#007f73] transition-colors"
-                >
-                  Đóng
-                </button>
+      <Modal
+        open={viewTplOpen}
+        onOpenChange={setViewTplOpen}
+        title="Chi tiết công việc"
+        size="sm"
+        footer={
+          <Button variant="secondary" onClick={() => setViewTplOpen(false)}>
+            Đóng
+          </Button>
+        }
+      >
+        {selectedTpl && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-primary-50 flex items-center justify-center shrink-0">
+                <ClipboardList className="w-5 h-5 text-primary" />
               </div>
-            )}
-          </Dialog.Content>
-        </Dialog.Portal>
-      </Dialog.Root>
+              <div>
+                <p className="font-semibold text-ink-900 text-sm">
+                  {selectedTpl.taskTitle}
+                </p>
+                <StatusBadge
+                  label={
+                    normaliseTaskStatus(selectedTpl.taskStatus) === "active"
+                      ? "Đang hoạt động"
+                      : "Không hoạt động"
+                  }
+                  tone={
+                    normaliseTaskStatus(selectedTpl.taskStatus) === "active"
+                      ? "success"
+                      : "neutral"
+                  }
+                  size="sm"
+                />
+              </div>
+            </div>
+            <div className="p-3 bg-surface-alt rounded-lg border border-border min-h-[60px]">
+              <p className="text-sm text-ink-600 leading-relaxed whitespace-pre-wrap">
+                {selectedTpl.taskNotes || (
+                  <span className="text-ink-400 italic">Không có ghi chú</span>
+                )}
+              </p>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       {/* ══ MODAL: Edit Template ══ */}
-      <Dialog.Root
+      <Modal
         open={editTplOpen}
         onOpenChange={(o) => {
           setEditTplOpen(o);
           if (!o) setEditTpl(null);
         }}
+        title="Chỉnh sửa công việc"
+        size="md"
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setEditTplOpen(false);
+                setEditTpl(null);
+              }}
+            >
+              Hủy
+            </Button>
+            <Button
+              leadingIcon={CheckCircle2}
+              onClick={handleSaveEdit}
+              disabled={!editTpl?.taskTitle || isSaving}
+              loading={isSaving}
+            >
+              {isSaving ? "Đang lưu..." : "Lưu"}
+            </Button>
+          </>
+        }
       >
-        <Dialog.Portal>
-          <Dialog.Overlay className="fixed inset-0 bg-black/50 z-40" />
-          <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-md bg-white rounded-xl shadow-2xl p-6">
-            <div className="flex items-center justify-between mb-5">
-              <Dialog.Title className="text-lg font-bold text-[#1e293b]">
-                Chỉnh sửa công việc
-              </Dialog.Title>
-              <Dialog.Close asChild>
-                <button className="p-1 text-slate-400 hover:text-slate-600 rounded">
-                  <X className="w-5 h-5" />
-                </button>
-              </Dialog.Close>
+        {editTpl && (
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                Tên công việc <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={editTpl.taskTitle}
+                onChange={(e) =>
+                  setEditTpl((p) =>
+                    p ? { ...p, taskTitle: e.target.value } : p,
+                  )
+                }
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689]"
+              />
             </div>
-            <Dialog.Description className="sr-only">
-              Chỉnh sửa công việc mẫu
-            </Dialog.Description>
-            {editTpl && (
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                    Tên công việc <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={editTpl.taskTitle}
-                    onChange={(e) =>
-                      setEditTpl((p) =>
-                        p ? { ...p, taskTitle: e.target.value } : p,
-                      )
-                    }
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                    Trạng thái
-                  </label>
-                  <select
-                    value={editTpl.taskStatus}
-                    onChange={(e) =>
-                      setEditTpl((p) =>
-                        p ? { ...p, taskStatus: e.target.value } : p,
-                      )
-                    }
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                  >
-                    <option value="Active">Đang hoạt động</option>
-                    <option value="Inactive">Không hoạt động</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                    Ghi chú / Mô tả
-                  </label>
-                  <textarea
-                    rows={3}
-                    value={editTpl.taskNotes}
-                    onChange={(e) =>
-                      setEditTpl((p) =>
-                        p ? { ...p, taskNotes: e.target.value } : p,
-                      )
-                    }
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] resize-none"
-                  />
-                </div>
-                <div className="flex gap-3 pt-2 border-t border-[#e2e8f0]">
-                  <button
-                    onClick={() => {
-                      setEditTplOpen(false);
-                      setEditTpl(null);
-                    }}
-                    className="flex-1 px-4 py-2 rounded-lg text-sm font-medium text-slate-700 border border-[#e2e8f0] hover:bg-slate-50 transition-colors"
-                  >
-                    Hủy
-                  </button>
-                  <button
-                    onClick={handleSaveEdit}
-                    disabled={!editTpl.taskTitle || isSaving}
-                    className="flex-1 px-4 py-2 rounded-lg text-sm font-medium bg-[#009689] text-white hover:bg-[#007f73] disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
-                  >
-                    <CheckCircle2 className="w-4 h-4" />
-                    {isSaving ? "Đang lưu..." : "Lưu"}
-                  </button>
-                </div>
-              </div>
-            )}
-          </Dialog.Content>
-        </Dialog.Portal>
-      </Dialog.Root>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                Trạng thái
+              </label>
+              <select
+                value={editTpl.taskStatus}
+                onChange={(e) =>
+                  setEditTpl((p) =>
+                    p ? { ...p, taskStatus: e.target.value } : p,
+                  )
+                }
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#009689]"
+              >
+                <option value="Active">Đang hoạt động</option>
+                <option value="Inactive">Không hoạt động</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                Ghi chú / Mô tả
+              </label>
+              <textarea
+                rows={3}
+                value={editTpl.taskNotes}
+                onChange={(e) =>
+                  setEditTpl((p) =>
+                    p ? { ...p, taskNotes: e.target.value } : p,
+                  )
+                }
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] resize-none"
+              />
+            </div>
+          </div>
+        )}
+      </Modal>
 
       {/* ══ DIALOG: Delete Template ══ */}
-      <AlertDialog.Root open={deleteTplOpen} onOpenChange={setDeleteTplOpen}>
-        <AlertDialog.Portal>
-          <AlertDialog.Overlay className="fixed inset-0 bg-black/50 z-40" />
-          <AlertDialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-md bg-white rounded-xl shadow-2xl p-6">
-            <AlertDialog.Title className="text-base font-semibold text-slate-900 mb-2">
-              Xác nhận xoá công việc
-            </AlertDialog.Title>
-            <AlertDialog.Description className="text-sm text-slate-600 mb-6">
-              Xoá công việc{" "}
-              <span className="font-semibold">"{tplToDelete?.taskTitle}"</span>?
-              Hành động này không thể hoàn tác.
-            </AlertDialog.Description>
-            <div className="flex gap-3 justify-end">
-              <AlertDialog.Cancel asChild>
-                <button className="px-4 py-2 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-100 transition-colors">
-                  Hủy bỏ
-                </button>
-              </AlertDialog.Cancel>
-              <AlertDialog.Action asChild>
-                <button
-                  onClick={handleDeleteTemplate}
-                  className="px-4 py-2 rounded-lg text-sm font-medium bg-red-600 text-white hover:bg-red-700 transition-colors"
-                >
-                  Xoá
-                </button>
-              </AlertDialog.Action>
-            </div>
-          </AlertDialog.Content>
-        </AlertDialog.Portal>
-      </AlertDialog.Root>
+      <ConfirmDialog
+        open={deleteTplOpen}
+        onOpenChange={(o) => {
+          if (!o) {
+            setDeleteTplOpen(false);
+            setTplToDelete(null);
+          }
+        }}
+        title="Xóa công việc"
+        description={
+          <>
+            Xoá công việc <strong>"{tplToDelete?.taskTitle}"</strong>? Hành động
+            này không thể hoàn tác.
+          </>
+        }
+        confirmLabel="Xoá"
+        loading={isDeletingTpl}
+        onConfirm={handleDeleteTemplate}
+      />
     </div>
   );
 }
