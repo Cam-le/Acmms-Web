@@ -58,7 +58,8 @@ function bedStatusToneInline(status: string): "success" | "danger" {
 
 interface PlotFormErrors {
   plotName?: string;
-  plotArea?: string;
+  plotLength?: string;
+  plotWidth?: string;
   farmId?: string;
   soilId?: string;
 }
@@ -74,10 +75,11 @@ function validatePlotForm(
   } else if (data.plotName.trim().length < 2) {
     errors.plotName = "Tên vuông đất phải có ít nhất 2 ký tự";
   }
-  if (!data.plotArea || data.plotArea <= 0) {
-    errors.plotArea = "Diện tích phải là số dương";
-  } else if (data.plotArea > 1_000_000) {
-    errors.plotArea = "Diện tích vượt quá giới hạn cho phép";
+  if (!data.plotLength || data.plotLength <= 0) {
+    errors.plotLength = "Chiều dài phải là số dương";
+  }
+  if (!data.plotWidth || data.plotWidth <= 0) {
+    errors.plotWidth = "Chiều rộng phải là số dương";
   }
   if (!data.farmId) errors.farmId = "Vui lòng chọn trang trại";
   if (!data.soilId) errors.soilId = "Vui lòng chọn loại đất";
@@ -192,7 +194,8 @@ export function PlotsPage() {
     .filter((p): p is PlotResponse => !!p?.plotId)
     .sort(
       (a, b) =>
-        new Date(a.bedCreatedAt).getTime() - new Date(b.bedCreatedAt).getTime(),
+        new Date(a.plotCreatedAt).getTime() -
+        new Date(b.plotCreatedAt).getTime(),
     );
 
   // ── Plot CRUD ──
@@ -735,7 +738,8 @@ function CreatePlotModal({
     plotArea: 0,
     plotLength: 0,
     plotWidth: 0,
-    plotMargin: 0.3,
+    plotMarginLength: 1,
+    plotMarginWidth: 0.3,
     plotStatus: "Active",
   });
   const [formErrors, setFormErrors] = useState<PlotFormErrors>({});
@@ -749,18 +753,27 @@ function CreatePlotModal({
         plotArea: 0,
         plotLength: 0,
         plotWidth: 0,
-        plotMargin: 0.3,
+        plotMarginLength: 1,
+        plotMarginWidth: 0.3,
         plotStatus: "Active",
       });
       setFormErrors({});
     }
   }, [open, farms, soils]);
 
+  const computedArea = parseFloat(
+    (formData.plotLength * formData.plotWidth).toFixed(2),
+  );
+
+  const set = (patch: Partial<PlotRequest>) =>
+    setFormData((prev) => ({ ...prev, ...patch }));
+
   const handleSubmit = () => {
-    const errors = validatePlotForm(formData, farms, soils);
+    const payload = { ...formData, plotArea: computedArea };
+    const errors = validatePlotForm(payload, farms, soils);
     setFormErrors(errors);
     if (Object.keys(errors).length > 0) return;
-    onCreate({ ...formData, plotName: formData.plotName.trim() });
+    onCreate({ ...payload, plotName: payload.plotName.trim() });
   };
 
   return (
@@ -784,10 +797,10 @@ function CreatePlotModal({
           required
           value={formData.plotName}
           onChange={(v) => {
-            setFormData({ ...formData, plotName: v });
+            set({ plotName: v });
             setFormErrors((p) => ({ ...p, plotName: undefined }));
           }}
-          placeholder="Ví dụ: Plot A1"
+          placeholder="Ví dụ: Vuông 01_Tây Nam"
           error={formErrors.plotName}
         />
         <div className="grid grid-cols-2 gap-4">
@@ -795,7 +808,7 @@ function CreatePlotModal({
             label="Trang Trại"
             required
             value={formData.farmId}
-            onChange={(v) => setFormData({ ...formData, farmId: v })}
+            onChange={(v) => set({ farmId: v })}
             options={farms.map((f) => ({ value: f.farmId, label: f.farmName }))}
             error={formErrors.farmId}
           />
@@ -803,58 +816,64 @@ function CreatePlotModal({
             label="Loại Đất"
             required
             value={formData.soilId}
-            onChange={(v) => setFormData({ ...formData, soilId: v })}
+            onChange={(v) => set({ soilId: v })}
             options={soils.map((s) => ({ value: s.soilId, label: s.name }))}
             error={formErrors.soilId}
           />
         </div>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-3 gap-4">
           <FormField
-            label="Diện Tích (m²)"
+            label="Chiều Dài (m)"
             required
             type="number"
-            value={formData.plotArea ? String(formData.plotArea) : ""}
+            value={formData.plotLength ? String(formData.plotLength) : ""}
             onChange={(v) => {
-              setFormData({ ...formData, plotArea: parseFloat(v) || 0 });
-              setFormErrors((p) => ({ ...p, plotArea: undefined }));
+              set({ plotLength: parseFloat(v) || 0 });
+              setFormErrors((p) => ({ ...p, plotLength: undefined }));
             }}
-            error={formErrors.plotArea}
-            inputProps={{ min: 1 }}
+            error={formErrors.plotLength}
+            inputProps={{ min: 0.1, step: 0.1 }}
           />
           <FormField
-            label="Lề Vuông (m)"
+            label="Chiều Rộng (m)"
+            required
             type="number"
-            value={String(formData.plotMargin)}
-            onChange={(v) =>
-              setFormData({ ...formData, plotMargin: parseFloat(v) || 0 })
-            }
-            inputProps={{ min: 0, step: 0.1 }}
+            value={formData.plotWidth ? String(formData.plotWidth) : ""}
+            onChange={(v) => {
+              set({ plotWidth: parseFloat(v) || 0 });
+              setFormErrors((p) => ({ ...p, plotWidth: undefined }));
+            }}
+            error={formErrors.plotWidth}
+            inputProps={{ min: 0.1, step: 0.1 }}
+          />
+          <FormField
+            label="Diện Tích (m²)"
+            type="number"
+            value={computedArea > 0 ? String(computedArea) : "0"}
+            onChange={() => {}}
+            disabled
           />
         </div>
         <div className="grid grid-cols-2 gap-4">
           <FormField
-            label="Chiều Dài (m)"
+            label="Độ Dài Lề (m)"
             type="number"
-            value={formData.plotLength ? String(formData.plotLength) : ""}
-            onChange={(v) =>
-              setFormData({ ...formData, plotLength: parseFloat(v) || 0 })
-            }
+            value={String(formData.plotMarginLength)}
+            onChange={(v) => set({ plotMarginLength: parseFloat(v) || 0 })}
             inputProps={{ min: 0, step: 0.1 }}
           />
           <FormField
-            label="Chiều Rộng (m)"
+            label="Độ Rộng Lề (m)"
             type="number"
-            value={formData.plotWidth ? String(formData.plotWidth) : ""}
-            onChange={(v) =>
-              setFormData({ ...formData, plotWidth: parseFloat(v) || 0 })
-            }
+            value={String(formData.plotMarginWidth)}
+            onChange={(v) => set({ plotMarginWidth: parseFloat(v) || 0 })}
             inputProps={{ min: 0, step: 0.1 }}
           />
         </div>
         <FormSelect
           label="Trạng Thái"
           value={formData.plotStatus}
-          onChange={(v) => setFormData({ ...formData, plotStatus: v })}
+          onChange={(v) => set({ plotStatus: v })}
           options={[
             { value: "Active", label: "Hoạt động" },
             { value: "Inactive", label: "Không hoạt động" },
@@ -924,7 +943,20 @@ function ViewPlotModal({
           {[
             { label: "Dài", value: `${plot.plotLength ?? "-"} m` },
             { label: "Rộng", value: `${plot.plotWidth ?? "-"} m` },
-            { label: "Lề", value: `${plot.plotMargin ?? "-"} m` },
+            { label: "Lề dài", value: `${plot.plotMarginLength ?? "-"} m` },
+          ].map((item) => (
+            <div key={item.label}>
+              <div className="text-xs text-ink-400 uppercase mb-1">
+                {item.label}
+              </div>
+              <div className="font-medium text-ink-800">{item.value}</div>
+            </div>
+          ))}
+        </div>
+        <div className="grid grid-cols-2 gap-4 pt-4 border-t border-border">
+          {[
+            { label: "Lề rộng", value: `${plot.plotMarginWidth ?? "-"} m` },
+            { label: "Số luống", value: `${plot.bedsCount} luống` },
           ].map((item) => (
             <div key={item.label}>
               <div className="text-xs text-ink-400 uppercase mb-1">
@@ -935,13 +967,9 @@ function ViewPlotModal({
           ))}
         </div>
         <div className="pt-4 border-t border-border">
-          <div className="text-xs text-ink-400 uppercase mb-1">Số luống</div>
-          <div className="text-ink-800 font-medium">{plot.bedsCount} luống</div>
-        </div>
-        <div className="pt-4 border-t border-border">
           <div className="flex items-center gap-2 text-xs text-ink-500">
             <Calendar className="w-4 h-4" />
-            <span>Ngày tạo: {formatDate(plot.bedCreatedAt)}</span>
+            <span>Ngày tạo: {formatDate(plot.plotCreatedAt)}</span>
           </div>
         </div>
       </div>
@@ -971,9 +999,11 @@ function EditPlotModal({
     plotArea: plot.plotArea,
     plotLength: plot.plotLength ?? 0,
     plotWidth: plot.plotWidth ?? 0,
-    plotMargin: plot.plotMargin ?? 0.3,
+    plotMarginLength: plot.plotMarginLength ?? 1,
+    plotMarginWidth: plot.plotMarginWidth ?? 0.3,
     plotStatus: plot.plotStatus,
   });
+  const [formErrors, setFormErrors] = useState<PlotFormErrors>({});
 
   useEffect(() => {
     if (open)
@@ -984,10 +1014,27 @@ function EditPlotModal({
         plotArea: plot.plotArea,
         plotLength: plot.plotLength ?? 0,
         plotWidth: plot.plotWidth ?? 0,
-        plotMargin: plot.plotMargin ?? 0.3,
+        plotMarginLength: plot.plotMarginLength ?? 1,
+        plotMarginWidth: plot.plotMarginWidth ?? 0.3,
         plotStatus: plot.plotStatus,
       });
+    setFormErrors({});
   }, [open, plot]);
+
+  const computedArea = parseFloat(
+    (formData.plotLength * formData.plotWidth).toFixed(2),
+  );
+
+  const set = (patch: Partial<PlotRequest>) =>
+    setFormData((prev) => ({ ...prev, ...patch }));
+
+  const handleSubmit = () => {
+    const payload = { ...formData, plotArea: computedArea };
+    const errors = validatePlotForm(payload, farms, soils);
+    setFormErrors(errors);
+    if (Object.keys(errors).length > 0) return;
+    onUpdate(plot.plotId, { ...payload, plotName: payload.plotName.trim() });
+  };
 
   return (
     <Modal
@@ -1000,9 +1047,7 @@ function EditPlotModal({
           <Button variant="secondary" onClick={onClose}>
             Hủy Bỏ
           </Button>
-          <Button onClick={() => onUpdate(plot.plotId, formData)}>
-            Lưu Thay Đổi
-          </Button>
+          <Button onClick={handleSubmit}>Lưu Thay Đổi</Button>
         </>
       }
     >
@@ -1011,67 +1056,79 @@ function EditPlotModal({
           label="Tên Vuông Đất"
           required
           value={formData.plotName}
-          onChange={(v) => setFormData({ ...formData, plotName: v })}
+          onChange={(v) => {
+            set({ plotName: v });
+            setFormErrors((p) => ({ ...p, plotName: undefined }));
+          }}
+          error={formErrors.plotName}
         />
         <div className="grid grid-cols-2 gap-4">
           <FormSelect
             label="Trang Trại"
             value={formData.farmId}
-            onChange={(v) => setFormData({ ...formData, farmId: v })}
+            onChange={(v) => set({ farmId: v })}
             options={farms.map((f) => ({ value: f.farmId, label: f.farmName }))}
           />
           <FormSelect
             label="Loại Đất"
             value={formData.soilId}
-            onChange={(v) => setFormData({ ...formData, soilId: v })}
+            onChange={(v) => set({ soilId: v })}
             options={soils.map((s) => ({ value: s.soilId, label: s.name }))}
           />
         </div>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-3 gap-4">
           <FormField
-            label="Diện Tích (m²)"
+            label="Chiều Dài (m)"
             required
             type="number"
-            value={String(formData.plotArea)}
-            onChange={(v) =>
-              setFormData({ ...formData, plotArea: parseFloat(v) || 0 })
-            }
-            inputProps={{ min: 1 }}
+            value={formData.plotLength ? String(formData.plotLength) : ""}
+            onChange={(v) => {
+              set({ plotLength: parseFloat(v) || 0 });
+              setFormErrors((p) => ({ ...p, plotLength: undefined }));
+            }}
+            error={formErrors.plotLength}
+            inputProps={{ min: 0.1, step: 0.1 }}
           />
           <FormField
-            label="Lề Vuông (m)"
+            label="Chiều Rộng (m)"
+            required
             type="number"
-            value={String(formData.plotMargin)}
-            onChange={(v) =>
-              setFormData({ ...formData, plotMargin: parseFloat(v) || 0 })
-            }
-            inputProps={{ min: 0, step: 0.1 }}
+            value={formData.plotWidth ? String(formData.plotWidth) : ""}
+            onChange={(v) => {
+              set({ plotWidth: parseFloat(v) || 0 });
+              setFormErrors((p) => ({ ...p, plotWidth: undefined }));
+            }}
+            error={formErrors.plotWidth}
+            inputProps={{ min: 0.1, step: 0.1 }}
+          />
+          <FormField
+            label="Diện Tích (m²)"
+            type="number"
+            value={computedArea > 0 ? String(computedArea) : "0"}
+            onChange={() => {}}
+            disabled
           />
         </div>
         <div className="grid grid-cols-2 gap-4">
           <FormField
-            label="Chiều Dài (m)"
+            label="Độ Dài Lề (m)"
             type="number"
-            value={String(formData.plotLength)}
-            onChange={(v) =>
-              setFormData({ ...formData, plotLength: parseFloat(v) || 0 })
-            }
+            value={String(formData.plotMarginLength)}
+            onChange={(v) => set({ plotMarginLength: parseFloat(v) || 0 })}
             inputProps={{ min: 0, step: 0.1 }}
           />
           <FormField
-            label="Chiều Rộng (m)"
+            label="Độ Rộng Lề (m)"
             type="number"
-            value={String(formData.plotWidth)}
-            onChange={(v) =>
-              setFormData({ ...formData, plotWidth: parseFloat(v) || 0 })
-            }
+            value={String(formData.plotMarginWidth)}
+            onChange={(v) => set({ plotMarginWidth: parseFloat(v) || 0 })}
             inputProps={{ min: 0, step: 0.1 }}
           />
         </div>
         <FormSelect
           label="Trạng Thái"
           value={formData.plotStatus}
-          onChange={(v) => setFormData({ ...formData, plotStatus: v })}
+          onChange={(v) => set({ plotStatus: v })}
           options={[
             { value: "Active", label: "Hoạt động" },
             { value: "Inactive", label: "Không hoạt động" },
