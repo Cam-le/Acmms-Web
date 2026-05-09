@@ -1,21 +1,18 @@
 import { useState, useEffect } from "react";
 import {
   Plus,
-  Eye,
-  Edit,
-  Trash2,
   ChevronDown,
   ChevronUp,
   Grid3x3,
   Layers,
-  X,
   Sprout,
   Calendar,
   MapPin,
   Cpu,
+  Eye,
+  Pencil,
+  Trash2,
 } from "lucide-react";
-import * as Dialog from "@radix-ui/react-dialog";
-import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import * as Collapsible from "@radix-ui/react-collapsible";
 import {
   api,
@@ -28,37 +25,90 @@ import {
   CropResponse,
   IotDeviceRequest,
   AutoAllocatePreviewResponse,
-  AutoAllocateBedItem,
 } from "../../api/client";
+import { Modal } from "../components/ui/Modal";
+import { ConfirmDialog } from "../components/ui/ConfirmDialog";
+import { Button } from "../components/ui/Button";
+import { PageHeader } from "../components/ui/PageHeader";
+import { StatusBadge } from "../components/ui/StatusBadge";
+import { FormField } from "../components/ui/FormField";
+import { FormSelect } from "../components/ui/FormSelect";
+import { LoadingState } from "../components/ui/LoadingState";
+import { EmptyState } from "../components/ui/EmptyState";
+import { Spinner } from "../components/ui/Spinner";
+import { useToast } from "../components/ui/useToast";
+import { ToastContainer } from "../components/ui/ToastContainer";
+import { plotStatusTone } from "../utils/status";
+import { formatDate } from "../utils/format";
 
 // ==================== Helpers ====================
 
-const plotStatusMap: Record<string, string> = {
-  Active: "Hoạt động",
-  Inactive: "Không hoạt động",
-};
+const plotStatusLabel = (s: string) =>
+  s === "Active" ? "Hoạt động" : "Không hoạt động";
 
 function bedStatusLabel(status: string): string {
   return status.toLowerCase() === "active" ? "Hoạt động" : "Không hoạt động";
 }
 
-function bedStatusClass(status: string): string {
-  return status.toLowerCase() === "active"
-    ? "bg-[#dcfce7] text-[#166534]"
-    : "bg-[#fee2e2] text-[#991b1b]";
+function bedStatusToneInline(status: string): "success" | "danger" {
+  return status.toLowerCase() === "active" ? "success" : "danger";
 }
 
-function formatDate(iso: string) {
-  try {
-    return new Date(iso).toLocaleDateString("vi-VN");
-  } catch {
-    return iso;
+// ==================== Validation ====================
+
+interface PlotFormErrors {
+  plotName?: string;
+  plotArea?: string;
+  farmId?: string;
+  soilId?: string;
+}
+
+function validatePlotForm(
+  data: PlotRequest,
+  farms: FarmResponse[],
+  soils: SoilResponse[],
+): PlotFormErrors {
+  const errors: PlotFormErrors = {};
+  if (!data.plotName.trim()) {
+    errors.plotName = "Vui lòng nhập tên vuông đất";
+  } else if (data.plotName.trim().length < 2) {
+    errors.plotName = "Tên vuông đất phải có ít nhất 2 ký tự";
   }
+  if (!data.plotArea || data.plotArea <= 0) {
+    errors.plotArea = "Diện tích phải là số dương";
+  } else if (data.plotArea > 1_000_000) {
+    errors.plotArea = "Diện tích vượt quá giới hạn cho phép";
+  }
+  if (!data.farmId) errors.farmId = "Vui lòng chọn trang trại";
+  if (!data.soilId) errors.soilId = "Vui lòng chọn loại đất";
+  return errors;
+}
+
+interface BedFormErrors {
+  bedName?: string;
+  bedArea?: string;
+}
+
+function validateBedForm(data: BedRequest): BedFormErrors {
+  const errors: BedFormErrors = {};
+  if (!data.bedName.trim()) {
+    errors.bedName = "Vui lòng nhập tên luống";
+  } else if (data.bedName.trim().length < 2) {
+    errors.bedName = "Tên luống phải có ít nhất 2 ký tự";
+  } else if (data.bedName.trim().length > 200) {
+    errors.bedName = "Tên luống không được quá 200 ký tự";
+  }
+  if (!data.bedArea || data.bedArea <= 0) {
+    errors.bedArea = "Diện tích phải là số dương";
+  }
+  return errors;
 }
 
 // ==================== Main Page ====================
 
 export function PlotsPage() {
+  const { toasts, showToast, dismissToast } = useToast();
+
   const [plots, setPlots] = useState<PlotResponse[]>([]);
   const [beds, setBeds] = useState<BedResponse[]>([]);
   const [farms, setFarms] = useState<FarmResponse[]>([]);
@@ -84,6 +134,9 @@ export function PlotsPage() {
   const [deleteBedDialogOpen, setDeleteBedDialogOpen] = useState(false);
   const [plotToDeleteId, setPlotToDeleteId] = useState<string | null>(null);
   const [bedToDeleteId, setBedToDeleteId] = useState<string | null>(null);
+  const [deletingPlot, setDeletingPlot] = useState(false);
+  const [deletingBed, setDeletingBed] = useState(false);
+
   // IoT quick-add: bedId to pre-fill the modal launched from a bed row
   const [iotBedTarget, setIotBedTarget] = useState<string | null>(null);
 
@@ -142,8 +195,6 @@ export function PlotsPage() {
         new Date(a.bedCreatedAt).getTime() - new Date(b.bedCreatedAt).getTime(),
     );
 
-  const farmOptions: FarmResponse[] = farms;
-
   // ── Plot CRUD ──
   const handleCreatePlot = async (data: PlotRequest) => {
     try {
@@ -151,8 +202,9 @@ export function PlotsPage() {
       const refreshed = await api.getPlots();
       setPlots(refreshed);
       setCreatePlotOpen(false);
+      showToast("Tạo vuông đất thành công", "success");
     } catch (err) {
-      alert("Tạo vuông đất thất bại: " + (err as Error).message);
+      showToast("Tạo vuông đất thất bại: " + (err as Error).message, "error");
     }
   };
 
@@ -162,8 +214,12 @@ export function PlotsPage() {
       const refreshed = await api.getPlots();
       setPlots(refreshed);
       setEditPlotOpen(false);
+      showToast("Cập nhật vuông đất thành công", "success");
     } catch (err) {
-      alert("Cập nhật vuông đất thất bại: " + (err as Error).message);
+      showToast(
+        "Cập nhật vuông đất thất bại: " + (err as Error).message,
+        "error",
+      );
     }
   };
 
@@ -174,15 +230,19 @@ export function PlotsPage() {
 
   const confirmDeletePlot = async () => {
     if (!plotToDeleteId) return;
+    setDeletingPlot(true);
     try {
       await api.deletePlot(plotToDeleteId);
       setPlots(plots.filter((p) => p.plotId !== plotToDeleteId));
       setBeds(beds.filter((b) => b.plotId !== plotToDeleteId));
+      setDeletePlotDialogOpen(false);
+      setPlotToDeleteId(null);
+      showToast("Xóa vuông đất thành công", "success");
     } catch (err) {
-      alert("Xóa vuông đất thất bại: " + (err as Error).message);
+      showToast("Xóa vuông đất thất bại: " + (err as Error).message, "error");
+    } finally {
+      setDeletingPlot(false);
     }
-    setPlotToDeleteId(null);
-    setDeletePlotDialogOpen(false);
   };
 
   // ── Bed CRUD ──
@@ -196,8 +256,9 @@ export function PlotsPage() {
       setBeds(refreshedBeds);
       setPlots(refreshedPlots);
       setCreateBedOpen(false);
+      showToast("Tạo luống thành công", "success");
     } catch (err) {
-      alert("Tạo luống thất bại: " + (err as Error).message);
+      showToast("Tạo luống thất bại: " + (err as Error).message, "error");
     }
   };
 
@@ -207,8 +268,9 @@ export function PlotsPage() {
       const refreshed = await api.getBeds();
       setBeds(refreshed);
       setEditBedOpen(false);
+      showToast("Cập nhật luống thành công", "success");
     } catch (err) {
-      alert("Cập nhật luống thất bại: " + (err as Error).message);
+      showToast("Cập nhật luống thất bại: " + (err as Error).message, "error");
     }
   };
 
@@ -220,6 +282,7 @@ export function PlotsPage() {
   const confirmDeleteBed = async () => {
     if (!bedToDeleteId) return;
     const bed = beds.find((b) => b.bedId === bedToDeleteId);
+    setDeletingBed(true);
     try {
       await api.deleteBed(bedToDeleteId);
       setBeds(beds.filter((b) => b.bedId !== bedToDeleteId));
@@ -231,53 +294,47 @@ export function PlotsPage() {
               : p,
           ),
         );
+      setDeleteBedDialogOpen(false);
+      setBedToDeleteId(null);
+      showToast("Xóa luống thành công", "success");
     } catch (err) {
-      alert("Xóa luống thất bại: " + (err as Error).message);
+      showToast("Xóa luống thất bại: " + (err as Error).message, "error");
+    } finally {
+      setDeletingBed(false);
     }
-    setBedToDeleteId(null);
-    setDeleteBedDialogOpen(false);
   };
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64 text-[#62748e]">
-        Đang tải dữ liệu...
-      </div>
-    );
+    return <LoadingState message="Đang tải dữ liệu..." />;
   }
 
   return (
     <div className="flex flex-col gap-6">
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+
       {/* Header */}
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-[#115e59] text-2xl font-semibold mb-1">
-            Quản Lý Vuông Đất
-          </h1>
-          <p className="text-[#45556c] text-sm">Quản lý đất và luống</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => setCreatePlotOpen(true)}
-            className="bg-[#009689] text-white px-4 py-2 rounded-lg hover:bg-[#007f75] transition-colors flex items-center gap-2"
-          >
-            <Plus className="w-4 h-4" />
+      <PageHeader
+        icon={Grid3x3}
+        title="Quản Lý Vuông Đất"
+        subtitle="Quản lý đất và luống"
+        actions={
+          <Button leadingIcon={Plus} onClick={() => setCreatePlotOpen(true)}>
             Thêm vuông
-          </button>
-        </div>
-      </div>
+          </Button>
+        }
+      />
 
       {/* Farm Selector */}
-      <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-4">
-        <label className="block text-sm text-[#62748e] mb-2">
+      <div className="bg-white rounded-lg border border-border shadow-card p-4">
+        <label className="block text-sm text-ink-500 mb-2">
           Chọn Trang Trại:
         </label>
         <select
           value={selectedFarmId}
           onChange={(e) => setSelectedFarmId(e.target.value)}
-          className="w-full max-w-md px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
+          className="w-full max-w-md px-4 py-2 border border-border-strong rounded-btn focus:outline-none focus:ring-2 focus:ring-primary text-sm text-ink-700"
         >
-          {farmOptions.map((f) => (
+          {farms.map((f) => (
             <option key={f.farmId} value={f.farmId}>
               {f.farmName}
             </option>
@@ -288,14 +345,16 @@ export function PlotsPage() {
       {/* Plot List */}
       <div className="space-y-6">
         {filteredPlots.length === 0 ? (
-          <div className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm p-12 text-center text-[#62748e]">
-            Chưa có vuông đất nào
+          <div className="bg-white rounded-lg border border-border shadow-card p-12">
+            <EmptyState
+              icon={Grid3x3}
+              message="Chưa có vuông đất nào trong trang trại này"
+            />
           </div>
         ) : (
           filteredPlots.map((plot) => {
             const isOpen = openPlotIds.includes(plot.plotId);
             const plotBeds = bedsForPlot(plot.plotId).sort((a, b) => {
-              // Extract leading number from bedName for natural numeric sort
               const numA = parseInt(a.bedName.match(/\d+/)?.[0] ?? "0", 10);
               const numB = parseInt(b.bedName.match(/\d+/)?.[0] ?? "0", 10);
               if (numA !== numB) return numA - numB;
@@ -308,26 +367,26 @@ export function PlotsPage() {
             return (
               <div
                 key={plot.plotId}
-                className="bg-white rounded-lg border border-[#e2e8f0] shadow-sm overflow-hidden"
+                className="bg-white rounded-lg border border-border shadow-card overflow-hidden"
               >
                 <div className="p-6">
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex items-start gap-4">
-                      <div className="w-12 h-12 bg-[#f0fdfa] rounded-lg flex items-center justify-center">
-                        <Grid3x3 className="w-6 h-6 text-[#009689]" />
+                  <div className="flex items-start justify-between mb-4 gap-3 flex-wrap">
+                    <div className="flex items-start gap-4 min-w-0">
+                      <div className="w-12 h-12 bg-primary-50 rounded-card flex items-center justify-center shrink-0">
+                        <Grid3x3 className="w-6 h-6 text-primary" />
                       </div>
-                      <div>
-                        <h3 className="text-lg font-semibold text-[#115e59] mb-1">
+                      <div className="min-w-0">
+                        <h3 className="text-lg font-semibold text-ink-800 mb-1 truncate">
                           {plot.plotName}
                         </h3>
-                        <p className="text-sm text-[#62748e] mb-2">
+                        <p className="text-sm text-ink-500 mb-2">
                           {plot.plotArea} m² · {plot.farmName}
                         </p>
-                        <div className="flex items-center gap-3">
-                          <span className="px-2.5 py-1 bg-[#f0fdfa] text-[#009689] rounded text-xs font-medium">
+                        <div className="flex items-center gap-3 flex-wrap">
+                          <span className="px-2.5 py-1 bg-primary-50 text-primary rounded-btn text-xs font-medium">
                             {plot.soilName}
                           </span>
-                          <span className="text-xs text-[#62748e]">
+                          <span className="text-xs text-ink-500">
                             {activeBeds}/{plotBeds.length} luống
                           </span>
                         </div>
@@ -335,22 +394,18 @@ export function PlotsPage() {
                     </div>
 
                     <div className="flex items-center gap-2 flex-wrap justify-end">
-                      <span
-                        className={`px-3 py-1 rounded text-sm font-medium ${
-                          plot.plotStatus === "Active"
-                            ? "bg-[#dcfce7] text-[#008236]"
-                            : "bg-[#fee2e2] text-[#991b1b]"
-                        }`}
-                      >
-                        {plotStatusMap[plot.plotStatus] ?? plot.plotStatus}
-                      </span>
+                      <StatusBadge
+                        label={plotStatusLabel(plot.plotStatus)}
+                        tone={plotStatusTone(plot.plotStatus)}
+                      />
                       <button
                         onClick={() => {
                           setSelectedPlot(plot);
                           setViewPlotOpen(true);
                         }}
-                        className="p-2 text-[#009689] hover:bg-[#f0fdfa] rounded-lg transition-colors"
+                        className="p-2 text-primary hover:bg-primary-50 rounded-btn transition-colors"
                         title="Xem"
+                        aria-label="Xem chi tiết vuông đất"
                       >
                         <Eye className="w-5 h-5" />
                       </button>
@@ -359,28 +414,29 @@ export function PlotsPage() {
                           setSelectedPlot(plot);
                           setEditPlotOpen(true);
                         }}
-                        className="p-2 text-[#009689] hover:bg-[#f0fdfa] rounded-lg transition-colors"
+                        className="p-2 text-primary hover:bg-primary-50 rounded-btn transition-colors"
                         title="Chỉnh sửa"
+                        aria-label="Chỉnh sửa vuông đất"
                       >
-                        <Edit className="w-5 h-5" />
+                        <Pencil className="w-5 h-5" />
                       </button>
                       <button
                         onClick={() => handleDeletePlot(plot.plotId)}
-                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                        className="p-2 text-status-danger-fg hover:bg-status-danger-bg rounded-btn transition-colors"
                         title="Xóa"
+                        aria-label="Xóa vuông đất"
                       >
                         <Trash2 className="w-5 h-5" />
                       </button>
-                      <button
+                      <Button
+                        leadingIcon={Layers}
                         onClick={() => {
                           setSelectedPlot(plot);
                           setAutoPlotOpen(true);
                         }}
-                        className="ml-2 px-4 py-2 bg-[#009689] text-white rounded-lg hover:bg-[#007f75] transition-colors text-sm flex items-center gap-2"
                       >
-                        <Layers className="w-4 h-4" />
                         Thêm Luống Tự Động
-                      </button>
+                      </Button>
                     </div>
                   </div>
 
@@ -388,8 +444,8 @@ export function PlotsPage() {
                     open={isOpen}
                     onOpenChange={() => togglePlot(plot.plotId)}
                   >
-                    <div className="flex items-center justify-between py-3 border-t border-[#e2e8f0]">
-                      <Collapsible.Trigger className="flex items-center gap-2 text-[#115e59] font-medium">
+                    <div className="flex items-center justify-between py-3 border-t border-border">
+                      <Collapsible.Trigger className="flex items-center gap-2 text-ink-800 font-medium">
                         {isOpen ? (
                           <ChevronUp className="w-5 h-5" />
                         ) : (
@@ -399,105 +455,96 @@ export function PlotsPage() {
                           Luống ({activeBeds}/{plotBeds.length})
                         </span>
                       </Collapsible.Trigger>
-                      <button
+                      <Button
+                        variant="secondary"
+                        leadingIcon={Plus}
                         onClick={() => {
                           setSelectedPlot(plot);
                           setCreateBedOpen(true);
                         }}
-                        className="px-4 py-2 bg-white text-[#009689] border border-[#009689] rounded-lg hover:bg-[#f0fdfa] transition-colors text-sm flex items-center gap-2"
                       >
-                        <Plus className="w-4 h-4" />
                         Thêm Luống
-                      </button>
+                      </Button>
                     </div>
 
                     <Collapsible.Content>
                       {plotBeds.length === 0 ? (
-                        <div className="py-8 text-center text-[#62748e]">
-                          Chưa có luống nào
+                        <div className="py-8">
+                          <EmptyState size="sm" message="Chưa có luống nào" />
                         </div>
                       ) : (
-                        <div className="mt-4">
-                          <table className="w-full">
-                            <thead className="bg-[#f8fafc]">
+                        <div className="mt-4 overflow-x-auto">
+                          <table className="w-full min-w-[700px]">
+                            <thead className="bg-surface-alt">
                               <tr>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-[#62748e] uppercase">
-                                  Tên luống
-                                </th>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-[#62748e] uppercase">
-                                  Cây trồng
-                                </th>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-[#62748e] uppercase">
-                                  Diện tích
-                                </th>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-[#62748e] uppercase">
-                                  Dài (m)
-                                </th>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-[#62748e] uppercase">
-                                  Rộng (m)
-                                </th>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-[#62748e] uppercase">
-                                  Số hàng
-                                </th>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-[#62748e] uppercase">
-                                  Số cây
-                                </th>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-[#62748e] uppercase">
-                                  Trạng thái
-                                </th>
-                                <th className="px-4 py-3 text-center text-xs font-medium text-[#62748e] uppercase">
-                                  Thao tác
-                                </th>
+                                {[
+                                  "Tên luống",
+                                  "Cây trồng",
+                                  "Diện tích",
+                                  "Dài (m)",
+                                  "Rộng (m)",
+                                  "Số hàng",
+                                  "Số cây",
+                                  "Trạng thái",
+                                  "Thao tác",
+                                ].map((h, i) => (
+                                  <th
+                                    key={h}
+                                    className={`px-4 py-3 text-xs font-medium text-ink-500 uppercase whitespace-nowrap ${i === 8 ? "text-center" : "text-left"}`}
+                                  >
+                                    {h}
+                                  </th>
+                                ))}
                               </tr>
                             </thead>
-                            <tbody className="divide-y divide-[#e2e8f0]">
+                            <tbody className="divide-y divide-border">
                               {plotBeds.map((bed) => (
                                 <tr
                                   key={bed.bedId}
-                                  className="hover:bg-[#f8fafc] transition-colors"
+                                  className="hover:bg-surface-alt transition-colors"
                                 >
-                                  <td className="px-4 py-3 text-sm text-[#115e59] font-medium">
+                                  <td className="px-4 py-3 text-sm text-ink-800 font-medium whitespace-nowrap">
                                     {bed.bedName}
                                   </td>
-                                  <td className="px-4 py-3 text-sm text-[#62748e]">
+                                  <td className="px-4 py-3 text-sm text-ink-500">
                                     {bed.cropName ?? "-"}
                                   </td>
-                                  <td className="px-4 py-3 text-sm text-[#62748e]">
+                                  <td className="px-4 py-3 text-sm text-ink-500 whitespace-nowrap">
                                     {bed.bedArea} m²
                                   </td>
-                                  <td className="px-4 py-3 text-sm text-[#62748e]">
+                                  <td className="px-4 py-3 text-sm text-ink-500">
                                     {bed.bedLength != null
                                       ? bed.bedLength
                                       : "-"}
                                   </td>
-                                  <td className="px-4 py-3 text-sm text-[#62748e]">
+                                  <td className="px-4 py-3 text-sm text-ink-500">
                                     {bed.bedWidth != null ? bed.bedWidth : "-"}
                                   </td>
-                                  <td className="px-4 py-3 text-sm text-[#62748e]">
+                                  <td className="px-4 py-3 text-sm text-ink-500">
                                     {bed.rowCount != null ? bed.rowCount : "-"}
                                   </td>
-                                  <td className="px-4 py-3 text-sm text-[#62748e]">
+                                  <td className="px-4 py-3 text-sm text-ink-500">
                                     {bed.plantCount != null
                                       ? bed.plantCount
                                       : "-"}
                                   </td>
                                   <td className="px-4 py-3">
-                                    <span
-                                      className={`inline-block px-2.5 py-1 rounded text-xs font-medium ${bedStatusClass(bed.bedStatus)}`}
-                                    >
-                                      {bedStatusLabel(bed.bedStatus)}
-                                    </span>
+                                    <StatusBadge
+                                      label={bedStatusLabel(bed.bedStatus)}
+                                      tone={bedStatusToneInline(bed.bedStatus)}
+                                    />
                                   </td>
                                   <td className="px-4 py-3">
-                                    <div className="flex items-center justify-center gap-2">
+                                    <div className="flex items-center justify-center gap-1">
                                       <button
                                         onClick={() => {
                                           setSelectedBed(bed);
                                           setSelectedPlot(plot);
                                           setViewBedOpen(true);
                                         }}
-                                        className="p-2 text-[#009689] hover:bg-[#f0fdfa] rounded-lg transition-colors"
+                                        className="p-1.5 rounded-btn transition-colors text-ink-500 hover:text-primary hover:bg-primary-50"
                                         title="Xem"
+                                        aria-label="Xem chi tiết luống"
                                       >
                                         <Eye className="w-4 h-4" />
                                       </button>
@@ -507,17 +554,19 @@ export function PlotsPage() {
                                           setSelectedPlot(plot);
                                           setEditBedOpen(true);
                                         }}
-                                        className="p-2 text-[#009689] hover:bg-[#f0fdfa] rounded-lg transition-colors"
+                                        className="p-1.5 rounded-btn transition-colors text-ink-500 hover:text-primary hover:bg-primary-50"
                                         title="Chỉnh sửa"
+                                        aria-label="Chỉnh sửa luống"
                                       >
-                                        <Edit className="w-4 h-4" />
+                                        <Pencil className="w-4 h-4" />
                                       </button>
                                       <button
                                         onClick={() =>
                                           handleDeleteBed(bed.bedId)
                                         }
-                                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                        className="p-1.5 rounded-btn transition-colors text-ink-500 hover:text-status-danger-fg hover:bg-status-danger-bg"
                                         title="Xóa"
+                                        aria-label="Xóa luống"
                                       >
                                         <Trash2 className="w-4 h-4" />
                                       </button>
@@ -525,8 +574,9 @@ export function PlotsPage() {
                                         onClick={() =>
                                           setIotBedTarget(bed.bedId)
                                         }
-                                        className="p-2 text-[#009689] hover:bg-[#f0fdfa] rounded-lg transition-colors"
+                                        className="p-1.5 rounded-btn transition-colors text-ink-500 hover:text-primary hover:bg-primary-50"
                                         title="Thêm thiết bị IoT"
+                                        aria-label="Thêm thiết bị IoT"
                                       >
                                         <Cpu className="w-4 h-4" />
                                       </button>
@@ -547,11 +597,11 @@ export function PlotsPage() {
         )}
       </div>
 
-      {/* Modals */}
+      {/* ── Plot Modals ── */}
       <CreatePlotModal
         open={createPlotOpen}
         onClose={() => setCreatePlotOpen(false)}
-        farms={farmOptions}
+        farms={farms}
         soils={soils}
         onCreate={handleCreatePlot}
       />
@@ -567,7 +617,7 @@ export function PlotsPage() {
             open={editPlotOpen}
             onClose={() => setEditPlotOpen(false)}
             plot={selectedPlot}
-            farms={farmOptions}
+            farms={farms}
             soils={soils}
             onUpdate={handleUpdatePlot}
           />
@@ -614,137 +664,53 @@ export function PlotsPage() {
         </>
       )}
 
-      {/* Delete Plot Dialog */}
-      <AlertDialog.Root
+      {/* ── Delete Dialogs ── */}
+      <ConfirmDialog
         open={deletePlotDialogOpen}
-        onOpenChange={setDeletePlotDialogOpen}
-      >
-        <AlertDialog.Portal>
-          <AlertDialog.Overlay className="fixed inset-0 bg-black/50 z-50 animate-in fade-in" />
-          <AlertDialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-md bg-white rounded-xl shadow-2xl p-6 animate-in fade-in zoom-in-95">
-            <AlertDialog.Title className="text-lg font-semibold text-slate-900 mb-2">
-              Xác nhận xóa vuông đất
-            </AlertDialog.Title>
-            <AlertDialog.Description className="text-sm text-slate-600 mb-6">
-              Bạn có chắc chắn muốn xóa vuông này? Tất cả các luống bên trong
-              cũng sẽ bị xóa và không thể hoàn tác.
-            </AlertDialog.Description>
-            <div className="flex gap-3 justify-end">
-              <AlertDialog.Cancel asChild>
-                <button className="px-4 py-2 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-100 transition-colors">
-                  Hủy bỏ
-                </button>
-              </AlertDialog.Cancel>
-              <AlertDialog.Action asChild>
-                <button
-                  onClick={confirmDeletePlot}
-                  className="px-4 py-2 rounded-lg text-sm font-medium bg-red-600 text-white hover:bg-red-700 transition-colors"
-                >
-                  Xóa vuông đất
-                </button>
-              </AlertDialog.Action>
-            </div>
-          </AlertDialog.Content>
-        </AlertDialog.Portal>
-      </AlertDialog.Root>
+        onOpenChange={(o) => {
+          if (!o) {
+            setDeletePlotDialogOpen(false);
+            setPlotToDeleteId(null);
+          }
+        }}
+        title="Xóa vuông đất"
+        description={
+          <>
+            Bạn có chắc chắn muốn xóa vuông này? Tất cả các luống bên trong cũng
+            sẽ bị xóa và không thể hoàn tác.
+          </>
+        }
+        confirmLabel="Xóa vuông đất"
+        loading={deletingPlot}
+        onConfirm={confirmDeletePlot}
+      />
 
-      {/* Delete Bed Dialog */}
-      <AlertDialog.Root
+      <ConfirmDialog
         open={deleteBedDialogOpen}
-        onOpenChange={setDeleteBedDialogOpen}
-      >
-        <AlertDialog.Portal>
-          <AlertDialog.Overlay className="fixed inset-0 bg-black/50 z-50 animate-in fade-in" />
-          <AlertDialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-md bg-white rounded-xl shadow-2xl p-6 animate-in fade-in zoom-in-95">
-            <AlertDialog.Title className="text-lg font-semibold text-slate-900 mb-2">
-              Xác nhận xóa luống
-            </AlertDialog.Title>
-            <AlertDialog.Description className="text-sm text-slate-600 mb-6">
-              Bạn có chắc chắn muốn xóa luống này? Hành động này không thể hoàn
-              tác.
-            </AlertDialog.Description>
-            <div className="flex gap-3 justify-end">
-              <AlertDialog.Cancel asChild>
-                <button className="px-4 py-2 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-100 transition-colors">
-                  Hủy bỏ
-                </button>
-              </AlertDialog.Cancel>
-              <AlertDialog.Action asChild>
-                <button
-                  onClick={confirmDeleteBed}
-                  className="px-4 py-2 rounded-lg text-sm font-medium bg-red-600 text-white hover:bg-red-700 transition-colors"
-                >
-                  Xóa luống
-                </button>
-              </AlertDialog.Action>
-            </div>
-          </AlertDialog.Content>
-        </AlertDialog.Portal>
-      </AlertDialog.Root>
+        onOpenChange={(o) => {
+          if (!o) {
+            setDeleteBedDialogOpen(false);
+            setBedToDeleteId(null);
+          }
+        }}
+        title="Xóa luống"
+        description="Bạn có chắc chắn muốn xóa luống này? Hành động này không thể hoàn tác."
+        confirmLabel="Xóa luống"
+        loading={deletingBed}
+        onConfirm={confirmDeleteBed}
+      />
 
-      {/* IoT Quick-Add Modal — launched from bed row Cpu button */}
+      {/* IoT Quick-Add Modal */}
       {iotBedTarget && (
         <IotQuickAddModal
           bedId={iotBedTarget}
           onClose={() => setIotBedTarget(null)}
+          onSuccess={() => showToast("Thêm thiết bị IoT thành công", "success")}
+          onError={(msg) => showToast(msg, "error")}
         />
       )}
     </div>
   );
-}
-
-// ==================== Validation ====================
-
-interface PlotFormErrors {
-  plotName?: string;
-  plotArea?: string;
-  farmId?: string;
-  soilId?: string;
-}
-
-function validatePlotForm(
-  data: PlotRequest,
-  farms: FarmResponse[],
-  soils: SoilResponse[],
-): PlotFormErrors {
-  const errors: PlotFormErrors = {};
-  if (!data.plotName.trim()) {
-    errors.plotName = "Vui lòng nhập tên vuông đất";
-  } else if (data.plotName.trim().length < 2) {
-    errors.plotName = "Tên vuông đất phải có ít nhất 2 ký tự";
-  }
-  if (!data.plotArea || data.plotArea <= 0) {
-    errors.plotArea = "Diện tích phải là số dương";
-  } else if (data.plotArea > 1_000_000) {
-    errors.plotArea = "Diện tích vượt quá giới hạn cho phép";
-  }
-  if (!data.farmId) {
-    errors.farmId = "Vui lòng chọn trang trại";
-  }
-  if (!data.soilId) {
-    errors.soilId = "Vui lòng chọn loại đất";
-  }
-  return errors;
-}
-
-interface BedFormErrors {
-  bedName?: string;
-  bedArea?: string;
-}
-
-function validateBedForm(data: BedRequest): BedFormErrors {
-  const errors: BedFormErrors = {};
-  if (!data.bedName.trim()) {
-    errors.bedName = "Vui lòng nhập tên luống";
-  } else if (data.bedName.trim().length < 2) {
-    errors.bedName = "Tên luống phải có ít nhất 2 ký tự";
-  } else if (data.bedName.trim().length > 200) {
-    errors.bedName = "Tên luống không được quá 200 ký tự";
-  }
-  if (!data.bedArea || data.bedArea <= 0) {
-    errors.bedArea = "Diện tích phải là số dương";
-  }
-  return errors;
 }
 
 // ==================== Plot Modals ====================
@@ -790,206 +756,112 @@ function CreatePlotModal({
     }
   }, [open, farms, soils]);
 
+  const handleSubmit = () => {
+    const errors = validatePlotForm(formData, farms, soils);
+    setFormErrors(errors);
+    if (Object.keys(errors).length > 0) return;
+    onCreate({ ...formData, plotName: formData.plotName.trim() });
+  };
+
   return (
-    <Dialog.Root open={open} onOpenChange={onClose}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-lg bg-white rounded-xl shadow-2xl p-6">
-          <div className="flex items-center justify-between mb-6">
-            <Dialog.Title className="text-xl font-semibold text-[#115e59]">
-              Thêm Vuông Đất Mới
-            </Dialog.Title>
-            <Dialog.Close asChild>
-              <button className="p-2 text-[#62748e] hover:bg-[#f8fafc] rounded-lg transition-colors">
-                <X className="w-5 h-5" />
-              </button>
-            </Dialog.Close>
-          </div>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              const errors = validatePlotForm(formData, farms, soils);
-              setFormErrors(errors);
-              if (Object.keys(errors).length > 0) return;
-              onCreate({ ...formData, plotName: formData.plotName.trim() });
+    <Modal
+      open={open}
+      onOpenChange={(o) => !o && onClose()}
+      title="Thêm Vuông Đất Mới"
+      size="lg"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Hủy Bỏ
+          </Button>
+          <Button onClick={handleSubmit}>Tạo Vuông Đất</Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <FormField
+          label="Tên Vuông Đất"
+          required
+          value={formData.plotName}
+          onChange={(v) => {
+            setFormData({ ...formData, plotName: v });
+            setFormErrors((p) => ({ ...p, plotName: undefined }));
+          }}
+          placeholder="Ví dụ: Plot A1"
+          error={formErrors.plotName}
+        />
+        <div className="grid grid-cols-2 gap-4">
+          <FormSelect
+            label="Trang Trại"
+            required
+            value={formData.farmId}
+            onChange={(v) => setFormData({ ...formData, farmId: v })}
+            options={farms.map((f) => ({ value: f.farmId, label: f.farmName }))}
+            error={formErrors.farmId}
+          />
+          <FormSelect
+            label="Loại Đất"
+            required
+            value={formData.soilId}
+            onChange={(v) => setFormData({ ...formData, soilId: v })}
+            options={soils.map((s) => ({ value: s.soilId, label: s.name }))}
+            error={formErrors.soilId}
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <FormField
+            label="Diện Tích (m²)"
+            required
+            type="number"
+            value={formData.plotArea ? String(formData.plotArea) : ""}
+            onChange={(v) => {
+              setFormData({ ...formData, plotArea: parseFloat(v) || 0 });
+              setFormErrors((p) => ({ ...p, plotArea: undefined }));
             }}
-            className="space-y-4"
-          >
-            <div>
-              <label className="block text-sm font-medium text-[#115e59] mb-2">
-                Tên Vuông Đất <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                placeholder="Ví dụ: Plot A1"
-                value={formData.plotName}
-                onChange={(e) => {
-                  setFormData({ ...formData, plotName: e.target.value });
-                  setFormErrors((p) => ({ ...p, plotName: undefined }));
-                }}
-                className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] ${formErrors.plotName ? "border-red-300 bg-red-50" : "border-[#cad5e2]"}`}
-              />
-              {formErrors.plotName && (
-                <p className="mt-1 text-xs text-red-500">
-                  {formErrors.plotName}
-                </p>
-              )}
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Trang Trại <span className="text-red-500">*</span>
-                </label>
-                <select
-                  required
-                  value={formData.farmId}
-                  onChange={(e) =>
-                    setFormData({ ...formData, farmId: e.target.value })
-                  }
-                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                >
-                  {farms.map((f) => (
-                    <option key={f.farmId} value={f.farmId}>
-                      {f.farmName}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Loại Đất <span className="text-red-500">*</span>
-                </label>
-                <select
-                  required
-                  value={formData.soilId}
-                  onChange={(e) =>
-                    setFormData({ ...formData, soilId: e.target.value })
-                  }
-                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                >
-                  {soils.map((s) => (
-                    <option key={s.soilId} value={s.soilId}>
-                      {s.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Diện Tích (m²) <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="number"
-                  min={1}
-                  value={formData.plotArea || ""}
-                  onChange={(e) => {
-                    setFormData({
-                      ...formData,
-                      plotArea: parseFloat(e.target.value) || 0,
-                    });
-                    setFormErrors((p) => ({ ...p, plotArea: undefined }));
-                  }}
-                  className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] ${formErrors.plotArea ? "border-red-300 bg-red-50" : "border-[#cad5e2]"}`}
-                />
-                {formErrors.plotArea && (
-                  <p className="mt-1 text-xs text-red-500">
-                    {formErrors.plotArea}
-                  </p>
-                )}
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Lề Vuông (m)
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  step={0.1}
-                  value={formData.plotMargin}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      plotMargin: parseFloat(e.target.value) || 0,
-                    })
-                  }
-                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Chiều Dài (m)
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  step={0.1}
-                  value={formData.plotLength || ""}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      plotLength: parseFloat(e.target.value) || 0,
-                    })
-                  }
-                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Chiều Rộng (m)
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  step={0.1}
-                  value={formData.plotWidth || ""}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      plotWidth: parseFloat(e.target.value) || 0,
-                    })
-                  }
-                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                />
-              </div>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-[#115e59] mb-2">
-                Trạng Thái
-              </label>
-              <select
-                value={formData.plotStatus}
-                onChange={(e) =>
-                  setFormData({ ...formData, plotStatus: e.target.value })
-                }
-                className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-              >
-                <option value="Active">Hoạt động</option>
-                <option value="Inactive">Không hoạt động</option>
-              </select>
-            </div>
-            <div className="flex justify-end gap-3 pt-4">
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-6 py-2 bg-[#f1f5f9] text-[#314158] rounded-lg hover:bg-[#e2e8f0] transition-colors"
-              >
-                Hủy Bỏ
-              </button>
-              <button
-                type="submit"
-                className="px-6 py-2 bg-[#009689] text-white rounded-lg hover:bg-[#007f75] transition-colors"
-              >
-                Tạo Vuông Đất
-              </button>
-            </div>
-          </form>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+            error={formErrors.plotArea}
+            inputProps={{ min: 1 }}
+          />
+          <FormField
+            label="Lề Vuông (m)"
+            type="number"
+            value={String(formData.plotMargin)}
+            onChange={(v) =>
+              setFormData({ ...formData, plotMargin: parseFloat(v) || 0 })
+            }
+            inputProps={{ min: 0, step: 0.1 }}
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <FormField
+            label="Chiều Dài (m)"
+            type="number"
+            value={formData.plotLength ? String(formData.plotLength) : ""}
+            onChange={(v) =>
+              setFormData({ ...formData, plotLength: parseFloat(v) || 0 })
+            }
+            inputProps={{ min: 0, step: 0.1 }}
+          />
+          <FormField
+            label="Chiều Rộng (m)"
+            type="number"
+            value={formData.plotWidth ? String(formData.plotWidth) : ""}
+            onChange={(v) =>
+              setFormData({ ...formData, plotWidth: parseFloat(v) || 0 })
+            }
+            inputProps={{ min: 0, step: 0.1 }}
+          />
+        </div>
+        <FormSelect
+          label="Trạng Thái"
+          value={formData.plotStatus}
+          onChange={(v) => setFormData({ ...formData, plotStatus: v })}
+          options={[
+            { value: "Active", label: "Hoạt động" },
+            { value: "Inactive", label: "Không hoạt động" },
+          ]}
+        />
+      </div>
+    </Modal>
   );
 }
 
@@ -1003,107 +875,77 @@ function ViewPlotModal({
   plot: PlotResponse;
 }) {
   return (
-    <Dialog.Root open={open} onOpenChange={onClose}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-md bg-white rounded-xl shadow-2xl p-6">
-          <div className="flex items-center justify-between mb-6">
-            <Dialog.Title className="text-xl font-semibold text-[#115e59]">
-              Chi Tiết Vuông Đất
-            </Dialog.Title>
-            <Dialog.Close asChild>
-              <button className="p-2 text-[#62748e] hover:bg-[#f8fafc] rounded-lg transition-colors">
-                <X className="w-5 h-5" />
-              </button>
-            </Dialog.Close>
-          </div>
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-[#115e59]">
-                {plot.plotName}
-              </h3>
-              <span
-                className={`px-3 py-1 rounded text-sm font-medium ${plot.plotStatus === "Active" ? "bg-[#dcfce7] text-[#008236]" : "bg-[#fee2e2] text-[#991b1b]"}`}
-              >
-                {plotStatusMap[plot.plotStatus] ?? plot.plotStatus}
+    <Modal
+      open={open}
+      onOpenChange={(o) => !o && onClose()}
+      title="Chi Tiết Vuông Đất"
+      size="md"
+      footer={
+        <Button variant="secondary" onClick={onClose}>
+          Đóng
+        </Button>
+      }
+    >
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-semibold text-ink-800">
+            {plot.plotName}
+          </h3>
+          <StatusBadge
+            label={plotStatusLabel(plot.plotStatus)}
+            tone={plotStatusTone(plot.plotStatus)}
+          />
+        </div>
+        <div className="flex items-center gap-2 text-sm text-ink-500">
+          <MapPin className="w-4 h-4" />
+          <span>{plot.farmName}</span>
+        </div>
+        <div className="grid grid-cols-2 gap-4 pt-4 border-t border-border">
+          <div>
+            <div className="text-xs text-ink-400 uppercase mb-1">
+              Tổng diện tích
+            </div>
+            <div className="flex items-center gap-2">
+              <Layers className="w-5 h-5 text-primary" />
+              <span className="text-lg font-semibold text-ink-800">
+                {plot.plotArea.toLocaleString()} m²
               </span>
             </div>
-            <div className="flex items-center gap-2 text-sm text-[#62748e]">
-              <MapPin className="w-4 h-4" />
-              <span>{plot.farmName}</span>
-            </div>
-            <div className="grid grid-cols-2 gap-4 pt-4 border-t border-[#e2e8f0]">
-              <div>
-                <div className="text-xs text-[#62748e] uppercase mb-1">
-                  Tổng diện tích
-                </div>
-                <div className="flex items-center gap-2">
-                  <Layers className="w-5 h-5 text-[#009689]" />
-                  <span className="text-lg font-semibold text-[#115e59]">
-                    {plot.plotArea.toLocaleString()} m²
-                  </span>
-                </div>
-              </div>
-              <div>
-                <div className="text-xs text-[#62748e] uppercase mb-1">
-                  Loại đất
-                </div>
-                <div className="flex items-center gap-2">
-                  <Sprout className="w-5 h-5 text-[#009689]" />
-                  <span className="font-medium text-[#115e59]">
-                    {plot.soilName}
-                  </span>
-                </div>
-              </div>
-            </div>
-            <div className="grid grid-cols-3 gap-4 pt-4 border-t border-[#e2e8f0]">
-              <div>
-                <div className="text-xs text-[#62748e] uppercase mb-1">Dài</div>
-                <div className="font-medium text-[#115e59]">
-                  {plot.plotLength ?? "-"} m
-                </div>
-              </div>
-              <div>
-                <div className="text-xs text-[#62748e] uppercase mb-1">
-                  Rộng
-                </div>
-                <div className="font-medium text-[#115e59]">
-                  {plot.plotWidth ?? "-"} m
-                </div>
-              </div>
-              <div>
-                <div className="text-xs text-[#62748e] uppercase mb-1">Lề</div>
-                <div className="font-medium text-[#115e59]">
-                  {plot.plotMargin ?? "-"} m
-                </div>
-              </div>
-            </div>
-            <div className="pt-4 border-t border-[#e2e8f0]">
-              <div className="text-xs text-[#62748e] uppercase mb-1">
-                Số luống
-              </div>
-              <div className="text-[#115e59] font-medium">
-                {plot.bedsCount} luống
-              </div>
-            </div>
-            <div className="pt-4 border-t border-[#e2e8f0]">
-              <div className="flex items-center gap-2 text-xs text-[#62748e]">
-                <Calendar className="w-4 h-4" />
-                <span>Ngày tạo: {formatDate(plot.bedCreatedAt)}</span>
-              </div>
+          </div>
+          <div>
+            <div className="text-xs text-ink-400 uppercase mb-1">Loại đất</div>
+            <div className="flex items-center gap-2">
+              <Sprout className="w-5 h-5 text-primary" />
+              <span className="font-medium text-ink-800">{plot.soilName}</span>
             </div>
           </div>
-          <div className="flex justify-end pt-6">
-            <button
-              onClick={onClose}
-              className="px-6 py-2 bg-[#f1f5f9] text-[#314158] rounded-lg hover:bg-[#e2e8f0] transition-colors"
-            >
-              Đóng
-            </button>
+        </div>
+        <div className="grid grid-cols-3 gap-4 pt-4 border-t border-border">
+          {[
+            { label: "Dài", value: `${plot.plotLength ?? "-"} m` },
+            { label: "Rộng", value: `${plot.plotWidth ?? "-"} m` },
+            { label: "Lề", value: `${plot.plotMargin ?? "-"} m` },
+          ].map((item) => (
+            <div key={item.label}>
+              <div className="text-xs text-ink-400 uppercase mb-1">
+                {item.label}
+              </div>
+              <div className="font-medium text-ink-800">{item.value}</div>
+            </div>
+          ))}
+        </div>
+        <div className="pt-4 border-t border-border">
+          <div className="text-xs text-ink-400 uppercase mb-1">Số luống</div>
+          <div className="text-ink-800 font-medium">{plot.bedsCount} luống</div>
+        </div>
+        <div className="pt-4 border-t border-border">
+          <div className="flex items-center gap-2 text-xs text-ink-500">
+            <Calendar className="w-4 h-4" />
+            <span>Ngày tạo: {formatDate(plot.bedCreatedAt)}</span>
           </div>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -1132,6 +974,7 @@ function EditPlotModal({
     plotMargin: plot.plotMargin ?? 0.3,
     plotStatus: plot.plotStatus,
   });
+
   useEffect(() => {
     if (open)
       setFormData({
@@ -1147,201 +990,110 @@ function EditPlotModal({
   }, [open, plot]);
 
   return (
-    <Dialog.Root open={open} onOpenChange={onClose}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-lg bg-white rounded-xl shadow-2xl p-6">
-          <div className="flex items-center justify-between mb-6">
-            <Dialog.Title className="text-xl font-semibold text-[#115e59]">
-              Chỉnh Sửa Vuông Đất
-            </Dialog.Title>
-            <Dialog.Close asChild>
-              <button className="p-2 text-[#62748e] hover:bg-[#f8fafc] rounded-lg transition-colors">
-                <X className="w-5 h-5" />
-              </button>
-            </Dialog.Close>
-          </div>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              onUpdate(plot.plotId, formData);
-            }}
-            className="space-y-4"
-          >
-            <div>
-              <label className="block text-sm font-medium text-[#115e59] mb-2">
-                Tên Vuông Đất
-              </label>
-              <input
-                type="text"
-                required
-                value={formData.plotName}
-                onChange={(e) =>
-                  setFormData({ ...formData, plotName: e.target.value })
-                }
-                className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Trang Trại
-                </label>
-                <select
-                  value={formData.farmId}
-                  onChange={(e) =>
-                    setFormData({ ...formData, farmId: e.target.value })
-                  }
-                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                >
-                  {farms.map((f) => (
-                    <option key={f.farmId} value={f.farmId}>
-                      {f.farmName}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Loại Đất
-                </label>
-                <select
-                  value={formData.soilId}
-                  onChange={(e) =>
-                    setFormData({ ...formData, soilId: e.target.value })
-                  }
-                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                >
-                  {soils.map((s) => (
-                    <option key={s.soilId} value={s.soilId}>
-                      {s.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Diện Tích (m²)
-                </label>
-                <input
-                  type="number"
-                  required
-                  min={1}
-                  value={formData.plotArea}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      plotArea: parseFloat(e.target.value) || 0,
-                    })
-                  }
-                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Lề Vuông (m)
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  step={0.1}
-                  value={formData.plotMargin}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      plotMargin: parseFloat(e.target.value) || 0,
-                    })
-                  }
-                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Chiều Dài (m)
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  step={0.1}
-                  value={formData.plotLength}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      plotLength: parseFloat(e.target.value) || 0,
-                    })
-                  }
-                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Chiều Rộng (m)
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  step={0.1}
-                  value={formData.plotWidth}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      plotWidth: parseFloat(e.target.value) || 0,
-                    })
-                  }
-                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                />
-              </div>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-[#115e59] mb-2">
-                Trạng Thái
-              </label>
-              <select
-                value={formData.plotStatus}
-                onChange={(e) =>
-                  setFormData({ ...formData, plotStatus: e.target.value })
-                }
-                className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-              >
-                <option value="Active">Hoạt động</option>
-                <option value="Inactive">Không hoạt động</option>
-              </select>
-            </div>
-
-            <div className="flex justify-end gap-3 pt-4">
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-6 py-2 bg-[#f1f5f9] text-[#314158] rounded-lg hover:bg-[#e2e8f0] transition-colors"
-              >
-                Hủy Bỏ
-              </button>
-              <button
-                type="submit"
-                className="px-6 py-2 bg-[#009689] text-white rounded-lg hover:bg-[#007f75] transition-colors"
-              >
-                Lưu Thay Đổi
-              </button>
-            </div>
-          </form>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+    <Modal
+      open={open}
+      onOpenChange={(o) => !o && onClose()}
+      title="Chỉnh Sửa Vuông Đất"
+      size="lg"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Hủy Bỏ
+          </Button>
+          <Button onClick={() => onUpdate(plot.plotId, formData)}>
+            Lưu Thay Đổi
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <FormField
+          label="Tên Vuông Đất"
+          required
+          value={formData.plotName}
+          onChange={(v) => setFormData({ ...formData, plotName: v })}
+        />
+        <div className="grid grid-cols-2 gap-4">
+          <FormSelect
+            label="Trang Trại"
+            value={formData.farmId}
+            onChange={(v) => setFormData({ ...formData, farmId: v })}
+            options={farms.map((f) => ({ value: f.farmId, label: f.farmName }))}
+          />
+          <FormSelect
+            label="Loại Đất"
+            value={formData.soilId}
+            onChange={(v) => setFormData({ ...formData, soilId: v })}
+            options={soils.map((s) => ({ value: s.soilId, label: s.name }))}
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <FormField
+            label="Diện Tích (m²)"
+            required
+            type="number"
+            value={String(formData.plotArea)}
+            onChange={(v) =>
+              setFormData({ ...formData, plotArea: parseFloat(v) || 0 })
+            }
+            inputProps={{ min: 1 }}
+          />
+          <FormField
+            label="Lề Vuông (m)"
+            type="number"
+            value={String(formData.plotMargin)}
+            onChange={(v) =>
+              setFormData({ ...formData, plotMargin: parseFloat(v) || 0 })
+            }
+            inputProps={{ min: 0, step: 0.1 }}
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <FormField
+            label="Chiều Dài (m)"
+            type="number"
+            value={String(formData.plotLength)}
+            onChange={(v) =>
+              setFormData({ ...formData, plotLength: parseFloat(v) || 0 })
+            }
+            inputProps={{ min: 0, step: 0.1 }}
+          />
+          <FormField
+            label="Chiều Rộng (m)"
+            type="number"
+            value={String(formData.plotWidth)}
+            onChange={(v) =>
+              setFormData({ ...formData, plotWidth: parseFloat(v) || 0 })
+            }
+            inputProps={{ min: 0, step: 0.1 }}
+          />
+        </div>
+        <FormSelect
+          label="Trạng Thái"
+          value={formData.plotStatus}
+          onChange={(v) => setFormData({ ...formData, plotStatus: v })}
+          options={[
+            { value: "Active", label: "Hoạt động" },
+            { value: "Inactive", label: "Không hoạt động" },
+          ]}
+        />
+      </div>
+    </Modal>
   );
 }
 
-// ==================== IoT Quick-Add Modal (from PlotsPage bed row) ====================
+// ==================== IoT Quick-Add Modal ====================
 
 function IotQuickAddModal({
   bedId,
   onClose,
+  onSuccess,
+  onError,
 }: {
   bedId: string;
   onClose: () => void;
+  onSuccess: () => void;
+  onError: (msg: string) => void;
 }) {
   const emptyForm: IotDeviceRequest = {
     bedId,
@@ -1366,187 +1118,111 @@ function IotQuickAddModal({
         ...formData,
         installationDate: new Date(formData.installationDate).toISOString(),
       });
+      onSuccess();
       onClose();
     } catch (err) {
-      alert("Thêm thiết bị thất bại: " + (err as Error).message);
+      onError("Thêm thiết bị thất bại: " + (err as Error).message);
     } finally {
       setSubmitting(false);
     }
   };
 
   return (
-    <Dialog.Root open onOpenChange={(o) => !o && onClose()}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-md bg-white rounded-xl shadow-2xl overflow-hidden">
-          <div className="flex items-center justify-between px-6 py-5 border-b border-[#e2e8f0]">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 bg-[#f0fdfa] rounded-lg flex items-center justify-center">
-                <Cpu className="w-5 h-5 text-[#009689]" />
-              </div>
-              <div>
-                <Dialog.Title className="text-base font-semibold text-[#115e59]">
-                  Thêm Thiết Bị IoT
-                </Dialog.Title>
-                <p className="text-xs text-[#62748e] mt-0.5 font-mono">
-                  Luống: {bedId.slice(0, 8)}…
-                </p>
-              </div>
-            </div>
-            <Dialog.Close asChild>
-              <button className="p-2 text-[#62748e] hover:bg-[#f8fafc] rounded-lg transition-colors">
-                <X className="w-5 h-5" />
-              </button>
-            </Dialog.Close>
-          </div>
-
-          <div className="px-6 py-5 space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-[#115e59] mb-1.5">
-                  Mã thiết bị <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  placeholder="CMMS_01_ESP"
-                  value={formData.deviceCode}
-                  onChange={(e) =>
-                    setFormData({ ...formData, deviceCode: e.target.value })
-                  }
-                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-[#115e59] mb-1.5">
-                  Tên thiết bị <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  placeholder="Cảm biến nhiệt độ A1"
-                  value={formData.name}
-                  onChange={(e) =>
-                    setFormData({ ...formData, name: e.target.value })
-                  }
-                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] text-sm"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-[#115e59] mb-1.5">
-                  Loại thiết bị
-                </label>
-                <input
-                  type="text"
-                  placeholder="Environment"
-                  value={formData.type}
-                  onChange={(e) =>
-                    setFormData({ ...formData, type: e.target.value })
-                  }
-                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-[#115e59] mb-1.5">
-                  Trạng thái
-                </label>
-                <select
-                  value={formData.status}
-                  onChange={(e) =>
-                    setFormData({ ...formData, status: e.target.value })
-                  }
-                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] text-sm"
-                >
-                  <option value="Active">Hoạt động</option>
-                  <option value="Inactive">Không hoạt động</option>
-                  <option value="Maintenance">Bảo trì</option>
-                </select>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-[#115e59] mb-1.5">
-                Ngày lắp đặt
-              </label>
-              <input
-                type="date"
-                value={formData.installationDate.split("T")[0]}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    installationDate: e.target.value
-                      ? new Date(e.target.value).toISOString()
-                      : new Date().toISOString(),
-                  })
-                }
-                className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] text-sm"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-sm font-medium text-[#115e59] mb-1.5">
-                  Vĩ độ
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  placeholder="0"
-                  value={formData.latitude || ""}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      latitude: parseFloat(e.target.value) || 0,
-                    })
-                  }
-                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-[#115e59] mb-1.5">
-                  Kinh độ
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  placeholder="0"
-                  value={formData.longitude || ""}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      longitude: parseFloat(e.target.value) || 0,
-                    })
-                  }
-                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] text-sm"
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="px-6 py-4 border-t border-[#e2e8f0] flex justify-end gap-3">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-5 py-2 bg-[#f1f5f9] text-[#314158] rounded-lg hover:bg-[#e2e8f0] transition-colors text-sm"
-            >
-              Hủy bỏ
-            </button>
-            <button
-              type="button"
-              onClick={handleSubmit}
-              disabled={!canSubmit || submitting}
-              className="px-5 py-2 bg-[#009689] text-white rounded-lg hover:bg-[#007f75] transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-            >
-              {submitting && (
-                <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              )}
-              Thêm Thiết Bị
-            </button>
-          </div>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+    <Modal
+      open
+      onOpenChange={(o) => !o && onClose()}
+      title="Thêm Thiết Bị IoT"
+      size="md"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Hủy bỏ
+          </Button>
+          <Button
+            onClick={handleSubmit}
+            loading={submitting}
+            disabled={!canSubmit || submitting}
+          >
+            Thêm Thiết Bị
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <p className="text-xs text-ink-400 font-mono">
+          Luống: {bedId.slice(0, 8)}…
+        </p>
+        <div className="grid grid-cols-2 gap-4">
+          <FormField
+            label="Mã thiết bị"
+            required
+            placeholder="CMMS_01_ESP"
+            value={formData.deviceCode}
+            onChange={(v) => setFormData({ ...formData, deviceCode: v })}
+          />
+          <FormField
+            label="Tên thiết bị"
+            required
+            placeholder="Cảm biến nhiệt độ A1"
+            value={formData.name}
+            onChange={(v) => setFormData({ ...formData, name: v })}
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <FormField
+            label="Loại thiết bị"
+            placeholder="Environment"
+            value={formData.type}
+            onChange={(v) => setFormData({ ...formData, type: v })}
+          />
+          <FormSelect
+            label="Trạng thái"
+            value={formData.status}
+            onChange={(v) => setFormData({ ...formData, status: v })}
+            options={[
+              { value: "Active", label: "Hoạt động" },
+              { value: "Inactive", label: "Không hoạt động" },
+              { value: "Maintenance", label: "Bảo trì" },
+            ]}
+          />
+        </div>
+        <FormField
+          label="Ngày lắp đặt"
+          type="date"
+          value={formData.installationDate.split("T")[0]}
+          onChange={(v) =>
+            setFormData({
+              ...formData,
+              installationDate: v
+                ? new Date(v).toISOString()
+                : new Date().toISOString(),
+            })
+          }
+        />
+        <div className="grid grid-cols-2 gap-3">
+          <FormField
+            label="Vĩ độ"
+            type="number"
+            placeholder="0"
+            value={formData.latitude ? String(formData.latitude) : ""}
+            onChange={(v) =>
+              setFormData({ ...formData, latitude: parseFloat(v) || 0 })
+            }
+            inputProps={{ step: "any" }}
+          />
+          <FormField
+            label="Kinh độ"
+            type="number"
+            placeholder="0"
+            value={formData.longitude ? String(formData.longitude) : ""}
+            onChange={(v) =>
+              setFormData({ ...formData, longitude: parseFloat(v) || 0 })
+            }
+            inputProps={{ step: "any" }}
+          />
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -1570,7 +1246,7 @@ function CreateBedModal({
     bedName: "",
     bedArea: 0,
     bedStatus: "Active",
-    cropQuantities: 0, // not sent to API — kept to satisfy BedRequest type
+    cropQuantities: 0,
     cropId: undefined,
     bedWidth: undefined,
     bedLength: undefined,
@@ -1592,19 +1268,15 @@ function CreateBedModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, plot]);
 
-  // Fetch crop defaults when a crop is selected; auto-fill bedWidth, pathWidth, rowCount
   const handleCropChange = async (newCropId: string) => {
     setFormData((prev) => ({
       ...prev,
       cropId: newCropId || undefined,
-      // Clear auto-filled fields so stale values don't persist if user switches crop
       bedWidth: undefined,
       pathWidth: undefined,
       rowCount: undefined,
     }));
-
     if (!newCropId) return;
-
     setLoadingCrop(true);
     try {
       const crop = await api.getCrop(newCropId);
@@ -1622,240 +1294,155 @@ function CreateBedModal({
     }
   };
 
+  const handleSubmit = () => {
+    const errors = validateBedForm(formData);
+    setFormErrors(errors);
+    if (Object.keys(errors).length > 0) return;
+    onCreate({ ...formData, bedName: formData.bedName.trim() });
+  };
+
   return (
-    <Dialog.Root open={open} onOpenChange={onClose}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-lg bg-white rounded-xl shadow-2xl p-6 max-h-[90vh] overflow-y-auto">
-          <div className="flex items-center justify-between mb-6">
-            <Dialog.Title className="text-xl font-semibold text-[#115e59]">
-              Thêm Luống
-            </Dialog.Title>
-            <Dialog.Close asChild>
-              <button className="p-2 text-[#62748e] hover:bg-[#f8fafc] rounded-lg transition-colors">
-                <X className="w-5 h-5" />
-              </button>
-            </Dialog.Close>
-          </div>
-          <div className="mb-4 text-sm text-[#62748e]">
-            Vuông đất:{" "}
-            <span className="font-medium text-[#115e59]">{plot.plotName}</span>
-          </div>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              const errors = validateBedForm(formData);
-              setFormErrors(errors);
-              if (Object.keys(errors).length > 0) return;
-              onCreate({ ...formData, bedName: formData.bedName.trim() });
-            }}
-            className="space-y-4"
-          >
-            {/* Tên luống — always manual */}
-            <div>
-              <label className="block text-sm font-medium text-[#115e59] mb-2">
-                Tên Luống <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                value={formData.bedName}
-                onChange={(e) => {
-                  setFormData({ ...formData, bedName: e.target.value });
-                  setFormErrors((p) => ({ ...p, bedName: undefined }));
-                }}
-                className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] ${formErrors.bedName ? "border-red-300 bg-red-50" : "border-[#cad5e2]"}`}
-              />
-              {formErrors.bedName && (
-                <p className="mt-1 text-xs text-red-500">
-                  {formErrors.bedName}
-                </p>
+    <Modal
+      open={open}
+      onOpenChange={(o) => !o && onClose()}
+      title="Thêm Luống"
+      size="lg"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Hủy bỏ
+          </Button>
+          <Button onClick={handleSubmit}>Tạo Luống</Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <p className="text-sm text-ink-500">
+          Vuông đất:{" "}
+          <span className="font-medium text-ink-800">{plot.plotName}</span>
+        </p>
+
+        <FormField
+          label="Tên Luống"
+          required
+          value={formData.bedName}
+          onChange={(v) => {
+            setFormData({ ...formData, bedName: v });
+            setFormErrors((p) => ({ ...p, bedName: undefined }));
+          }}
+          error={formErrors.bedName}
+        />
+
+        {crops.length > 0 && (
+          <div>
+            <label className="block text-sm font-medium text-ink-600 mb-1.5">
+              Cây Trồng
+            </label>
+            <div className="relative">
+              <select
+                value={formData.cropId ?? ""}
+                onChange={(e) => handleCropChange(e.target.value)}
+                className="w-full px-3 py-2.5 border border-border-strong rounded-btn text-sm text-ink-700 bg-surface focus:outline-none focus:ring-2 focus:ring-primary appearance-none"
+              >
+                <option value="">-- Không chọn --</option>
+                {crops.map((c) => (
+                  <option key={c.cropId} value={c.cropId}>
+                    {c.cropName}
+                  </option>
+                ))}
+              </select>
+              {loadingCrop && (
+                <span className="absolute right-3 top-1/2 -translate-y-1/2">
+                  <Spinner size="sm" />
+                </span>
               )}
             </div>
+          </div>
+        )}
 
-            {/* Cây trồng — triggers auto-fill of bedWidth / pathWidth / rowCount */}
-            {crops.length > 0 && (
-              <div>
-                <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Cây Trồng
-                </label>
-                <div className="relative">
-                  <select
-                    value={formData.cropId ?? ""}
-                    onChange={(e) => handleCropChange(e.target.value)}
-                    className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                  >
-                    <option value="">-- Không chọn --</option>
-                    {crops.map((c) => (
-                      <option key={c.cropId} value={c.cropId}>
-                        {c.cropName}
-                      </option>
-                    ))}
-                  </select>
-                  {loadingCrop && (
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-[#009689] border-t-transparent rounded-full animate-spin" />
-                  )}
-                </div>
-              </div>
-            )}
+        <div className="grid grid-cols-2 gap-4">
+          <FormField
+            label="Diện Tích (m²)"
+            required
+            type="number"
+            value={formData.bedArea ? String(formData.bedArea) : ""}
+            onChange={(v) => {
+              setFormData({ ...formData, bedArea: parseFloat(v) || 0 });
+              setFormErrors((p) => ({ ...p, bedArea: undefined }));
+            }}
+            error={formErrors.bedArea}
+            inputProps={{ min: 0.1, step: 0.01 }}
+          />
+        </div>
 
-            {/* Diện tích + Số lượng cây — always manual */}
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Diện Tích (m²) <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="number"
-                  min={0.1}
-                  step={0.01}
-                  value={formData.bedArea || ""}
-                  onChange={(e) => {
-                    setFormData({
-                      ...formData,
-                      bedArea: parseFloat(e.target.value) || 0,
-                    });
-                    setFormErrors((p) => ({ ...p, bedArea: undefined }));
-                  }}
-                  className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] ${formErrors.bedArea ? "border-red-300 bg-red-50" : "border-[#cad5e2]"}`}
-                />
-                {formErrors.bedArea && (
-                  <p className="mt-1 text-xs text-red-500">
-                    {formErrors.bedArea}
-                  </p>
-                )}
-              </div>
-            </div>
+        <FormField
+          label="Chiều Dài (m)"
+          type="number"
+          value={formData.bedLength != null ? String(formData.bedLength) : ""}
+          onChange={(v) =>
+            setFormData({
+              ...formData,
+              bedLength: parseFloat(v) || undefined,
+            })
+          }
+          inputProps={{ min: 0, step: 0.01 }}
+        />
 
-            {/* Chiều dài — always manual */}
-            <div>
-              <label className="block text-sm font-medium text-[#115e59] mb-2">
-                Chiều Dài (m)
-              </label>
-              <input
-                type="number"
-                min={0}
-                step={0.01}
-                value={formData.bedLength ?? ""}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    bedLength: parseFloat(e.target.value) || undefined,
-                  })
-                }
-                className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-              />
-            </div>
+        <div className="grid grid-cols-3 gap-4">
+          <FormField
+            label={
+              formData.cropId ? "Chiều Rộng (m) (tự động)" : "Chiều Rộng (m)"
+            }
+            type="number"
+            value={formData.bedWidth != null ? String(formData.bedWidth) : ""}
+            onChange={(v) =>
+              setFormData({
+                ...formData,
+                bedWidth: parseFloat(v) || undefined,
+              })
+            }
+            inputProps={{ min: 0, step: 0.01 }}
+          />
+          <FormField
+            label={formData.cropId ? "Lối Đi (m) (tự động)" : "Lối Đi (m)"}
+            type="number"
+            value={formData.pathWidth != null ? String(formData.pathWidth) : ""}
+            onChange={(v) =>
+              setFormData({
+                ...formData,
+                pathWidth: parseFloat(v) || undefined,
+              })
+            }
+            inputProps={{ min: 0, step: 0.01 }}
+          />
+          <FormField
+            label={formData.cropId ? "Số Hàng (tự động)" : "Số Hàng"}
+            type="number"
+            value={formData.rowCount != null ? String(formData.rowCount) : ""}
+            onChange={(v) =>
+              setFormData({
+                ...formData,
+                rowCount: parseInt(v) || undefined,
+              })
+            }
+            inputProps={{ min: 1 }}
+          />
+        </div>
 
-            {/* Chiều rộng + Lối đi + Số hàng — auto-filled from crop, still editable */}
-            <div className="grid grid-cols-3 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Chiều Rộng (m)
-                  {formData.cropId && (
-                    <span className="ml-1 text-xs text-[#009689] font-normal">
-                      (tự động)
-                    </span>
-                  )}
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  step={0.01}
-                  value={formData.bedWidth ?? ""}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      bedWidth: parseFloat(e.target.value) || undefined,
-                    })
-                  }
-                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Lối Đi (m)
-                  {formData.cropId && (
-                    <span className="ml-1 text-xs text-[#009689] font-normal">
-                      (tự động)
-                    </span>
-                  )}
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  step={0.01}
-                  value={formData.pathWidth ?? ""}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      pathWidth: parseFloat(e.target.value) || undefined,
-                    })
-                  }
-                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Số Hàng
-                  {formData.cropId && (
-                    <span className="ml-1 text-xs text-[#009689] font-normal">
-                      (tự động)
-                    </span>
-                  )}
-                </label>
-                <input
-                  type="number"
-                  min={1}
-                  value={formData.rowCount ?? ""}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      rowCount: parseInt(e.target.value) || undefined,
-                    })
-                  }
-                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                />
-              </div>
-            </div>
-
-            {/* Số cây — always manual */}
-            <div>
-              <label className="block text-sm font-medium text-[#115e59] mb-2">
-                Số Cây
-              </label>
-              <input
-                type="number"
-                min={0}
-                value={formData.plantCount ?? ""}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    plantCount: parseInt(e.target.value) || undefined,
-                  })
-                }
-                className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-              />
-            </div>
-
-            <div className="flex justify-end gap-3 pt-4">
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-6 py-2 bg-[#f1f5f9] text-[#314158] rounded-lg hover:bg-[#e2e8f0] transition-colors"
-              >
-                Hủy bỏ
-              </button>
-              <button
-                type="submit"
-                className="px-6 py-2 bg-[#009689] text-white rounded-lg hover:bg-[#007f75] transition-colors"
-              >
-                Tạo Luống
-              </button>
-            </div>
-          </form>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+        <FormField
+          label="Số Cây"
+          type="number"
+          value={formData.plantCount != null ? String(formData.plantCount) : ""}
+          onChange={(v) =>
+            setFormData({
+              ...formData,
+              plantCount: parseInt(v) || undefined,
+            })
+          }
+          inputProps={{ min: 0 }}
+        />
+      </div>
+    </Modal>
   );
 }
 
@@ -1871,119 +1458,69 @@ function ViewBedModal({
   plot: PlotResponse;
 }) {
   return (
-    <Dialog.Root open={open} onOpenChange={onClose}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-md bg-white rounded-xl shadow-2xl p-6">
-          <div className="flex items-center justify-between mb-6">
-            <Dialog.Title className="text-xl font-semibold text-[#115e59]">
-              Thông Tin Chi Tiết Luống
-            </Dialog.Title>
-            <Dialog.Close asChild>
-              <button className="p-2 text-[#62748e] hover:bg-[#f8fafc] rounded-lg transition-colors">
-                <X className="w-5 h-5" />
-              </button>
-            </Dialog.Close>
+    <Modal
+      open={open}
+      onOpenChange={(o) => !o && onClose()}
+      title="Thông Tin Chi Tiết Luống"
+      size="md"
+      footer={
+        <Button variant="secondary" onClick={onClose}>
+          Đóng
+        </Button>
+      }
+    >
+      <div className="space-y-4">
+        <div className="text-sm text-ink-500">
+          <MapPin className="w-4 h-4 inline mr-1" />
+          Vị trí: {plot.plotName} · {plot.farmName}
+        </div>
+        <div className="pt-4 border-t border-border space-y-2">
+          {[
+            { label: "Tên luống", value: bed.bedName },
+            bed.cropName ? { label: "Cây trồng", value: bed.cropName } : null,
+            { label: "Diện tích", value: `${bed.bedArea} m²` },
+            bed.bedLength != null
+              ? { label: "Chiều dài", value: `${bed.bedLength} m` }
+              : null,
+            bed.bedWidth != null
+              ? { label: "Chiều rộng", value: `${bed.bedWidth} m` }
+              : null,
+            bed.pathWidth != null
+              ? { label: "Lối đi", value: `${bed.pathWidth} m` }
+              : null,
+            bed.rowCount != null
+              ? { label: "Số hàng", value: String(bed.rowCount) }
+              : null,
+            bed.plantCount != null
+              ? { label: "Số cây", value: String(bed.plantCount) }
+              : null,
+            {
+              label: "Mùa vụ liên kết",
+              value: `${bed.seasonsDetailsCount} mùa`,
+            },
+            { label: "Ngày tạo", value: formatDate(bed.bedCreatedAt) },
+          ]
+            .filter(Boolean)
+            .map((item) =>
+              item ? (
+                <div key={item.label} className="flex justify-between">
+                  <span className="text-sm text-ink-500">{item.label}:</span>
+                  <span className="text-sm font-medium text-ink-800">
+                    {item.value}
+                  </span>
+                </div>
+              ) : null,
+            )}
+          <div className="flex justify-between items-center">
+            <span className="text-sm text-ink-500">Trạng thái:</span>
+            <StatusBadge
+              label={bedStatusLabel(bed.bedStatus)}
+              tone={bedStatusToneInline(bed.bedStatus)}
+            />
           </div>
-          <div className="space-y-4">
-            <div className="text-sm text-[#62748e]">
-              <MapPin className="w-4 h-4 inline mr-1" />
-              Vị trí: {plot.plotName} · {plot.farmName}
-            </div>
-            <div className="pt-4 border-t border-[#e2e8f0] space-y-2">
-              <div className="flex justify-between">
-                <span className="text-sm text-[#62748e]">Tên luống:</span>
-                <span className="text-sm font-medium text-[#115e59]">
-                  {bed.bedName}
-                </span>
-              </div>
-              {bed.cropName && (
-                <div className="flex justify-between">
-                  <span className="text-sm text-[#62748e]">Cây trồng:</span>
-                  <span className="text-sm font-medium text-[#115e59]">
-                    {bed.cropName}
-                  </span>
-                </div>
-              )}
-              <div className="flex justify-between">
-                <span className="text-sm text-[#62748e]">Diện tích:</span>
-                <span className="text-sm font-medium text-[#115e59]">
-                  {bed.bedArea} m²
-                </span>
-              </div>
-              {bed.bedLength != null && (
-                <div className="flex justify-between">
-                  <span className="text-sm text-[#62748e]">Chiều dài:</span>
-                  <span className="text-sm font-medium text-[#115e59]">
-                    {bed.bedLength} m
-                  </span>
-                </div>
-              )}
-              {bed.bedWidth != null && (
-                <div className="flex justify-between">
-                  <span className="text-sm text-[#62748e]">Chiều rộng:</span>
-                  <span className="text-sm font-medium text-[#115e59]">
-                    {bed.bedWidth} m
-                  </span>
-                </div>
-              )}
-              {bed.pathWidth != null && (
-                <div className="flex justify-between">
-                  <span className="text-sm text-[#62748e]">Lối đi:</span>
-                  <span className="text-sm font-medium text-[#115e59]">
-                    {bed.pathWidth} m
-                  </span>
-                </div>
-              )}
-              {bed.rowCount != null && (
-                <div className="flex justify-between">
-                  <span className="text-sm text-[#62748e]">Số hàng:</span>
-                  <span className="text-sm font-medium text-[#115e59]">
-                    {bed.rowCount}
-                  </span>
-                </div>
-              )}
-              {bed.plantCount != null && (
-                <div className="flex justify-between">
-                  <span className="text-sm text-[#62748e]">Số cây:</span>
-                  <span className="text-sm font-medium text-[#115e59]">
-                    {bed.plantCount}
-                  </span>
-                </div>
-              )}
-              <div className="flex justify-between">
-                <span className="text-sm text-[#62748e]">Mùa vụ liên kết:</span>
-                <span className="text-sm font-medium text-[#115e59]">
-                  {bed.seasonsDetailsCount} mùa
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-sm text-[#62748e]">Trạng thái:</span>
-                <span
-                  className={`inline-block px-2 py-1 rounded text-xs font-medium ${bedStatusClass(bed.bedStatus)}`}
-                >
-                  {bedStatusLabel(bed.bedStatus)}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-sm text-[#62748e]">Ngày tạo:</span>
-                <span className="text-sm font-medium text-[#115e59]">
-                  {formatDate(bed.bedCreatedAt)}
-                </span>
-              </div>
-            </div>
-          </div>
-          <div className="flex justify-end pt-6">
-            <button
-              onClick={onClose}
-              className="px-6 py-2 bg-[#f1f5f9] text-[#314158] rounded-lg hover:bg-[#e2e8f0] transition-colors"
-            >
-              Đóng
-            </button>
-          </div>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -2034,246 +1571,166 @@ function EditBedModal({
     }
   }, [open, bed]);
 
+  const handleSubmit = () => {
+    const errors = validateBedForm(formData);
+    setFormErrors(errors);
+    if (Object.keys(errors).length > 0) return;
+    onUpdate(bed.bedId, { ...formData, bedName: formData.bedName.trim() });
+  };
+
   return (
-    <Dialog.Root open={open} onOpenChange={onClose}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-lg bg-white rounded-xl shadow-2xl p-6 max-h-[90vh] overflow-y-auto">
-          <div className="flex items-center justify-between mb-6">
-            <Dialog.Title className="text-xl font-semibold text-[#115e59]">
-              Chỉnh Sửa Luống
-            </Dialog.Title>
-            <Dialog.Close asChild>
-              <button className="p-2 text-[#62748e] hover:bg-[#f8fafc] rounded-lg transition-colors">
-                <X className="w-5 h-5" />
-              </button>
-            </Dialog.Close>
+    <Modal
+      open={open}
+      onOpenChange={(o) => !o && onClose()}
+      title="Chỉnh Sửa Luống"
+      size="lg"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Hủy Bỏ
+          </Button>
+          <Button onClick={handleSubmit}>Lưu Thay Đổi</Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <FormField
+          label="Tên Luống"
+          required
+          value={formData.bedName}
+          onChange={(v) => {
+            setFormData({ ...formData, bedName: v });
+            setFormErrors((p) => ({ ...p, bedName: undefined }));
+          }}
+          error={formErrors.bedName}
+        />
+        {crops.length > 0 && (
+          <div>
+            <label className="block text-sm font-medium text-ink-600 mb-1.5">
+              Cây Trồng
+            </label>
+            <select
+              value={formData.cropId ?? ""}
+              onChange={(e) =>
+                setFormData({
+                  ...formData,
+                  cropId: e.target.value || undefined,
+                })
+              }
+              className="w-full px-3 py-2.5 border border-border-strong rounded-btn text-sm text-ink-700 bg-surface focus:outline-none focus:ring-2 focus:ring-primary"
+            >
+              <option value="">-- Không chọn --</option>
+              {crops.map((c) => (
+                <option key={c.cropId} value={c.cropId}>
+                  {c.cropName}
+                </option>
+              ))}
+            </select>
           </div>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              const errors = validateBedForm(formData);
-              setFormErrors(errors);
-              if (Object.keys(errors).length > 0) return;
-              onUpdate(bed.bedId, {
-                ...formData,
-                bedName: formData.bedName.trim(),
-              });
+        )}
+        <div className="grid grid-cols-2 gap-4">
+          <FormField
+            label="Diện Tích (m²)"
+            required
+            type="number"
+            value={formData.bedArea ? String(formData.bedArea) : ""}
+            onChange={(v) => {
+              setFormData({ ...formData, bedArea: parseFloat(v) || 0 });
+              setFormErrors((p) => ({ ...p, bedArea: undefined }));
             }}
-            className="space-y-4"
-          >
-            <div>
-              <label className="block text-sm font-medium text-[#115e59] mb-2">
-                Tên Luống
-              </label>
-              <input
-                type="text"
-                value={formData.bedName}
-                onChange={(e) => {
-                  setFormData({ ...formData, bedName: e.target.value });
-                  setFormErrors((p) => ({ ...p, bedName: undefined }));
-                }}
-                className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] ${formErrors.bedName ? "border-red-300 bg-red-50" : "border-[#cad5e2]"}`}
-              />
-              {formErrors.bedName && (
-                <p className="mt-1 text-xs text-red-500">
-                  {formErrors.bedName}
-                </p>
-              )}
-            </div>
-            {crops.length > 0 && (
-              <div>
-                <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Cây Trồng
-                </label>
-                <select
-                  value={formData.cropId ?? ""}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      cropId: e.target.value || undefined,
-                    })
-                  }
-                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                >
-                  <option value="">-- Không chọn --</option>
-                  {crops.map((c) => (
-                    <option key={c.cropId} value={c.cropId}>
-                      {c.cropName}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Diện Tích (m²)
-                </label>
-                <input
-                  type="number"
-                  min={0.1}
-                  step={0.01}
-                  value={formData.bedArea || ""}
-                  onChange={(e) => {
-                    setFormData({
-                      ...formData,
-                      bedArea: parseFloat(e.target.value) || 0,
-                    });
-                    setFormErrors((p) => ({ ...p, bedArea: undefined }));
-                  }}
-                  className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689] ${formErrors.bedArea ? "border-red-300 bg-red-50" : "border-[#cad5e2]"}`}
-                />
-                {formErrors.bedArea && (
-                  <p className="mt-1 text-xs text-red-500">
-                    {formErrors.bedArea}
-                  </p>
-                )}
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Số Lượng Cây
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  value={formData.cropQuantities}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      cropQuantities: parseInt(e.target.value) || 0,
-                    })
-                  }
-                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-3 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Chiều Dài (m)
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  step={0.01}
-                  value={formData.bedLength ?? ""}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      bedLength: parseFloat(e.target.value) || undefined,
-                    })
-                  }
-                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Chiều Rộng (m)
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  step={0.01}
-                  value={formData.bedWidth ?? ""}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      bedWidth: parseFloat(e.target.value) || undefined,
-                    })
-                  }
-                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Lối Đi (m)
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  step={0.01}
-                  value={formData.pathWidth ?? ""}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      pathWidth: parseFloat(e.target.value) || undefined,
-                    })
-                  }
-                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Số Hàng
-                </label>
-                <input
-                  type="number"
-                  min={1}
-                  value={formData.rowCount ?? ""}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      rowCount: parseInt(e.target.value) || undefined,
-                    })
-                  }
-                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-[#115e59] mb-2">
-                  Số Cây
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  value={formData.plantCount ?? ""}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      plantCount: parseInt(e.target.value) || undefined,
-                    })
-                  }
-                  className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                />
-              </div>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-[#115e59] mb-2">
-                Trạng Thái
-              </label>
-              <select
-                value={formData.bedStatus}
-                onChange={(e) =>
-                  setFormData({ ...formData, bedStatus: e.target.value })
-                }
-                className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-              >
-                <option value="Active">Hoạt động</option>
-                <option value="Inactive">Không hoạt động</option>
-              </select>
-            </div>
-            <div className="flex justify-end gap-3 pt-4">
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-6 py-2 bg-[#f1f5f9] text-[#314158] rounded-lg hover:bg-[#e2e8f0] transition-colors"
-              >
-                Hủy Bỏ
-              </button>
-              <button
-                type="submit"
-                className="px-6 py-2 bg-[#009689] text-white rounded-lg hover:bg-[#007f75] transition-colors"
-              >
-                Lưu Thay Đổi
-              </button>
-            </div>
-          </form>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+            error={formErrors.bedArea}
+            inputProps={{ min: 0.1, step: 0.01 }}
+          />
+          <FormField
+            label="Số Lượng Cây"
+            type="number"
+            value={String(formData.cropQuantities)}
+            onChange={(v) =>
+              setFormData({
+                ...formData,
+                cropQuantities: parseInt(v) || 0,
+              })
+            }
+            inputProps={{ min: 0 }}
+          />
+        </div>
+        <div className="grid grid-cols-3 gap-4">
+          <FormField
+            label="Chiều Dài (m)"
+            type="number"
+            value={formData.bedLength != null ? String(formData.bedLength) : ""}
+            onChange={(v) =>
+              setFormData({
+                ...formData,
+                bedLength: parseFloat(v) || undefined,
+              })
+            }
+            inputProps={{ min: 0, step: 0.01 }}
+          />
+          <FormField
+            label="Chiều Rộng (m)"
+            type="number"
+            value={formData.bedWidth != null ? String(formData.bedWidth) : ""}
+            onChange={(v) =>
+              setFormData({
+                ...formData,
+                bedWidth: parseFloat(v) || undefined,
+              })
+            }
+            inputProps={{ min: 0, step: 0.01 }}
+          />
+          <FormField
+            label="Lối Đi (m)"
+            type="number"
+            value={formData.pathWidth != null ? String(formData.pathWidth) : ""}
+            onChange={(v) =>
+              setFormData({
+                ...formData,
+                pathWidth: parseFloat(v) || undefined,
+              })
+            }
+            inputProps={{ min: 0, step: 0.01 }}
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <FormField
+            label="Số Hàng"
+            type="number"
+            value={formData.rowCount != null ? String(formData.rowCount) : ""}
+            onChange={(v) =>
+              setFormData({
+                ...formData,
+                rowCount: parseInt(v) || undefined,
+              })
+            }
+            inputProps={{ min: 1 }}
+          />
+          <FormField
+            label="Số Cây"
+            type="number"
+            value={
+              formData.plantCount != null ? String(formData.plantCount) : ""
+            }
+            onChange={(v) =>
+              setFormData({
+                ...formData,
+                plantCount: parseInt(v) || undefined,
+              })
+            }
+            inputProps={{ min: 0 }}
+          />
+        </div>
+        <FormSelect
+          label="Trạng Thái"
+          value={formData.bedStatus}
+          onChange={(v) => setFormData({ ...formData, bedStatus: v })}
+          options={[
+            { value: "Active", label: "Hoạt động" },
+            { value: "Inactive", label: "Không hoạt động" },
+          ]}
+        />
+      </div>
+    </Modal>
   );
 }
 
@@ -2294,13 +1751,11 @@ function AutoBedModal({
 }) {
   const [step, setStep] = useState<"form" | "preview">("form");
 
-  // Crop selection
   const [cropId, setCropId] = useState<string>("");
   const [loadingCrop, setLoadingCrop] = useState(false);
   const [soilWarning, setSoilWarning] = useState<string | null>(null);
   const [soilBlocked, setSoilBlocked] = useState(false);
 
-  // Form fields — populated after crop fetch
   const [bedWidth, setBedWidth] = useState<number>(1);
   const [pathWidth, setPathWidth] = useState<number>(0.5);
   const [rowsPerBed, setRowsPerBed] = useState<number>(2);
@@ -2313,7 +1768,6 @@ function AutoBedModal({
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Reset when modal opens
   useEffect(() => {
     if (open) {
       setStep("form");
@@ -2329,37 +1783,28 @@ function AutoBedModal({
     }
   }, [open]);
 
-  // When crop selection changes: fetch crop details, auto-fill, check soil
   const handleCropChange = async (newCropId: string) => {
     setCropId(newCropId);
     setSoilWarning(null);
     setSoilBlocked(false);
     setError(null);
-
     if (!newCropId) return;
-
     setLoadingCrop(true);
     try {
       const crop = await api.getCrop(newCropId);
-
-      // Auto-fill defaults from crop
       if (crop.bedWidthDefault != null) setBedWidth(crop.bedWidthDefault);
       if (crop.pathWidthDefault != null) setPathWidth(crop.pathWidthDefault);
       if (crop.rowsPerBed != null) setRowsPerBed(crop.rowsPerBed);
-
-      // Soil compatibility check — case-insensitive
       if (crop.compatibleSoils && crop.compatibleSoils.length > 0) {
         const match = crop.compatibleSoils.find(
           (s) => s.soilId === plot.soilId,
         );
         if (!match) {
-          // Soil not listed at all — block
           setSoilBlocked(true);
           setSoilWarning(
             `Loại đất "${plot.soilName}" không có trong danh sách đất tương thích của cây trồng này. Không thể tiếp tục.`,
           );
         } else if (match.compatibility.toLowerCase() === "poor") {
-          // Poor compatibility — warn but allow
           setSoilWarning(
             `Cảnh báo: Loại đất "${plot.soilName}" không phù hợp tốt với cây trồng này (mức độ: kém). Bạn vẫn có thể tiếp tục nhưng nên cân nhắc.`,
           );
@@ -2419,249 +1864,179 @@ function AutoBedModal({
     }
   };
 
+  const footer =
+    step === "form" ? (
+      <>
+        <Button variant="secondary" onClick={onClose}>
+          Hủy bỏ
+        </Button>
+        <Button
+          onClick={handlePreview}
+          loading={loadingPreview}
+          disabled={loadingPreview || !cropId || loadingCrop || soilBlocked}
+        >
+          Xem Trước
+        </Button>
+      </>
+    ) : (
+      <>
+        <Button
+          variant="secondary"
+          onClick={() => {
+            setStep("form");
+            setError(null);
+          }}
+        >
+          Quay Lại
+        </Button>
+        <Button
+          onClick={handleConfirm}
+          loading={confirming}
+          disabled={confirming}
+        >
+          Xác Nhận Tạo
+        </Button>
+      </>
+    );
+
   return (
-    <Dialog.Root
+    <Modal
       open={open}
       onOpenChange={(o) => {
         if (!o) onClose();
       }}
+      title="Phân Luống Tự Động"
+      size="lg"
+      footer={footer}
     >
-      <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-lg bg-white rounded-xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
-          <div className="flex items-center justify-between px-6 py-5 border-b border-[#e2e8f0]">
-            <div>
-              <Dialog.Title className="text-xl font-semibold text-[#115e59]">
-                Phân Luống Tự Động
-              </Dialog.Title>
-              <p className="text-xs text-[#62748e] mt-0.5">
-                {plot.plotName} ·{" "}
-                {step === "form" ? "Nhập thông số" : "Xem trước kết quả"}
-              </p>
+      <p className="text-xs text-ink-500 mb-4">
+        {plot.plotName} ·{" "}
+        {step === "form" ? "Nhập thông số" : "Xem trước kết quả"}
+      </p>
+
+      {error && (
+        <div className="mb-4 px-4 py-3 bg-status-danger-bg border border-status-danger-fg/30 rounded-btn text-sm text-status-danger-fg">
+          {error}
+        </div>
+      )}
+
+      {step === "form" && (
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-ink-600 mb-1.5">
+              Cây Trồng <span className="text-status-danger-fg ml-0.5">*</span>
+            </label>
+            <div className="relative">
+              <select
+                value={cropId}
+                onChange={(e) => handleCropChange(e.target.value)}
+                className="w-full px-3 py-2.5 border border-border-strong rounded-btn text-sm text-ink-700 bg-surface focus:outline-none focus:ring-2 focus:ring-primary"
+              >
+                <option value="">-- Chọn cây trồng --</option>
+                {crops.map((c) => (
+                  <option key={c.cropId} value={c.cropId}>
+                    {c.cropName}
+                  </option>
+                ))}
+              </select>
+              {loadingCrop && (
+                <span className="absolute right-3 top-1/2 -translate-y-1/2">
+                  <Spinner size="sm" />
+                </span>
+              )}
             </div>
-            <Dialog.Close asChild>
-              <button className="p-2 text-[#62748e] hover:bg-[#f8fafc] rounded-lg transition-colors">
-                <X className="w-5 h-5" />
-              </button>
-            </Dialog.Close>
           </div>
 
-          <div className="px-6 py-5 overflow-y-auto flex-1">
-            {error && (
-              <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600">
-                {error}
+          {soilWarning && (
+            <div
+              className={`px-4 py-3 rounded-btn text-sm border ${
+                soilBlocked
+                  ? "bg-status-danger-bg border-status-danger-fg/30 text-status-danger-fg"
+                  : "bg-status-warning-bg border-status-warning-fg/30 text-status-warning-fg"
+              }`}
+            >
+              {soilWarning}
+            </div>
+          )}
+
+          {cropId && !loadingCrop && (
+            <>
+              <FormField
+                label="Prefix tên luống"
+                value={bedNamePrefix}
+                onChange={setBedNamePrefix}
+                placeholder="Ví dụ: Luống"
+              />
+              <div className="grid grid-cols-3 gap-4">
+                <FormField
+                  label="Chiều Rộng luống (m)"
+                  type="number"
+                  value={String(bedWidth)}
+                  onChange={(v) => setBedWidth(parseFloat(v) || 0)}
+                  inputProps={{ min: 0.1, step: 0.1 }}
+                />
+                <FormField
+                  label="Khoảng cách lối đi (m)"
+                  type="number"
+                  value={String(pathWidth)}
+                  onChange={(v) => setPathWidth(parseFloat(v) || 0)}
+                  inputProps={{ min: 0, step: 0.1 }}
+                />
+                <FormField
+                  label="Số hàng trên luống"
+                  type="number"
+                  value={String(rowsPerBed)}
+                  onChange={(v) => setRowsPerBed(parseInt(v) || 1)}
+                  inputProps={{ min: 1 }}
+                />
               </div>
-            )}
+            </>
+          )}
+        </div>
+      )}
 
-            {step === "form" && (
-              <div className="space-y-4">
-                {/* Crop selector — must be chosen first */}
-                <div>
-                  <label className="block text-sm font-medium text-[#115e59] mb-2">
-                    Cây Trồng <span className="text-red-500">*</span>
-                  </label>
-                  <div className="relative">
-                    <select
-                      value={cropId}
-                      onChange={(e) => handleCropChange(e.target.value)}
-                      className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                    >
-                      <option value="">-- Chọn cây trồng --</option>
-                      {crops.map((c) => (
-                        <option key={c.cropId} value={c.cropId}>
-                          {c.cropName}
-                        </option>
-                      ))}
-                    </select>
-                    {loadingCrop && (
-                      <span className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-[#009689] border-t-transparent rounded-full animate-spin" />
-                    )}
-                  </div>
+      {step === "preview" && preview && (
+        <div className="space-y-4">
+          <div className="grid grid-cols-3 gap-3">
+            {[
+              { value: preview.bedCount, label: "Luống" },
+              { value: preview.plantCount, label: "Cây" },
+              { value: preview.bedArea, label: "m²/luống" },
+            ].map((item) => (
+              <div
+                key={item.label}
+                className="bg-primary-50 rounded-btn p-3 text-center"
+              >
+                <div className="text-2xl font-bold text-primary">
+                  {item.value}
                 </div>
-
-                {/* Soil compatibility notice */}
-                {soilWarning && (
-                  <div
-                    className={`px-4 py-3 rounded-lg text-sm border ${
-                      soilBlocked
-                        ? "bg-red-50 border-red-200 text-red-700"
-                        : "bg-amber-50 border-amber-200 text-amber-700"
-                    }`}
-                  >
-                    {soilWarning}
-                  </div>
-                )}
-
-                {/* Rest of the form — only shown after a crop is chosen and loaded */}
-                {cropId && !loadingCrop && (
-                  <>
-                    <div>
-                      <label className="block text-sm font-medium text-[#115e59] mb-2">
-                        Prefix tên luống
-                      </label>
-                      <input
-                        type="text"
-                        value={bedNamePrefix}
-                        onChange={(e) => setBedNamePrefix(e.target.value)}
-                        placeholder="Ví dụ: Luống"
-                        className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                      />
-                    </div>
-                    <div className="grid grid-cols-3 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-[#115e59] mb-2">
-                          Chiều Rộng luống (m)
-                        </label>
-                        <input
-                          type="number"
-                          min={0.1}
-                          step={0.1}
-                          value={bedWidth}
-                          onChange={(e) =>
-                            setBedWidth(parseFloat(e.target.value) || 0)
-                          }
-                          className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-[#115e59] mb-2">
-                          Khoảng cách lối đi (m)
-                        </label>
-                        <input
-                          type="number"
-                          min={0}
-                          step={0.1}
-                          value={pathWidth}
-                          onChange={(e) =>
-                            setPathWidth(parseFloat(e.target.value) || 0)
-                          }
-                          className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-[#115e59] mb-2">
-                          Số hàng trên luống
-                        </label>
-                        <input
-                          type="number"
-                          min={1}
-                          value={rowsPerBed}
-                          onChange={(e) =>
-                            setRowsPerBed(parseInt(e.target.value) || 1)
-                          }
-                          className="w-full px-4 py-2 border border-[#cad5e2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#009689]"
-                        />
-                      </div>
-                    </div>
-                  </>
-                )}
+                <div className="text-xs text-ink-500 mt-1">{item.label}</div>
               </div>
-            )}
-
-            {step === "preview" && preview && (
-              <div className="space-y-4">
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="bg-[#f0fdfa] rounded-lg p-3 text-center">
-                    <div className="text-2xl font-bold text-[#009689]">
-                      {preview.bedCount}
-                    </div>
-                    <div className="text-xs text-[#62748e] mt-1">Luống</div>
-                  </div>
-                  <div className="bg-[#f0fdfa] rounded-lg p-3 text-center">
-                    <div className="text-2xl font-bold text-[#009689]">
-                      {preview.plantCount}
-                    </div>
-                    <div className="text-xs text-[#62748e] mt-1">Cây</div>
-                  </div>
-                  <div className="bg-[#f0fdfa] rounded-lg p-3 text-center">
-                    <div className="text-2xl font-bold text-[#009689]">
-                      {preview.bedArea}
-                    </div>
-                    <div className="text-xs text-[#62748e] mt-1">m²/luống</div>
-                  </div>
-                </div>
-                {preview.widthRemain > 0 && (
-                  <div className="px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700">
-                    Còn dư {preview.widthRemain} m chiều rộng chưa sử dụng
-                  </div>
-                )}
-                <div className="border border-[#e2e8f0] rounded-lg overflow-hidden">
-                  <div className="bg-[#f8fafc] px-4 py-2 grid grid-cols-2 text-xs font-medium text-[#62748e] uppercase">
-                    <span>Tên luống</span>
-                    <span className="text-right">Tổng Cây Trồng</span>
-                  </div>
-                  <div className="max-h-48 overflow-y-auto divide-y divide-[#e2e8f0]">
-                    {preview.beds.map((b, i) => (
-                      <div
-                        key={i}
-                        className="px-4 py-2 grid grid-cols-2 text-sm"
-                      >
-                        <span className="font-medium text-[#115e59]">
-                          {b.bedName}
-                        </span>
-                        <span className="text-right text-[#62748e]">
-                          {b.plantCount} cây
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
+            ))}
           </div>
-
-          <div className="px-6 py-4 border-t border-[#e2e8f0] flex justify-end gap-3">
-            {step === "form" ? (
-              <>
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="px-6 py-2 bg-[#f1f5f9] text-[#314158] rounded-lg hover:bg-[#e2e8f0] transition-colors"
-                >
-                  Hủy bỏ
-                </button>
-                <button
-                  type="button"
-                  onClick={handlePreview}
-                  disabled={
-                    loadingPreview || !cropId || loadingCrop || soilBlocked
-                  }
-                  className="px-6 py-2 bg-[#009689] text-white rounded-lg hover:bg-[#007f75] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                >
-                  {loadingPreview && (
-                    <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  )}
-                  Xem Trước
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setStep("form");
-                    setError(null);
-                  }}
-                  className="px-6 py-2 bg-[#f1f5f9] text-[#314158] rounded-lg hover:bg-[#e2e8f0] transition-colors"
-                >
-                  Quay Lại
-                </button>
-                <button
-                  type="button"
-                  onClick={handleConfirm}
-                  disabled={confirming}
-                  className="px-6 py-2 bg-[#009689] text-white rounded-lg hover:bg-[#007f75] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                >
-                  {confirming && (
-                    <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  )}
-                  Xác Nhận Tạo
-                </button>
-              </>
-            )}
+          {preview.widthRemain > 0 && (
+            <div className="px-3 py-2 bg-status-warning-bg border border-status-warning-fg/30 rounded-btn text-xs text-status-warning-fg">
+              Còn dư {preview.widthRemain} m chiều rộng chưa sử dụng
+            </div>
+          )}
+          <div className="border border-border rounded-btn overflow-hidden">
+            <div className="bg-surface-alt px-4 py-2 grid grid-cols-2 text-xs font-medium text-ink-500 uppercase">
+              <span>Tên luống</span>
+              <span className="text-right">Tổng Cây Trồng</span>
+            </div>
+            <div className="max-h-48 overflow-y-auto divide-y divide-border">
+              {preview.beds.map((b, i) => (
+                <div key={i} className="px-4 py-2 grid grid-cols-2 text-sm">
+                  <span className="font-medium text-ink-800">{b.bedName}</span>
+                  <span className="text-right text-ink-500">
+                    {b.plantCount} cây
+                  </span>
+                </div>
+              ))}
+            </div>
           </div>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+        </div>
+      )}
+    </Modal>
   );
 }
