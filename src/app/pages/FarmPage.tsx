@@ -162,7 +162,7 @@ function FarmFormFields({
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <FormField
           label="Tên trang trại"
           required
@@ -191,7 +191,7 @@ function FarmFormFields({
         />
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <FormField
           label="Diện tích (m²)"
           required
@@ -241,21 +241,23 @@ function FarmCard({
   return (
     <Collapsible.Root open={open} onOpenChange={setOpen}>
       <div className="bg-surface rounded-card border border-border shadow-card overflow-hidden">
-        <div className="p-5 flex items-center justify-between">
-          <div className="flex items-center gap-4">
+        <div className="p-5 flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-4 min-w-0">
             <div className="w-12 h-12 bg-primary-50 rounded-card flex items-center justify-center shrink-0">
               <Home className="w-6 h-6 text-primary" />
             </div>
-            <div>
-              <h3 className="font-semibold text-primary-700">{farm.name}</h3>
+            <div className="min-w-0">
+              <h3 className="font-semibold text-primary-700 truncate">
+                {farm.name}
+              </h3>
               <div className="flex items-center gap-1 text-sm text-ink-500 mt-0.5">
-                <MapPin className="w-3.5 h-3.5" />
-                <span className="max-w-xs truncate">{farm.location}</span>
+                <MapPin className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">{farm.location}</span>
               </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap justify-end">
             <StatusBadge
               label={farmStatusLabel(farm.status)}
               tone={farmStatusTone(farm.status)}
@@ -281,7 +283,7 @@ function FarmCard({
 
         <Collapsible.Content>
           <div className="border-t border-surface-subtle p-5">
-            <div className="grid grid-cols-2 gap-4 text-sm">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
               <div>
                 <div className="text-xs text-ink-400 uppercase mb-1">
                   Diện tích

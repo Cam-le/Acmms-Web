@@ -2,27 +2,25 @@ import { useState, useEffect } from "react";
 import { useToast } from "../components/ui/useToast";
 import { ToastContainer } from "../components/ui/ToastContainer";
 import {
-  Search,
-  Plus,
-  Eye,
-  Edit,
-  Trash2,
   Sprout,
   Image as ImageIcon,
   ChevronUp,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   ArrowUpDown,
   X,
   Loader2,
   WifiOff,
   TrendingUp,
-  ChevronLeft,
-  ChevronRight,
   Thermometer,
   Droplets,
   ClipboardList,
   List,
   Layers,
+  Edit,
+  Trash2,
+  Plus,
 } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
@@ -34,11 +32,29 @@ import {
   CropGrowthStageResponse,
   CropGrowthTaskResponse,
 } from "../../api/client";
+import { Button } from "../components/ui/Button";
+import { Modal } from "../components/ui/Modal";
+import { ConfirmDialog } from "../components/ui/ConfirmDialog";
+import { PageHeader } from "../components/ui/PageHeader";
+import { SearchInput } from "../components/ui/SearchInput";
+import { Pagination } from "../components/ui/Pagination";
+import { LoadingState } from "../components/ui/LoadingState";
+import { EmptyState } from "../components/ui/EmptyState";
+import { RowActions } from "../components/ui/RowActions";
+import { StatusBadge } from "../components/ui/StatusBadge";
+import { Tabs } from "../components/ui/Tabs";
+import { usePagination } from "../hooks/usePagination";
+import {
+  cropStatusTone,
+  cropStatusLabel,
+  soilCompatibilityTone,
+  soilCompatibilityLabel,
+} from "../utils/status";
 
-// Defined locally — no longer imported from mockData
+// ─── Types ────────────────────────────────────────────────────────────────────
+
 type CropStatus = "Đang sử dụng" | "Không sử dụng";
 
-// Flat local type — derived purely from API fields, no mock dependency
 interface CropEx {
   id: string;
   name: string;
@@ -53,7 +69,6 @@ interface CropEx {
   compatibleSoils: CompatibleSoil[];
 }
 
-// ---- Status normalisation (defensive: API returns inconsistent casing/language) ----
 function normaliseStatus(raw?: string): CropStatus {
   if (!raw) return "Không sử dụng";
   const s = raw.trim().toLowerCase();
@@ -62,7 +77,6 @@ function normaliseStatus(raw?: string): CropStatus {
   return "Không sử dụng";
 }
 
-// Map API response → local CropEx shape
 function mapCrop(c: CropResponse): CropEx {
   return {
     id: c.cropId,
@@ -79,38 +93,27 @@ function mapCrop(c: CropResponse): CropEx {
   };
 }
 
-const getSoilBadgeColor = () => "bg-[#cbfbf1] text-[#00786f]";
-const getCompatibilityBadgeColor = (compat: string) => {
-  const c = compat.toLowerCase();
-  if (c === "high") return "bg-[#dcfce7] text-[#008236]";
-  if (c === "medium") return "bg-[#fef9c3] text-[#a16207]";
-  return "bg-[#fee2e2] text-[#991b1b]";
-};
-const compatibilityLabel = (compat: string) => {
-  const c = compat.toLowerCase();
-  if (c === "good") return "Cao";
-  if (c === "average") return "Trung bình";
-  return "Thấp";
-};
-const getStatusBadgeColor = (status: CropStatus) =>
-  status === "Đang sử dụng"
-    ? "bg-[#dcfce7] text-[#008236]"
-    : "bg-[#fee2e2] text-[#991b1b]";
-
 const PAGE_SIZE = 8;
+
+const CROP_TABS = [
+  { value: "list" as const, label: "Danh sách cây trồng", icon: List },
+  { value: "growth" as const, label: "Hướng dẫn theo dõi", icon: TrendingUp },
+] as const;
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
 
 export function CropsPage() {
   const { toasts, showToast, dismissToast } = useToast();
   const [activeTab, setActiveTab] = useState<"list" | "growth">("list");
   const [crops, setCrops] = useState<CropEx[]>([]);
-  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [sortField, setSortField] = useState<"growthPeriod" | "status" | null>(
     null,
   );
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+
+  // Modal state
   const [viewModalOpen, setViewModalOpen] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
@@ -125,12 +128,16 @@ export function CropsPage() {
 
   const loadCrops = async () => {
     setLoading(true);
-    setLoadError(false);
     try {
       const data = await api.getCrops();
       setCrops(data.map(mapCrop));
-    } catch {
-      setLoadError(true);
+    } catch (err) {
+      showToast(
+        err instanceof Error
+          ? err.message
+          : "Không thể tải danh sách cây trồng",
+        "error",
+      );
     } finally {
       setLoading(false);
     }
@@ -143,7 +150,6 @@ export function CropsPage() {
       setSortField(field);
       setSortDirection("asc");
     }
-    setPage(1);
   };
 
   const filteredCrops = crops
@@ -165,12 +171,17 @@ export function CropsPage() {
         : order[b.status] - order[a.status];
     });
 
-  const totalPages = Math.max(1, Math.ceil(filteredCrops.length / PAGE_SIZE));
-  const currentPage = Math.min(page, totalPages);
-  const pagedCrops = filteredCrops.slice(
-    (currentPage - 1) * PAGE_SIZE,
-    currentPage * PAGE_SIZE,
-  );
+  const {
+    page,
+    setPage,
+    reset,
+    totalPages,
+    pagedItems: pagedCrops,
+  } = usePagination(filteredCrops, PAGE_SIZE);
+
+  useEffect(() => {
+    reset();
+  }, [searchQuery]);
 
   const handleCreate = async (cropData: Omit<CropEx, "id">) => {
     setSubmitting(true);
@@ -249,62 +260,32 @@ export function CropsPage() {
 
   const SortIcon = ({ field }: { field: "growthPeriod" | "status" }) => {
     if (sortField !== field)
-      return <ArrowUpDown className="w-3.5 h-3.5 text-[#94a3b8]" />;
+      return <ArrowUpDown className="w-3.5 h-3.5 text-ink-400" />;
     return sortDirection === "asc" ? (
-      <ChevronUp className="w-3.5 h-3.5 text-[#009689]" />
+      <ChevronUp className="w-3.5 h-3.5 text-primary" />
     ) : (
-      <ChevronDown className="w-3.5 h-3.5 text-[#009689]" />
+      <ChevronDown className="w-3.5 h-3.5 text-primary" />
     );
   };
 
   return (
-    <div className="p-6 flex flex-col gap-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-[#009689] rounded-[10px] flex items-center justify-center">
-            <Sprout className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold text-[#115e59]">Cây Trồng</h1>
-            <p className="text-sm text-[#62748e]">Quản lý giống cây trồng</p>
-          </div>
-          {loadError && (
-            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-red-50 border border-red-200 rounded-full">
-              <WifiOff className="w-3 h-3 text-red-500" />
-              <span className="text-xs text-red-600">
-                Không thể tải dữ liệu
-              </span>
-            </div>
-          )}
-        </div>
-        {activeTab === "list" ? (
-          <button
-            onClick={() => setCreateModalOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-[#009689] text-white rounded-lg hover:bg-[#007f75] transition-colors text-sm font-medium"
-          >
-            <Plus className="w-4 h-4" /> Thêm cây trồng
-          </button>
-        ) : null}
-      </div>
+    <div className="p-4 sm:p-6 flex flex-col gap-6">
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
 
-      {/* Tabs */}
-      <div className="flex gap-1 bg-[#f1f5f9] rounded-xl p-1 w-fit">
-        <button
-          onClick={() => setActiveTab("list")}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === "list" ? "bg-white text-[#115e59] shadow-sm" : "text-[#62748e] hover:text-[#334155]"}`}
-        >
-          <List className="w-4 h-4" />
-          Danh sách cây trồng
-        </button>
-        <button
-          onClick={() => setActiveTab("growth")}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === "growth" ? "bg-white text-[#115e59] shadow-sm" : "text-[#62748e] hover:text-[#334155]"}`}
-        >
-          <TrendingUp className="w-4 h-4" />
-          Hướng dẫn theo dõi
-        </button>
-      </div>
+      <PageHeader
+        icon={Sprout}
+        title="Cây Trồng"
+        subtitle="Quản lý giống cây trồng"
+        actions={
+          activeTab === "list" ? (
+            <Button leadingIcon={Plus} onClick={() => setCreateModalOpen(true)}>
+              Thêm cây trồng
+            </Button>
+          ) : undefined
+        }
+      />
+
+      <Tabs value={activeTab} onChange={setActiveTab} tabs={CROP_TABS} />
 
       {activeTab === "growth" && (
         <GrowthStagesTab crops={crops} loading={loading} />
@@ -312,296 +293,236 @@ export function CropsPage() {
 
       {activeTab === "list" && (
         <>
-          {/* Search */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#94a3b8]" />
-            <input
-              value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
-                setPage(1);
-              }}
-              placeholder="Tìm kiếm cây trồng..."
-              className="w-full pl-9 pr-4 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689]"
-            />
-          </div>
+          <SearchInput
+            value={searchQuery}
+            onChange={(v) => setSearchQuery(v)}
+            placeholder="Tìm kiếm cây trồng..."
+            className="max-w-md"
+          />
 
-          {/* Table */}
-          <div className="bg-white rounded-xl border border-[#e2e8f0] shadow-sm overflow-hidden">
+          <div className="bg-surface rounded-card border border-border shadow-card overflow-hidden">
             {loading ? (
-              <div className="flex items-center justify-center py-16">
-                <Loader2 className="w-6 h-6 animate-spin text-[#009689]" />
-              </div>
+              <LoadingState />
             ) : filteredCrops.length === 0 ? (
-              <div className="text-center py-16 text-[#62748e]">
-                Không tìm thấy cây trồng nào
-              </div>
+              <EmptyState
+                icon={Sprout}
+                message="Không tìm thấy cây trồng nào"
+              />
             ) : (
-              <table className="w-full">
-                <thead className="bg-[#f8fafc] border-b border-[#e2e8f0]">
-                  <tr>
-                    {/* Column order: Cây trồng → Tên khoa học → Chu kỳ → Trạng thái → Thao tác */}
-                    <th className="px-6 py-4 text-left text-xs font-bold text-[#62748e] uppercase tracking-wider">
-                      Cây trồng
-                    </th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-[#62748e] uppercase tracking-wider">
-                      Tên khoa học
-                    </th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-[#62748e] uppercase tracking-wider">
-                      <button
-                        onClick={() => handleSort("growthPeriod")}
-                        className="flex items-center gap-1 hover:text-[#009689]"
-                      >
-                        Chu kỳ <SortIcon field="growthPeriod" />
-                      </button>
-                    </th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-[#62748e] uppercase tracking-wider">
-                      <button
-                        onClick={() => handleSort("status")}
-                        className="flex items-center gap-1 hover:text-[#009689]"
-                      >
-                        Trạng thái <SortIcon field="status" />
-                      </button>
-                    </th>
-                    <th className="px-6 py-4 text-center text-xs font-bold text-[#62748e] uppercase tracking-wider">
-                      Thao tác
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#e2e8f0]">
-                  {pagedCrops.map((crop) => (
-                    <tr
-                      key={crop.id}
-                      className="hover:bg-[#f8fafc] transition-colors"
-                    >
-                      {/* Cây trồng */}
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 bg-[#f0fdf9] rounded-lg flex items-center justify-center shrink-0">
-                            <ImageIcon className="w-5 h-5 text-[#009689]" />
-                          </div>
-                          <span className="font-medium text-[#115e59] text-sm">
-                            {crop.name}
-                          </span>
-                        </div>
-                      </td>
-                      {/* Tên khoa học */}
-                      <td className="px-6 py-4 text-sm text-[#62748e] italic">
-                        {crop.scientificName || "—"}
-                      </td>
-                      {/* Chu kỳ */}
-                      <td className="px-6 py-4 text-sm text-[#62748e] whitespace-nowrap">
-                        {crop.growthPeriod > 0
-                          ? `${crop.growthPeriod} ngày`
-                          : "—"}
-                      </td>
-                      {/* Trạng thái — whitespace-nowrap prevents wrapping */}
-                      <td className="px-6 py-4">
-                        <span
-                          className={`px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap ${getStatusBadgeColor(crop.status)}`}
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[600px]">
+                  <thead className="bg-surface-alt border-b border-border">
+                    <tr>
+                      <th className="px-6 py-4 text-left text-xs font-bold text-ink-500 uppercase tracking-wider">
+                        Cây trồng
+                      </th>
+                      <th className="px-6 py-4 text-left text-xs font-bold text-ink-500 uppercase tracking-wider">
+                        Tên khoa học
+                      </th>
+                      <th className="px-6 py-4 text-left text-xs font-bold text-ink-500 uppercase tracking-wider">
+                        <button
+                          onClick={() => handleSort("growthPeriod")}
+                          className="flex items-center gap-1 hover:text-primary"
                         >
-                          {crop.status}
-                        </span>
-                      </td>
-                      {/* Thao tác */}
-                      <td className="px-6 py-4">
-                        <div className="flex items-center justify-center gap-2">
-                          <button
-                            onClick={() => {
+                          Chu kỳ <SortIcon field="growthPeriod" />
+                        </button>
+                      </th>
+                      <th className="px-6 py-4 text-left text-xs font-bold text-ink-500 uppercase tracking-wider">
+                        <button
+                          onClick={() => handleSort("status")}
+                          className="flex items-center gap-1 hover:text-primary"
+                        >
+                          Trạng thái <SortIcon field="status" />
+                        </button>
+                      </th>
+                      <th className="px-6 py-4 text-center text-xs font-bold text-ink-500 uppercase tracking-wider">
+                        Thao tác
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {pagedCrops.map((crop) => (
+                      <tr
+                        key={crop.id}
+                        className="hover:bg-surface-alt transition-colors"
+                      >
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 bg-primary-50 rounded-btn flex items-center justify-center shrink-0">
+                              <ImageIcon className="w-5 h-5 text-primary" />
+                            </div>
+                            <span className="font-medium text-primary-700 text-sm">
+                              {crop.name}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-sm text-ink-500 italic">
+                          {crop.scientificName || "—"}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-ink-500 whitespace-nowrap">
+                          {crop.growthPeriod > 0
+                            ? `${crop.growthPeriod} ngày`
+                            : "—"}
+                        </td>
+                        <td className="px-6 py-4">
+                          <StatusBadge
+                            label={crop.status}
+                            tone={cropStatusTone(crop.status)}
+                          />
+                        </td>
+                        <td className="px-6 py-4">
+                          <RowActions
+                            align="center"
+                            onView={() => {
                               setSelectedCrop(crop);
                               setViewModalOpen(true);
                             }}
-                            className="p-1.5 text-[#62748e] hover:text-[#009689] hover:bg-[#f0fdf9] rounded transition-colors"
-                          >
-                            <Eye className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => {
+                            onEdit={() => {
                               setSelectedCrop(crop);
                               setEditModalOpen(true);
                             }}
-                            className="p-1.5 text-[#62748e] hover:text-[#009689] hover:bg-[#f0fdf9] rounded transition-colors"
-                          >
-                            <Edit className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => {
+                            onDelete={() => {
                               setCropToDelete(crop);
                               setDeleteDialogOpen(true);
                             }}
-                            className="p-1.5 text-[#62748e] hover:text-red-500 hover:bg-red-50 rounded transition-colors"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-            {/* pagination */}
-            <div className="flex items-center justify-end px-5 py-4 border-t border-[#e2e8f0]">
-              <div className="flex items-center gap-1">
-                <CropPaginationBtn
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  disabled={currentPage === 1}
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                </CropPaginationBtn>
-                {Array.from({ length: totalPages }, (_, i) => i + 1).map(
-                  (p) => (
-                    <button
-                      key={p}
-                      onClick={() => setPage(p)}
-                      className={`w-8 h-8 text-sm rounded-lg transition-colors ${
-                        p === currentPage
-                          ? "bg-[#009689] text-white font-semibold"
-                          : "text-[#62748e] hover:bg-[#f1f5f9]"
-                      }`}
-                    >
-                      {p}
-                    </button>
-                  ),
-                )}
-                <CropPaginationBtn
-                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                  disabled={currentPage === totalPages}
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </CropPaginationBtn>
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-            </div>
+            )}
+            {filteredCrops.length > 0 && (
+              <div className="border-t border-border px-4">
+                <Pagination
+                  currentPage={page}
+                  totalPages={totalPages}
+                  onPageChange={setPage}
+                  showLabel
+                  totalItems={filteredCrops.length}
+                  pageSize={PAGE_SIZE}
+                  itemLabel="cây trồng"
+                />
+              </div>
+            )}
           </div>
 
           {/* View Modal */}
           {selectedCrop && (
-            <Dialog.Root
+            <Modal
               open={viewModalOpen}
               onOpenChange={(o) => {
                 setViewModalOpen(o);
                 if (!o) setSelectedCrop(null);
               }}
+              title={selectedCrop.name}
+              size="lg"
+              footer={
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    setViewModalOpen(false);
+                    setSelectedCrop(null);
+                  }}
+                >
+                  Đóng
+                </Button>
+              }
             >
-              <Dialog.Portal>
-                <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
-                <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-xl shadow-xl w-full max-w-lg z-50 p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <Dialog.Title className="text-lg font-bold text-[#115e59]">
-                      {selectedCrop.name}
-                    </Dialog.Title>
-                    <Dialog.Close className="text-[#94a3b8] hover:text-[#62748e]">
-                      <X className="w-5 h-5" />
-                    </Dialog.Close>
+              <div className="flex items-center gap-4 mb-4">
+                <div className="w-16 h-16 bg-primary-50 rounded-card flex items-center justify-center shrink-0">
+                  <Sprout className="w-8 h-8 text-primary" />
+                </div>
+                <div>
+                  <div className="italic text-sm text-ink-500">
+                    {selectedCrop.scientificName || "—"}
                   </div>
-                  <Dialog.Description className="sr-only">
-                    Chi tiết cây trồng
-                  </Dialog.Description>
-                  <div className="flex items-center gap-4 mb-4">
-                    <div className="w-16 h-16 bg-[#f0fdf9] rounded-xl flex items-center justify-center">
-                      <Sprout className="w-8 h-8 text-[#009689]" />
-                    </div>
-                    <div>
-                      <div className="italic text-sm text-[#62748e]">
-                        {selectedCrop.scientificName || "—"}
-                      </div>
-                      <span
-                        className={`mt-1 inline-block px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${getStatusBadgeColor(selectedCrop.status)}`}
-                      >
-                        {selectedCrop.status}
-                      </span>
-                    </div>
+                  <StatusBadge
+                    label={selectedCrop.status}
+                    tone={cropStatusTone(selectedCrop.status)}
+                    className="mt-1"
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                {[
+                  {
+                    label: "Chu kỳ sinh trưởng",
+                    value:
+                      selectedCrop.growthPeriod > 0
+                        ? `${selectedCrop.growthPeriod} ngày`
+                        : "—",
+                  },
+                  {
+                    label: "Khoảng cách trồng",
+                    value:
+                      selectedCrop.plantSpacing > 0
+                        ? `${selectedCrop.plantSpacing} m`
+                        : "—",
+                  },
+                  {
+                    label: "Chiều rộng luống (tối thiểu)",
+                    value:
+                      selectedCrop.bedWidthDefault > 0
+                        ? `${selectedCrop.bedWidthDefault} m`
+                        : "—",
+                  },
+                  {
+                    label: "Khoảng cách lối đi giữa các luống",
+                    value:
+                      selectedCrop.pathWidthDefault > 0
+                        ? `${selectedCrop.pathWidthDefault} m`
+                        : "—",
+                  },
+                  {
+                    label: "Hàng / luống",
+                    value:
+                      selectedCrop.rowsPerBed > 0
+                        ? `${selectedCrop.rowsPerBed}`
+                        : "—",
+                  },
+                  {
+                    label: "Khoảng cách hàng",
+                    value:
+                      selectedCrop.rowSpacing > 0
+                        ? `${selectedCrop.rowSpacing} m`
+                        : "—",
+                  },
+                ].map(({ label, value }) => (
+                  <div
+                    key={label}
+                    className="flex justify-between py-2 border-b border-surface-subtle"
+                  >
+                    <span className="text-sm text-ink-500">{label}</span>
+                    <span className="text-sm font-medium text-primary-700">
+                      {value}
+                    </span>
                   </div>
-                  <div className="space-y-2">
-                    {[
-                      {
-                        label: "Chu kỳ sinh trưởng",
-                        value:
-                          selectedCrop.growthPeriod > 0
-                            ? `${selectedCrop.growthPeriod} ngày`
-                            : "—",
-                      },
-                      {
-                        label: "Khoảng cách trồng",
-                        value:
-                          selectedCrop.plantSpacing > 0
-                            ? `${selectedCrop.plantSpacing} m`
-                            : "—",
-                      },
-                      {
-                        label: "Chiều rộng luống (tối thiểu)",
-                        value:
-                          selectedCrop.bedWidthDefault > 0
-                            ? `${selectedCrop.bedWidthDefault} m`
-                            : "—",
-                      },
-                      {
-                        label: "Khoảng cách lối đi giữa các luống",
-                        value:
-                          selectedCrop.pathWidthDefault > 0
-                            ? `${selectedCrop.pathWidthDefault} m`
-                            : "—",
-                      },
-                      {
-                        label: "Hàng / luống",
-                        value:
-                          selectedCrop.rowsPerBed > 0
-                            ? `${selectedCrop.rowsPerBed}`
-                            : "—",
-                      },
-                      {
-                        label: "Khoảng cách hàng",
-                        value:
-                          selectedCrop.rowSpacing > 0
-                            ? `${selectedCrop.rowSpacing} m`
-                            : "—",
-                      },
-                    ].map(({ label, value }) => (
-                      <div
-                        key={label}
-                        className="flex justify-between py-2 border-b border-[#f1f5f9]"
-                      >
-                        <span className="text-sm text-[#62748e]">{label}</span>
-                        <span className="text-sm font-medium text-[#115e59]">
-                          {value}
-                        </span>
-                      </div>
-                    ))}
-                    {/* Compatible soils list */}
-                    <div className="py-2 border-b border-[#f1f5f9]">
-                      <span className="text-sm text-[#62748e]">
-                        Loại đất phù hợp
-                      </span>
-                      {(selectedCrop.compatibleSoils ?? []).length === 0 ? (
-                        <span className="block text-sm font-medium text-[#115e59] mt-0.5">
-                          —
-                        </span>
-                      ) : (
-                        <div className="flex flex-wrap gap-1.5 mt-1.5">
-                          {(selectedCrop.compatibleSoils ?? []).map(
-                            (s: CompatibleSoil) => (
-                              <span
-                                key={s.soilId}
-                                className={`px-2 py-0.5 rounded-full text-xs font-medium ${getCompatibilityBadgeColor(s.compatibility)}`}
-                                title={`Độ tương thích: ${compatibilityLabel(s.compatibility)}`}
-                              >
-                                {s.soilName} ·{" "}
-                                {compatibilityLabel(s.compatibility)}
-                              </span>
-                            ),
-                          )}
-                        </div>
+                ))}
+                <div className="py-2 border-b border-surface-subtle">
+                  <span className="text-sm text-ink-500">Loại đất phù hợp</span>
+                  {(selectedCrop.compatibleSoils ?? []).length === 0 ? (
+                    <span className="block text-sm font-medium text-primary-700 mt-0.5">
+                      —
+                    </span>
+                  ) : (
+                    <div className="flex flex-wrap gap-1.5 mt-1.5">
+                      {(selectedCrop.compatibleSoils ?? []).map(
+                        (s: CompatibleSoil) => (
+                          <StatusBadge
+                            key={s.soilId}
+                            label={`${s.soilName} · ${soilCompatibilityLabel(s.compatibility)}`}
+                            tone={soilCompatibilityTone(s.compatibility)}
+                            size="sm"
+                          />
+                        ),
                       )}
                     </div>
-                  </div>
-                  <div className="mt-6 flex justify-end">
-                    <Dialog.Close className="px-4 py-2 bg-[#f1f5f9] text-[#314158] rounded-lg text-sm hover:bg-[#e2e8f0]">
-                      Đóng
-                    </Dialog.Close>
-                  </div>
-                </Dialog.Content>
-              </Dialog.Portal>
-            </Dialog.Root>
+                  )}
+                </div>
+              </div>
+            </Modal>
           )}
 
           {/* Create Modal */}
@@ -627,42 +548,29 @@ export function CropsPage() {
           )}
 
           {/* Delete Dialog */}
-          <AlertDialog.Root
+          <ConfirmDialog
             open={deleteDialogOpen}
-            onOpenChange={setDeleteDialogOpen}
-          >
-            <AlertDialog.Portal>
-              <AlertDialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
-              <AlertDialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-xl shadow-xl w-full max-w-sm z-50 p-6">
-                <AlertDialog.Title className="text-lg font-bold text-[#115e59] mb-2">
-                  Xóa cây trồng
-                </AlertDialog.Title>
-                <AlertDialog.Description className="text-sm text-[#62748e] mb-6">
-                  Bạn có chắc muốn xóa <strong>{cropToDelete?.name}</strong>?
-                  Hành động này không thể hoàn tác.
-                </AlertDialog.Description>
-                <div className="flex justify-end gap-3">
-                  <AlertDialog.Cancel className="px-4 py-2 text-sm text-[#62748e] hover:text-[#334155]">
-                    Hủy
-                  </AlertDialog.Cancel>
-                  <AlertDialog.Action
-                    onClick={handleDelete}
-                    className="px-4 py-2 bg-red-500 text-white text-sm rounded-lg hover:bg-red-600 flex items-center gap-2"
-                  >
-                    {submitting && <Loader2 className="w-4 h-4 animate-spin" />}{" "}
-                    Xóa
-                  </AlertDialog.Action>
-                </div>
-              </AlertDialog.Content>
-            </AlertDialog.Portal>
-          </AlertDialog.Root>
+            onOpenChange={(o) => {
+              setDeleteDialogOpen(o);
+              if (!o) setCropToDelete(null);
+            }}
+            title="Xóa cây trồng"
+            description={
+              <>
+                Bạn có chắc muốn xóa <strong>{cropToDelete?.name}</strong>? Hành
+                động này không thể hoàn tác.
+              </>
+            }
+            loading={submitting}
+            onConfirm={async () => {
+              await handleDelete();
+            }}
+          />
         </>
       )}
     </div>
   );
 }
-
-// ===================== GROWTH STAGES TAB =====================
 
 function GrowthStagesTab({
   crops,
@@ -1925,43 +1833,10 @@ interface CropFormErrors {
   plantSpacing?: string;
 }
 
-function validateCropForm(formData: {
-  name: string;
-  scientificName: string;
-  growthPeriod: string;
-  plantSpacing: string;
-}): CropFormErrors {
-  const errors: CropFormErrors = {};
-  if (!formData.name.trim()) {
-    errors.name = "Vui lòng nhập tên cây trồng";
-  } else if (formData.name.trim().length < 2) {
-    errors.name = "Tên cây trồng phải có ít nhất 2 ký tự";
-  } else if (formData.name.trim().length > 200) {
-    errors.name = "Tên cây trồng không được quá 200 ký tự";
-  }
-  if (formData.scientificName.trim().length > 500) {
-    errors.scientificName = "Tên khoa học không được quá 500 ký tự";
-  }
-  if (formData.growthPeriod.trim()) {
-    const gp = parseInt(formData.growthPeriod);
-    if (isNaN(gp) || gp < 1) {
-      errors.growthPeriod = "Chu kỳ sinh trưởng phải là số dương";
-    } else if (gp > 365) {
-      errors.growthPeriod = "Chu kỳ sinh trưởng không nên quá 365 ngày";
-    }
-  }
-  if (formData.plantSpacing.trim()) {
-    const ps = parseFloat(formData.plantSpacing);
-    if (isNaN(ps) || ps < 0) {
-      errors.plantSpacing = "Khoảng cách trồng phải là số không âm";
-    } else if (ps > 500) {
-      errors.plantSpacing = "Khoảng cách trồng không nên quá 500 cm";
-    }
-  }
-  return errors;
-}
+// ─── CropFormFields (kept intact — domain-specific form) ──────────────────────
 
-// Shared form data type — mirrors API fields only (no image/description)
+// CropFormErrors interface is declared above in the GrowthStagesTab section
+
 type CropFormData = {
   name: string;
   scientificName: string;
@@ -1985,26 +1860,25 @@ function CropFormFields({
 }) {
   return (
     <div className="space-y-4">
-      {/* Row 1: Tên cây trồng + Tên khoa học */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium text-[#45556c] mb-1">
-            Tên cây trồng <span className="text-red-400">*</span>
+          <label className="block text-sm font-medium text-ink-600 mb-1.5">
+            Tên cây trồng <span className="text-status-danger-fg">*</span>
           </label>
           <input
             value={formData.name}
             onChange={(e) =>
               setFormData((p) => ({ ...p, name: e.target.value }))
             }
-            className={`w-full px-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155] ${errors.name ? "border-red-300 bg-red-50" : "border-[#e2e8f0]"}`}
+            className={`w-full px-3 py-2.5 border rounded-btn text-sm focus:outline-none focus:ring-2 focus:ring-primary text-ink-700 bg-surface ${errors.name ? "border-status-danger-fg/40 bg-status-danger-bg/30" : "border-border-strong"}`}
             placeholder="Bắp Cải Trắng"
           />
           {errors.name && (
-            <p className="mt-1 text-xs text-red-500">{errors.name}</p>
+            <p className="mt-1 text-xs text-status-danger-fg">{errors.name}</p>
           )}
         </div>
         <div>
-          <label className="block text-sm font-medium text-[#45556c] mb-1">
+          <label className="block text-sm font-medium text-ink-600 mb-1.5">
             Tên khoa học
           </label>
           <input
@@ -2012,18 +1886,19 @@ function CropFormFields({
             onChange={(e) =>
               setFormData((p) => ({ ...p, scientificName: e.target.value }))
             }
-            className={`w-full px-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155] italic ${errors.scientificName ? "border-red-300 bg-red-50" : "border-[#e2e8f0]"}`}
+            className={`w-full px-3 py-2.5 border rounded-btn text-sm focus:outline-none focus:ring-2 focus:ring-primary text-ink-700 italic bg-surface ${errors.scientificName ? "border-status-danger-fg/40 bg-status-danger-bg/30" : "border-border-strong"}`}
             placeholder="Brassica oleracea"
           />
           {errors.scientificName && (
-            <p className="mt-1 text-xs text-red-500">{errors.scientificName}</p>
+            <p className="mt-1 text-xs text-status-danger-fg">
+              {errors.scientificName}
+            </p>
           )}
         </div>
       </div>
-      {/* Row 2: Chu kỳ sinh trưởng + Khoảng cách trồng */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium text-[#45556c] mb-1">
+          <label className="block text-sm font-medium text-ink-600 mb-1.5">
             Chu kỳ sinh trưởng (ngày)
           </label>
           <input
@@ -2033,15 +1908,17 @@ function CropFormFields({
             onChange={(e) =>
               setFormData((p) => ({ ...p, growthPeriod: e.target.value }))
             }
-            className={`w-full px-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155] ${errors.growthPeriod ? "border-red-300 bg-red-50" : "border-[#e2e8f0]"}`}
+            className={`w-full px-3 py-2.5 border rounded-btn text-sm focus:outline-none focus:ring-2 focus:ring-primary text-ink-700 bg-surface ${errors.growthPeriod ? "border-status-danger-fg/40 bg-status-danger-bg/30" : "border-border-strong"}`}
             placeholder="105"
           />
           {errors.growthPeriod && (
-            <p className="mt-1 text-xs text-red-500">{errors.growthPeriod}</p>
+            <p className="mt-1 text-xs text-status-danger-fg">
+              {errors.growthPeriod}
+            </p>
           )}
         </div>
         <div>
-          <label className="block text-sm font-medium text-[#45556c] mb-1">
+          <label className="block text-sm font-medium text-ink-600 mb-1.5">
             Khoảng cách trồng (m)
           </label>
           <input
@@ -2052,18 +1929,19 @@ function CropFormFields({
             onChange={(e) =>
               setFormData((p) => ({ ...p, plantSpacing: e.target.value }))
             }
-            className={`w-full px-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155] ${errors.plantSpacing ? "border-red-300 bg-red-50" : "border-[#e2e8f0]"}`}
+            className={`w-full px-3 py-2.5 border rounded-btn text-sm focus:outline-none focus:ring-2 focus:ring-primary text-ink-700 bg-surface ${errors.plantSpacing ? "border-status-danger-fg/40 bg-status-danger-bg/30" : "border-border-strong"}`}
             placeholder="0.45"
           />
           {errors.plantSpacing && (
-            <p className="mt-1 text-xs text-red-500">{errors.plantSpacing}</p>
+            <p className="mt-1 text-xs text-status-danger-fg">
+              {errors.plantSpacing}
+            </p>
           )}
         </div>
       </div>
-      {/* Row 3: Rộng luống + Rộng lối đi */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium text-[#45556c] mb-1">
+          <label className="block text-sm font-medium text-ink-600 mb-1.5">
             Chiều rộng luống (tối thiểu) (m)
           </label>
           <input
@@ -2074,12 +1952,12 @@ function CropFormFields({
             onChange={(e) =>
               setFormData((p) => ({ ...p, bedWidthDefault: e.target.value }))
             }
-            className="w-full px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155]"
+            className="w-full px-3 py-2.5 border border-border-strong rounded-btn text-sm focus:outline-none focus:ring-2 focus:ring-primary text-ink-700 bg-surface"
             placeholder="0.7"
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-[#45556c] mb-1">
+          <label className="block text-sm font-medium text-ink-600 mb-1.5">
             Khoảng cách lối đi giữa các luống (m)
           </label>
           <input
@@ -2090,15 +1968,14 @@ function CropFormFields({
             onChange={(e) =>
               setFormData((p) => ({ ...p, pathWidthDefault: e.target.value }))
             }
-            className="w-full px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155]"
+            className="w-full px-3 py-2.5 border border-border-strong rounded-btn text-sm focus:outline-none focus:ring-2 focus:ring-primary text-ink-700 bg-surface"
             placeholder="0.5"
           />
         </div>
       </div>
-      {/* Row 4: Hàng / luống + Khoảng cách hàng */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium text-[#45556c] mb-1">
+          <label className="block text-sm font-medium text-ink-600 mb-1.5">
             Hàng / luống
           </label>
           <input
@@ -2108,12 +1985,12 @@ function CropFormFields({
             onChange={(e) =>
               setFormData((p) => ({ ...p, rowsPerBed: e.target.value }))
             }
-            className="w-full px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155]"
+            className="w-full px-3 py-2.5 border border-border-strong rounded-btn text-sm focus:outline-none focus:ring-2 focus:ring-primary text-ink-700 bg-surface"
             placeholder="1"
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-[#45556c] mb-1">
+          <label className="block text-sm font-medium text-ink-600 mb-1.5">
             Khoảng cách hàng (m)
           </label>
           <input
@@ -2124,25 +2001,21 @@ function CropFormFields({
             onChange={(e) =>
               setFormData((p) => ({ ...p, rowSpacing: e.target.value }))
             }
-            className="w-full px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155]"
+            className="w-full px-3 py-2.5 border border-border-strong rounded-btn text-sm focus:outline-none focus:ring-2 focus:ring-primary text-ink-700 bg-surface"
             placeholder="0.55"
           />
         </div>
       </div>
-      {/* Row 5: Trạng thái */}
       <div>
-        <label className="block text-sm font-medium text-[#45556c] mb-1">
+        <label className="block text-sm font-medium text-ink-600 mb-1.5">
           Trạng thái
         </label>
         <select
           value={formData.status}
           onChange={(e) =>
-            setFormData((p) => ({
-              ...p,
-              status: e.target.value as CropStatus,
-            }))
+            setFormData((p) => ({ ...p, status: e.target.value as CropStatus }))
           }
-          className="w-full px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] bg-white text-[#334155]"
+          className="w-full px-3 py-2.5 border border-border-strong rounded-btn text-sm focus:outline-none focus:ring-2 focus:ring-primary bg-surface text-ink-700"
         >
           <option value="Đang sử dụng">Đang sử dụng</option>
           <option value="Không sử dụng">Không sử dụng</option>
@@ -2152,7 +2025,40 @@ function CropFormFields({
   );
 }
 
-const defaultFormData = {
+// ─── Validation ───────────────────────────────────────────────────────────────
+
+function validateCropForm(formData: {
+  name: string;
+  scientificName: string;
+  growthPeriod: string;
+  plantSpacing: string;
+}): CropFormErrors {
+  const errors: CropFormErrors = {};
+  if (!formData.name.trim()) errors.name = "Vui lòng nhập tên cây trồng";
+  else if (formData.name.trim().length < 2)
+    errors.name = "Tên cây trồng phải có ít nhất 2 ký tự";
+  else if (formData.name.trim().length > 200)
+    errors.name = "Tên cây trồng không được quá 200 ký tự";
+  if (formData.scientificName.trim().length > 500)
+    errors.scientificName = "Tên khoa học không được quá 500 ký tự";
+  if (formData.growthPeriod.trim()) {
+    const gp = parseInt(formData.growthPeriod);
+    if (isNaN(gp) || gp < 1)
+      errors.growthPeriod = "Chu kỳ sinh trưởng phải là số dương";
+    else if (gp > 365)
+      errors.growthPeriod = "Chu kỳ sinh trưởng không nên quá 365 ngày";
+  }
+  if (formData.plantSpacing.trim()) {
+    const ps = parseFloat(formData.plantSpacing);
+    if (isNaN(ps) || ps < 0)
+      errors.plantSpacing = "Khoảng cách trồng phải là số không âm";
+    else if (ps > 500)
+      errors.plantSpacing = "Khoảng cách trồng không nên quá 500 cm";
+  }
+  return errors;
+}
+
+const defaultFormData: CropFormData = {
   name: "",
   scientificName: "",
   growthPeriod: "",
@@ -2161,8 +2067,10 @@ const defaultFormData = {
   pathWidthDefault: "",
   rowsPerBed: "",
   rowSpacing: "",
-  status: "Đang sử dụng" as CropStatus,
+  status: "Đang sử dụng",
 };
+
+// ─── Create Crop Modal ────────────────────────────────────────────────────────
 
 function CreateCropModal({
   open,
@@ -2177,6 +2085,7 @@ function CreateCropModal({
 }) {
   const [formData, setFormData] = useState(defaultFormData);
   const [formErrors, setFormErrors] = useState<CropFormErrors>({});
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const errors = validateCropForm(formData);
@@ -2197,53 +2106,38 @@ function CreateCropModal({
     setFormData(defaultFormData);
     setFormErrors({});
   };
+
   return (
-    <Dialog.Root open={open} onOpenChange={onClose}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
-        <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto z-50">
-          <form onSubmit={handleSubmit} className="p-6">
-            <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center gap-2">
-                <Sprout className="w-5 h-5 text-[#009689]" />
-                <Dialog.Title className="text-lg font-bold text-[#115e59]">
-                  Thêm giống cây mới
-                </Dialog.Title>
-              </div>
-              <Dialog.Close className="text-[#94a3b8] hover:text-[#62748e] text-2xl">
-                &times;
-              </Dialog.Close>
-            </div>
-            <Dialog.Description className="sr-only">
-              Form thêm giống cây mới
-            </Dialog.Description>
-            <CropFormFields
-              formData={formData}
-              setFormData={(updater) => {
-                setFormData((prev) => updater(prev));
-                setFormErrors({});
-              }}
-              errors={formErrors}
-            />
-            <div className="flex justify-end gap-3 mt-6">
-              <Dialog.Close className="px-4 py-2 text-sm text-[#62748e] hover:text-[#334155]">
-                Hủy
-              </Dialog.Close>
-              <button
-                type="submit"
-                disabled={submitting}
-                className="px-4 py-2 bg-[#009689] text-white text-sm rounded-lg hover:bg-[#007f75] flex items-center gap-2 disabled:opacity-50"
-              >
-                {submitting && <Loader2 className="w-4 h-4 animate-spin" />} Tạo
-                cây trồng
-              </button>
-            </div>
-          </form>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+    <Modal
+      open={open}
+      onOpenChange={(o) => !o && onClose()}
+      title="Thêm giống cây mới"
+      size="2xl"
+      onSubmit={handleSubmit}
+      footer={
+        <>
+          <Button variant="secondary" type="button" onClick={onClose}>
+            Hủy
+          </Button>
+          <Button type="submit" loading={submitting} leadingIcon={Sprout}>
+            Tạo cây trồng
+          </Button>
+        </>
+      }
+    >
+      <CropFormFields
+        formData={formData}
+        setFormData={(updater) => {
+          setFormData((prev) => updater(prev));
+          setFormErrors({});
+        }}
+        errors={formErrors}
+      />
+    </Modal>
   );
 }
+
+// ─── Edit Crop Modal ──────────────────────────────────────────────────────────
 
 function EditCropModal({
   crop,
@@ -2270,6 +2164,7 @@ function EditCropModal({
     status: crop.status,
   });
   const [formErrors, setFormErrors] = useState<CropFormErrors>({});
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const errors = validateCropForm(formData);
@@ -2288,71 +2183,33 @@ function EditCropModal({
       status: formData.status,
     });
   };
-  return (
-    <Dialog.Root open={open} onOpenChange={onClose}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
-        <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto z-50">
-          <form onSubmit={handleSubmit} className="p-6">
-            <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center gap-2">
-                <Sprout className="w-5 h-5 text-[#009689]" />
-                <Dialog.Title className="text-lg font-bold text-[#115e59]">
-                  Chỉnh sửa cây trồng
-                </Dialog.Title>
-              </div>
-              <Dialog.Close className="text-[#94a3b8] hover:text-[#62748e] text-2xl">
-                &times;
-              </Dialog.Close>
-            </div>
-            <Dialog.Description className="sr-only">
-              Form chỉnh sửa cây trồng {crop.name}
-            </Dialog.Description>
-            <CropFormFields
-              formData={formData}
-              setFormData={(updater) => {
-                setFormData((prev) => updater(prev));
-                setFormErrors({});
-              }}
-              errors={formErrors}
-            />
-            <div className="flex justify-end gap-3 mt-6">
-              <Dialog.Close className="px-4 py-2 text-sm text-[#62748e] hover:text-[#334155]">
-                Hủy
-              </Dialog.Close>
-              <button
-                type="submit"
-                disabled={submitting}
-                className="px-4 py-2 bg-[#009689] text-white text-sm rounded-lg hover:bg-[#007f75] flex items-center gap-2 disabled:opacity-50"
-              >
-                {submitting && <Loader2 className="w-4 h-4 animate-spin" />} Lưu
-                thay đổi
-              </button>
-            </div>
-          </form>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
-  );
-}
 
-// ── Pagination Button ─────────────────────────────────────────────────────────
-function CropPaginationBtn({
-  onClick,
-  disabled,
-  children,
-}: {
-  onClick: () => void;
-  disabled: boolean;
-  children: React.ReactNode;
-}) {
   return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      className="w-8 h-8 flex items-center justify-center rounded-lg text-[#62748e] hover:bg-[#f1f5f9] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+    <Modal
+      open={open}
+      onOpenChange={(o) => !o && onClose()}
+      title="Chỉnh sửa cây trồng"
+      size="2xl"
+      onSubmit={handleSubmit}
+      footer={
+        <>
+          <Button variant="secondary" type="button" onClick={onClose}>
+            Hủy
+          </Button>
+          <Button type="submit" loading={submitting}>
+            Lưu thay đổi
+          </Button>
+        </>
+      }
     >
-      {children}
-    </button>
+      <CropFormFields
+        formData={formData}
+        setFormData={(updater) => {
+          setFormData((prev) => updater(prev));
+          setFormErrors({});
+        }}
+        errors={formErrors}
+      />
+    </Modal>
   );
 }
