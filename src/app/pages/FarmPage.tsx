@@ -20,19 +20,28 @@ import {
   Home,
   Tractor,
   Globe,
-  Clock,
+  Search,
+  CheckCircle,
+  AlertCircle,
+  Loader2,
 } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as Collapsible from "@radix-ui/react-collapsible";
-import { Farm, FarmStatus } from "../../data/mockData";
-import { api, FarmResponse } from "../../api/client";
+import { api, FarmResponse, GeocodeResultResponse } from "../../api/client";
 
-// ─── Types ────────────────────────────────────────────────────────────────
+// ─── Local Types ──────────────────────────────────────────────────────────
 
-interface FarmFormErrors {
-  name?: string;
-  location?: string;
-  area?: string;
+type FarmStatus = "Hoạt động" | "Không hoạt động";
+
+interface Farm {
+  id: string;
+  name: string;
+  location: string;
+  status: FarmStatus;
+  area: number;
+  createdAt: string;
+  latitude?: number;
+  longitude?: number;
 }
 
 interface FarmFormData {
@@ -40,6 +49,14 @@ interface FarmFormData {
   location: string;
   status: FarmStatus;
   area: string;
+  latitude?: number;
+  longitude?: number;
+}
+
+interface FarmFormErrors {
+  name?: string;
+  location?: string;
+  area?: string;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
@@ -51,12 +68,11 @@ function mapFarm(f: FarmResponse): Farm {
     location: f.farmLocation ?? "",
     status: f.farmStatus === "Active" ? "Hoạt động" : "Không hoạt động",
     area: f.farmArea ?? 0,
-    description: "",
-    image: "",
     createdAt: f.farmCreatedAt
       ? new Date(f.farmCreatedAt).toLocaleDateString("vi-VN")
       : "",
-    plots: [],
+    latitude: toCoord(f.latitude) ?? undefined,
+    longitude: toCoord(f.longitude) ?? undefined,
   };
 }
 
@@ -96,51 +112,220 @@ const STATUS_OPTIONS: Array<{ value: FarmStatus; label: string }> = [
   { value: "Không hoạt động", label: "Không hoạt động" },
 ];
 
+/**
+ * Safely parse a coord value from the API.
+ * Backend may return latitude/longitude as string or number — both are handled.
+ */
+function toCoord(v: number | string | null | undefined): number | null {
+  if (v == null) return null;
+  const n = typeof v === "string" ? parseFloat(v) : v;
+  return isNaN(n) ? null : n;
+}
+
+function fmtCoord(v: number | string | null | undefined): string {
+  const n = toCoord(v);
+  return n != null ? n.toFixed(6) : "—";
+}
+
 // ─── MapPickerModal ───────────────────────────────────────────────────────
-// Domain-specific — kept inline, renders as nested modal (z-[60])
+// Geocode địa chỉ qua BE (Google Maps API)
+// Flow: nhập địa chỉ → Tìm → xem kết quả → Xác nhận
+
+type GeocodeState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "success"; result: GeocodeResultResponse }
+  | { status: "error"; message: string };
 
 function MapPickerModal({
   open,
   onClose,
+  onSelect,
+  initialLocation = "",
 }: {
   open: boolean;
   onClose: () => void;
-  onSelect: (location: string) => void;
+  onSelect: (result: GeocodeResultResponse) => void;
   initialLocation?: string;
 }) {
+  const [query, setQuery] = useState(initialLocation);
+  const [geocodeState, setGeocodeState] = useState<GeocodeState>({
+    status: "idle",
+  });
+
+  useEffect(() => {
+    if (open) {
+      setQuery(initialLocation);
+      setGeocodeState({ status: "idle" });
+    }
+  }, [open, initialLocation]);
+
+  const handleGeocode = async () => {
+    const trimmed = query.trim();
+    if (!trimmed) return;
+    setGeocodeState({ status: "loading" });
+    try {
+      const result = await api.geocodeAddress(trimmed);
+      setGeocodeState({ status: "success", result });
+    } catch (err) {
+      setGeocodeState({
+        status: "error",
+        message:
+          err instanceof Error
+            ? err.message
+            : "Không thể tìm tọa độ cho địa chỉ này",
+      });
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleGeocode();
+    }
+  };
+
+  const handleConfirm = () => {
+    if (geocodeState.status !== "success") return;
+    onSelect(geocodeState.result);
+    onClose();
+  };
+
+  const isLoading = geocodeState.status === "loading";
+
   return (
-    <Dialog.Root open={open} onOpenChange={onClose}>
+    <Dialog.Root open={open} onOpenChange={(o) => !o && onClose()}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 bg-black/50 z-[60]" />
-        <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-surface rounded-modal shadow-modal w-full max-w-sm z-[60] p-6 text-center">
-          <Dialog.Title className="sr-only">Bản đồ</Dialog.Title>
+        <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-surface rounded-modal shadow-modal w-[calc(100%-2rem)] max-w-md z-[60] flex flex-col max-h-[90vh] overflow-hidden">
+          <Dialog.Title className="sr-only">Tìm tọa độ địa chỉ</Dialog.Title>
           <Dialog.Description className="sr-only">
-            Tính năng bản đồ sắp ra mắt
+            Nhập địa chỉ để tìm tọa độ bằng Google Maps
           </Dialog.Description>
 
-          <div className="mx-auto mb-4 w-16 h-16 rounded-full bg-primary-50 flex items-center justify-center">
-            <Globe className="w-8 h-8 text-primary" />
+          {/* Header */}
+          <div className="flex items-center gap-3 px-6 py-4 border-b border-border">
+            <div className="w-8 h-8 bg-primary-50 rounded-btn flex items-center justify-center shrink-0">
+              <Globe className="w-4 h-4 text-primary" />
+            </div>
+            <div>
+              <p className="text-base font-bold text-ink-800">
+                Xác định vị trí
+              </p>
+              <p className="text-xs text-ink-400">Google Maps Geocoding</p>
+            </div>
           </div>
 
-          <h3 className="text-base font-bold text-primary-700 mb-1">
-            Tính năng sắp ra mắt
-          </h3>
-          <p className="text-sm text-ink-500 mb-1">
-            Chọn địa chỉ bằng <span className="font-medium">Google Maps</span>{" "}
-            đang được phát triển.
-          </p>
-          <p className="text-xs text-ink-400 mb-5">
-            Vui lòng nhập địa chỉ thủ công vào ô địa chỉ trong thời gian này.
-          </p>
+          {/* Body */}
+          <div className="px-6 py-5 space-y-4 overflow-y-auto flex-1">
+            <div>
+              <label className="block text-sm font-medium text-ink-600 mb-1.5">
+                Địa chỉ trang trại
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={query}
+                  onChange={(e) => {
+                    setQuery(e.target.value);
+                    if (geocodeState.status !== "idle") {
+                      setGeocodeState({ status: "idle" });
+                    }
+                  }}
+                  onKeyDown={handleKeyDown}
+                  placeholder="VD: Đà Lạt, Lâm Đồng, Việt Nam"
+                  disabled={isLoading}
+                  className="flex-1 min-w-0 px-3 py-2.5 border border-border-strong rounded-btn text-sm text-ink-700 bg-surface focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50"
+                />
+                <Button
+                  onClick={handleGeocode}
+                  loading={isLoading}
+                  disabled={!query.trim()}
+                  leadingIcon={Search}
+                  size="md"
+                >
+                  Tìm
+                </Button>
+              </div>
+              <p className="mt-1.5 text-xs text-ink-400">
+                Nhập địa chỉ đầy đủ để kết quả chính xác hơn. Nhấn Enter hoặc
+                bấm Tìm.
+              </p>
+            </div>
 
-          <div className="flex items-center justify-center gap-1.5 text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-btn px-3 py-2 mb-5">
-            <Clock className="w-3.5 h-3.5 shrink-0" />
-            <span>Google Maps API integration — coming soon</span>
+            {geocodeState.status === "loading" && (
+              <div className="flex items-center gap-2 text-sm text-ink-500 py-2">
+                <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                <span>Đang tìm kiếm tọa độ...</span>
+              </div>
+            )}
+
+            {geocodeState.status === "error" && (
+              <div className="flex items-start gap-2.5 p-3 bg-status-danger-bg/40 border border-status-danger-fg/20 rounded-btn">
+                <AlertCircle className="w-4 h-4 text-status-danger-fg mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-sm font-medium text-status-danger-fg">
+                    Không tìm được tọa độ
+                  </p>
+                  <p className="text-xs text-ink-500 mt-0.5">
+                    {geocodeState.message}. Hãy thử nhập địa chỉ cụ thể hơn.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {geocodeState.status === "success" && (
+              <div className="p-4 bg-primary-50 border border-primary/20 rounded-btn space-y-3">
+                <div className="flex items-center gap-2">
+                  <CheckCircle className="w-4 h-4 text-primary shrink-0" />
+                  <p className="text-sm font-semibold text-primary-700">
+                    Đã tìm thấy vị trí
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <div>
+                    <p className="text-xs text-ink-400 uppercase mb-0.5">
+                      Địa chỉ chuẩn hóa
+                    </p>
+                    <p className="text-sm font-medium text-ink-700">
+                      {geocodeState.result.formattedAddress}
+                    </p>
+                  </div>
+                  <div className="flex gap-6">
+                    <div>
+                      <p className="text-xs text-ink-400 uppercase mb-0.5">
+                        Vĩ độ
+                      </p>
+                      <p className="text-sm font-mono text-ink-700">
+                        {fmtCoord(geocodeState.result.latitude)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-ink-400 uppercase mb-0.5">
+                        Kinh độ
+                      </p>
+                      <p className="text-sm font-mono text-ink-700">
+                        {fmtCoord(geocodeState.result.longitude)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
-          <Dialog.Close className="w-full px-4 py-2 bg-primary text-primary-fg text-sm rounded-btn hover:bg-primary-hover transition-colors">
-            Đã hiểu
-          </Dialog.Close>
+          {/* Footer */}
+          <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-border">
+            <Button variant="ghost" onClick={onClose}>
+              Hủy
+            </Button>
+            <Button
+              onClick={handleConfirm}
+              disabled={geocodeState.status !== "success"}
+            >
+              Xác nhận vị trí
+            </Button>
+          </div>
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
@@ -160,6 +345,15 @@ function FarmFormFields({
 }) {
   const [mapOpen, setMapOpen] = useState(false);
 
+  const handleGeocodeSelect = (result: GeocodeResultResponse) => {
+    setFormData((p) => ({
+      ...p,
+      location: result.formattedAddress,
+      latitude: toCoord(result.latitude) ?? undefined,
+      longitude: toCoord(result.longitude) ?? undefined,
+    }));
+  };
+
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -175,14 +369,22 @@ function FarmFormFields({
           label="Địa chỉ"
           required
           value={formData.location}
-          onChange={(v) => setFormData((p) => ({ ...p, location: v }))}
-          placeholder="Hà Nội, Việt Nam"
+          onChange={(v) =>
+            setFormData((p) => ({
+              ...p,
+              location: v,
+              // Clear tọa độ khi user tự sửa text — cần geocode lại
+              latitude: undefined,
+              longitude: undefined,
+            }))
+          }
+          placeholder="Đà Lạt, Lâm Đồng, Việt Nam"
           error={errors.location}
           trailingAddon={
             <button
               type="button"
               onClick={() => setMapOpen(true)}
-              title="Chọn vị trí trên bản đồ"
+              title="Xác định tọa độ qua Google Maps"
               className="h-full px-2.5 border border-border-strong rounded-btn text-primary hover:bg-primary-50 hover:border-primary transition-colors"
             >
               <Globe className="w-4 h-4" />
@@ -190,6 +392,32 @@ function FarmFormFields({
           }
         />
       </div>
+
+      {/* Tọa độ đã geocode */}
+      {formData.latitude != null && formData.longitude != null && (
+        <div className="flex items-center gap-2 px-3 py-2 bg-primary-50 border border-primary/20 rounded-btn">
+          <MapPin className="w-3.5 h-3.5 text-primary shrink-0" />
+          <span className="text-xs text-primary-700 font-mono">
+            {fmtCoord(formData.latitude)}, {fmtCoord(formData.longitude)}
+          </span>
+          <span className="text-xs text-ink-400 ml-1">
+            · Tọa độ đã xác định
+          </span>
+          <button
+            type="button"
+            onClick={() =>
+              setFormData((p) => ({
+                ...p,
+                latitude: undefined,
+                longitude: undefined,
+              }))
+            }
+            className="ml-auto text-xs text-ink-400 hover:text-status-danger-fg transition-colors"
+          >
+            Xóa
+          </button>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <FormField
@@ -213,10 +441,7 @@ function FarmFormFields({
       <MapPickerModal
         open={mapOpen}
         onClose={() => setMapOpen(false)}
-        onSelect={(address) => {
-          setFormData((p) => ({ ...p, location: address }));
-          setMapOpen(false);
-        }}
+        onSelect={handleGeocodeSelect}
         initialLocation={formData.location}
       />
     </div>
@@ -300,6 +525,17 @@ function FarmCard({
                   {farm.createdAt || "—"}
                 </div>
               </div>
+              {farm.latitude != null && farm.longitude != null && (
+                <div className="sm:col-span-2">
+                  <div className="text-xs text-ink-400 uppercase mb-1">
+                    Tọa độ GPS
+                  </div>
+                  <div className="flex items-center gap-1.5 font-mono text-sm text-primary-700">
+                    <MapPin className="w-3.5 h-3.5 text-primary" />
+                    {fmtCoord(farm.latitude)}, {fmtCoord(farm.longitude)}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </Collapsible.Content>
@@ -319,11 +555,19 @@ function ViewFarmModal({
   open: boolean;
   onClose: () => void;
 }) {
-  const rows = [
+  const rows: Array<{ label: string; value: string }> = [
     { label: "Địa chỉ", value: farm.location },
     { label: "Diện tích", value: `${farm.area.toLocaleString()} m²` },
     { label: "Trạng thái", value: farmStatusLabel(farm.status) },
     { label: "Ngày tạo", value: farm.createdAt },
+    ...(farm.latitude != null && farm.longitude != null
+      ? [
+          {
+            label: "Tọa độ GPS",
+            value: `${fmtCoord(farm.latitude)}, ${fmtCoord(farm.longitude)}`,
+          },
+        ]
+      : []),
   ];
 
   return (
@@ -345,8 +589,8 @@ function ViewFarmModal({
             key={label}
             className="flex justify-between py-2 border-b border-surface-subtle last:border-0"
           >
-            <span className="text-sm text-ink-500">{label}</span>
-            <span className="text-sm font-medium text-primary-700">
+            <span className="text-sm text-ink-500 shrink-0">{label}</span>
+            <span className="text-sm font-medium text-primary-700 text-right ml-4 break-all">
               {value || "—"}
             </span>
           </div>
@@ -366,7 +610,7 @@ function CreateFarmModal({
 }: {
   open: boolean;
   onClose: () => void;
-  onCreate: (farm: Omit<Farm, "id" | "plots" | "createdAt">) => void;
+  onCreate: (data: FarmFormData) => void;
   submitting: boolean;
 }) {
   const [formData, setFormData] = useState<FarmFormData>({
@@ -389,14 +633,7 @@ function CreateFarmModal({
     const errors = validateFarmForm(formData);
     setFormErrors(errors);
     if (Object.keys(errors).length > 0) return;
-    onCreate({
-      ...formData,
-      name: formData.name.trim(),
-      location: formData.location.trim(),
-      area: parseFloat(formData.area) || 0,
-      image: "",
-      description: "",
-    });
+    onCreate(formData);
   };
 
   return (
@@ -441,7 +678,7 @@ function EditFarmModal({
   farm: Farm;
   open: boolean;
   onClose: () => void;
-  onUpdate: (farm: Farm) => void;
+  onUpdate: (id: string, data: FarmFormData) => void;
   submitting: boolean;
 }) {
   const [formData, setFormData] = useState<FarmFormData>({
@@ -449,6 +686,8 @@ function EditFarmModal({
     location: farm.location,
     status: farm.status,
     area: farm.area.toString(),
+    latitude: farm.latitude,
+    longitude: farm.longitude,
   });
   const [formErrors, setFormErrors] = useState<FarmFormErrors>({});
 
@@ -458,6 +697,8 @@ function EditFarmModal({
       location: farm.location,
       status: farm.status,
       area: farm.area.toString(),
+      latitude: farm.latitude,
+      longitude: farm.longitude,
     });
     setFormErrors({});
   }, [farm]);
@@ -467,13 +708,7 @@ function EditFarmModal({
     const errors = validateFarmForm(formData);
     setFormErrors(errors);
     if (Object.keys(errors).length > 0) return;
-    onUpdate({
-      ...farm,
-      ...formData,
-      name: formData.name.trim(),
-      location: formData.location.trim(),
-      area: parseFloat(formData.area) || 0,
-    });
+    onUpdate(farm.id, formData);
   };
 
   return (
@@ -513,8 +748,6 @@ export function FarmPage() {
   const [farms, setFarms] = useState<Farm[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Modal state — manual (not useCrudModals) because View and Edit share
-  // selectedFarm, and Create doesn't need an item ref.
   const [viewModalOpen, setViewModalOpen] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
@@ -555,10 +788,12 @@ export function FarmPage() {
     setSelectedFarm(farm);
     setViewModalOpen(true);
   };
+
   const handleEdit = (farm: Farm) => {
     setSelectedFarm(farm);
     setEditModalOpen(true);
   };
+
   const handleDelete = (farm: Farm) => {
     setFarmToDelete(farm);
   };
@@ -581,17 +816,36 @@ export function FarmPage() {
     }
   };
 
-  const handleCreate = async (
-    farm: Omit<Farm, "id" | "plots" | "createdAt">,
-  ) => {
+  /**
+   * Gọi PUT /api/Maps/farm/{id}/coordinates sau khi create/update.
+   * Không block — nếu fail chỉ show toast info, farm vẫn đã được lưu.
+   */
+  async function maybeUpdateCoordinates(farmId: string, data: FarmFormData) {
+    if (data.latitude == null || data.longitude == null) return;
+    try {
+      await api.updateFarmCoordinates(farmId, {
+        address: data.location.trim(),
+        latitude: data.latitude,
+        longitude: data.longitude,
+      });
+    } catch {
+      showToast(
+        "Trang trại đã lưu nhưng không thể cập nhật tọa độ GPS",
+        "info",
+      );
+    }
+  }
+
+  const handleCreate = async (data: FarmFormData) => {
     setSubmitting(true);
     try {
-      await api.createFarm({
-        farmName: farm.name,
-        farmLocation: farm.location,
-        farmArea: farm.area,
-        farmStatus: farm.status === "Hoạt động" ? "Active" : "Inactive",
+      const created = await api.createFarm({
+        farmName: data.name.trim(),
+        farmLocation: data.location.trim(),
+        farmArea: parseFloat(data.area) || 0,
+        farmStatus: data.status === "Hoạt động" ? "Active" : "Inactive",
       });
+      await maybeUpdateCoordinates(created.farmId, data);
       setCreateModalOpen(false);
       showToast("Tạo trang trại thành công", "success");
       await loadFarms();
@@ -605,15 +859,16 @@ export function FarmPage() {
     }
   };
 
-  const handleUpdate = async (updatedFarm: Farm) => {
+  const handleUpdate = async (id: string, data: FarmFormData) => {
     setSubmitting(true);
     try {
-      await api.updateFarm(updatedFarm.id, {
-        farmName: updatedFarm.name,
-        farmLocation: updatedFarm.location,
-        farmArea: updatedFarm.area,
-        farmStatus: updatedFarm.status === "Hoạt động" ? "Active" : "Inactive",
+      await api.updateFarm(id, {
+        farmName: data.name.trim(),
+        farmLocation: data.location.trim(),
+        farmArea: parseFloat(data.area) || 0,
+        farmStatus: data.status === "Hoạt động" ? "Active" : "Inactive",
       });
+      await maybeUpdateCoordinates(id, data);
       setEditModalOpen(false);
       setSelectedFarm(null);
       showToast("Cập nhật trang trại thành công", "success");
@@ -667,7 +922,6 @@ export function FarmPage() {
         </div>
       )}
 
-      {/* View Modal */}
       {selectedFarm && (
         <ViewFarmModal
           farm={selectedFarm}
@@ -679,7 +933,6 @@ export function FarmPage() {
         />
       )}
 
-      {/* Create Modal */}
       <CreateFarmModal
         open={createModalOpen}
         onClose={() => setCreateModalOpen(false)}
@@ -687,7 +940,6 @@ export function FarmPage() {
         submitting={submitting}
       />
 
-      {/* Edit Modal */}
       {selectedFarm && (
         <EditFarmModal
           farm={selectedFarm}
@@ -701,7 +953,6 @@ export function FarmPage() {
         />
       )}
 
-      {/* Delete Confirm */}
       <ConfirmDialog
         open={farmToDelete !== null}
         onOpenChange={(o) => !o && setFarmToDelete(null)}
