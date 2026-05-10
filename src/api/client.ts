@@ -606,9 +606,16 @@ export interface HarvestResponse {
   seasonId: string;
   seasonName: string;
   expectedDate: string;
+  /**
+   * Despite the field name, this stores the *actual* yield entered by the user.
+   * The POST /api/harvests docs label this as "actual yield".
+   */
   expectedQuantity: number;
+  /** Unit of yield — "kg" or "tấn" */
+  unit?: string;
   status: string;
   detailsCount: number;
+  harvestedBedsCount: number;
   recordsCount: number;
   harvestDetails?: HarvestDetailResponse[];
   totalHarvestedQuantity?: number;
@@ -625,6 +632,8 @@ export interface HarvestDetailResponse {
   cropQuantity: number;
   startDate: string;
   endDate: string;
+  /** Whether this specific bed has been harvested */
+  isHarvested: boolean;
   cropId?: string;
   cropName?: string;
   plotId?: string;

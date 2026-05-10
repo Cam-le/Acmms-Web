@@ -87,8 +87,10 @@ interface HarvestItem {
   cropName: string;
   expectedDate: string;
   expectedQuantity: number;
+  unit: string;
   status: string;
   detailsCount: number;
+  harvestedBedsCount: number;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -590,6 +592,7 @@ function DetailSeasonView({
     cropId: "",
     expectedDate: "",
     expectedQuantity: "",
+    unit: "kg",
     status: "planned",
   });
 
@@ -606,8 +609,10 @@ function DetailSeasonView({
           cropName: h.cropName,
           expectedDate: h.expectedDate,
           expectedQuantity: h.expectedQuantity,
+          unit: h.unit ?? "kg",
           status: h.status,
           detailsCount: h.detailsCount,
+          harvestedBedsCount: h.harvestedBedsCount ?? 0,
         })),
       );
     } catch {
@@ -649,6 +654,7 @@ function DetailSeasonView({
       cropId: "",
       expectedDate: "",
       expectedQuantity: "",
+      unit: "kg",
       status: "planned",
     });
     setCreateHarvestOpen(true);
@@ -661,6 +667,7 @@ function DetailSeasonView({
       cropId: h.cropId,
       expectedDate: h.expectedDate,
       expectedQuantity: String(h.expectedQuantity),
+      unit: h.unit || "kg",
       status: h.status,
     });
     setEditHarvest(h);
@@ -683,6 +690,7 @@ function DetailSeasonView({
         const body: HarvestUpdateRequest = {
           expectedDate: harvestForm.expectedDate,
           expectedQuantity: parseFloat(harvestForm.expectedQuantity) || 0,
+          unit: harvestForm.unit,
           status: harvestForm.status,
         };
         await api.updateHarvest(editHarvest.harvestId, body);
@@ -694,6 +702,7 @@ function DetailSeasonView({
           cropId: harvestForm.cropId,
           expectedDate: harvestForm.expectedDate,
           expectedQuantity: parseFloat(harvestForm.expectedQuantity) || 0,
+          unit: harvestForm.unit,
           status: harvestForm.status,
           startDate: season.startDate,
           endDate: season.endDate,
@@ -947,12 +956,13 @@ function DetailSeasonView({
                           </span>
                           <span className="flex items-center gap-1">
                             <Package className="w-3 h-3" />
-                            {h.expectedQuantity.toLocaleString("vi-VN")} cây
+                            {h.expectedQuantity.toLocaleString("vi-VN")}{" "}
+                            {h.unit || "kg"}
                           </span>
                           {h.detailsCount > 0 && (
                             <span className="flex items-center gap-1">
                               <BarChart2 className="w-3 h-3" />
-                              {h.detailsCount} luống
+                              {h.harvestedBedsCount}/{h.detailsCount} luống
                             </span>
                           )}
                         </div>
@@ -992,6 +1002,7 @@ function DetailSeasonView({
                                   "Số lượng (cây)",
                                   "Ngày bắt đầu",
                                   "Ngày kết thúc",
+                                  "Đã thu hoạch",
                                 ].map((h) => (
                                   <th
                                     key={h}
@@ -1027,6 +1038,19 @@ function DetailSeasonView({
                                     </td>
                                     <td className="px-4 py-2.5 text-ink-500 whitespace-nowrap">
                                       {formatDate(d.endDate)}
+                                    </td>
+                                    <td className="px-4 py-2.5">
+                                      <StatusBadge
+                                        label={
+                                          d.isHarvested
+                                            ? "Đã xong"
+                                            : "Chưa xong"
+                                        }
+                                        tone={
+                                          d.isHarvested ? "success" : "neutral"
+                                        }
+                                        size="sm"
+                                      />
                                     </td>
                                   </tr>
                                 ))}
@@ -1243,16 +1267,26 @@ function DetailSeasonView({
               }}
             />
             <FormField
-              label="Sản lượng dự kiến (kg)"
+              label="Sản lượng thực tế"
               type="number"
               value={harvestForm.expectedQuantity}
               onChange={(v) =>
                 setHarvestForm((p) => ({ ...p, expectedQuantity: v }))
               }
-              inputProps={{ min: "0" }}
+              inputProps={{ min: "0", step: "0.01" }}
               placeholder="0"
             />
           </div>
+
+          <FormSelect
+            label="Đơn vị sản lượng"
+            value={harvestForm.unit}
+            onChange={(v) => setHarvestForm((p) => ({ ...p, unit: v }))}
+            options={[
+              { value: "kg", label: "kg" },
+              { value: "tấn", label: "tấn" },
+            ]}
+          />
 
           <FormSelect
             label="Trạng thái"
@@ -1325,6 +1359,7 @@ function CreateSeasonView({
     cropId: string;
     expectedDate: string;
     expectedQuantity: string;
+    unit: string;
     // Which beds to assign to this harvest (for UI display; actual HarvestDetails are auto-created by backend)
     bedIds: string[];
   }
@@ -1336,6 +1371,7 @@ function CreateSeasonView({
       cropId: "",
       expectedDate: "",
       expectedQuantity: "",
+      unit: "kg",
       bedIds: [],
     },
   ]);
@@ -1474,6 +1510,7 @@ function CreateSeasonView({
               cropId: g.cropId,
               expectedDate: g.expectedDate,
               expectedQuantity: parseFloat(g.expectedQuantity) || 0,
+              unit: g.unit,
               status: "planned",
               startDate: formData.startDate,
               endDate: formData.endDate,
@@ -1784,7 +1821,7 @@ function CreateSeasonView({
                     }}
                   />
                   <FormField
-                    label="Số lượng dự kiến (cây)"
+                    label="Sản lượng thực tế"
                     type="number"
                     value={group.expectedQuantity}
                     onChange={(v) =>
@@ -1794,8 +1831,23 @@ function CreateSeasonView({
                         ),
                       )
                     }
-                    inputProps={{ min: "0" }}
+                    inputProps={{ min: "0", step: "0.01" }}
                     placeholder="0"
+                  />
+                  <FormSelect
+                    label="Đơn vị sản lượng"
+                    value={group.unit}
+                    onChange={(v) =>
+                      setHarvestGroups((p) =>
+                        p.map((g) =>
+                          g.id === group.id ? { ...g, unit: v } : g,
+                        ),
+                      )
+                    }
+                    options={[
+                      { value: "kg", label: "kg" },
+                      { value: "tấn", label: "tấn" },
+                    ]}
                   />
                 </div>
               </div>
@@ -1814,6 +1866,7 @@ function CreateSeasonView({
                   cropId: "",
                   expectedDate: "",
                   expectedQuantity: "",
+                  unit: "kg",
                   bedIds: [],
                 },
               ])
