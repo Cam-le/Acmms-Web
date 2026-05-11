@@ -186,7 +186,7 @@ function MapPickerModal({
   };
 
   const handleConfirm = () => {
-    if (geocodeState.status !== "success") return;
+    if (geocodeState.status !== "success" || !geocodeState.result) return;
     onSelect(geocodeState.result);
     onClose();
   };
@@ -209,9 +209,7 @@ function MapPickerModal({
               <Globe className="w-4 h-4 text-primary" />
             </div>
             <div>
-              <p className="text-base font-bold text-ink-800">
-                Xác định vị trí
-              </p>
+              <p className="text-base font-bold text-ink-800">Xác định vị trí</p>
               <p className="text-xs text-ink-400">Google Maps Geocoding</p>
             </div>
           </div>
@@ -248,8 +246,7 @@ function MapPickerModal({
                 </Button>
               </div>
               <p className="mt-1.5 text-xs text-ink-400">
-                Nhập địa chỉ đầy đủ để kết quả chính xác hơn. Nhấn Enter hoặc
-                bấm Tìm.
+                Nhập địa chỉ đầy đủ để kết quả chính xác hơn. Nhấn Enter hoặc bấm Tìm.
               </p>
             </div>
 
@@ -274,7 +271,7 @@ function MapPickerModal({
               </div>
             )}
 
-            {geocodeState.status === "success" && (
+            {geocodeState.status === "success" && geocodeState.result && (
               <div className="p-4 bg-primary-50 border border-primary/20 rounded-btn space-y-3">
                 <div className="flex items-center gap-2">
                   <CheckCircle className="w-4 h-4 text-primary shrink-0" />
@@ -288,7 +285,7 @@ function MapPickerModal({
                       Địa chỉ chuẩn hóa
                     </p>
                     <p className="text-sm font-medium text-ink-700">
-                      {geocodeState.result.formattedAddress}
+                      {geocodeState.result?.formattedAddress ?? "—"}
                     </p>
                   </div>
                   <div className="flex gap-6">
@@ -297,7 +294,7 @@ function MapPickerModal({
                         Vĩ độ
                       </p>
                       <p className="text-sm font-mono text-ink-700">
-                        {fmtCoord(geocodeState.result.latitude)}
+                        {fmtCoord(geocodeState.result?.latitude)}
                       </p>
                     </div>
                     <div>
@@ -305,7 +302,7 @@ function MapPickerModal({
                         Kinh độ
                       </p>
                       <p className="text-sm font-mono text-ink-700">
-                        {fmtCoord(geocodeState.result.longitude)}
+                        {fmtCoord(geocodeState.result?.longitude)}
                       </p>
                     </div>
                   </div>
@@ -400,9 +397,7 @@ function FarmFormFields({
           <span className="text-xs text-primary-700 font-mono">
             {fmtCoord(formData.latitude)}, {fmtCoord(formData.longitude)}
           </span>
-          <span className="text-xs text-ink-400 ml-1">
-            · Tọa độ đã xác định
-          </span>
+          <span className="text-xs text-ink-400 ml-1">· Tọa độ đã xác định</span>
           <button
             type="button"
             onClick={() =>
