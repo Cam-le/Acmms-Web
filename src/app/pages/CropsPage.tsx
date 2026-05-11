@@ -476,7 +476,7 @@ export function CropsPage() {
                         : "—",
                   },
                   {
-                    label: "Hàng / luống",
+                    label: "Số hàng trên luống",
                     value:
                       selectedCrop.rowsPerBed > 0
                         ? `${selectedCrop.rowsPerBed}`
@@ -1976,7 +1976,7 @@ function CropFormFields({
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium text-ink-600 mb-1.5">
-            Hàng / luống
+            Số hàng trên luống
           </label>
           <input
             type="number"

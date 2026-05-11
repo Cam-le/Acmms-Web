@@ -43,6 +43,8 @@ export interface FarmResponse {
   farmStatus: string;
   farmCreatedAt: string;
   seasonsCount: number;
+  latitude?: number;
+  longitude?: number;
 }
 
 export interface SeasonResponse {
@@ -530,6 +532,7 @@ export interface PaymentCreateResponse {
   paymentUrl?: string;
   paymentId?: string;
 }
+
 // Parsed shape of ReportResponse.aiResultsJson
 export interface AiResultParsed {
   diseaseName?: string;
@@ -606,9 +609,16 @@ export interface HarvestResponse {
   seasonId: string;
   seasonName: string;
   expectedDate: string;
+  /**
+   * Despite the field name, this stores the *actual* yield entered by the user.
+   * The POST /api/harvests docs label this as "actual yield".
+   */
   expectedQuantity: number;
+  /** Unit of yield — "kg" or "tấn" */
+  unit?: string;
   status: string;
   detailsCount: number;
+  harvestedBedsCount: number;
   recordsCount: number;
   harvestDetails?: HarvestDetailResponse[];
   totalHarvestedQuantity?: number;
@@ -625,6 +635,8 @@ export interface HarvestDetailResponse {
   cropQuantity: number;
   startDate: string;
   endDate: string;
+  /** Whether this specific bed has been harvested */
+  isHarvested: boolean;
   cropId?: string;
   cropName?: string;
   plotId?: string;
@@ -658,6 +670,79 @@ export interface HarvestDetailUpdateRequest {
   cropQuantity: number;
   startDate: string;
   endDate: string;
+}
+
+// ── Maps / Geocoding ──────────────────────────────────────────────────────────
+
+export interface GeocodeResultResponse {
+  formattedAddress: string;
+  latitude: number;
+  longitude: number;
+  placeId?: string;
+  locationType?: string;
+}
+
+export interface UpdateFarmCoordinatesRequest {
+  address?: string;
+  latitude?: number;
+  longitude?: number;
+}
+
+// ── Weather ───────────────────────────────────────────────────────────────────
+
+export interface WeatherLocationResponse {
+  name?: string;
+  region?: string;
+  country?: string;
+  latitude: number;
+  longitude: number;
+  localTime?: string;
+}
+
+export interface WeatherConditionResponse {
+  text?: string;
+  /** URL from WeatherAPI — prepend "https:" if starts with "//" */
+  icon?: string;
+  code: number;
+}
+
+export interface WeatherCurrentResponse {
+  location: WeatherLocationResponse;
+  lastUpdated: string;
+  tempC: number;
+  feelsLikeC: number;
+  humidity: number;
+  windKph: number;
+  windDir?: string;
+  gustKph: number;
+  precipMm: number;
+  pressureMb: number;
+  cloud: number;
+  uv: number;
+  visKm: number;
+  isDay: boolean;
+  condition: WeatherConditionResponse;
+}
+
+export interface WeatherForecastDayResponse {
+  date: string;
+  maxTempC: number;
+  minTempC: number;
+  avgTempC: number;
+  totalPrecipMm: number;
+  avgHumidity: number;
+  maxWindKph: number;
+  uv: number;
+  chanceOfRain: number;
+  condition: WeatherConditionResponse;
+  sunrise?: string;
+  sunset?: string;
+}
+
+export interface WeatherForecastResponse {
+  location: WeatherLocationResponse;
+  current: WeatherCurrentResponse;
+  forecast: WeatherForecastDayResponse[];
 }
 
 // ==================== API Methods ====================
@@ -883,6 +968,7 @@ export const api = {
       `/api/Reports/${reportId}/diagnosis`,
       body,
     ),
+
   // Attachments
   getAttachments: (objectType: string, objectId: string) =>
     request<AttachmentResponse[]>(
@@ -897,6 +983,7 @@ export const api = {
     request<unknown>("POST", "/api/payment/price-setting", body),
   createPayment: (body: PaymentCreateRequest) =>
     request<PaymentCreateResponse>("POST", "/api/payment/create", body),
+
   // Harvests
   getHarvests: () => request<HarvestResponse[]>("GET", "/api/harvests"),
   getHarvest: (id: string) =>
@@ -924,4 +1011,40 @@ export const api = {
     request<HarvestDetailResponse>("PUT", `/api/harvest-details/${id}`, body),
   deleteHarvestDetail: (id: string) =>
     request<unknown>("DELETE", `/api/harvest-details/${id}`),
+
+  // Maps / Geocoding
+  geocodeAddress: (address: string) =>
+    request<GeocodeResultResponse>(
+      "GET",
+      `/api/Maps/geocode?address=${encodeURIComponent(address)}`,
+    ),
+  reverseGeocode: (lat: number, lng: number) =>
+    request<GeocodeResultResponse>(
+      "GET",
+      `/api/Maps/reverse?lat=${lat}&lng=${lng}`,
+    ),
+  updateFarmCoordinates: (farmId: string, body: UpdateFarmCoordinatesRequest) =>
+    request<unknown>("PUT", `/api/Maps/farm/${farmId}/coordinates`, body),
+
+  // Weather
+  getWeatherCurrent: (lat: number, lng: number) =>
+    request<WeatherCurrentResponse>(
+      "GET",
+      `/api/Weather/current?lat=${lat}&lng=${lng}`,
+    ),
+  getWeatherForecast: (lat: number, lng: number, days = 3) =>
+    request<WeatherForecastResponse>(
+      "GET",
+      `/api/Weather/forecast?lat=${lat}&lng=${lng}&days=${days}`,
+    ),
+  getWeatherCurrentByFarm: (farmId: string) =>
+    request<WeatherCurrentResponse>(
+      "GET",
+      `/api/Weather/farm/${farmId}/current`,
+    ),
+  getWeatherForecastByFarm: (farmId: string, days = 3) =>
+    request<WeatherForecastResponse>(
+      "GET",
+      `/api/Weather/farm/${farmId}/forecast?days=${days}`,
+    ),
 };
