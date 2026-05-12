@@ -28,12 +28,7 @@ import {
 } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as Collapsible from "@radix-ui/react-collapsible";
-import {
-  api,
-  FarmResponse,
-  GeocodeResultResponse,
-  WeatherCurrentResponse,
-} from "../../api/client";
+import { api, FarmResponse, WeatherCurrentResponse } from "../../api/client";
 
 // ─── Local Types ──────────────────────────────────────────────────────────
 
@@ -63,6 +58,17 @@ interface FarmFormErrors {
   name?: string;
   location?: string;
   area?: string;
+}
+
+/**
+ * Result returned by MapPickerModal via onSelect.
+ * latitude/longitude are null when the user confirmed a text-only address
+ * (typed address, no pin placed on the map).
+ */
+interface MapPickerResult {
+  formattedAddress: string;
+  latitude: number | null;
+  longitude: number | null;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
@@ -124,7 +130,6 @@ const STATUS_OPTIONS: Array<{ value: FarmStatus; label: string }> = [
  * We display the cleaned version — DB value is unchanged.
  */
 function stripPlusCode(address: string): string {
-  // Pattern: 4-8 alphanum chars + "+" + 2-3 chars, followed by optional comma+space
   return address.replace(/^[A-Z0-9]{4,8}\+[A-Z0-9]{2,3},?\s*/i, "").trim();
 }
 
@@ -145,12 +150,12 @@ function fmtCoord(v: number | string | null | undefined): string {
 // Flow:
 //   A) Gõ địa chỉ → debounce 400ms → Nominatim suggestions dropdown
 //      Chọn suggestion → pin + flyTo
-//   B) Click trực tiếp trên bản đồ → đặt pin
-// Xác nhận → trả về { latitude, longitude }
+//   B) Click trực tiếp trên bản đồ → đặt pin, reverse geocode fill address
+//   C) Gõ địa chỉ → click Xác nhận (không pin) → địa chỉ được paste thẳng
+// Xác nhận → trả về MapPickerResult
 //
 // Nominatim usage policy: 1 req/s max — debounce 400ms đủ safe cho typing
 
-// Inject Leaflet CSS once at module level
 import "leaflet/dist/leaflet.css";
 
 const VN_CENTER: [number, number] = [16.047079, 108.20623];
@@ -178,7 +183,6 @@ async function fetchNominatimSuggestions(
     format: "json",
     addressdetails: "0",
     limit: "6",
-    // Bias results toward Vietnam — helps surface VN results first
     countrycodes: "vn",
     "accept-language": "vi",
   });
@@ -186,7 +190,6 @@ async function fetchNominatimSuggestions(
     `https://nominatim.openstreetmap.org/search?${params}`,
     {
       headers: {
-        // Nominatim policy requires a descriptive User-Agent
         "User-Agent": "CMMS-FarmManagement/1.0",
       },
     },
@@ -203,7 +206,7 @@ function MapPickerModal({
 }: {
   open: boolean;
   onClose: () => void;
-  onSelect: (result: GeocodeResultResponse) => void;
+  onSelect: (result: MapPickerResult) => void;
   initialLocation?: string;
 }) {
   const [query, setQuery] = useState(initialLocation);
@@ -211,29 +214,31 @@ function MapPickerModal({
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
   const [suggestLoading, setSuggestLoading] = useState(false);
   const [pinned, setPinned] = useState<PinnedLocation | null>(null);
+  const [pinnedLabel, setPinnedLabel] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const mapRef = useRef<LeafletInstance>(null);
   const markerRef = useRef<LeafletInstance>(null);
   const LRef = useRef<LeafletInstance>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Stable ref so the Leaflet click handler (captured in a closure) can always
+  // call the latest version of reverseGeocodeNominatim without stale closure issues.
+  const reverseGeoRef = useRef<
+    ((lat: number, lng: number) => Promise<string | null>) | undefined
+  >(undefined);
 
-  // Callback ref — fires exactly when the div is mounted into the Radix portal
+  // Callback ref — fires exactly when the div is mounted into the Radix portal.
   // useRef + useEffect([open]) does NOT work because the portal DOM node
-  // doesn't exist yet when the effect runs
+  // doesn't exist yet when the effect runs.
   const mapDivRef = useCallback((node: HTMLDivElement | null) => {
     if (!node || mapRef.current) return;
 
-    console.log(
-      "[MAP DEBUG] callback ref fired, node dimensions:",
-      node.offsetWidth,
-      node.offsetHeight,
-    );
-
     import("leaflet").then((L) => {
-      if (mapRef.current) return; // already init (StrictMode double-fire guard)
+      if (mapRef.current) return; // StrictMode double-fire guard
+
       LRef.current = L;
 
+      // Fix default marker icons under Vite
       delete (L.Icon.Default.prototype as LeafletInstance)._getIconUrl;
       L.Icon.Default.mergeOptions({
         iconUrl: new URL("leaflet/dist/images/marker-icon.png", import.meta.url)
@@ -257,30 +262,39 @@ function MapPickerModal({
       }).addTo(map);
 
       map.on("click", (e: { latlng: { lat: number; lng: number } }) => {
-        placePin(e.latlng.lat, e.latlng.lng, false);
+        const { lat, lng } = e.latlng;
+        placePin(lat, lng, false);
         setSuggestionsOpen(false);
+        setQuery("");
+        // Reverse geocode in background — update address field when ready
+        reverseGeoRef.current?.(lat, lng).then((name) => {
+          if (name) {
+            setPinnedLabel(name);
+            setQuery(name);
+          }
+        });
       });
 
       mapRef.current = map;
       requestAnimationFrame(() => {
         map.invalidateSize();
-        console.log("[MAP DEBUG] invalidateSize, size:", map.getSize());
       });
     });
   }, []); // empty deps — stable ref, init once
 
-  // Reset on open
+  // Reset state when modal opens
   useEffect(() => {
     if (open) {
       setQuery(initialLocation);
       setSuggestions([]);
       setSuggestionsOpen(false);
       setPinned(null);
+      setPinnedLabel(null);
       setError(null);
     }
   }, [open, initialLocation]);
 
-  // Cleanup map on modal close
+  // Destroy map when modal closes to allow re-init on next open
   useEffect(() => {
     if (!open && mapRef.current) {
       mapRef.current.remove();
@@ -315,6 +329,32 @@ function MapPickerModal({
     }
   }, []);
 
+  // Nominatim reverse geocode — called when user clicks on the map.
+  // Returns display_name to fill the address field.
+  const reverseGeocodeNominatim = useCallback(
+    async (lat: number, lng: number): Promise<string | null> => {
+      try {
+        const url = new URL("https://nominatim.openstreetmap.org/reverse");
+        url.searchParams.set("lat", String(lat));
+        url.searchParams.set("lon", String(lng));
+        url.searchParams.set("format", "json");
+        url.searchParams.set("zoom", "18");
+        url.searchParams.set("addressdetails", "0");
+        const res = await fetch(url.toString(), {
+          headers: { "Accept-Language": "vi,en" },
+        });
+        if (!res.ok) return null;
+        const data = await res.json();
+        return (data.display_name as string) ?? null;
+      } catch {
+        return null;
+      }
+    },
+    [],
+  );
+  // Keep ref up to date so the Leaflet click closure always calls latest version
+  reverseGeoRef.current = reverseGeocodeNominatim;
+
   // Debounced Nominatim autocomplete
   const handleQueryChange = (value: string) => {
     setQuery(value);
@@ -335,7 +375,7 @@ function MapPickerModal({
         setSuggestions(results);
         setSuggestionsOpen(results.length > 0);
       } catch {
-        // Silent fail — suggestions are optional, don't block user
+        // Silent fail — suggestions are optional
         setSuggestions([]);
         setSuggestionsOpen(false);
       } finally {
@@ -350,6 +390,7 @@ function MapPickerModal({
     setQuery(item.display_name);
     setSuggestions([]);
     setSuggestionsOpen(false);
+    setPinnedLabel(item.display_name);
     placePin(lat, lng, true);
   };
 
@@ -359,43 +400,33 @@ function MapPickerModal({
     }
     if (e.key === "Enter") {
       e.preventDefault();
-      // If suggestions open, pick first one
       if (suggestionsOpen && suggestions.length > 0) {
         handleSelectSuggestion(suggestions[0]);
       }
     }
   };
 
-  const [confirming, setConfirming] = useState(false);
-
-  const handleConfirm = async () => {
-    if (!pinned) return;
-    setConfirming(true);
-    setError(null);
-    try {
-      // Gọi BE reverse geocode để lấy địa chỉ chuẩn từ lat/lng đã pin
-      // Chỉ gọi 1 lần tại đây — không gọi khi user đang click trên map
-      const result = await api.reverseGeocode(pinned.lat, pinned.lng);
+  const handleConfirm = () => {
+    if (pinned) {
+      // Pin placed — use reverse-geocoded label, fall back to typed query text
       onSelect({
-        formattedAddress: result.formattedAddress,
-        latitude: toCoord(result.latitude) ?? pinned.lat,
-        longitude: toCoord(result.longitude) ?? pinned.lng,
-        placeId: result.placeId,
-        locationType: result.locationType,
-      });
-      onClose();
-    } catch {
-      // Nếu reverse geocode fail → vẫn trả lat/lng, chỉ không có địa chỉ
-      onSelect({
-        formattedAddress: "",
+        formattedAddress: pinnedLabel ?? query,
         latitude: pinned.lat,
         longitude: pinned.lng,
       });
-      onClose();
-    } finally {
-      setConfirming(false);
+    } else {
+      // Text-only confirm — paste typed address into the location field, no coords
+      onSelect({
+        formattedAddress: query.trim(),
+        latitude: null,
+        longitude: null,
+      });
     }
+    onClose();
   };
+
+  // Confirm button is enabled when a pin is placed OR the user typed ≥3 chars
+  const canConfirm = pinned !== null || query.trim().length >= 3;
 
   return (
     <Dialog.Root open={open} onOpenChange={(o) => !o && onClose()}>
@@ -419,7 +450,8 @@ function MapPickerModal({
                 Chọn vị trí trang trại
               </p>
               <p className="text-xs text-ink-400">
-                Gõ địa chỉ để tìm kiếm, hoặc click trực tiếp trên bản đồ
+                Gõ địa chỉ rồi xác nhận, hoặc click trực tiếp trên bản đồ để
+                ghim vị trí
               </p>
             </div>
           </div>
@@ -483,7 +515,8 @@ function MapPickerModal({
             </div>
 
             <p className="text-xs text-ink-400 -mt-1">
-              Gõ ít nhất 3 ký tự để hiện gợi ý · Hoặc click thẳng lên bản đồ
+              Gõ ít nhất 3 ký tự để hiện gợi ý · Chọn gợi ý hoặc click thẳng lên
+              bản đồ để ghim tọa độ
             </p>
 
             {/* Error */}
@@ -501,11 +534,11 @@ function MapPickerModal({
               style={{ height: 300 }}
             />
 
-            {/* Pin status */}
+            {/* Pin / address status */}
             {pinned ? (
               <div className="flex items-center gap-2 px-3 py-2 bg-primary-50 border border-primary/20 rounded-btn">
                 <CheckCircle className="w-4 h-4 text-primary shrink-0" />
-                <span className="text-xs text-ink-500">Vị trí đã chọn:</span>
+                <span className="text-xs text-ink-500">Tọa độ đã ghim:</span>
                 <span className="text-xs font-mono text-primary-700">
                   {pinned.lat.toFixed(6)}, {pinned.lng.toFixed(6)}
                 </span>
@@ -513,6 +546,8 @@ function MapPickerModal({
                   type="button"
                   onClick={() => {
                     setPinned(null);
+                    setPinnedLabel(null);
+                    setQuery("");
                     if (markerRef.current) {
                       markerRef.current.remove();
                       markerRef.current = null;
@@ -523,6 +558,14 @@ function MapPickerModal({
                   Xóa pin
                 </button>
               </div>
+            ) : query.trim().length >= 3 ? (
+              <div className="flex items-center gap-2 px-3 py-2 bg-surface-subtle border border-border rounded-btn">
+                <MapPin className="w-4 h-4 text-ink-400 shrink-0" />
+                <span className="text-xs text-ink-500">
+                  Địa chỉ sẽ được dùng trực tiếp (không có tọa độ GPS). Chọn gợi
+                  ý hoặc click bản đồ để thêm tọa độ.
+                </span>
+              </div>
             ) : (
               <p className="text-xs text-ink-400 text-center py-1">
                 Chưa chọn vị trí
@@ -532,14 +575,10 @@ function MapPickerModal({
 
           {/* Footer */}
           <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-border shrink-0">
-            <Button variant="ghost" onClick={onClose} disabled={confirming}>
+            <Button variant="ghost" onClick={onClose}>
               Hủy
             </Button>
-            <Button
-              onClick={handleConfirm}
-              disabled={!pinned}
-              loading={confirming}
-            >
+            <Button onClick={handleConfirm} disabled={!canConfirm}>
               Xác nhận vị trí
             </Button>
           </div>
@@ -562,24 +601,16 @@ function FarmFormFields({
 }) {
   const [mapOpen, setMapOpen] = useState(false);
 
-  const handleGeocodeSelect = (result: GeocodeResultResponse) => {
-    setFormData((p) => {
-      // Dùng formattedAddress từ reverse geocode nếu có và không chứa Plus Code
-      // Plus Code pattern: chữ+số theo sau bởi dấu cộng, VD: "XF9X+XH9"
-      const hasPlusCode = /^[A-Z0-9]{4}\+[A-Z0-9]+/.test(
-        result.formattedAddress ?? "",
-      );
-      const newLocation =
-        result.formattedAddress && !hasPlusCode
-          ? result.formattedAddress
-          : p.location; // giữ nguyên địa chỉ user đã nhập
-      return {
-        ...p,
-        location: newLocation,
-        latitude: toCoord(result.latitude) ?? undefined,
-        longitude: toCoord(result.longitude) ?? undefined,
-      };
-    });
+  const handleGeocodeSelect = (result: MapPickerResult) => {
+    setFormData((p) => ({
+      ...p,
+      // Always update the address text
+      location: result.formattedAddress || p.location,
+      // Only overwrite coordinates when non-null (text-only confirm leaves coords unchanged)
+      ...(result.latitude != null && result.longitude != null
+        ? { latitude: result.latitude, longitude: result.longitude }
+        : {}),
+    }));
   };
 
   return (
@@ -597,22 +628,14 @@ function FarmFormFields({
           label="Địa chỉ"
           required
           value={formData.location}
-          onChange={(v) =>
-            setFormData((p) => ({
-              ...p,
-              location: v,
-              // Clear tọa độ khi user tự sửa text — cần geocode lại
-              latitude: undefined,
-              longitude: undefined,
-            }))
-          }
+          onChange={(v) => setFormData((p) => ({ ...p, location: v }))}
           placeholder="Đà Lạt, Lâm Đồng, Việt Nam"
           error={errors.location}
           trailingAddon={
             <button
               type="button"
               onClick={() => setMapOpen(true)}
-              title="Xác định tọa độ qua Google Maps"
+              title="Chọn tọa độ trên bản đồ"
               className="h-full px-2.5 border border-border-strong rounded-btn text-primary hover:bg-primary-50 hover:border-primary transition-colors"
             >
               <Globe className="w-4 h-4" />
@@ -621,7 +644,7 @@ function FarmFormFields({
         />
       </div>
 
-      {/* Tọa độ đã geocode */}
+      {/* Coordinates chip — only shown when coords are set */}
       {formData.latitude != null && formData.longitude != null && (
         <div className="flex items-center gap-2 px-3 py-2 bg-primary-50 border border-primary/20 rounded-btn">
           <MapPin className="w-3.5 h-3.5 text-primary shrink-0" />
@@ -791,13 +814,12 @@ function ViewFarmModal({
       setWeather(null);
       return;
     }
-    // Only fetch if farm has coordinates saved on BE
     if (farm.latitude == null || farm.longitude == null) return;
     setWeatherLoading(true);
     api
       .getWeatherCurrentByFarm(farm.id)
       .then((data) => setWeather(data))
-      .catch(() => setWeather(null)) // silent fail — weather is supplementary info
+      .catch(() => setWeather(null))
       .finally(() => setWeatherLoading(false));
   }, [open, farm.id, farm.latitude, farm.longitude]);
 
