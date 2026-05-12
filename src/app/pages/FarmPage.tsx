@@ -781,9 +781,32 @@ function FarmCard({
                   <div className="text-xs text-ink-400 uppercase mb-1">
                     Tọa độ GPS
                   </div>
-                  <div className="flex items-center gap-1.5 font-mono text-sm text-primary-700">
-                    <MapPin className="w-3.5 h-3.5 text-primary" />
-                    {fmtCoord(farm.latitude)}, {fmtCoord(farm.longitude)}
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                    <div className="flex items-center gap-1.5 font-mono text-sm text-primary-700">
+                      <MapPin className="w-3.5 h-3.5 text-primary shrink-0" />
+                      <span>
+                        <span className="font-sans text-xs text-ink-400 mr-1">
+                          Vĩ độ
+                        </span>
+                        {fmtCoord(farm.latitude)}
+                      </span>
+                      <span className="text-ink-300 mx-0.5">/</span>
+                      <span>
+                        <span className="font-sans text-xs text-ink-400 mr-1">
+                          Kinh độ
+                        </span>
+                        {fmtCoord(farm.longitude)}
+                      </span>
+                    </div>
+                    <a
+                      href={`https://www.google.com/maps?q=${farm.latitude},${farm.longitude}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                    >
+                      <Globe className="w-3 h-3" />
+                      Xem bản đồ
+                    </a>
                   </div>
                 </div>
               )}
@@ -828,15 +851,12 @@ function ViewFarmModal({
     { label: "Diện tích", value: `${farm.area.toLocaleString()} m²` },
     { label: "Trạng thái", value: farmStatusLabel(farm.status) },
     { label: "Ngày tạo", value: farm.createdAt },
-    ...(farm.latitude != null && farm.longitude != null
-      ? [
-          {
-            label: "Tọa độ GPS",
-            value: `${fmtCoord(farm.latitude)}, ${fmtCoord(farm.longitude)}`,
-          },
-        ]
-      : []),
   ];
+
+  const hasCoords = farm.latitude != null && farm.longitude != null;
+  const mapsUrl = hasCoords
+    ? `https://www.google.com/maps?q=${farm.latitude},${farm.longitude}`
+    : null;
 
   return (
     <Modal
@@ -864,6 +884,41 @@ function ViewFarmModal({
             </span>
           </div>
         ))}
+        {/* GPS coordinates — shown only when available */}
+        {hasCoords && (
+          <div className="py-2 border-b border-surface-subtle last:border-0">
+            <div className="flex justify-between items-start">
+              <span className="text-sm text-ink-500 shrink-0">Tọa độ GPS</span>
+              <div className="text-right ml-4">
+                <div className="flex items-center gap-3 justify-end text-sm font-mono text-primary-700">
+                  <span>
+                    <span className="text-xs font-sans text-ink-400 mr-1">
+                      Vĩ độ
+                    </span>
+                    {fmtCoord(farm.latitude)}
+                  </span>
+                  <span>
+                    <span className="text-xs font-sans text-ink-400 mr-1">
+                      Kinh độ
+                    </span>
+                    {fmtCoord(farm.longitude)}
+                  </span>
+                </div>
+                {mapsUrl && (
+                  <a
+                    href={mapsUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 mt-1 text-xs text-primary hover:underline"
+                  >
+                    <MapPin className="w-3 h-3" />
+                    Xem trên bản đồ
+                  </a>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Weather section — only shown if farm has coordinates */}
