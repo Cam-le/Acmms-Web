@@ -24,6 +24,7 @@ import {
   CheckCircle,
   AlertCircle,
   Loader2,
+  X,
 } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as Collapsible from "@radix-ui/react-collapsible";
@@ -138,119 +139,65 @@ function fmtCoord(v: number | string | null | undefined): string {
   return n != null ? n.toFixed(6) : "—";
 }
 
-// ─── MapPickerModal ───────────────────────────────────────────────────────
-// Leaflet + OpenStreetMap (miễn phí, không giới hạn, không bản đồ TQ)
-// Flow:
-//   A) Tìm địa chỉ → geocode BE → pin nhảy đến kết quả
-//   B) Click trực tiếp trên bản đồ → đặt pin tại đó
-// Xác nhận → trả về { latitude, longitude }
 
-// Leaflet CSS — inject once
+// ─── MapPickerModal ───────────────────────────────────────────────────────
+// Leaflet + OpenStreetMap tiles (miễn phí, không TQ)
+// Autocomplete: Nominatim (OSM) — free, no API key, hỗ trợ địa chỉ VN
+// Flow:
+//   A) Gõ địa chỉ → debounce 400ms → Nominatim suggestions dropdown
+//      Chọn suggestion → pin + flyTo
+//   B) Click trực tiếp trên bản đồ → đặt pin
+// Xác nhận → trả về { latitude, longitude }
+//
+// Nominatim usage policy: 1 req/s max — debounce 400ms đủ safe cho typing
+
+// Inject Leaflet CSS once at module level
 if (typeof document !== "undefined") {
-  const id = "leaflet-css";
-  if (!document.getElementById(id)) {
+  const LEAFLET_CSS_ID = "leaflet-css";
+  if (!document.getElementById(LEAFLET_CSS_ID)) {
     const link = document.createElement("link");
-    link.id = id;
+    link.id = LEAFLET_CSS_ID;
     link.rel = "stylesheet";
     link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
     document.head.appendChild(link);
   }
 }
 
-// Default center: Việt Nam
 const VN_CENTER: [number, number] = [16.047079, 108.20623];
 const VN_ZOOM = 6;
 
-interface PinnedLocation {
-  lat: number;
-  lng: number;
+interface PinnedLocation { lat: number; lng: number }
+interface NominatimResult {
+  place_id: number;
+  display_name: string;
+  lat: string;
+  lon: string;
 }
 
-// Inner map component — loaded lazily to avoid SSR issues with Leaflet
-function LeafletMapInner({
-  pinned,
-  onMapClick,
-}: {
-  pinned: PinnedLocation | null;
-  onMapClick: (lat: number, lng: number) => void;
-}) {
-  const mapRef = useRef<HTMLDivElement>(null);
-  const leafletMap = useRef<unknown>(null);
-  const markerRef = useRef<unknown>(null);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type LeafletInstance = any;
 
-  useEffect(() => {
-    // Dynamically import Leaflet to avoid window-is-not-defined in SSR
-    import("leaflet").then((L) => {
-      if (!mapRef.current || leafletMap.current) return;
-
-      // Fix default icon paths broken by Vite bundling
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      delete (L.Icon.Default.prototype as any)._getIconUrl;
-      L.Icon.Default.mergeOptions({
-        iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-        iconRetinaUrl:
-          "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
-        shadowUrl:
-          "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
-      });
-
-      const map = L.map(mapRef.current).setView(VN_CENTER, VN_ZOOM);
-
-      // OpenStreetMap tile — free, open data, no Chinese map
-      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        attribution:
-          '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-        maxZoom: 19,
-      }).addTo(map);
-
-      map.on("click", (e: { latlng: { lat: number; lng: number } }) => {
-        onMapClick(e.latlng.lat, e.latlng.lng);
-      });
-
-      leafletMap.current = map;
-    });
-
-    return () => {
-      if (leafletMap.current) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (leafletMap.current as any).remove();
-        leafletMap.current = null;
-        markerRef.current = null;
-      }
-    };
-    // onMapClick ref is stable — no need in deps
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Update/move marker when pinned changes
-  useEffect(() => {
-    if (!leafletMap.current) return;
-    import("leaflet").then((L) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const map = leafletMap.current as any;
-      if (!map) return;
-
-      if (markerRef.current) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (markerRef.current as any).remove();
-        markerRef.current = null;
-      }
-
-      if (pinned) {
-        const marker = L.marker([pinned.lat, pinned.lng]).addTo(map);
-        markerRef.current = marker;
-        map.setView([pinned.lat, pinned.lng], Math.max(map.getZoom(), 14));
-      }
-    });
-  }, [pinned]);
-
-  return (
-    <div
-      ref={mapRef}
-      className="w-full rounded-btn overflow-hidden border border-border"
-      style={{ height: 320 }}
-    />
+async function fetchNominatimSuggestions(query: string): Promise<NominatimResult[]> {
+  const params = new URLSearchParams({
+    q: query,
+    format: "json",
+    addressdetails: "0",
+    limit: "6",
+    // Bias results toward Vietnam — helps surface VN results first
+    countrycodes: "vn",
+    "accept-language": "vi",
+  });
+  const res = await fetch(
+    `https://nominatim.openstreetmap.org/search?${params}`,
+    {
+      headers: {
+        // Nominatim policy requires a descriptive User-Agent
+        "User-Agent": "CMMS-FarmManagement/1.0",
+      },
+    },
   );
+  if (!res.ok) throw new Error("Nominatim request failed");
+  return res.json();
 }
 
 function MapPickerModal({
@@ -265,68 +212,176 @@ function MapPickerModal({
   initialLocation?: string;
 }) {
   const [query, setQuery] = useState(initialLocation);
-  const [geocoding, setGeocoding] = useState(false);
-  const [geocodeError, setGeocodeError] = useState<string | null>(null);
+  const [suggestions, setSuggestions] = useState<NominatimResult[]>([]);
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
+  const [suggestLoading, setSuggestLoading] = useState(false);
   const [pinned, setPinned] = useState<PinnedLocation | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  // Stable callback ref so LeafletMapInner useEffect doesn't re-run
-  const onMapClickRef = useRef<(lat: number, lng: number) => void>(() => {});
-  onMapClickRef.current = (lat: number, lng: number) => {
-    setPinned({ lat, lng });
-    setGeocodeError(null);
-  };
-  const stableOnMapClick = useCallback(
-    (lat: number, lng: number) => onMapClickRef.current(lat, lng),
-    [],
-  );
+  // Leaflet refs — never trigger re-render
+  const mapDivRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<LeafletInstance>(null);
+  const markerRef = useRef<LeafletInstance>(null);
+  const LRef = useRef<LeafletInstance>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Reset on open
   useEffect(() => {
     if (open) {
       setQuery(initialLocation);
+      setSuggestions([]);
+      setSuggestionsOpen(false);
       setPinned(null);
-      setGeocodeError(null);
-      setGeocoding(false);
+      setError(null);
     }
   }, [open, initialLocation]);
 
-  const handleGeocode = async () => {
-    const trimmed = query.trim();
-    if (!trimmed) return;
-    setGeocoding(true);
-    setGeocodeError(null);
-    try {
-      const result = await api.geocodeAddress(trimmed);
-      const lat = toCoord(result.latitude);
-      const lng = toCoord(result.longitude);
-      if (lat == null || lng == null) throw new Error("Tọa độ không hợp lệ");
-      setPinned({ lat, lng });
-    } catch (err) {
-      setGeocodeError(
-        err instanceof Error
-          ? err.message
-          : "Không thể tìm tọa độ cho địa chỉ này",
-      );
-    } finally {
-      setGeocoding(false);
+  // Init Leaflet once — deferred via setTimeout so Radix Dialog portal
+  // has fully painted and mapDivRef has real dimensions before init
+  useEffect(() => {
+    if (!open || !mapDivRef.current || mapRef.current) return;
+
+    const init = () => {
+      import("leaflet").then((L) => {
+        if (!mapDivRef.current || mapRef.current) return;
+        LRef.current = L;
+
+        delete (L.Icon.Default.prototype as LeafletInstance)._getIconUrl;
+        L.Icon.Default.mergeOptions({
+          iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+          iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
+          shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+        });
+
+        const map = L.map(mapDivRef.current).setView(VN_CENTER, VN_ZOOM);
+
+        L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+          attribution:
+            '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+          maxZoom: 19,
+        }).addTo(map);
+
+        map.on("click", (e: { latlng: { lat: number; lng: number } }) => {
+          placePin(e.latlng.lat, e.latlng.lng, false);
+          setSuggestionsOpen(false);
+        });
+
+        mapRef.current = map;
+
+        // Force Leaflet to recalculate tile layout after container is visible
+        setTimeout(() => map.invalidateSize(), 100);
+      });
+    };
+
+    // Defer past Radix Dialog's portal animation frame
+    const t = setTimeout(init, 50);
+
+    return () => {
+      clearTimeout(t);
+      if (mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current = null;
+        markerRef.current = null;
+        LRef.current = null;
+      }
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  const placePin = useCallback((lat: number, lng: number, flyTo = true) => {
+    setPinned({ lat, lng });
+    setError(null);
+
+    const map = mapRef.current;
+    const L = LRef.current;
+    if (!map || !L) return;
+
+    if (markerRef.current) { markerRef.current.remove(); markerRef.current = null; }
+    markerRef.current = L.marker([lat, lng]).addTo(map);
+
+    const zoom = Math.max(map.getZoom(), 15);
+    if (flyTo) {
+      map.flyTo([lat, lng], zoom, { duration: 1 });
+    } else {
+      map.setView([lat, lng], zoom);
     }
+  }, []);
+
+  // Debounced Nominatim autocomplete
+  const handleQueryChange = (value: string) => {
+    setQuery(value);
+    setError(null);
+
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+
+    if (value.trim().length < 3) {
+      setSuggestions([]);
+      setSuggestionsOpen(false);
+      return;
+    }
+
+    setSuggestLoading(true);
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const results = await fetchNominatimSuggestions(value.trim());
+        setSuggestions(results);
+        setSuggestionsOpen(results.length > 0);
+      } catch {
+        // Silent fail — suggestions are optional, don't block user
+        setSuggestions([]);
+        setSuggestionsOpen(false);
+      } finally {
+        setSuggestLoading(false);
+      }
+    }, 400);
+  };
+
+  const handleSelectSuggestion = (item: NominatimResult) => {
+    const lat = parseFloat(item.lat);
+    const lng = parseFloat(item.lon);
+    setQuery(item.display_name);
+    setSuggestions([]);
+    setSuggestionsOpen(false);
+    placePin(lat, lng, true);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Escape") { setSuggestionsOpen(false); }
     if (e.key === "Enter") {
       e.preventDefault();
-      handleGeocode();
+      // If suggestions open, pick first one
+      if (suggestionsOpen && suggestions.length > 0) {
+        handleSelectSuggestion(suggestions[0]);
+      }
     }
   };
 
-  const handleConfirm = () => {
+  const [confirming, setConfirming] = useState(false);
+
+  const handleConfirm = async () => {
     if (!pinned) return;
-    // Return minimal GeocodeResultResponse — only lat/lng matter for our use case
-    onSelect({
-      formattedAddress: "", // caller ignores this (we no longer overwrite location)
-      latitude: pinned.lat,
-      longitude: pinned.lng,
-    });
-    onClose();
+    setConfirming(true);
+    setError(null);
+    try {
+      // Gọi BE reverse geocode để lấy địa chỉ chuẩn từ lat/lng đã pin
+      // Chỉ gọi 1 lần tại đây — không gọi khi user đang click trên map
+      const result = await api.reverseGeocode(pinned.lat, pinned.lng);
+      onSelect({
+        formattedAddress: result.formattedAddress,
+        latitude: toCoord(result.latitude) ?? pinned.lat,
+        longitude: toCoord(result.longitude) ?? pinned.lng,
+        placeId: result.placeId,
+        locationType: result.locationType,
+      });
+      onClose();
+    } catch {
+      // Nếu reverse geocode fail → vẫn trả lat/lng, chỉ không có địa chỉ
+      onSelect({ formattedAddress: "", latitude: pinned.lat, longitude: pinned.lng });
+      onClose();
+    } finally {
+      setConfirming(false);
+    }
   };
 
   return (
@@ -334,11 +389,9 @@ function MapPickerModal({
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 bg-black/50 z-[60]" />
         <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-surface rounded-modal shadow-modal w-[calc(100%-2rem)] max-w-2xl z-[60] flex flex-col max-h-[90vh] overflow-hidden">
-          <Dialog.Title className="sr-only">
-            Chọn vị trí trên bản đồ
-          </Dialog.Title>
+          <Dialog.Title className="sr-only">Chọn vị trí trên bản đồ</Dialog.Title>
           <Dialog.Description className="sr-only">
-            Tìm địa chỉ hoặc click trực tiếp trên bản đồ để chọn vị trí
+            Gõ địa chỉ để tìm kiếm hoặc click trực tiếp trên bản đồ
           </Dialog.Description>
 
           {/* Header */}
@@ -347,56 +400,88 @@ function MapPickerModal({
               <Globe className="w-4 h-4 text-primary" />
             </div>
             <div className="min-w-0">
-              <p className="text-base font-bold text-ink-800">
-                Chọn vị trí trang trại
-              </p>
+              <p className="text-base font-bold text-ink-800">Chọn vị trí trang trại</p>
               <p className="text-xs text-ink-400">
-                OpenStreetMap · Tìm địa chỉ hoặc click trực tiếp trên bản đồ
+                Gõ địa chỉ để tìm kiếm, hoặc click trực tiếp trên bản đồ
               </p>
             </div>
           </div>
 
           {/* Body */}
           <div className="px-6 py-4 flex flex-col gap-3 overflow-y-auto flex-1">
-            {/* Search bar */}
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={query}
-                onChange={(e) => {
-                  setQuery(e.target.value);
-                  setGeocodeError(null);
-                }}
-                onKeyDown={handleKeyDown}
-                placeholder="Nhập địa chỉ rồi bấm Tìm, hoặc click thẳng lên bản đồ"
-                disabled={geocoding}
-                className="flex-1 min-w-0 px-3 py-2.5 border border-border-strong rounded-btn text-sm text-ink-700 bg-surface focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50"
-              />
-              <Button
-                onClick={handleGeocode}
-                loading={geocoding}
-                disabled={!query.trim()}
-                leadingIcon={Search}
-                size="md"
-              >
-                Tìm
-              </Button>
+
+            {/* Search with autocomplete */}
+            <div className="relative">
+              <div className="flex items-center gap-2 border border-border-strong rounded-btn bg-surface px-3 focus-within:ring-2 focus-within:ring-primary">
+                <Search className="w-4 h-4 text-ink-400 shrink-0" />
+                <input
+                  type="text"
+                  value={query}
+                  onChange={(e) => handleQueryChange(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  onFocus={() => suggestions.length > 0 && setSuggestionsOpen(true)}
+                  placeholder="Gõ tên đường, phường, quận, tỉnh... (VD: Hoàng Bá Huân, Củ Chi)"
+                  className="flex-1 py-2.5 text-sm text-ink-700 bg-transparent outline-none placeholder:text-ink-400"
+                  autoComplete="off"
+                />
+                {suggestLoading && (
+                  <Loader2 className="w-4 h-4 animate-spin text-primary shrink-0" />
+                )}
+                {query && !suggestLoading && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setQuery("");
+                      setSuggestions([]);
+                      setSuggestionsOpen(false);
+                    }}
+                    className="text-ink-400 hover:text-ink-700 shrink-0"
+                    tabIndex={-1}
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+
+              {/* Suggestions dropdown */}
+              {suggestionsOpen && suggestions.length > 0 && (
+                <ul className="absolute top-full left-0 right-0 mt-1 bg-surface border border-border rounded-btn shadow-modal z-10 max-h-52 overflow-y-auto">
+                  {suggestions.map((item) => (
+                    <li key={item.place_id}>
+                      <button
+                        type="button"
+                        onClick={() => handleSelectSuggestion(item)}
+                        className="w-full text-left px-3 py-2.5 text-sm text-ink-700 hover:bg-primary-50 hover:text-primary-700 transition-colors flex items-start gap-2"
+                      >
+                        <MapPin className="w-3.5 h-3.5 text-ink-400 shrink-0 mt-0.5" />
+                        <span className="line-clamp-2">{item.display_name}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
 
-            {/* Geocode error */}
-            {geocodeError && (
+            <p className="text-xs text-ink-400 -mt-1">
+              Gõ ít nhất 3 ký tự để hiện gợi ý · Hoặc click thẳng lên bản đồ
+            </p>
+
+            {/* Error */}
+            {error && (
               <div className="flex items-start gap-2 p-3 bg-status-danger-bg/40 border border-status-danger-fg/20 rounded-btn">
                 <AlertCircle className="w-4 h-4 text-status-danger-fg mt-0.5 shrink-0" />
-                <p className="text-sm text-status-danger-fg">{geocodeError}</p>
+                <p className="text-sm text-status-danger-fg">{error}</p>
               </div>
             )}
 
             {/* Map */}
-            {open && (
-              <LeafletMapInner pinned={pinned} onMapClick={stableOnMapClick} />
-            )}
+            <div
+              ref={mapDivRef}
+              className="w-full rounded-btn overflow-hidden border border-border"
+              style={{ height: 300 }}
+            />
 
-            {/* Selected coords */}
+            {/* Pin status */}
             {pinned ? (
               <div className="flex items-center gap-2 px-3 py-2 bg-primary-50 border border-primary/20 rounded-btn">
                 <CheckCircle className="w-4 h-4 text-primary shrink-0" />
@@ -404,20 +489,28 @@ function MapPickerModal({
                 <span className="text-xs font-mono text-primary-700">
                   {pinned.lat.toFixed(6)}, {pinned.lng.toFixed(6)}
                 </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPinned(null);
+                    if (markerRef.current) { markerRef.current.remove(); markerRef.current = null; }
+                  }}
+                  className="ml-auto text-xs text-ink-400 hover:text-status-danger-fg transition-colors"
+                >
+                  Xóa pin
+                </button>
               </div>
             ) : (
-              <p className="text-xs text-ink-400 text-center">
-                Chưa chọn vị trí — tìm địa chỉ hoặc click trên bản đồ
+              <p className="text-xs text-ink-400 text-center py-1">
+                Chưa chọn vị trí
               </p>
             )}
           </div>
 
           {/* Footer */}
           <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-border shrink-0">
-            <Button variant="ghost" onClick={onClose}>
-              Hủy
-            </Button>
-            <Button onClick={handleConfirm} disabled={!pinned}>
+            <Button variant="ghost" onClick={onClose} disabled={confirming}>Hủy</Button>
+            <Button onClick={handleConfirm} disabled={!pinned} loading={confirming}>
               Xác nhận vị trí
             </Button>
           </div>
@@ -441,13 +534,21 @@ function FarmFormFields({
   const [mapOpen, setMapOpen] = useState(false);
 
   const handleGeocodeSelect = (result: GeocodeResultResponse) => {
-    setFormData((p) => ({
-      ...p,
-      // Giữ nguyên địa chỉ user nhập — KHÔNG overwrite bằng formattedAddress
-      // vì Google có thể thêm Plus Code (VD: "XF9X+XH9, ...") vào formattedAddress
-      latitude: toCoord(result.latitude) ?? undefined,
-      longitude: toCoord(result.longitude) ?? undefined,
-    }));
+    setFormData((p) => {
+      // Dùng formattedAddress từ reverse geocode nếu có và không chứa Plus Code
+      // Plus Code pattern: chữ+số theo sau bởi dấu cộng, VD: "XF9X+XH9"
+      const hasPlusCode = /^[A-Z0-9]{4}\+[A-Z0-9]+/.test(result.formattedAddress ?? "");
+      const newLocation =
+        result.formattedAddress && !hasPlusCode
+          ? result.formattedAddress
+          : p.location; // giữ nguyên địa chỉ user đã nhập
+      return {
+        ...p,
+        location: newLocation,
+        latitude: toCoord(result.latitude) ?? undefined,
+        longitude: toCoord(result.longitude) ?? undefined,
+      };
+    });
   };
 
   return (
@@ -496,9 +597,7 @@ function FarmFormFields({
           <span className="text-xs text-primary-700 font-mono">
             {fmtCoord(formData.latitude)}, {fmtCoord(formData.longitude)}
           </span>
-          <span className="text-xs text-ink-400 ml-1">
-            · Tọa độ đã xác định
-          </span>
+          <span className="text-xs text-ink-400 ml-1">· Tọa độ đã xác định</span>
           <button
             type="button"
             onClick={() =>
@@ -662,8 +761,7 @@ function ViewFarmModal({
     // Only fetch if farm has coordinates saved on BE
     if (farm.latitude == null || farm.longitude == null) return;
     setWeatherLoading(true);
-    api
-      .getWeatherCurrentByFarm(farm.id)
+    api.getWeatherCurrentByFarm(farm.id)
       .then((data) => setWeather(data))
       .catch(() => setWeather(null)) // silent fail — weather is supplementary info
       .finally(() => setWeatherLoading(false));
@@ -713,7 +811,7 @@ function ViewFarmModal({
       </div>
 
       {/* Weather section — only shown if farm has coordinates */}
-      {farm.latitude != null && farm.longitude != null && (
+      {(farm.latitude != null && farm.longitude != null) && (
         <div className="border-t border-border pt-4">
           <p className="text-xs font-semibold text-ink-400 uppercase mb-3">
             Thời tiết hiện tại
@@ -760,14 +858,8 @@ function ViewFarmModal({
               {/* Detail grid */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 border-t border-primary/10">
                 <WeatherStat label="Độ ẩm" value={`${weather.humidity}%`} />
-                <WeatherStat
-                  label="Gió"
-                  value={`${weather.windKph} km/h ${weather.windDir ?? ""}`}
-                />
-                <WeatherStat
-                  label="Lượng mưa"
-                  value={`${weather.precipMm} mm`}
-                />
+                <WeatherStat label="Gió" value={`${weather.windKph} km/h ${weather.windDir ?? ""}`} />
+                <WeatherStat label="Lượng mưa" value={`${weather.precipMm} mm`} />
                 <WeatherStat label="UV" value={`${weather.uv}`} />
               </div>
 
