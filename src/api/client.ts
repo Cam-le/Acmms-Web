@@ -1023,7 +1023,10 @@ export const api = {
       "GET",
       `/api/Maps/reverse?lat=${lat}&lng=${lng}`,
     ),
-  updateFarmCoordinates: (farmId: string, body: UpdateFarmCoordinatesRequest) =>
+  updateFarmCoordinates: (
+    farmId: string,
+    body: UpdateFarmCoordinatesRequest,
+  ) =>
     request<unknown>("PUT", `/api/Maps/farm/${farmId}/coordinates`, body),
 
   // Weather
