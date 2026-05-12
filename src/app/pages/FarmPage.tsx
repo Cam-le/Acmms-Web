@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useToast } from "../components/ui/useToast";
 import { ToastContainer } from "../components/ui/ToastContainer";
 import { Button } from "../components/ui/Button";
@@ -27,7 +27,12 @@ import {
 } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as Collapsible from "@radix-ui/react-collapsible";
-import { api, FarmResponse, GeocodeResultResponse } from "../../api/client";
+import {
+  api,
+  FarmResponse,
+  GeocodeResultResponse,
+  WeatherCurrentResponse,
+} from "../../api/client";
 
 // ─── Local Types ──────────────────────────────────────────────────────────
 
@@ -65,7 +70,7 @@ function mapFarm(f: FarmResponse): Farm {
   return {
     id: f.farmId,
     name: f.farmName ?? "",
-    location: f.farmLocation ?? "",
+    location: stripPlusCode(f.farmLocation ?? ""),
     status: f.farmStatus === "Active" ? "Hoạt động" : "Không hoạt động",
     area: f.farmArea ?? 0,
     createdAt: f.farmCreatedAt
@@ -113,9 +118,15 @@ const STATUS_OPTIONS: Array<{ value: FarmStatus; label: string }> = [
 ];
 
 /**
- * Safely parse a coord value from the API.
- * Backend may return latitude/longitude as string or number — both are handled.
+ * Strip Google Plus Codes from a formatted address.
+ * Plus Codes look like "XF9X+XH9, " at the start of the address.
+ * We display the cleaned version — DB value is unchanged.
  */
+function stripPlusCode(address: string): string {
+  // Pattern: 4-8 alphanum chars + "+" + 2-3 chars, followed by optional comma+space
+  return address.replace(/^[A-Z0-9]{4,8}\+[A-Z0-9]{2,3},?\s*/i, "").trim();
+}
+
 function toCoord(v: number | string | null | undefined): number | null {
   if (v == null) return null;
   const n = typeof v === "string" ? parseFloat(v) : v;
@@ -128,14 +139,119 @@ function fmtCoord(v: number | string | null | undefined): string {
 }
 
 // ─── MapPickerModal ───────────────────────────────────────────────────────
-// Geocode địa chỉ qua BE (Google Maps API)
-// Flow: nhập địa chỉ → Tìm → xem kết quả → Xác nhận
+// Leaflet + OpenStreetMap (miễn phí, không giới hạn, không bản đồ TQ)
+// Flow:
+//   A) Tìm địa chỉ → geocode BE → pin nhảy đến kết quả
+//   B) Click trực tiếp trên bản đồ → đặt pin tại đó
+// Xác nhận → trả về { latitude, longitude }
 
-type GeocodeState =
-  | { status: "idle" }
-  | { status: "loading" }
-  | { status: "success"; result: GeocodeResultResponse }
-  | { status: "error"; message: string };
+// Leaflet CSS — inject once
+if (typeof document !== "undefined") {
+  const id = "leaflet-css";
+  if (!document.getElementById(id)) {
+    const link = document.createElement("link");
+    link.id = id;
+    link.rel = "stylesheet";
+    link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+    document.head.appendChild(link);
+  }
+}
+
+// Default center: Việt Nam
+const VN_CENTER: [number, number] = [16.047079, 108.20623];
+const VN_ZOOM = 6;
+
+interface PinnedLocation {
+  lat: number;
+  lng: number;
+}
+
+// Inner map component — loaded lazily to avoid SSR issues with Leaflet
+function LeafletMapInner({
+  pinned,
+  onMapClick,
+}: {
+  pinned: PinnedLocation | null;
+  onMapClick: (lat: number, lng: number) => void;
+}) {
+  const mapRef = useRef<HTMLDivElement>(null);
+  const leafletMap = useRef<unknown>(null);
+  const markerRef = useRef<unknown>(null);
+
+  useEffect(() => {
+    // Dynamically import Leaflet to avoid window-is-not-defined in SSR
+    import("leaflet").then((L) => {
+      if (!mapRef.current || leafletMap.current) return;
+
+      // Fix default icon paths broken by Vite bundling
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      delete (L.Icon.Default.prototype as any)._getIconUrl;
+      L.Icon.Default.mergeOptions({
+        iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+        iconRetinaUrl:
+          "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
+        shadowUrl:
+          "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+      });
+
+      const map = L.map(mapRef.current).setView(VN_CENTER, VN_ZOOM);
+
+      // OpenStreetMap tile — free, open data, no Chinese map
+      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution:
+          '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        maxZoom: 19,
+      }).addTo(map);
+
+      map.on("click", (e: { latlng: { lat: number; lng: number } }) => {
+        onMapClick(e.latlng.lat, e.latlng.lng);
+      });
+
+      leafletMap.current = map;
+    });
+
+    return () => {
+      if (leafletMap.current) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (leafletMap.current as any).remove();
+        leafletMap.current = null;
+        markerRef.current = null;
+      }
+    };
+    // onMapClick ref is stable — no need in deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Update/move marker when pinned changes
+  useEffect(() => {
+    if (!leafletMap.current) return;
+    import("leaflet").then((L) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const map = leafletMap.current as any;
+      if (!map) return;
+
+      if (markerRef.current) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (markerRef.current as any).remove();
+        markerRef.current = null;
+      }
+
+      if (pinned) {
+        const marker = L.marker([pinned.lat, pinned.lng]).addTo(map);
+        markerRef.current = marker;
+        map.setView([pinned.lat, pinned.lng], Math.max(map.getZoom(), 14));
+      }
+    });
+  }, [pinned]);
+
+  return (
+    <div
+      ref={mapRef}
+      className="w-full rounded-btn overflow-hidden border border-border"
+      style={{ height: 320 }}
+    />
+  );
+}
 
 function MapPickerModal({
   open,
@@ -149,32 +265,49 @@ function MapPickerModal({
   initialLocation?: string;
 }) {
   const [query, setQuery] = useState(initialLocation);
-  const [geocodeState, setGeocodeState] = useState<GeocodeState>({
-    status: "idle",
-  });
+  const [geocoding, setGeocoding] = useState(false);
+  const [geocodeError, setGeocodeError] = useState<string | null>(null);
+  const [pinned, setPinned] = useState<PinnedLocation | null>(null);
+
+  // Stable callback ref so LeafletMapInner useEffect doesn't re-run
+  const onMapClickRef = useRef<(lat: number, lng: number) => void>(() => {});
+  onMapClickRef.current = (lat: number, lng: number) => {
+    setPinned({ lat, lng });
+    setGeocodeError(null);
+  };
+  const stableOnMapClick = useCallback(
+    (lat: number, lng: number) => onMapClickRef.current(lat, lng),
+    [],
+  );
 
   useEffect(() => {
     if (open) {
       setQuery(initialLocation);
-      setGeocodeState({ status: "idle" });
+      setPinned(null);
+      setGeocodeError(null);
+      setGeocoding(false);
     }
   }, [open, initialLocation]);
 
   const handleGeocode = async () => {
     const trimmed = query.trim();
     if (!trimmed) return;
-    setGeocodeState({ status: "loading" });
+    setGeocoding(true);
+    setGeocodeError(null);
     try {
       const result = await api.geocodeAddress(trimmed);
-      setGeocodeState({ status: "success", result });
+      const lat = toCoord(result.latitude);
+      const lng = toCoord(result.longitude);
+      if (lat == null || lng == null) throw new Error("Tọa độ không hợp lệ");
+      setPinned({ lat, lng });
     } catch (err) {
-      setGeocodeState({
-        status: "error",
-        message:
-          err instanceof Error
-            ? err.message
-            : "Không thể tìm tọa độ cho địa chỉ này",
-      });
+      setGeocodeError(
+        err instanceof Error
+          ? err.message
+          : "Không thể tìm tọa độ cho địa chỉ này",
+      );
+    } finally {
+      setGeocoding(false);
     }
   };
 
@@ -186,140 +319,105 @@ function MapPickerModal({
   };
 
   const handleConfirm = () => {
-    if (geocodeState.status !== "success" || !geocodeState.result) return;
-    onSelect(geocodeState.result);
+    if (!pinned) return;
+    // Return minimal GeocodeResultResponse — only lat/lng matter for our use case
+    onSelect({
+      formattedAddress: "", // caller ignores this (we no longer overwrite location)
+      latitude: pinned.lat,
+      longitude: pinned.lng,
+    });
     onClose();
   };
-
-  const isLoading = geocodeState.status === "loading";
 
   return (
     <Dialog.Root open={open} onOpenChange={(o) => !o && onClose()}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 bg-black/50 z-[60]" />
-        <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-surface rounded-modal shadow-modal w-[calc(100%-2rem)] max-w-md z-[60] flex flex-col max-h-[90vh] overflow-hidden">
-          <Dialog.Title className="sr-only">Tìm tọa độ địa chỉ</Dialog.Title>
+        <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-surface rounded-modal shadow-modal w-[calc(100%-2rem)] max-w-2xl z-[60] flex flex-col max-h-[90vh] overflow-hidden">
+          <Dialog.Title className="sr-only">
+            Chọn vị trí trên bản đồ
+          </Dialog.Title>
           <Dialog.Description className="sr-only">
-            Nhập địa chỉ để tìm tọa độ bằng Google Maps
+            Tìm địa chỉ hoặc click trực tiếp trên bản đồ để chọn vị trí
           </Dialog.Description>
 
           {/* Header */}
-          <div className="flex items-center gap-3 px-6 py-4 border-b border-border">
+          <div className="flex items-center gap-3 px-6 py-4 border-b border-border shrink-0">
             <div className="w-8 h-8 bg-primary-50 rounded-btn flex items-center justify-center shrink-0">
               <Globe className="w-4 h-4 text-primary" />
             </div>
-            <div>
-              <p className="text-base font-bold text-ink-800">Xác định vị trí</p>
-              <p className="text-xs text-ink-400">Google Maps Geocoding</p>
+            <div className="min-w-0">
+              <p className="text-base font-bold text-ink-800">
+                Chọn vị trí trang trại
+              </p>
+              <p className="text-xs text-ink-400">
+                OpenStreetMap · Tìm địa chỉ hoặc click trực tiếp trên bản đồ
+              </p>
             </div>
           </div>
 
           {/* Body */}
-          <div className="px-6 py-5 space-y-4 overflow-y-auto flex-1">
-            <div>
-              <label className="block text-sm font-medium text-ink-600 mb-1.5">
-                Địa chỉ trang trại
-              </label>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={query}
-                  onChange={(e) => {
-                    setQuery(e.target.value);
-                    if (geocodeState.status !== "idle") {
-                      setGeocodeState({ status: "idle" });
-                    }
-                  }}
-                  onKeyDown={handleKeyDown}
-                  placeholder="VD: Đà Lạt, Lâm Đồng, Việt Nam"
-                  disabled={isLoading}
-                  className="flex-1 min-w-0 px-3 py-2.5 border border-border-strong rounded-btn text-sm text-ink-700 bg-surface focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50"
-                />
-                <Button
-                  onClick={handleGeocode}
-                  loading={isLoading}
-                  disabled={!query.trim()}
-                  leadingIcon={Search}
-                  size="md"
-                >
-                  Tìm
-                </Button>
-              </div>
-              <p className="mt-1.5 text-xs text-ink-400">
-                Nhập địa chỉ đầy đủ để kết quả chính xác hơn. Nhấn Enter hoặc bấm Tìm.
-              </p>
+          <div className="px-6 py-4 flex flex-col gap-3 overflow-y-auto flex-1">
+            {/* Search bar */}
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={query}
+                onChange={(e) => {
+                  setQuery(e.target.value);
+                  setGeocodeError(null);
+                }}
+                onKeyDown={handleKeyDown}
+                placeholder="Nhập địa chỉ rồi bấm Tìm, hoặc click thẳng lên bản đồ"
+                disabled={geocoding}
+                className="flex-1 min-w-0 px-3 py-2.5 border border-border-strong rounded-btn text-sm text-ink-700 bg-surface focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50"
+              />
+              <Button
+                onClick={handleGeocode}
+                loading={geocoding}
+                disabled={!query.trim()}
+                leadingIcon={Search}
+                size="md"
+              >
+                Tìm
+              </Button>
             </div>
 
-            {geocodeState.status === "loading" && (
-              <div className="flex items-center gap-2 text-sm text-ink-500 py-2">
-                <Loader2 className="w-4 h-4 animate-spin text-primary" />
-                <span>Đang tìm kiếm tọa độ...</span>
-              </div>
-            )}
-
-            {geocodeState.status === "error" && (
-              <div className="flex items-start gap-2.5 p-3 bg-status-danger-bg/40 border border-status-danger-fg/20 rounded-btn">
+            {/* Geocode error */}
+            {geocodeError && (
+              <div className="flex items-start gap-2 p-3 bg-status-danger-bg/40 border border-status-danger-fg/20 rounded-btn">
                 <AlertCircle className="w-4 h-4 text-status-danger-fg mt-0.5 shrink-0" />
-                <div>
-                  <p className="text-sm font-medium text-status-danger-fg">
-                    Không tìm được tọa độ
-                  </p>
-                  <p className="text-xs text-ink-500 mt-0.5">
-                    {geocodeState.message}. Hãy thử nhập địa chỉ cụ thể hơn.
-                  </p>
-                </div>
+                <p className="text-sm text-status-danger-fg">{geocodeError}</p>
               </div>
             )}
 
-            {geocodeState.status === "success" && geocodeState.result && (
-              <div className="p-4 bg-primary-50 border border-primary/20 rounded-btn space-y-3">
-                <div className="flex items-center gap-2">
-                  <CheckCircle className="w-4 h-4 text-primary shrink-0" />
-                  <p className="text-sm font-semibold text-primary-700">
-                    Đã tìm thấy vị trí
-                  </p>
-                </div>
-                <div className="space-y-2">
-                  <div>
-                    <p className="text-xs text-ink-400 uppercase mb-0.5">
-                      Địa chỉ chuẩn hóa
-                    </p>
-                    <p className="text-sm font-medium text-ink-700">
-                      {geocodeState.result?.formattedAddress ?? "—"}
-                    </p>
-                  </div>
-                  <div className="flex gap-6">
-                    <div>
-                      <p className="text-xs text-ink-400 uppercase mb-0.5">
-                        Vĩ độ
-                      </p>
-                      <p className="text-sm font-mono text-ink-700">
-                        {fmtCoord(geocodeState.result?.latitude)}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-ink-400 uppercase mb-0.5">
-                        Kinh độ
-                      </p>
-                      <p className="text-sm font-mono text-ink-700">
-                        {fmtCoord(geocodeState.result?.longitude)}
-                      </p>
-                    </div>
-                  </div>
-                </div>
+            {/* Map */}
+            {open && (
+              <LeafletMapInner pinned={pinned} onMapClick={stableOnMapClick} />
+            )}
+
+            {/* Selected coords */}
+            {pinned ? (
+              <div className="flex items-center gap-2 px-3 py-2 bg-primary-50 border border-primary/20 rounded-btn">
+                <CheckCircle className="w-4 h-4 text-primary shrink-0" />
+                <span className="text-xs text-ink-500">Vị trí đã chọn:</span>
+                <span className="text-xs font-mono text-primary-700">
+                  {pinned.lat.toFixed(6)}, {pinned.lng.toFixed(6)}
+                </span>
               </div>
+            ) : (
+              <p className="text-xs text-ink-400 text-center">
+                Chưa chọn vị trí — tìm địa chỉ hoặc click trên bản đồ
+              </p>
             )}
           </div>
 
           {/* Footer */}
-          <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-border">
+          <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-border shrink-0">
             <Button variant="ghost" onClick={onClose}>
               Hủy
             </Button>
-            <Button
-              onClick={handleConfirm}
-              disabled={geocodeState.status !== "success"}
-            >
+            <Button onClick={handleConfirm} disabled={!pinned}>
               Xác nhận vị trí
             </Button>
           </div>
@@ -345,7 +443,8 @@ function FarmFormFields({
   const handleGeocodeSelect = (result: GeocodeResultResponse) => {
     setFormData((p) => ({
       ...p,
-      location: result.formattedAddress,
+      // Giữ nguyên địa chỉ user nhập — KHÔNG overwrite bằng formattedAddress
+      // vì Google có thể thêm Plus Code (VD: "XF9X+XH9, ...") vào formattedAddress
       latitude: toCoord(result.latitude) ?? undefined,
       longitude: toCoord(result.longitude) ?? undefined,
     }));
@@ -397,7 +496,9 @@ function FarmFormFields({
           <span className="text-xs text-primary-700 font-mono">
             {fmtCoord(formData.latitude)}, {fmtCoord(formData.longitude)}
           </span>
-          <span className="text-xs text-ink-400 ml-1">· Tọa độ đã xác định</span>
+          <span className="text-xs text-ink-400 ml-1">
+            · Tọa độ đã xác định
+          </span>
           <button
             type="button"
             onClick={() =>
@@ -470,7 +571,7 @@ function FarmCard({
               <h3 className="font-semibold text-primary-700 truncate">
                 {farm.name}
               </h3>
-              <div className="flex items-center gap-1 text-sm text-ink-500 mt-0.5">
+              <div className="flex items-center gap-1 text-sm text-ink-500 mt-0.5 min-w-0 overflow-hidden">
                 <MapPin className="w-3.5 h-3.5 shrink-0" />
                 <span className="truncate">{farm.location}</span>
               </div>
@@ -550,7 +651,25 @@ function ViewFarmModal({
   open: boolean;
   onClose: () => void;
 }) {
-  const rows: Array<{ label: string; value: string }> = [
+  const [weather, setWeather] = useState<WeatherCurrentResponse | null>(null);
+  const [weatherLoading, setWeatherLoading] = useState(false);
+
+  useEffect(() => {
+    if (!open) {
+      setWeather(null);
+      return;
+    }
+    // Only fetch if farm has coordinates saved on BE
+    if (farm.latitude == null || farm.longitude == null) return;
+    setWeatherLoading(true);
+    api
+      .getWeatherCurrentByFarm(farm.id)
+      .then((data) => setWeather(data))
+      .catch(() => setWeather(null)) // silent fail — weather is supplementary info
+      .finally(() => setWeatherLoading(false));
+  }, [open, farm.id, farm.latitude, farm.longitude]);
+
+  const infoRows: Array<{ label: string; value: string }> = [
     { label: "Địa chỉ", value: farm.location },
     { label: "Diện tích", value: `${farm.area.toLocaleString()} m²` },
     { label: "Trạng thái", value: farmStatusLabel(farm.status) },
@@ -578,8 +697,9 @@ function ViewFarmModal({
         </Button>
       }
     >
-      <div className="space-y-1">
-        {rows.map(({ label, value }) => (
+      {/* Farm info rows */}
+      <div className="space-y-1 mb-5">
+        {infoRows.map(({ label, value }) => (
           <div
             key={label}
             className="flex justify-between py-2 border-b border-surface-subtle last:border-0"
@@ -591,7 +711,98 @@ function ViewFarmModal({
           </div>
         ))}
       </div>
+
+      {/* Weather section — only shown if farm has coordinates */}
+      {farm.latitude != null && farm.longitude != null && (
+        <div className="border-t border-border pt-4">
+          <p className="text-xs font-semibold text-ink-400 uppercase mb-3">
+            Thời tiết hiện tại
+          </p>
+
+          {weatherLoading && (
+            <div className="flex items-center gap-2 text-sm text-ink-500 py-2">
+              <Loader2 className="w-4 h-4 animate-spin text-primary" />
+              <span>Đang tải thời tiết...</span>
+            </div>
+          )}
+
+          {!weatherLoading && weather && (
+            <div className="bg-primary-50 rounded-btn p-4 space-y-3">
+              {/* Condition + temp */}
+              <div className="flex items-center gap-3">
+                {weather.condition?.icon && (
+                  <img
+                    src={
+                      weather.condition.icon.startsWith("//")
+                        ? `https:${weather.condition.icon}`
+                        : weather.condition.icon
+                    }
+                    alt={weather.condition.text ?? ""}
+                    className="w-10 h-10 shrink-0"
+                  />
+                )}
+                <div>
+                  <p className="text-2xl font-bold text-primary-700">
+                    {weather.tempC}°C
+                  </p>
+                  <p className="text-sm text-ink-500">
+                    {weather.condition?.text ?? "—"}
+                  </p>
+                </div>
+                <div className="ml-auto text-right">
+                  <p className="text-xs text-ink-400">Cảm giác như</p>
+                  <p className="text-sm font-medium text-ink-700">
+                    {weather.feelsLikeC}°C
+                  </p>
+                </div>
+              </div>
+
+              {/* Detail grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 border-t border-primary/10">
+                <WeatherStat label="Độ ẩm" value={`${weather.humidity}%`} />
+                <WeatherStat
+                  label="Gió"
+                  value={`${weather.windKph} km/h ${weather.windDir ?? ""}`}
+                />
+                <WeatherStat
+                  label="Lượng mưa"
+                  value={`${weather.precipMm} mm`}
+                />
+                <WeatherStat label="UV" value={`${weather.uv}`} />
+              </div>
+
+              <p className="text-xs text-ink-400 pt-1">
+                Cập nhật lúc{" "}
+                {new Date(weather.lastUpdated).toLocaleString("vi-VN", {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  day: "2-digit",
+                  month: "2-digit",
+                })}
+                {" · "}
+                {weather.location?.name}
+                {weather.location?.region ? `, ${weather.location.region}` : ""}
+              </p>
+            </div>
+          )}
+
+          {!weatherLoading && !weather && (
+            <p className="text-sm text-ink-400 py-2">
+              Không thể tải thông tin thời tiết.
+            </p>
+          )}
+        </div>
+      )}
     </Modal>
+  );
+}
+
+function WeatherStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-xs text-ink-400 mb-0.5">{label}</p>
+      <p className="text-sm font-medium text-ink-700">{value}</p>
+    </div>
   );
 }
 
@@ -819,7 +1030,8 @@ export function FarmPage() {
     if (data.latitude == null || data.longitude == null) return;
     try {
       await api.updateFarmCoordinates(farmId, {
-        address: data.location.trim(),
+        // Chỉ gửi lat/lng — KHÔNG gửi address để BE không tự geocode lại
+        // và overwrite farmLocation bằng formattedAddress có Plus Code
         latitude: data.latitude,
         longitude: data.longitude,
       });
