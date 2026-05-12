@@ -153,7 +153,7 @@ export function DashboardPage() {
         <p className="text-xs font-medium text-primary uppercase tracking-widest mb-1">
           {today}
         </p>
-        <h1 className="text-2xl font-bold text-primary-800 tracking-tight">
+        <h1 className="text-xl sm:text-2xl font-bold text-primary-800 tracking-tight">
           Tổng quan trang trại
         </h1>
       </div>
@@ -161,84 +161,32 @@ export function DashboardPage() {
       {/* 2 Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {/* Reports pending action */}
-        <button
-          onClick={() => navigate("/advisory")}
-          className="group relative overflow-hidden bg-surface rounded-2xl border border-border shadow-card p-6 text-center hover:shadow-md hover:border-primary/30 transition-all duration-200"
-        >
-          <div
-            className={`absolute left-0 top-0 bottom-0 w-1 rounded-l-2xl ${sentToOwnerReports.length > 0 ? "bg-status-danger-fg" : "bg-primary"}`}
-          />
-
-          <div className="flex justify-center mb-4">
-            <div
-              className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${sentToOwnerReports.length > 0 ? "bg-status-danger-bg" : "bg-primary-50"}`}
-            >
-              <FileText
-                className={`w-5 h-5 ${sentToOwnerReports.length > 0 ? "text-status-danger-fg" : "text-primary"}`}
-              />
-            </div>
-          </div>
-
-          <div className="text-xs font-semibold text-ink-500 uppercase tracking-wider mb-1">
-            Báo cáo chờ xử lý
-          </div>
-
-          <div
-            className={`text-4xl font-extrabold tracking-tight ${sentToOwnerReports.length > 0 ? "text-status-danger-fg" : "text-primary-800"}`}
-          >
-            {loadingReports ? (
-              <span className="text-ink-400 text-2xl font-medium">…</span>
-            ) : (
-              sentToOwnerReports.length
-            )}
-          </div>
-
-          <div className="mt-2 text-xs text-ink-400">
-            {sentToOwnerReports.length > 0
+        <SummaryCard
+          icon={FileText}
+          label="Báo cáo chờ xử lý"
+          count={loadingReports ? null : sentToOwnerReports.length}
+          hint={
+            sentToOwnerReports.length > 0
               ? "Cần xem xét và phản hồi"
-              : "Không có báo cáo mới"}
-          </div>
-        </button>
+              : "Không có báo cáo mới"
+          }
+          tone={sentToOwnerReports.length > 0 ? "danger" : "primary"}
+          onClick={() => navigate("/advisory")}
+        />
 
         {/* Unpaid bills */}
-        <button
-          onClick={() => navigate("/billing")}
-          className="group relative overflow-hidden bg-surface rounded-2xl border border-border shadow-card p-6 text-center hover:shadow-md hover:border-primary/30 transition-all duration-200"
-        >
-          <div
-            className={`absolute left-0 top-0 bottom-0 w-1 rounded-l-2xl ${unpaidBills.length > 0 ? "bg-status-warning-fg" : "bg-primary"}`}
-          />
-
-          <div className="flex justify-center mb-4">
-            <div
-              className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${unpaidBills.length > 0 ? "bg-status-warning-bg" : "bg-primary-50"}`}
-            >
-              <Receipt
-                className={`w-5 h-5 ${unpaidBills.length > 0 ? "text-status-warning-fg" : "text-primary"}`}
-              />
-            </div>
-          </div>
-
-          <div className="text-xs font-semibold text-ink-500 uppercase tracking-wider mb-1">
-            Hóa đơn chưa thanh toán
-          </div>
-
-          <div
-            className={`text-4xl font-extrabold tracking-tight ${unpaidBills.length > 0 ? "text-status-warning-fg" : "text-primary-800"}`}
-          >
-            {loadingBills ? (
-              <span className="text-ink-400 text-2xl font-medium">…</span>
-            ) : (
-              unpaidBills.length
-            )}
-          </div>
-
-          <div className="mt-2 text-xs text-ink-400">
-            {unpaidBills.length > 0
+        <SummaryCard
+          icon={Receipt}
+          label="Hóa đơn chưa thanh toán"
+          count={loadingBills ? null : unpaidBills.length}
+          hint={
+            unpaidBills.length > 0
               ? "Cần thanh toán cho chuyên gia"
-              : "Tất cả hóa đơn đã thanh toán"}
-          </div>
-        </button>
+              : "Tất cả hóa đơn đã thanh toán"
+          }
+          tone={unpaidBills.length > 0 ? "warning" : "primary"}
+          onClick={() => navigate("/billing")}
+        />
       </div>
 
       {/* Reports table (SENT_TO_OWNER) */}
@@ -258,7 +206,7 @@ export function DashboardPage() {
             <table className="w-full min-w-[500px] text-sm">
               <thead>
                 <tr className="bg-surface-alt">
-                  <th className="text-left px-6 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider">
+                  <th className="text-left px-6 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider w-28">
                     Mã báo cáo
                   </th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider">
@@ -280,7 +228,7 @@ export function DashboardPage() {
                     className={`cursor-pointer hover:bg-primary-50 transition-colors ${i % 2 === 0 ? "bg-surface" : "bg-surface-alt"}`}
                     onClick={() => navigate("/advisory")}
                   >
-                    <td className="px-6 py-3.5 font-mono text-xs text-ink-400">
+                    <td className="px-6 py-3.5 font-mono text-xs text-ink-400 max-w-[7rem] truncate">
                       {r.reportNo}
                     </td>
                     <td className="px-4 py-3.5 text-primary-800 font-semibold max-w-[220px] truncate">
@@ -351,7 +299,8 @@ export function DashboardPage() {
                       {formatMonth(b.month)}
                     </td>
                     <td className="px-4 py-3.5">
-                      <StatusBadge label="Chưa thanh toán" tone="danger" />
+                      {/* Bills dashboard: use "warning" to match summary card tone */}
+                      <StatusBadge label="Chưa thanh toán" tone="warning" />
                     </td>
                   </tr>
                 ))}
@@ -378,9 +327,10 @@ export function DashboardPage() {
           <div className="divide-y divide-border">
             {seasonGroups.map((season) => (
               <div key={season.seasonName} className="px-6 py-5">
+                {/* Season label divider */}
                 <div className="flex items-center gap-2 mb-3">
                   <div className="h-px flex-1 bg-border" />
-                  <p className="text-xs font-semibold text-ink-400 uppercase tracking-widest px-2">
+                  <p className="text-xs font-semibold text-ink-400 uppercase tracking-widest px-2 shrink-0">
                     {season.seasonName}
                   </p>
                   <div className="h-px flex-1 bg-border" />
@@ -396,6 +346,93 @@ export function DashboardPage() {
         )}
       </SectionCard>
     </div>
+  );
+}
+
+// ─── SummaryCard ──────────────────────────────────────────────────────────────
+
+/**
+ * Extracted from the two inline <button> blocks. Removes ~70 lines of
+ * repeated markup; all conditional colour logic lives here.
+ */
+type SummaryTone = "primary" | "danger" | "warning";
+
+const SUMMARY_STRIPE: Record<SummaryTone, string> = {
+  primary: "bg-primary",
+  danger: "bg-status-danger-fg",
+  warning: "bg-status-warning-fg",
+};
+const SUMMARY_ICON_BG: Record<SummaryTone, string> = {
+  primary: "bg-primary-50",
+  danger: "bg-status-danger-bg",
+  warning: "bg-status-warning-bg",
+};
+const SUMMARY_ICON_FG: Record<SummaryTone, string> = {
+  primary: "text-primary",
+  danger: "text-status-danger-fg",
+  warning: "text-status-warning-fg",
+};
+const SUMMARY_COUNT_FG: Record<SummaryTone, string> = {
+  primary: "text-primary-800",
+  danger: "text-status-danger-fg",
+  warning: "text-status-warning-fg",
+};
+
+function SummaryCard({
+  icon: Icon,
+  label,
+  count,
+  hint,
+  tone,
+  onClick,
+}: {
+  icon: React.ElementType;
+  label: string;
+  /** null = loading */
+  count: number | null;
+  hint: string;
+  tone: SummaryTone;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="group relative overflow-hidden bg-surface rounded-2xl border border-border shadow-card p-6 text-left w-full hover:shadow-md hover:border-primary/30 transition-all duration-200"
+    >
+      {/* Left accent stripe */}
+      <div
+        className={`absolute left-0 top-0 bottom-0 w-1 rounded-l-2xl ${SUMMARY_STRIPE[tone]}`}
+      />
+
+      <div className="flex items-center gap-4">
+        {/* Icon box */}
+        <div
+          className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${SUMMARY_ICON_BG[tone]}`}
+        >
+          <Icon className={`w-5 h-5 ${SUMMARY_ICON_FG[tone]}`} />
+        </div>
+
+        {/* Text */}
+        <div className="min-w-0 flex-1">
+          <div className="text-xs font-semibold text-ink-500 uppercase tracking-wider mb-0.5">
+            {label}
+          </div>
+          <div
+            className={`text-3xl font-extrabold tracking-tight leading-none ${SUMMARY_COUNT_FG[tone]}`}
+          >
+            {count === null ? (
+              <span className="text-ink-400 text-xl font-medium">…</span>
+            ) : (
+              count
+            )}
+          </div>
+          <div className="mt-1 text-xs text-ink-400">{hint}</div>
+        </div>
+
+        {/* Navigate affordance */}
+        <ChevronRight className="w-4 h-4 text-ink-300 group-hover:text-primary group-hover:translate-x-0.5 transition-all shrink-0" />
+      </div>
+    </button>
   );
 }
 
@@ -420,7 +457,8 @@ function SectionCard({
 }) {
   return (
     <div className="bg-surface rounded-2xl border border-border shadow-card overflow-hidden">
-      <div className="flex items-center justify-between px-6 py-4 border-b border-surface-subtle">
+      {/* Header — border-b border-border (was border-surface-subtle, too faint) */}
+      <div className="flex items-center justify-between px-6 py-4 border-b border-border">
         <div className="flex items-center gap-3 min-w-0">
           <div
             className={`w-8 h-8 rounded-lg ${iconBg} flex items-center justify-center shrink-0`}
@@ -457,15 +495,16 @@ function DeviceCard({ entry }: { entry: DeviceWithData }) {
       className={`rounded-xl border p-4 text-sm transition-opacity ${
         isActive
           ? "border-primary-200 bg-primary-50"
-          : "border-border bg-surface-alt opacity-50"
+          : "border-border bg-surface-alt opacity-60"
       }`}
     >
-      <div className="flex items-center justify-between mb-1">
-        <span className="font-bold text-primary-800 text-xs truncate">
+      {/* Device header */}
+      <div className="flex items-center justify-between mb-1 gap-2">
+        <span className="font-bold text-primary-800 text-xs truncate min-w-0">
           {device.name}
         </span>
         <span
-          className={`text-xs px-2 py-0.5 rounded-full font-semibold shrink-0 ml-2 ${
+          className={`text-xs px-2 py-0.5 rounded-full font-semibold shrink-0 whitespace-nowrap ${
             isActive
               ? "bg-status-success-bg text-status-success-fg"
               : "bg-status-neutral-bg text-status-neutral-fg"
@@ -482,63 +521,69 @@ function DeviceCard({ entry }: { entry: DeviceWithData }) {
       {sensorData ? (
         <div className="grid grid-cols-2 gap-y-2 gap-x-3">
           <SensorItem
-            icon={<Thermometer className="w-3.5 h-3.5 text-[#ef4444]" />}
+            icon={<Thermometer className="w-3.5 h-3.5 text-red-500" />}
             label="Nhiệt độ"
             value={
               sensorData.temperature != null
                 ? `${sensorData.temperature}°C`
-                : "-"
+                : "—"
             }
           />
           <SensorItem
-            icon={<Droplets className="w-3.5 h-3.5 text-[#3b82f6]" />}
+            icon={<Droplets className="w-3.5 h-3.5 text-blue-500" />}
             label="Độ ẩm KK"
             value={
-              sensorData.humidity != null ? `${sensorData.humidity}%` : "-"
+              sensorData.humidity != null ? `${sensorData.humidity}%` : "—"
             }
           />
           <SensorItem
-            icon={<Wind className="w-3.5 h-3.5 text-[#0891b2]" />}
+            icon={<Wind className="w-3.5 h-3.5 text-cyan-600" />}
             label="Ẩm đất"
             value={
               sensorData.soilMoisture != null
                 ? `${sensorData.soilMoisture}%`
-                : "-"
+                : "—"
             }
           />
           <SensorItem
-            icon={<Sun className="w-3.5 h-3.5 text-[#f59e0b]" />}
+            icon={<Sun className="w-3.5 h-3.5 text-amber-500" />}
             label="Ánh sáng"
-            value={sensorData.light != null ? `${sensorData.light} lux` : "-"}
+            value={sensorData.light != null ? `${sensorData.light} lux` : "—"}
           />
           <SensorItem
-            icon={<CloudRain className="w-3.5 h-3.5 text-[#2563eb]" />}
+            icon={<CloudRain className="w-3.5 h-3.5 text-blue-600" />}
             label="Mưa"
             value={
               sensorData.isRaining != null
                 ? sensorData.isRaining
                   ? "Có"
                   : "Không"
-                : "-"
+                : "—"
             }
           />
-          <SensorItem
-            icon={
-              <AlertTriangle className="w-3.5 h-3.5 text-status-danger-fg" />
-            }
-            label="Sự cố"
-            value={
-              sensorData.isAlert != null
-                ? sensorData.isAlert
-                  ? "Có"
-                  : "Không"
-                : "-"
-            }
-          />
+          {/* isAlert is not in the confirmed IotSensorPayload shape —
+              guard with optional chaining and only render when present */}
+          {"isAlert" in sensorData && (
+            <SensorItem
+              icon={
+                <AlertTriangle className="w-3.5 h-3.5 text-status-danger-fg" />
+              }
+              label="Sự cố"
+              value={
+                (sensorData as { isAlert?: boolean | null }).isAlert != null
+                  ? (sensorData as { isAlert?: boolean }).isAlert
+                    ? "Có"
+                    : "Không"
+                  : "—"
+              }
+            />
+          )}
 
           <div className="col-span-2 flex items-center gap-1 text-xs text-ink-400 pt-1 border-t border-border mt-1">
-            <RefreshCw className="w-3 h-3" />
-            {formatDateTime(sensorData.recordedAt)}
+            <RefreshCw className="w-3 h-3 shrink-0" />
+            <span className="truncate">
+              {formatDateTime(sensorData.recordedAt)}
+            </span>
           </div>
         </div>
       ) : (
@@ -547,6 +592,8 @@ function DeviceCard({ entry }: { entry: DeviceWithData }) {
     </div>
   );
 }
+
+// ─── SensorItem ───────────────────────────────────────────────────────────────
 
 function SensorItem({
   icon,
@@ -558,10 +605,12 @@ function SensorItem({
   value: string;
 }) {
   return (
-    <div className="flex items-center gap-1.5">
-      {icon}
-      <span className="text-xs text-ink-400">{label}:</span>
-      <span className="text-xs font-bold text-primary-800">{value}</span>
+    <div className="flex items-center gap-1.5 min-w-0">
+      <span className="shrink-0">{icon}</span>
+      <span className="text-xs text-ink-400 shrink-0">{label}:</span>
+      <span className="text-xs font-bold text-primary-800 truncate">
+        {value}
+      </span>
     </div>
   );
 }
