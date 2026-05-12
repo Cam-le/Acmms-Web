@@ -139,7 +139,6 @@ function fmtCoord(v: number | string | null | undefined): string {
   return n != null ? n.toFixed(6) : "—";
 }
 
-
 // ─── MapPickerModal ───────────────────────────────────────────────────────
 // Leaflet + OpenStreetMap tiles (miễn phí, không TQ)
 // Autocomplete: Nominatim (OSM) — free, no API key, hỗ trợ địa chỉ VN
@@ -152,21 +151,15 @@ function fmtCoord(v: number | string | null | undefined): string {
 // Nominatim usage policy: 1 req/s max — debounce 400ms đủ safe cho typing
 
 // Inject Leaflet CSS once at module level
-if (typeof document !== "undefined") {
-  const LEAFLET_CSS_ID = "leaflet-css";
-  if (!document.getElementById(LEAFLET_CSS_ID)) {
-    const link = document.createElement("link");
-    link.id = LEAFLET_CSS_ID;
-    link.rel = "stylesheet";
-    link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
-    document.head.appendChild(link);
-  }
-}
+import "leaflet/dist/leaflet.css";
 
 const VN_CENTER: [number, number] = [16.047079, 108.20623];
 const VN_ZOOM = 6;
 
-interface PinnedLocation { lat: number; lng: number }
+interface PinnedLocation {
+  lat: number;
+  lng: number;
+}
 interface NominatimResult {
   place_id: number;
   display_name: string;
@@ -177,7 +170,9 @@ interface NominatimResult {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type LeafletInstance = any;
 
-async function fetchNominatimSuggestions(query: string): Promise<NominatimResult[]> {
+async function fetchNominatimSuggestions(
+  query: string,
+): Promise<NominatimResult[]> {
   const params = new URLSearchParams({
     q: query,
     format: "json",
@@ -218,12 +213,61 @@ function MapPickerModal({
   const [pinned, setPinned] = useState<PinnedLocation | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Leaflet refs — never trigger re-render
-  const mapDivRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<LeafletInstance>(null);
   const markerRef = useRef<LeafletInstance>(null);
   const LRef = useRef<LeafletInstance>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Callback ref — fires exactly when the div is mounted into the Radix portal
+  // useRef + useEffect([open]) does NOT work because the portal DOM node
+  // doesn't exist yet when the effect runs
+  const mapDivRef = useCallback((node: HTMLDivElement | null) => {
+    if (!node || mapRef.current) return;
+
+    console.log(
+      "[MAP DEBUG] callback ref fired, node dimensions:",
+      node.offsetWidth,
+      node.offsetHeight,
+    );
+
+    import("leaflet").then((L) => {
+      if (mapRef.current) return; // already init (StrictMode double-fire guard)
+      LRef.current = L;
+
+      delete (L.Icon.Default.prototype as LeafletInstance)._getIconUrl;
+      L.Icon.Default.mergeOptions({
+        iconUrl: new URL("leaflet/dist/images/marker-icon.png", import.meta.url)
+          .href,
+        iconRetinaUrl: new URL(
+          "leaflet/dist/images/marker-icon-2x.png",
+          import.meta.url,
+        ).href,
+        shadowUrl: new URL(
+          "leaflet/dist/images/marker-shadow.png",
+          import.meta.url,
+        ).href,
+      });
+
+      const map = L.map(node).setView(VN_CENTER, VN_ZOOM);
+
+      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution:
+          '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        maxZoom: 19,
+      }).addTo(map);
+
+      map.on("click", (e: { latlng: { lat: number; lng: number } }) => {
+        placePin(e.latlng.lat, e.latlng.lng, false);
+        setSuggestionsOpen(false);
+      });
+
+      mapRef.current = map;
+      requestAnimationFrame(() => {
+        map.invalidateSize();
+        console.log("[MAP DEBUG] invalidateSize, size:", map.getSize());
+      });
+    });
+  }, []); // empty deps — stable ref, init once
 
   // Reset on open
   useEffect(() => {
@@ -236,57 +280,17 @@ function MapPickerModal({
     }
   }, [open, initialLocation]);
 
-  // Init Leaflet once — deferred via setTimeout so Radix Dialog portal
-  // has fully painted and mapDivRef has real dimensions before init
+  // Cleanup map on modal close
   useEffect(() => {
-    if (!open || !mapDivRef.current || mapRef.current) return;
-
-    const init = () => {
-      import("leaflet").then((L) => {
-        if (!mapDivRef.current || mapRef.current) return;
-        LRef.current = L;
-
-        delete (L.Icon.Default.prototype as LeafletInstance)._getIconUrl;
-        L.Icon.Default.mergeOptions({
-          iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-          iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
-          shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
-        });
-
-        const map = L.map(mapDivRef.current).setView(VN_CENTER, VN_ZOOM);
-
-        L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-          attribution:
-            '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-          maxZoom: 19,
-        }).addTo(map);
-
-        map.on("click", (e: { latlng: { lat: number; lng: number } }) => {
-          placePin(e.latlng.lat, e.latlng.lng, false);
-          setSuggestionsOpen(false);
-        });
-
-        mapRef.current = map;
-
-        // Force Leaflet to recalculate tile layout after container is visible
-        setTimeout(() => map.invalidateSize(), 100);
-      });
-    };
-
-    // Defer past Radix Dialog's portal animation frame
-    const t = setTimeout(init, 50);
-
-    return () => {
-      clearTimeout(t);
-      if (mapRef.current) {
-        mapRef.current.remove();
-        mapRef.current = null;
-        markerRef.current = null;
-        LRef.current = null;
-      }
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (!open && mapRef.current) {
+      mapRef.current.remove();
+      mapRef.current = null;
+      markerRef.current = null;
+      LRef.current = null;
+    }
+    if (!open && debounceRef.current) {
+      clearTimeout(debounceRef.current);
+    }
   }, [open]);
 
   const placePin = useCallback((lat: number, lng: number, flyTo = true) => {
@@ -297,7 +301,10 @@ function MapPickerModal({
     const L = LRef.current;
     if (!map || !L) return;
 
-    if (markerRef.current) { markerRef.current.remove(); markerRef.current = null; }
+    if (markerRef.current) {
+      markerRef.current.remove();
+      markerRef.current = null;
+    }
     markerRef.current = L.marker([lat, lng]).addTo(map);
 
     const zoom = Math.max(map.getZoom(), 15);
@@ -347,7 +354,9 @@ function MapPickerModal({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Escape") { setSuggestionsOpen(false); }
+    if (e.key === "Escape") {
+      setSuggestionsOpen(false);
+    }
     if (e.key === "Enter") {
       e.preventDefault();
       // If suggestions open, pick first one
@@ -377,7 +386,11 @@ function MapPickerModal({
       onClose();
     } catch {
       // Nếu reverse geocode fail → vẫn trả lat/lng, chỉ không có địa chỉ
-      onSelect({ formattedAddress: "", latitude: pinned.lat, longitude: pinned.lng });
+      onSelect({
+        formattedAddress: "",
+        latitude: pinned.lat,
+        longitude: pinned.lng,
+      });
       onClose();
     } finally {
       setConfirming(false);
@@ -389,7 +402,9 @@ function MapPickerModal({
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 bg-black/50 z-[60]" />
         <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-surface rounded-modal shadow-modal w-[calc(100%-2rem)] max-w-2xl z-[60] flex flex-col max-h-[90vh] overflow-hidden">
-          <Dialog.Title className="sr-only">Chọn vị trí trên bản đồ</Dialog.Title>
+          <Dialog.Title className="sr-only">
+            Chọn vị trí trên bản đồ
+          </Dialog.Title>
           <Dialog.Description className="sr-only">
             Gõ địa chỉ để tìm kiếm hoặc click trực tiếp trên bản đồ
           </Dialog.Description>
@@ -400,7 +415,9 @@ function MapPickerModal({
               <Globe className="w-4 h-4 text-primary" />
             </div>
             <div className="min-w-0">
-              <p className="text-base font-bold text-ink-800">Chọn vị trí trang trại</p>
+              <p className="text-base font-bold text-ink-800">
+                Chọn vị trí trang trại
+              </p>
               <p className="text-xs text-ink-400">
                 Gõ địa chỉ để tìm kiếm, hoặc click trực tiếp trên bản đồ
               </p>
@@ -409,7 +426,6 @@ function MapPickerModal({
 
           {/* Body */}
           <div className="px-6 py-4 flex flex-col gap-3 overflow-y-auto flex-1">
-
             {/* Search with autocomplete */}
             <div className="relative">
               <div className="flex items-center gap-2 border border-border-strong rounded-btn bg-surface px-3 focus-within:ring-2 focus-within:ring-primary">
@@ -419,7 +435,9 @@ function MapPickerModal({
                   value={query}
                   onChange={(e) => handleQueryChange(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  onFocus={() => suggestions.length > 0 && setSuggestionsOpen(true)}
+                  onFocus={() =>
+                    suggestions.length > 0 && setSuggestionsOpen(true)
+                  }
                   placeholder="Gõ tên đường, phường, quận, tỉnh... (VD: Hoàng Bá Huân, Củ Chi)"
                   className="flex-1 py-2.5 text-sm text-ink-700 bg-transparent outline-none placeholder:text-ink-400"
                   autoComplete="off"
@@ -454,7 +472,9 @@ function MapPickerModal({
                         className="w-full text-left px-3 py-2.5 text-sm text-ink-700 hover:bg-primary-50 hover:text-primary-700 transition-colors flex items-start gap-2"
                       >
                         <MapPin className="w-3.5 h-3.5 text-ink-400 shrink-0 mt-0.5" />
-                        <span className="line-clamp-2">{item.display_name}</span>
+                        <span className="line-clamp-2">
+                          {item.display_name}
+                        </span>
                       </button>
                     </li>
                   ))}
@@ -493,7 +513,10 @@ function MapPickerModal({
                   type="button"
                   onClick={() => {
                     setPinned(null);
-                    if (markerRef.current) { markerRef.current.remove(); markerRef.current = null; }
+                    if (markerRef.current) {
+                      markerRef.current.remove();
+                      markerRef.current = null;
+                    }
                   }}
                   className="ml-auto text-xs text-ink-400 hover:text-status-danger-fg transition-colors"
                 >
@@ -509,8 +532,14 @@ function MapPickerModal({
 
           {/* Footer */}
           <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-border shrink-0">
-            <Button variant="ghost" onClick={onClose} disabled={confirming}>Hủy</Button>
-            <Button onClick={handleConfirm} disabled={!pinned} loading={confirming}>
+            <Button variant="ghost" onClick={onClose} disabled={confirming}>
+              Hủy
+            </Button>
+            <Button
+              onClick={handleConfirm}
+              disabled={!pinned}
+              loading={confirming}
+            >
               Xác nhận vị trí
             </Button>
           </div>
@@ -537,7 +566,9 @@ function FarmFormFields({
     setFormData((p) => {
       // Dùng formattedAddress từ reverse geocode nếu có và không chứa Plus Code
       // Plus Code pattern: chữ+số theo sau bởi dấu cộng, VD: "XF9X+XH9"
-      const hasPlusCode = /^[A-Z0-9]{4}\+[A-Z0-9]+/.test(result.formattedAddress ?? "");
+      const hasPlusCode = /^[A-Z0-9]{4}\+[A-Z0-9]+/.test(
+        result.formattedAddress ?? "",
+      );
       const newLocation =
         result.formattedAddress && !hasPlusCode
           ? result.formattedAddress
@@ -597,7 +628,9 @@ function FarmFormFields({
           <span className="text-xs text-primary-700 font-mono">
             {fmtCoord(formData.latitude)}, {fmtCoord(formData.longitude)}
           </span>
-          <span className="text-xs text-ink-400 ml-1">· Tọa độ đã xác định</span>
+          <span className="text-xs text-ink-400 ml-1">
+            · Tọa độ đã xác định
+          </span>
           <button
             type="button"
             onClick={() =>
@@ -761,7 +794,8 @@ function ViewFarmModal({
     // Only fetch if farm has coordinates saved on BE
     if (farm.latitude == null || farm.longitude == null) return;
     setWeatherLoading(true);
-    api.getWeatherCurrentByFarm(farm.id)
+    api
+      .getWeatherCurrentByFarm(farm.id)
       .then((data) => setWeather(data))
       .catch(() => setWeather(null)) // silent fail — weather is supplementary info
       .finally(() => setWeatherLoading(false));
@@ -811,7 +845,7 @@ function ViewFarmModal({
       </div>
 
       {/* Weather section — only shown if farm has coordinates */}
-      {(farm.latitude != null && farm.longitude != null) && (
+      {farm.latitude != null && farm.longitude != null && (
         <div className="border-t border-border pt-4">
           <p className="text-xs font-semibold text-ink-400 uppercase mb-3">
             Thời tiết hiện tại
@@ -858,8 +892,14 @@ function ViewFarmModal({
               {/* Detail grid */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 border-t border-primary/10">
                 <WeatherStat label="Độ ẩm" value={`${weather.humidity}%`} />
-                <WeatherStat label="Gió" value={`${weather.windKph} km/h ${weather.windDir ?? ""}`} />
-                <WeatherStat label="Lượng mưa" value={`${weather.precipMm} mm`} />
+                <WeatherStat
+                  label="Gió"
+                  value={`${weather.windKph} km/h ${weather.windDir ?? ""}`}
+                />
+                <WeatherStat
+                  label="Lượng mưa"
+                  value={`${weather.precipMm} mm`}
+                />
                 <WeatherStat label="UV" value={`${weather.uv}`} />
               </div>
 
