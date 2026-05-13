@@ -1,43 +1,82 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router";
 import {
   FileText,
   Receipt,
-  Thermometer,
   Droplets,
   Wind,
   Sun,
   CloudRain,
   AlertTriangle,
-  Cpu,
+  Cloud,
   ChevronRight,
   RefreshCw,
+  MapPin,
+  Eye,
+  Gauge,
+  Sunrise,
+  Sunset,
+  Waves,
 } from "lucide-react";
 import { api } from "../../api/client";
 import type {
   ReportResponse,
-  IotDeviceResponse,
-  IotDataResponse,
-  SeasonDetailResponse,
   PriceSettingResponse,
+  FarmResponse,
+  WeatherCurrentResponse,
+  WeatherForecastDayResponse,
 } from "../../api/client";
 import { LoadingState } from "../components/ui/LoadingState";
 import { EmptyState } from "../components/ui/EmptyState";
 import { StatusBadge } from "../components/ui/StatusBadge";
-import { formatDate, formatMonth, formatDateTime } from "../utils/format";
+import { formatDate, formatMonth } from "../utils/format";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface DeviceWithData {
-  device: IotDeviceResponse;
-  sensorData: IotDataResponse | null;
-  seasonName: string | null;
-  bedName: string | null;
+type ForecastDays = 1 | 3 | 7;
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Prepend https: to WeatherAPI icon URLs that start with // */
+function weatherIcon(url: string | undefined): string | undefined {
+  if (!url) return undefined;
+  return url.startsWith("//") ? `https:${url}` : url;
 }
 
-interface SeasonGroup {
-  seasonName: string;
-  devices: DeviceWithData[];
+function uvLabel(uv: number | undefined): string {
+  if (uv == null) return "—";
+  if (uv < 3) return "Thấp";
+  if (uv < 6) return "Trung bình";
+  if (uv < 8) return "Cao";
+  if (uv < 11) return "Rất cao";
+  return "Cực cao";
+}
+
+function uvTone(
+  uv: number | undefined,
+): "success" | "warning" | "warning-2" | "danger" {
+  if (uv == null || uv < 3) return "success";
+  if (uv < 6) return "warning";
+  if (uv < 8) return "warning-2";
+  return "danger";
+}
+
+function rainLabel(chance: number | undefined): string {
+  if (chance == null) return "—";
+  return `${chance}%`;
+}
+
+function shortDay(isoDate: string): string {
+  try {
+    const d = new Date(isoDate);
+    return d.toLocaleDateString("vi-VN", {
+      weekday: "short",
+      day: "numeric",
+      month: "numeric",
+    });
+  } catch {
+    return isoDate.slice(0, 10);
+  }
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -45,15 +84,35 @@ interface SeasonGroup {
 export function DashboardPage() {
   const navigate = useNavigate();
 
+  // ── Summary data ─────────────────────────────────────────────────────────
   const [reports, setReports] = useState<ReportResponse[]>([]);
   const [bills, setBills] = useState<PriceSettingResponse[]>([]);
-  const [seasonGroups, setSeasonGroups] = useState<SeasonGroup[]>([]);
-
   const [loadingReports, setLoadingReports] = useState(true);
   const [loadingBills, setLoadingBills] = useState(true);
-  const [loadingIot, setLoadingIot] = useState(true);
 
-  // Load reports
+  // ── Farm / weather ────────────────────────────────────────────────────────
+  const [farms, setFarms] = useState<FarmResponse[]>([]);
+  const [loadingFarms, setLoadingFarms] = useState(true);
+  const [selectedFarmId, setSelectedFarmId] = useState<string>("");
+  const [forecastDays, setForecastDays] = useState<ForecastDays>(3);
+
+  // Current weather — auto-fetches when farm changes
+  const [currentWeather, setCurrentWeather] =
+    useState<WeatherCurrentResponse | null>(null);
+  const [loadingCurrent, setLoadingCurrent] = useState(false);
+  const [currentError, setCurrentError] = useState<string | null>(null);
+
+  // Forecast — only fetched when user explicitly clicks "Xem dự báo"
+  const [forecast, setForecast] = useState<WeatherForecastDayResponse[]>([]);
+  const [loadingForecast, setLoadingForecast] = useState(false);
+  const [forecastError, setForecastError] = useState<string | null>(null);
+  const [forecastLoaded, setForecastLoaded] = useState(false);
+
+  // Separate ref counters to guard stale responses for each fetch type
+  const currentFetchId = useRef(0);
+  const forecastFetchId = useRef(0);
+
+  // ── Load reports ─────────────────────────────────────────────────────────
   useEffect(() => {
     api
       .getReports()
@@ -62,7 +121,7 @@ export function DashboardPage() {
       .finally(() => setLoadingReports(false));
   }, []);
 
-  // Load bills
+  // ── Load bills ───────────────────────────────────────────────────────────
   useEffect(() => {
     api
       .getPriceSettings()
@@ -71,68 +130,89 @@ export function DashboardPage() {
       .finally(() => setLoadingBills(false));
   }, []);
 
-  // Load IoT
+  // ── Load farms once ───────────────────────────────────────────────────────
   useEffect(() => {
-    async function loadIot() {
-      try {
-        const [devices, seasonDetails] = await Promise.all([
-          api.getIotDevices(),
-          api.getSeasonsDetails(),
-        ]);
-
-        if (!devices?.length) {
-          setSeasonGroups([]);
-          return;
-        }
-
-        const bedMap = new Map<
-          string,
-          Pick<SeasonDetailResponse, "seasonName" | "bedName">
-        >();
-        for (const sd of seasonDetails ?? []) {
-          if (sd.bedId)
-            bedMap.set(sd.bedId, {
-              seasonName: sd.seasonName,
-              bedName: sd.bedName,
-            });
-        }
-
-        const enriched: DeviceWithData[] = await Promise.all(
-          devices.map(async (device) => {
-            let sensorData: IotDataResponse | null = null;
-            try {
-              sensorData = await api.getLatestSensorByDevice(device.deviceCode);
-            } catch {
-              // device may have no readings yet
-            }
-            const bedInfo = bedMap.get(device.bedId);
-            return {
-              device,
-              sensorData,
-              seasonName: bedInfo?.seasonName ?? null,
-              bedName: bedInfo?.bedName ?? null,
-            };
-          }),
-        );
-
-        const grouped = new Map<string, SeasonGroup>();
-        for (const entry of enriched) {
-          const key = entry.seasonName ?? "Chưa có mùa vụ";
-          if (!grouped.has(key)) {
-            grouped.set(key, { seasonName: key, devices: [] });
-          }
-          grouped.get(key)!.devices.push(entry);
-        }
-
-        setSeasonGroups([...grouped.values()]);
-      } catch {
-        setSeasonGroups([]);
-      } finally {
-        setLoadingIot(false);
-      }
-    }
-    loadIot();
+    api
+      .getFarms()
+      .then((data) => {
+        const list = data ?? [];
+        setFarms(list);
+        if (list.length > 0) setSelectedFarmId(list[0].farmId);
+      })
+      .catch(() => setFarms([]))
+      .finally(() => setLoadingFarms(false));
   }, []);
+
+  // ── Auto-fetch current weather when farm changes ──────────────────────────
+  useEffect(() => {
+    if (!selectedFarmId) {
+      setCurrentWeather(null);
+      setCurrentError(null);
+      // Also clear any previously loaded forecast when farm switches
+      setForecast([]);
+      setForecastError(null);
+      setForecastLoaded(false);
+      return;
+    }
+
+    const fetchId = ++currentFetchId.current;
+    setLoadingCurrent(true);
+    setCurrentError(null);
+    setCurrentWeather(null);
+    // Clear stale forecast from previous farm
+    setForecast([]);
+    setForecastError(null);
+    setForecastLoaded(false);
+
+    api
+      .getWeatherCurrentByFarm(selectedFarmId)
+      .then((data: WeatherCurrentResponse) => {
+        if (fetchId !== currentFetchId.current) return;
+        setCurrentWeather(data ?? null);
+      })
+      .catch((err: unknown) => {
+        if (fetchId !== currentFetchId.current) return;
+        setCurrentError(
+          err instanceof Error
+            ? err.message
+            : "Không thể tải dữ liệu thời tiết.",
+        );
+      })
+      .finally(() => {
+        if (fetchId !== currentFetchId.current) return;
+        setLoadingCurrent(false);
+      });
+  }, [selectedFarmId]);
+
+  // ── Manual forecast fetch — called only when user clicks the button ───────
+  function loadForecast() {
+    if (!selectedFarmId || loadingForecast) return;
+
+    const fetchId = ++forecastFetchId.current;
+    setLoadingForecast(true);
+    setForecastError(null);
+    setForecast([]);
+
+    api
+      .getWeatherForecastByFarm(selectedFarmId, forecastDays)
+      .then((data) => {
+        if (fetchId !== forecastFetchId.current) return;
+        setForecast(data?.forecast ?? []);
+        setForecastLoaded(true);
+      })
+      .catch((err: unknown) => {
+        if (fetchId !== forecastFetchId.current) return;
+        setForecastError(
+          err instanceof Error
+            ? err.message
+            : "Không thể tải dự báo thời tiết.",
+        );
+      })
+      .finally(() => {
+        if (fetchId !== forecastFetchId.current) return;
+        setLoadingForecast(false);
+      });
+  }
 
   const sentToOwnerReports = reports.filter(
     (r) => r.status.toUpperCase() === "SENT_TO_OWNER",
@@ -145,6 +225,8 @@ export function DashboardPage() {
     month: "long",
     year: "numeric",
   });
+
+  const selectedFarm = farms.find((f) => f.farmId === selectedFarmId) ?? null;
 
   return (
     <div className="flex flex-col gap-6 p-4 sm:p-6 bg-surface-page min-h-screen">
@@ -160,7 +242,6 @@ export function DashboardPage() {
 
       {/* 2 Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {/* Reports pending action */}
         <SummaryCard
           icon={FileText}
           label="Báo cáo chờ xử lý"
@@ -173,8 +254,6 @@ export function DashboardPage() {
           tone={sentToOwnerReports.length > 0 ? "danger" : "primary"}
           onClick={() => navigate("/advisory")}
         />
-
-        {/* Unpaid bills */}
         <SummaryCard
           icon={Receipt}
           label="Hóa đơn chưa thanh toán"
@@ -189,7 +268,307 @@ export function DashboardPage() {
         />
       </div>
 
-      {/* Reports table (SENT_TO_OWNER) */}
+      {/* ── Weather Section ────────────────────────────────────────────────── */}
+      <div className="bg-surface rounded-2xl border border-border shadow-card overflow-hidden">
+        {/* Section header */}
+        <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4 border-b border-border">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-8 h-8 rounded-lg bg-primary-50 flex items-center justify-center shrink-0">
+              <Cloud className="w-4 h-4 text-primary" />
+            </div>
+            <div className="min-w-0">
+              <h2 className="text-sm font-bold text-primary-800 truncate">
+                Thời tiết trang trại
+              </h2>
+              <p className="text-xs text-ink-400 mt-0.5 truncate">
+                Thời tiết hiện tại và dự báo theo trang trại
+              </p>
+            </div>
+          </div>
+
+          {/* Controls: farm selector */}
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            {/* Farm picker */}
+            {loadingFarms ? (
+              <div className="h-9 w-44 rounded-btn bg-surface-subtle animate-pulse" />
+            ) : farms.length === 0 ? null : (
+              <select
+                value={selectedFarmId}
+                onChange={(e) => setSelectedFarmId(e.target.value)}
+                className="h-9 px-3 text-sm border border-border-strong rounded-btn bg-surface text-ink-700 focus:outline-none focus:ring-2 focus:ring-primary appearance-none cursor-pointer min-w-0 max-w-[180px] sm:max-w-xs truncate"
+              >
+                {farms.map((f) => (
+                  <option key={f.farmId} value={f.farmId}>
+                    {f.farmName}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+        </div>
+
+        {/* Body */}
+        <div className="p-6">
+          {farms.length === 0 && !loadingFarms ? (
+            <EmptyState
+              icon={MapPin}
+              message="Chưa có trang trại nào. Hãy tạo trang trại trước."
+            />
+          ) : loadingCurrent ? (
+            <LoadingState message="Đang tải dữ liệu thời tiết..." />
+          ) : currentError ? (
+            <div className="flex flex-col items-center gap-3 py-10 text-center">
+              <div className="w-10 h-10 rounded-card bg-status-warning-bg flex items-center justify-center">
+                <AlertTriangle className="w-5 h-5 text-status-warning-fg" />
+              </div>
+              <p className="text-sm text-ink-500 max-w-xs">{currentError}</p>
+              {selectedFarm && (
+                <button
+                  type="button"
+                  onClick={() => navigate("/farms")}
+                  className="text-xs font-semibold text-primary hover:text-primary-hover transition-colors"
+                >
+                  Cập nhật toạ độ trang trại →
+                </button>
+              )}
+            </div>
+          ) : currentWeather ? (
+            <div className="flex flex-col gap-5">
+              {/* Location row */}
+              {currentWeather.location?.name && (
+                <div className="flex items-center gap-1.5 text-xs text-ink-400">
+                  <MapPin className="w-3.5 h-3.5 shrink-0" />
+                  <span className="truncate">
+                    {[
+                      currentWeather.location.name,
+                      currentWeather.location.region,
+                      currentWeather.location.country,
+                    ]
+                      .filter(Boolean)
+                      .join(", ")}
+                  </span>
+                  {currentWeather.location.localTime && (
+                    <span className="ml-auto shrink-0 whitespace-nowrap">
+                      {currentWeather.location.localTime}
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* Current weather hero */}
+              <div className="flex flex-wrap items-start gap-6">
+                {/* Temp + condition */}
+                <div className="flex items-center gap-3 min-w-0">
+                  {weatherIcon(currentWeather.condition?.icon) && (
+                    <img
+                      src={weatherIcon(currentWeather.condition.icon)}
+                      alt={currentWeather.condition?.text ?? ""}
+                      className="w-14 h-14 shrink-0"
+                    />
+                  )}
+                  <div className="min-w-0">
+                    <div className="text-4xl font-extrabold text-primary-800 leading-none">
+                      {currentWeather.tempC != null
+                        ? `${Math.round(currentWeather.tempC)}°C`
+                        : "—"}
+                    </div>
+                    <div className="text-sm text-ink-500 mt-1 truncate">
+                      {currentWeather.condition?.text ?? ""}
+                    </div>
+                    {currentWeather.feelsLikeC != null && (
+                      <div className="text-xs text-ink-400 mt-0.5">
+                        Cảm giác như {Math.round(currentWeather.feelsLikeC)}°C
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Detail grid */}
+                <div className="flex-1 min-w-0 grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  <WeatherDetail
+                    icon={<Droplets className="w-4 h-4 text-blue-500" />}
+                    label="Độ ẩm"
+                    value={
+                      currentWeather.humidity != null
+                        ? `${currentWeather.humidity}%`
+                        : "—"
+                    }
+                  />
+                  <WeatherDetail
+                    icon={<Wind className="w-4 h-4 text-cyan-600" />}
+                    label="Gió"
+                    value={
+                      currentWeather.windKph != null
+                        ? `${currentWeather.windKph} km/h${currentWeather.windDir ? ` ${currentWeather.windDir}` : ""}`
+                        : "—"
+                    }
+                  />
+                  <WeatherDetail
+                    icon={<CloudRain className="w-4 h-4 text-blue-600" />}
+                    label="Lượng mưa"
+                    value={
+                      currentWeather.precipMm != null
+                        ? `${currentWeather.precipMm} mm`
+                        : "—"
+                    }
+                  />
+                  <WeatherDetail
+                    icon={<Sun className="w-4 h-4 text-amber-500" />}
+                    label="Chỉ số UV"
+                    value={
+                      currentWeather.uv != null
+                        ? `${currentWeather.uv} — ${uvLabel(currentWeather.uv)}`
+                        : "—"
+                    }
+                    tone={uvTone(currentWeather.uv)}
+                  />
+                  <WeatherDetail
+                    icon={<Eye className="w-4 h-4 text-ink-400" />}
+                    label="Tầm nhìn"
+                    value={
+                      currentWeather.visKm != null
+                        ? `${currentWeather.visKm} km`
+                        : "—"
+                    }
+                  />
+                  <WeatherDetail
+                    icon={<Gauge className="w-4 h-4 text-ink-400" />}
+                    label="Áp suất"
+                    value={
+                      currentWeather.pressureMb != null
+                        ? `${currentWeather.pressureMb} mb`
+                        : "—"
+                    }
+                  />
+                </div>
+              </div>
+
+              {/* Last updated */}
+              {currentWeather.lastUpdated && (
+                <div className="flex items-center gap-1 text-xs text-ink-400">
+                  <RefreshCw className="w-3 h-3 shrink-0" />
+                  <span>
+                    Cập nhật lúc{" "}
+                    {new Date(currentWeather.lastUpdated).toLocaleString(
+                      "vi-VN",
+                      {
+                        day: "2-digit",
+                        month: "2-digit",
+                        year: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      },
+                    )}
+                  </span>
+                </div>
+              )}
+
+              {/* ── Forecast panel — opt-in ──────────────────────────────────── */}
+              <div className="border-t border-border pt-4">
+                {!forecastLoaded && !loadingForecast ? (
+                  /* Prompt row */
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <p className="text-xs text-ink-400"></p>
+                    <div className="flex items-center gap-2">
+                      {/* Days selector */}
+                      <div className="flex items-center gap-1 bg-surface-subtle p-1 rounded-btn">
+                        {([1, 3, 7] as ForecastDays[]).map((d) => (
+                          <button
+                            key={d}
+                            type="button"
+                            onClick={() => setForecastDays(d)}
+                            className={[
+                              "px-2.5 py-1 text-xs font-medium rounded-btn transition-colors",
+                              forecastDays === d
+                                ? "bg-surface text-ink-800 shadow-card"
+                                : "text-ink-500 hover:text-ink-700",
+                            ].join(" ")}
+                          >
+                            {d} ngày
+                          </button>
+                        ))}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={loadForecast}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-btn bg-primary text-primary-fg hover:bg-primary-hover transition-colors"
+                      >
+                        <Cloud className="w-3.5 h-3.5" />
+                        Xem dự báo
+                      </button>
+                    </div>
+                  </div>
+                ) : loadingForecast ? (
+                  <LoadingState message="Đang tải dự báo..." variant="inline" />
+                ) : forecastError ? (
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <p className="text-xs text-status-danger-fg">
+                      {forecastError}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={loadForecast}
+                      className="text-xs font-semibold text-primary hover:text-primary-hover transition-colors"
+                    >
+                      Thử lại
+                    </button>
+                  </div>
+                ) : forecast.length > 0 ? (
+                  <div>
+                    <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                      <p className="text-xs font-semibold text-ink-400 uppercase tracking-widest">
+                        Dự báo {forecastDays} ngày tới
+                      </p>
+                      {/* Allow reloading with a different day count */}
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1 bg-surface-subtle p-1 rounded-btn">
+                          {([1, 3, 7] as ForecastDays[]).map((d) => (
+                            <button
+                              key={d}
+                              type="button"
+                              onClick={() => {
+                                setForecastDays(d);
+                                setForecastLoaded(false);
+                                setForecast([]);
+                              }}
+                              className={[
+                                "px-2.5 py-1 text-xs font-medium rounded-btn transition-colors",
+                                forecastDays === d
+                                  ? "bg-surface text-ink-800 shadow-card"
+                                  : "text-ink-500 hover:text-ink-700",
+                              ].join(" ")}
+                            >
+                              {d} ngày
+                            </button>
+                          ))}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={loadForecast}
+                          className="inline-flex items-center gap-1 text-xs text-ink-400 hover:text-primary transition-colors"
+                          title="Tải lại dự báo"
+                        >
+                          <RefreshCw className="w-3.5 h-3.5" />
+                          Tải lại
+                        </button>
+                      </div>
+                    </div>
+                    <div className="flex gap-3 overflow-x-auto pb-1">
+                      {forecast.map((day) => (
+                        <ForecastCard key={day.date} day={day} />
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          ) : (
+            <EmptyState message="Chọn một trang trại để xem thời tiết." />
+          )}
+        </div>
+      </div>
+
+      {/* Reports table */}
       <SectionCard
         icon={<AlertTriangle className="w-4 h-4 text-status-warning-fg" />}
         iconBg="bg-status-warning-bg"
@@ -299,7 +678,6 @@ export function DashboardPage() {
                       {formatMonth(b.month)}
                     </td>
                     <td className="px-4 py-3.5">
-                      {/* Bills dashboard: use "warning" to match summary card tone */}
                       <StatusBadge label="Chưa thanh toán" tone="warning" />
                     </td>
                   </tr>
@@ -309,52 +687,112 @@ export function DashboardPage() {
           </div>
         )}
       </SectionCard>
+    </div>
+  );
+}
 
-      {/* IoT Environment Section */}
-      <SectionCard
-        icon={<Cpu className="w-4 h-4 text-primary" />}
-        iconBg="bg-primary-50"
-        title="Dữ liệu môi trường IoT"
-        subtitle="Thông số mới nhất từ các thiết bị cảm biến"
-        onViewAll={() => navigate("/iot")}
-        viewAllLabel="Quản lý thiết bị"
-      >
-        {loadingIot ? (
-          <LoadingState />
-        ) : seasonGroups.length === 0 ? (
-          <EmptyState message="Không có thiết bị IoT nào được cài đặt" />
-        ) : (
-          <div className="divide-y divide-border">
-            {seasonGroups.map((season) => (
-              <div key={season.seasonName} className="px-6 py-5">
-                {/* Season label divider */}
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="h-px flex-1 bg-border" />
-                  <p className="text-xs font-semibold text-ink-400 uppercase tracking-widest px-2 shrink-0">
-                    {season.seasonName}
-                  </p>
-                  <div className="h-px flex-1 bg-border" />
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-                  {season.devices.map((entry) => (
-                    <DeviceCard key={entry.device.deviceId} entry={entry} />
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </SectionCard>
+// ─── WeatherDetail ────────────────────────────────────────────────────────────
+
+function WeatherDetail({
+  icon,
+  label,
+  value,
+  tone,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  tone?: "success" | "warning" | "warning-2" | "danger";
+}) {
+  const valueCls = tone
+    ? {
+        success: "text-status-success-fg",
+        warning: "text-status-warning-fg",
+        "warning-2": "text-status-warning-fg-2",
+        danger: "text-status-danger-fg",
+      }[tone]
+    : "text-primary-800";
+
+  return (
+    <div className="flex items-start gap-2 min-w-0">
+      <span className="shrink-0 mt-0.5">{icon}</span>
+      <div className="min-w-0">
+        <p className="text-xs text-ink-400">{label}</p>
+        <p className={`text-xs font-semibold truncate ${valueCls}`}>{value}</p>
+      </div>
+    </div>
+  );
+}
+
+// ─── ForecastCard ─────────────────────────────────────────────────────────────
+
+function ForecastCard({ day }: { day: WeatherForecastDayResponse }) {
+  return (
+    <div className="flex flex-col items-center gap-2 bg-surface-alt rounded-xl border border-border px-4 py-3 shrink-0 min-w-[130px]">
+      <p className="text-xs font-semibold text-ink-500 whitespace-nowrap">
+        {shortDay(day.date)}
+      </p>
+
+      {weatherIcon(day.condition?.icon) ? (
+        <img
+          src={weatherIcon(day.condition.icon)}
+          alt={day.condition?.text ?? ""}
+          className="w-10 h-10"
+        />
+      ) : (
+        <Cloud className="w-10 h-10 text-ink-300" />
+      )}
+
+      <p className="text-xs text-ink-500 text-center leading-snug line-clamp-2">
+        {day.condition?.text ?? "—"}
+      </p>
+
+      {/* High / low */}
+      <div className="flex items-center gap-2 text-xs font-semibold">
+        <span className="text-red-500">
+          {day.maxTempC != null ? `${Math.round(day.maxTempC)}°` : "—"}
+        </span>
+        <span className="text-ink-300">/</span>
+        <span className="text-blue-500">
+          {day.minTempC != null ? `${Math.round(day.minTempC)}°` : "—"}
+        </span>
+      </div>
+
+      {/* Rain chance */}
+      <div className="flex items-center gap-1 text-xs text-ink-500">
+        <Waves className="w-3 h-3 text-blue-400 shrink-0" />
+        <span>{rainLabel(day.chanceOfRain)} mưa</span>
+      </div>
+
+      {/* Humidity */}
+      <div className="flex items-center gap-1 text-xs text-ink-500">
+        <Droplets className="w-3 h-3 text-blue-500 shrink-0" />
+        <span>{day.avgHumidity != null ? `${day.avgHumidity}%` : "—"}</span>
+      </div>
+
+      {/* Sunrise / sunset if available */}
+      {(day.sunrise || day.sunset) && (
+        <div className="flex flex-col gap-0.5 w-full border-t border-border pt-2 mt-1">
+          {day.sunrise && (
+            <div className="flex items-center gap-1 text-[10px] text-ink-400">
+              <Sunrise className="w-3 h-3 shrink-0 text-amber-400" />
+              <span>{day.sunrise}</span>
+            </div>
+          )}
+          {day.sunset && (
+            <div className="flex items-center gap-1 text-[10px] text-ink-400">
+              <Sunset className="w-3 h-3 shrink-0 text-orange-400" />
+              <span>{day.sunset}</span>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
 // ─── SummaryCard ──────────────────────────────────────────────────────────────
 
-/**
- * Extracted from the two inline <button> blocks. Removes ~70 lines of
- * repeated markup; all conditional colour logic lives here.
- */
 type SummaryTone = "primary" | "danger" | "warning";
 
 const SUMMARY_STRIPE: Record<SummaryTone, string> = {
@@ -388,7 +826,6 @@ function SummaryCard({
 }: {
   icon: React.ElementType;
   label: string;
-  /** null = loading */
   count: number | null;
   hint: string;
   tone: SummaryTone;
@@ -399,20 +836,15 @@ function SummaryCard({
       onClick={onClick}
       className="group relative overflow-hidden bg-surface rounded-2xl border border-border shadow-card p-6 text-left w-full hover:shadow-md hover:border-primary/30 transition-all duration-200"
     >
-      {/* Left accent stripe */}
       <div
         className={`absolute left-0 top-0 bottom-0 w-1 rounded-l-2xl ${SUMMARY_STRIPE[tone]}`}
       />
-
       <div className="flex items-center gap-4">
-        {/* Icon box */}
         <div
           className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${SUMMARY_ICON_BG[tone]}`}
         >
           <Icon className={`w-5 h-5 ${SUMMARY_ICON_FG[tone]}`} />
         </div>
-
-        {/* Text */}
         <div className="min-w-0 flex-1">
           <div className="text-xs font-semibold text-ink-500 uppercase tracking-wider mb-0.5">
             {label}
@@ -428,8 +860,6 @@ function SummaryCard({
           </div>
           <div className="mt-1 text-xs text-ink-400">{hint}</div>
         </div>
-
-        {/* Navigate affordance */}
         <ChevronRight className="w-4 h-4 text-ink-300 group-hover:text-primary group-hover:translate-x-0.5 transition-all shrink-0" />
       </div>
     </button>
@@ -457,7 +887,6 @@ function SectionCard({
 }) {
   return (
     <div className="bg-surface rounded-2xl border border-border shadow-card overflow-hidden">
-      {/* Header — border-b border-border (was border-surface-subtle, too faint) */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-border">
         <div className="flex items-center gap-3 min-w-0">
           <div
@@ -480,137 +909,6 @@ function SectionCard({
         </button>
       </div>
       {children}
-    </div>
-  );
-}
-
-// ─── DeviceCard ───────────────────────────────────────────────────────────────
-
-function DeviceCard({ entry }: { entry: DeviceWithData }) {
-  const { device, sensorData, bedName } = entry;
-  const isActive = device.status === "Active";
-
-  return (
-    <div
-      className={`rounded-xl border p-4 text-sm transition-opacity ${
-        isActive
-          ? "border-primary-200 bg-primary-50"
-          : "border-border bg-surface-alt opacity-60"
-      }`}
-    >
-      {/* Device header */}
-      <div className="flex items-center justify-between mb-1 gap-2">
-        <span className="font-bold text-primary-800 text-xs truncate min-w-0">
-          {device.name}
-        </span>
-        <span
-          className={`text-xs px-2 py-0.5 rounded-full font-semibold shrink-0 whitespace-nowrap ${
-            isActive
-              ? "bg-status-success-bg text-status-success-fg"
-              : "bg-status-neutral-bg text-status-neutral-fg"
-          }`}
-        >
-          {isActive ? "● Hoạt động" : "○ Tắt"}
-        </span>
-      </div>
-
-      {bedName && (
-        <p className="text-xs text-ink-400 mb-3 truncate">{bedName}</p>
-      )}
-
-      {sensorData ? (
-        <div className="grid grid-cols-2 gap-y-2 gap-x-3">
-          <SensorItem
-            icon={<Thermometer className="w-3.5 h-3.5 text-red-500" />}
-            label="Nhiệt độ"
-            value={
-              sensorData.temperature != null
-                ? `${sensorData.temperature}°C`
-                : "—"
-            }
-          />
-          <SensorItem
-            icon={<Droplets className="w-3.5 h-3.5 text-blue-500" />}
-            label="Độ ẩm KK"
-            value={
-              sensorData.humidity != null ? `${sensorData.humidity}%` : "—"
-            }
-          />
-          <SensorItem
-            icon={<Wind className="w-3.5 h-3.5 text-cyan-600" />}
-            label="Ẩm đất"
-            value={
-              sensorData.soilMoisture != null
-                ? `${sensorData.soilMoisture}%`
-                : "—"
-            }
-          />
-          <SensorItem
-            icon={<Sun className="w-3.5 h-3.5 text-amber-500" />}
-            label="Ánh sáng"
-            value={sensorData.light != null ? `${sensorData.light} lux` : "—"}
-          />
-          <SensorItem
-            icon={<CloudRain className="w-3.5 h-3.5 text-blue-600" />}
-            label="Mưa"
-            value={
-              sensorData.isRaining != null
-                ? sensorData.isRaining
-                  ? "Có"
-                  : "Không"
-                : "—"
-            }
-          />
-          {/* isAlert is not in the confirmed IotSensorPayload shape —
-              guard with optional chaining and only render when present */}
-          {"isAlert" in sensorData && (
-            <SensorItem
-              icon={
-                <AlertTriangle className="w-3.5 h-3.5 text-status-danger-fg" />
-              }
-              label="Sự cố"
-              value={
-                (sensorData as { isAlert?: boolean | null }).isAlert != null
-                  ? (sensorData as { isAlert?: boolean }).isAlert
-                    ? "Có"
-                    : "Không"
-                  : "—"
-              }
-            />
-          )}
-
-          <div className="col-span-2 flex items-center gap-1 text-xs text-ink-400 pt-1 border-t border-border mt-1">
-            <RefreshCw className="w-3 h-3 shrink-0" />
-            <span className="truncate">
-              {formatDateTime(sensorData.recordedAt)}
-            </span>
-          </div>
-        </div>
-      ) : (
-        <p className="text-xs text-ink-400 italic">Chưa có dữ liệu cảm biến</p>
-      )}
-    </div>
-  );
-}
-
-// ─── SensorItem ───────────────────────────────────────────────────────────────
-
-function SensorItem({
-  icon,
-  label,
-  value,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="flex items-center gap-1.5 min-w-0">
-      <span className="shrink-0">{icon}</span>
-      <span className="text-xs text-ink-400 shrink-0">{label}:</span>
-      <span className="text-xs font-bold text-primary-800 truncate">
-        {value}
-      </span>
     </div>
   );
 }
