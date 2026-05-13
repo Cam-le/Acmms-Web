@@ -21,6 +21,12 @@ import {
   Sprout,
   BarChart2,
   Package,
+  TrendingUp,
+  Activity,
+  Clock,
+  User,
+  ChevronRight,
+  NotebookPen,
 } from "lucide-react";
 import * as Collapsible from "@radix-ui/react-collapsible";
 import {
@@ -35,6 +41,7 @@ import {
   type HarvestRequest,
   type HarvestUpdateRequest,
   type HarvestDetailUpdateRequest,
+  type GrowthTrackingResponse,
 } from "../../api/client";
 import { useToast } from "../components/ui/useToast";
 import { ToastContainer } from "../components/ui/ToastContainer";
@@ -60,6 +67,7 @@ import {
   harvestStatusLabel,
 } from "../utils/status";
 import { bedSortTokens, compareTokenArrays } from "../utils/sort";
+import type { BadgeTone } from "../components/ui/StatusBadge";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -130,6 +138,359 @@ function sortBeds<T extends { name: string; area: string }>(beds: T[]): T[] {
     if (areaCmp !== 0) return areaCmp;
     return compareTokenArrays(bedSortKey(a.name), bedSortKey(b.name));
   });
+}
+
+// ─── Growth Tracking helpers ──────────────────────────────────────────────────
+
+function trackingStatusTone(s: string): BadgeTone {
+  const n = s.toLowerCase();
+  if (n === "completed") return "success";
+  if (n === "in-progress" || n === "in_progress") return "info";
+  if (n === "cancelled" || n === "canceled") return "danger";
+  return "neutral";
+}
+
+function trackingStatusLabel(s: string): string {
+  const n = s.toLowerCase();
+  if (n === "completed") return "Đã hoàn thành";
+  if (n === "in-progress" || n === "in_progress") return "Đang thực hiện";
+  if (n === "cancelled" || n === "canceled") return "Đã hủy";
+  return s;
+}
+
+function healthStatusTone(s: string | undefined): BadgeTone {
+  if (!s) return "neutral";
+  const n = s.toLowerCase();
+  if (n === "good") return "success";
+  if (n === "ok") return "success";
+  if (n === "average" || n === "medium") return "warning";
+  if (n === "bad" || n === "poor") return "danger";
+  return "neutral";
+}
+
+function healthStatusLabel(s: string | undefined): string {
+  if (!s) return "—";
+  const n = s.toLowerCase();
+  if (n === "good") return "Tốt";
+  if (n === "ok") return "Ổn";
+  if (n === "average" || n === "medium") return "Trung bình";
+  if (n === "bad" || n === "poor") return "Kém";
+  return s;
+}
+
+// ─── GrowthTrackingModal ──────────────────────────────────────────────────────
+
+function GrowthTrackingModal({
+  harvestDetailId,
+  bedName,
+  onClose,
+  onFetched,
+}: {
+  harvestDetailId: string;
+  bedName: string;
+  onClose: () => void;
+  /** Called once fetch resolves — reports count so caller can update indicator */
+  onFetched: (harvestDetailId: string, count: number) => void;
+}) {
+  const { showToast, toasts, dismissToast } = useToast();
+  const [trackings, setTrackings] = React.useState<GrowthTrackingResponse[]>(
+    [],
+  );
+  const [loading, setLoading] = React.useState(true);
+  const [selectedTracking, setSelectedTracking] =
+    React.useState<GrowthTrackingResponse | null>(null);
+  const [staffNames, setStaffNames] = React.useState<Record<string, string>>(
+    {},
+  );
+  const [staffLoading, setStaffLoading] = React.useState(false);
+
+  // Fetch tracking records for this harvest detail
+  React.useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    api
+      .getGrowthTrackingsByHarvestDetail(harvestDetailId)
+      .then((res) => {
+        const list = Array.isArray(res) ? res : [];
+        if (!cancelled) {
+          setTrackings(list);
+          onFetched(harvestDetailId, list.length);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          showToast(
+            err instanceof Error
+              ? err.message
+              : "Không thể tải theo dõi sinh trưởng",
+            "error",
+          );
+          // Mark as checked-but-unknown (-1) so indicator doesn't stay neutral
+          onFetched(harvestDetailId, -1);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [harvestDetailId]);
+
+  // Batch-resolve staff names for all unique lastUpdatedBy IDs
+  React.useEffect(() => {
+    const ids = [
+      ...new Set(trackings.map((t) => t.lastUpdatedBy).filter(Boolean)),
+    ];
+    if (ids.length === 0) return;
+    setStaffLoading(true);
+    Promise.all(
+      ids.map((id) =>
+        api
+          .getStaff(id)
+          .then((res) => ({ id, name: res.fullname ?? id }))
+          .catch(() => ({ id, name: id })),
+      ),
+    ).then((results) => {
+      const map: Record<string, string> = {};
+      results.forEach(({ id, name }) => {
+        map[id] = name;
+      });
+      setStaffNames(map);
+      setStaffLoading(false);
+    });
+  }, [trackings]);
+
+  return (
+    <>
+      <Modal
+        open
+        onOpenChange={(o) => !o && onClose()}
+        title={`Theo dõi sinh trưởng — ${bedName}`}
+        size="2xl"
+      >
+        {loading ? (
+          <LoadingState message="Đang tải dữ liệu sinh trưởng..." />
+        ) : trackings.length === 0 ? (
+          <EmptyState
+            icon={TrendingUp}
+            message="Chưa có dữ liệu theo dõi sinh trưởng cho luống này."
+          />
+        ) : (
+          <div className="space-y-3">
+            <p className="text-xs text-ink-400">
+              {trackings.length} bản ghi · bấm vào hàng để xem chi tiết
+            </p>
+            <div className="overflow-x-auto rounded-btn border border-border">
+              <table className="w-full text-sm">
+                <thead className="bg-surface-alt">
+                  <tr>
+                    {[
+                      "Giai đoạn",
+                      "Trạng thái",
+                      "Sức khỏe",
+                      "Ngày bắt đầu",
+                      "Ngày kết thúc",
+                      "Quan sát lần cuối",
+                      "",
+                    ].map((h) => (
+                      <th
+                        key={h}
+                        className="px-3 py-2.5 text-left text-xs font-semibold text-ink-500 uppercase tracking-wide whitespace-nowrap"
+                      >
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {trackings.map((t) => (
+                    <tr
+                      key={t.trackingId}
+                      className="hover:bg-surface-alt transition-colors cursor-pointer"
+                      onClick={() => setSelectedTracking(t)}
+                    >
+                      <td className="px-3 py-2.5 font-medium text-ink-800 whitespace-nowrap">
+                        {t.stageName}
+                      </td>
+                      <td className="px-3 py-2.5 whitespace-nowrap">
+                        <StatusBadge
+                          label={trackingStatusLabel(t.trackingStatus)}
+                          tone={trackingStatusTone(t.trackingStatus)}
+                          size="sm"
+                        />
+                      </td>
+                      <td className="px-3 py-2.5 whitespace-nowrap">
+                        {t.healthStatus ? (
+                          <StatusBadge
+                            label={healthStatusLabel(t.healthStatus)}
+                            tone={healthStatusTone(t.healthStatus)}
+                            size="sm"
+                          />
+                        ) : (
+                          <span className="text-ink-400 text-xs">—</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2.5 text-ink-500 whitespace-nowrap text-xs">
+                        {formatDate(t.startDate)}
+                      </td>
+                      <td className="px-3 py-2.5 text-ink-500 whitespace-nowrap text-xs">
+                        {t.endDate ? formatDate(t.endDate) : "—"}
+                      </td>
+                      <td className="px-3 py-2.5 text-ink-500 whitespace-nowrap text-xs">
+                        {formatDate(t.lastObservedAt)}
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <ChevronRight className="w-4 h-4 text-ink-400" />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Detail drill-down for a single tracking record */}
+      {selectedTracking && (
+        <Modal
+          open
+          onOpenChange={(o) => !o && setSelectedTracking(null)}
+          title={`Chi tiết — ${selectedTracking.stageName}`}
+          size="lg"
+          nested
+        >
+          <div className="space-y-4">
+            {/* Status badges */}
+            <div className="flex flex-wrap gap-2">
+              <StatusBadge
+                label={trackingStatusLabel(selectedTracking.trackingStatus)}
+                tone={trackingStatusTone(selectedTracking.trackingStatus)}
+                icon={Activity}
+              />
+              {selectedTracking.healthStatus && (
+                <StatusBadge
+                  label={`Sức khỏe: ${healthStatusLabel(selectedTracking.healthStatus)}`}
+                  tone={healthStatusTone(selectedTracking.healthStatus)}
+                />
+              )}
+            </div>
+
+            {/* Info grid */}
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="bg-surface-alt rounded-btn p-3">
+                <p className="text-xs text-ink-400 mb-0.5">Cây trồng</p>
+                <p className="font-medium text-ink-800">
+                  {selectedTracking.cropName}
+                </p>
+              </div>
+              <div className="bg-surface-alt rounded-btn p-3">
+                <p className="text-xs text-ink-400 mb-0.5">Luống</p>
+                <p className="font-medium text-ink-800 font-mono text-xs">
+                  {selectedTracking.bedName}
+                </p>
+              </div>
+              <div className="bg-surface-alt rounded-btn p-3">
+                <p className="text-xs text-ink-400 mb-0.5">Ngày bắt đầu</p>
+                <p className="font-medium text-ink-800">
+                  {formatDate(selectedTracking.startDate)}
+                </p>
+              </div>
+              <div className="bg-surface-alt rounded-btn p-3">
+                <p className="text-xs text-ink-400 mb-0.5">Ngày kết thúc</p>
+                <p className="font-medium text-ink-800">
+                  {selectedTracking.endDate
+                    ? formatDate(selectedTracking.endDate)
+                    : "—"}
+                </p>
+              </div>
+              {selectedTracking.actualHeight != null &&
+                selectedTracking.actualHeight > 0 && (
+                  <div className="bg-surface-alt rounded-btn p-3">
+                    <p className="text-xs text-ink-400 mb-0.5">
+                      Chiều cao thực tế (cm)
+                    </p>
+                    <p className="font-medium text-ink-800">
+                      {selectedTracking.actualHeight}
+                    </p>
+                  </div>
+                )}
+              {selectedTracking.actualYield != null &&
+                selectedTracking.actualYield > 0 && (
+                  <div className="bg-surface-alt rounded-btn p-3">
+                    <p className="text-xs text-ink-400 mb-0.5">
+                      Sản lượng thực tế
+                    </p>
+                    <p className="font-medium text-ink-800">
+                      {selectedTracking.actualYield}
+                    </p>
+                  </div>
+                )}
+              {(selectedTracking.delayDays ?? 0) > 0 && (
+                <div className="bg-status-warning-bg rounded-btn p-3">
+                  <p className="text-xs text-status-warning-fg mb-0.5">
+                    Số ngày trễ
+                  </p>
+                  <p className="font-medium text-status-warning-fg">
+                    {selectedTracking.delayDays} ngày
+                  </p>
+                </div>
+              )}
+              {selectedTracking.delayReason &&
+                selectedTracking.delayReason !== "string" && (
+                  <div className="bg-surface-alt rounded-btn p-3 col-span-2">
+                    <p className="text-xs text-ink-400 mb-0.5">Lý do trễ</p>
+                    <p className="font-medium text-ink-800">
+                      {selectedTracking.delayReason}
+                    </p>
+                  </div>
+                )}
+            </div>
+
+            {/* Notes */}
+            {selectedTracking.notes && selectedTracking.notes !== "string" && (
+              <div className="bg-surface-alt rounded-btn p-3 text-sm">
+                <p className="text-xs text-ink-400 mb-1">Ghi chú</p>
+                <p className="text-ink-700 leading-relaxed">
+                  {selectedTracking.notes}
+                </p>
+              </div>
+            )}
+
+            {/* Footer meta */}
+            <div className="border-t border-border pt-3 flex flex-col gap-1.5 text-xs text-ink-400">
+              <div className="flex items-center gap-1.5">
+                <User className="w-3.5 h-3.5 shrink-0" />
+                <span>
+                  Cập nhật bởi:{" "}
+                  <span className="text-ink-600 font-medium">
+                    {staffLoading
+                      ? "Đang tải..."
+                      : (staffNames[selectedTracking.lastUpdatedBy] ??
+                        selectedTracking.lastUpdatedBy)}
+                  </span>
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5 shrink-0" />
+                <span>
+                  Quan sát lần cuối:{" "}
+                  {formatDate(selectedTracking.lastObservedAt)}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5 shrink-0" />
+                <span>Tạo lúc: {formatDate(selectedTracking.createdAt)}</span>
+              </div>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+    </>
+  );
 }
 
 // ─── IoT sensor types (detail view) ───────────────────────────────────────────
@@ -579,6 +940,18 @@ function DetailSeasonView({
     {},
   );
 
+  // Cache of harvestDetailId → whether tracking records exist (populated on first modal open)
+  // undefined = never opened, true = has data, false = no data
+  const [trackingKnown, setTrackingKnown] = useState<Record<string, boolean>>(
+    {},
+  );
+
+  // Growth tracking modal target: { id: harvestDetailId, bedName }
+  const [growthTrackingTarget, setGrowthTrackingTarget] = React.useState<{
+    id: string;
+    bedName: string;
+  } | null>(null);
+
   // Create harvest modal
   const [createHarvestOpen, setCreateHarvestOpen] = useState(false);
   const [editHarvest, setEditHarvest] = useState<HarvestItem | null>(null);
@@ -997,20 +1370,26 @@ function DetailSeasonView({
                           <table className="w-full text-sm">
                             <thead className="bg-surface-alt">
                               <tr>
-                                {[
-                                  "Luống",
-                                  "Số lượng (cây)",
-                                  "Ngày bắt đầu",
-                                  "Ngày kết thúc",
-                                  "Đã thu hoạch",
-                                ].map((h) => (
-                                  <th
-                                    key={h}
-                                    className="px-4 py-2.5 text-left text-xs font-semibold text-ink-500 uppercase tracking-wide whitespace-nowrap"
-                                  >
-                                    {h}
-                                  </th>
-                                ))}
+                                {/* Luống — takes all remaining space */}
+                                <th className="px-4 py-2.5 text-left text-xs font-semibold text-ink-500 uppercase tracking-wide w-full">
+                                  Luống
+                                </th>
+                                {/* All other columns — shrink to content */}
+                                <th className="px-4 py-2.5 text-center text-xs font-semibold text-ink-500 uppercase tracking-wide whitespace-nowrap">
+                                  Số lượng (cây)
+                                </th>
+                                <th className="px-4 py-2.5 text-center text-xs font-semibold text-ink-500 uppercase tracking-wide whitespace-nowrap">
+                                  Ngày bắt đầu
+                                </th>
+                                <th className="px-4 py-2.5 text-center text-xs font-semibold text-ink-500 uppercase tracking-wide whitespace-nowrap">
+                                  Ngày kết thúc
+                                </th>
+                                <th className="px-4 py-2.5 text-center text-xs font-semibold text-ink-500 uppercase tracking-wide whitespace-nowrap">
+                                  Đã thu hoạch
+                                </th>
+                                <th className="px-4 py-2.5 text-center text-xs font-semibold text-ink-500 uppercase tracking-wide whitespace-nowrap">
+                                  Sinh trưởng
+                                </th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-border">
@@ -1027,30 +1406,71 @@ function DetailSeasonView({
                                     key={d.harvestDetailId}
                                     className="hover:bg-surface-alt transition-colors"
                                   >
-                                    <td className="px-4 py-2.5 font-mono text-xs font-semibold text-ink-800">
+                                    <td className="px-4 py-2.5 font-mono text-xs font-semibold text-ink-800 whitespace-nowrap">
                                       {d.bedName}
                                     </td>
-                                    <td className="px-4 py-2.5 text-ink-700">
+                                    <td className="px-4 py-2.5 text-center text-ink-700 whitespace-nowrap">
                                       {d.cropQuantity.toLocaleString("vi-VN")}
                                     </td>
-                                    <td className="px-4 py-2.5 text-ink-500 whitespace-nowrap">
+                                    <td className="px-4 py-2.5 text-center text-ink-500 whitespace-nowrap">
                                       {formatDate(d.startDate)}
                                     </td>
-                                    <td className="px-4 py-2.5 text-ink-500 whitespace-nowrap">
+                                    <td className="px-4 py-2.5 text-center text-ink-500 whitespace-nowrap">
                                       {formatDate(d.endDate)}
                                     </td>
-                                    <td className="px-4 py-2.5">
-                                      <StatusBadge
-                                        label={
-                                          d.isHarvested
-                                            ? "Đã xong"
-                                            : "Chưa xong"
-                                        }
-                                        tone={
-                                          d.isHarvested ? "success" : "neutral"
-                                        }
-                                        size="sm"
-                                      />
+                                    <td className="px-4 py-2.5 whitespace-nowrap">
+                                      <div className="flex justify-center">
+                                        <StatusBadge
+                                          label={
+                                            d.isHarvested
+                                              ? "Đã xong"
+                                              : "Chưa xong"
+                                          }
+                                          tone={
+                                            d.isHarvested
+                                              ? "success"
+                                              : "neutral"
+                                          }
+                                          size="sm"
+                                        />
+                                      </div>
+                                    </td>
+                                    <td className="px-4 py-2.5 whitespace-nowrap">
+                                      <div className="flex items-center justify-center">
+                                        <button
+                                          type="button"
+                                          title={
+                                            trackingKnown[d.harvestDetailId] ===
+                                            true
+                                              ? "Xem theo dõi sinh trưởng"
+                                              : trackingKnown[
+                                                    d.harvestDetailId
+                                                  ] === false
+                                                ? "Chưa có dữ liệu sinh trưởng"
+                                                : "Xem theo dõi sinh trưởng"
+                                          }
+                                          aria-label="Xem theo dõi sinh trưởng"
+                                          onClick={() =>
+                                            setGrowthTrackingTarget({
+                                              id: d.harvestDetailId,
+                                              bedName: d.bedName,
+                                            })
+                                          }
+                                          className={[
+                                            "p-1.5 rounded-btn transition-colors",
+                                            trackingKnown[d.harvestDetailId] ===
+                                            true
+                                              ? "text-primary hover:bg-primary-50"
+                                              : trackingKnown[
+                                                    d.harvestDetailId
+                                                  ] === false
+                                                ? "text-ink-300 hover:text-ink-500 hover:bg-surface-alt"
+                                                : "text-ink-400 hover:text-primary hover:bg-primary-50",
+                                          ].join(" ")}
+                                        >
+                                          <NotebookPen className="w-4 h-4" />
+                                        </button>
+                                      </div>
                                     </td>
                                   </tr>
                                 ))}
@@ -1296,6 +1716,18 @@ function DetailSeasonView({
           />
         </div>
       </Modal>
+
+      {/* Growth Tracking Modal */}
+      {growthTrackingTarget && (
+        <GrowthTrackingModal
+          harvestDetailId={growthTrackingTarget.id}
+          bedName={growthTrackingTarget.bedName}
+          onClose={() => setGrowthTrackingTarget(null)}
+          onFetched={(id, count) =>
+            setTrackingKnown((prev) => ({ ...prev, [id]: count > 0 }))
+          }
+        />
+      )}
 
       {/* Delete Harvest Dialog */}
       <ConfirmDialog
@@ -1626,6 +2058,7 @@ function CreateSeasonView({
                       expectedDate: "",
                       expectedQuantity: "",
                       bedIds: [],
+                      unit: "",
                     },
                   ]);
                 }}

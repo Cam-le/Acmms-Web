@@ -672,6 +672,32 @@ export interface HarvestDetailUpdateRequest {
   endDate: string;
 }
 
+// ── Growth Trackings ──────────────────────────────────────────────────────────
+
+export interface GrowthTrackingResponse {
+  trackingId: string;
+  harvestDetailId: string;
+  stageId: string;
+  stageName: string;
+  cropName: string;
+  bedName: string;
+  startDate: string;
+  endDate?: string;
+  /** "In-Progress" | "Completed" | "Cancelled" */
+  trackingStatus: string;
+  healthStatus?: string;
+  actualHeight?: number;
+  actualYield?: number;
+  delayDays?: number;
+  delayReason?: string;
+  /** userId — resolve to fullname via api.getStaff() */
+  lastUpdatedBy: string;
+  lastObservedAt: string;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // ── Maps / Geocoding ──────────────────────────────────────────────────────────
 
 export interface GeocodeResultResponse {
@@ -1011,6 +1037,17 @@ export const api = {
     request<HarvestDetailResponse>("PUT", `/api/harvest-details/${id}`, body),
   deleteHarvestDetail: (id: string) =>
     request<unknown>("DELETE", `/api/harvest-details/${id}`),
+
+  // Growth Trackings
+  getGrowthTrackings: () =>
+    request<GrowthTrackingResponse[]>("GET", "/api/growth-trackings"),
+  getGrowthTracking: (id: string) =>
+    request<GrowthTrackingResponse>("GET", `/api/growth-trackings/${id}`),
+  getGrowthTrackingsByHarvestDetail: (harvestDetailId: string) =>
+    request<GrowthTrackingResponse[]>(
+      "GET",
+      `/api/growth-trackings/harvest-detail/${harvestDetailId}`,
+    ),
 
   // Maps / Geocoding
   geocodeAddress: (address: string) =>
