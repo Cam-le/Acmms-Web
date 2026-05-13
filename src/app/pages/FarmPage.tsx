@@ -278,6 +278,11 @@ function MapPickerModal({
   const [pinnedLabel, setPinnedLabel] = useState<string | null>(null);
   const [mapError, setMapError] = useState<string | null>(null);
   const [mapLoading, setMapLoading] = useState(false);
+  // True while BE reverse geocode is in-flight after a map click
+  const [reverseLoading, setReverseLoading] = useState(false);
+  // Incremented on every map click — lets us discard responses from
+  // previous clicks if the user clicks again before the first resolves.
+  const reverseSeqRef = useRef(0);
 
   // Google Maps instances
   const mapRef = useRef<google.maps.Map | null>(null);
@@ -331,11 +336,39 @@ function MapPickerModal({
           placesServiceRef.current = new gmaps.places.PlacesService(map);
           sessionTokenRef.current = new gmaps.places.AutocompleteSessionToken();
 
-          // Map click → pin only. NO reverse geocode (cost guard).
+          // Map click → pin immediately, then call BE reverse geocode to
+          // resolve a real address string. The reverseSeqRef guards against
+          // a previous slow request overwriting results from a newer click.
           map.addListener("click", (e: google.maps.MapMouseEvent) => {
             if (!e.latLng) return;
-            placePinOnMap(e.latLng.lat(), e.latLng.lng(), map);
+            const lat = e.latLng.lat();
+            const lng = e.latLng.lng();
+
+            placePinOnMap(lat, lng, map);
             setSuggestionsOpen(false);
+
+            // Show coords immediately as a fallback label while BE responds
+            const coordFallback = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+            setQuery(coordFallback);
+            setPinnedLabel(coordFallback);
+            setReverseLoading(true);
+
+            const seq = ++reverseSeqRef.current;
+            api
+              .reverseGeocode(lat, lng)
+              .then((result) => {
+                if (seq !== reverseSeqRef.current) return; // stale — newer click fired
+                const addr = result.formattedAddress ?? coordFallback;
+                setQuery(addr);
+                setPinnedLabel(addr);
+              })
+              .catch(() => {
+                if (seq !== reverseSeqRef.current) return;
+                // Silently keep the coord fallback already shown
+              })
+              .finally(() => {
+                if (seq === reverseSeqRef.current) setReverseLoading(false);
+              });
           });
 
           setMapLoading(false);
@@ -385,6 +418,8 @@ function MapPickerModal({
       }
       autocompleteSeqRef.current = 0;
       placeDetailsPendingRef.current = false;
+      reverseSeqRef.current = 0;
+      setReverseLoading(false);
     }
   }, [open]);
 
@@ -635,8 +670,9 @@ function MapPickerModal({
             </div>
 
             <p className="text-xs text-ink-400 -mt-1">
-              Gõ ít nhất 2 ký tự để hiện gợi ý · Chọn gợi ý hoặc click thẳng lên
-              bản đồ để ghim tọa độ
+              Gõ ít nhất 2 ký tự để hiện gợi ý · Click trực tiếp lên bản đồ để
+              ghim tọa độ — ô địa chỉ sẽ tự điền tọa độ, bạn có thể sửa lại
+              thành tên địa chỉ thực
             </p>
 
             {/* Error */}
@@ -670,23 +706,40 @@ function MapPickerModal({
             {/* Pin / address status indicator */}
             {pinned ? (
               <div className="flex items-center gap-2 px-3 py-2 bg-primary-50 border border-primary/20 rounded-btn">
-                <CheckCircle className="w-4 h-4 text-primary shrink-0" />
-                <span className="text-xs text-ink-500">Tọa độ đã ghim:</span>
-                <span className="text-xs font-mono text-primary-700">
-                  {pinned.lat.toFixed(6)}, {pinned.lng.toFixed(6)}
-                </span>
+                {reverseLoading ? (
+                  <Loader2 className="w-4 h-4 animate-spin text-primary shrink-0" />
+                ) : (
+                  <CheckCircle className="w-4 h-4 text-primary shrink-0" />
+                )}
+                <div className="flex flex-col min-w-0 flex-1">
+                  {reverseLoading ? (
+                    <span className="text-xs text-ink-500">
+                      Đang tra địa chỉ...
+                    </span>
+                  ) : (
+                    <span className="text-xs text-primary-700 truncate">
+                      {pinnedLabel ??
+                        `${pinned.lat.toFixed(6)}, ${pinned.lng.toFixed(6)}`}
+                    </span>
+                  )}
+                  <span className="text-xs text-ink-400 font-mono">
+                    {pinned.lat.toFixed(6)}, {pinned.lng.toFixed(6)}
+                  </span>
+                </div>
                 <button
                   type="button"
                   onClick={() => {
                     setPinned(null);
                     setPinnedLabel(null);
                     setQuery("");
+                    setReverseLoading(false);
+                    reverseSeqRef.current++;
                     if (markerRef.current) {
                       markerRef.current.setMap(null);
                       markerRef.current = null;
                     }
                   }}
-                  className="ml-auto text-xs text-ink-400 hover:text-status-danger-fg transition-colors"
+                  className="text-xs text-ink-400 hover:text-status-danger-fg transition-colors shrink-0"
                 >
                   Xóa pin
                 </button>
@@ -848,8 +901,8 @@ function FarmCard({
   return (
     <Collapsible.Root open={open} onOpenChange={setOpen}>
       <div className="bg-surface rounded-card border border-border shadow-card overflow-hidden">
-        <div className="p-5 flex items-center justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-4 min-w-0">
+        <div className="p-5 flex items-center gap-3">
+          <div className="flex items-center gap-4 min-w-0 flex-1">
             <div className="w-12 h-12 bg-primary-50 rounded-card flex items-center justify-center shrink-0">
               <Home className="w-6 h-6 text-primary" />
             </div>
@@ -857,14 +910,14 @@ function FarmCard({
               <h3 className="font-semibold text-primary-700 truncate">
                 {farm.name}
               </h3>
-              <div className="flex items-center gap-1 text-sm text-ink-500 mt-0.5 min-w-0 overflow-hidden">
+              <div className="flex items-center gap-1 text-sm text-ink-500 mt-0.5 min-w-0">
                 <MapPin className="w-3.5 h-3.5 shrink-0" />
                 <span className="truncate">{farm.location}</span>
               </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-3 flex-wrap justify-end">
+          <div className="flex items-center gap-3 shrink-0">
             <StatusBadge
               label={farmStatusLabel(farm.status)}
               tone={farmStatusTone(farm.status)}
