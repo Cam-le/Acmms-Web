@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { qk } from "../../api/queryKeys";
 import { useToast } from "../components/ui/useToast";
 import { ToastContainer } from "../components/ui/ToastContainer";
 import { Button } from "../components/ui/Button";
@@ -1334,77 +1336,47 @@ function EditFarmModal({
 
 export function FarmPage() {
   const { toasts, showToast, dismissToast } = useToast();
-  const [farms, setFarms] = useState<Farm[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
 
+  // ── UI-only state (modals, selection) ──────────────────────────────────
   const [viewModalOpen, setViewModalOpen] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [selectedFarm, setSelectedFarm] = useState<Farm | null>(null);
   const [farmToDelete, setFarmToDelete] = useState<Farm | null>(null);
-  const [submitting, setSubmitting] = useState(false);
 
-  const loadFarms = useCallback(async () => {
-    setLoading(true);
-    try {
+  // ── Read: farm list ────────────────────────────────────────────────────
+  const farmsQuery = useQuery({
+    queryKey: qk.farms.list(),
+    queryFn: async () => {
       const data = await api.getFarms();
-      setFarms(
-        data
-          .sort(
-            (a, b) =>
-              new Date(a.farmCreatedAt ?? 0).getTime() -
-              new Date(b.farmCreatedAt ?? 0).getTime(),
-          )
-          .map(mapFarm),
-      );
-    } catch (err) {
+      return data
+        .sort(
+          (a, b) =>
+            new Date(a.farmCreatedAt ?? 0).getTime() -
+            new Date(b.farmCreatedAt ?? 0).getTime(),
+        )
+        .map(mapFarm);
+    },
+  });
+
+  const farms = farmsQuery.data ?? [];
+  const loading = farmsQuery.isLoading;
+
+  useEffect(() => {
+    if (farmsQuery.error) {
       showToast(
-        err instanceof Error
-          ? err.message
+        farmsQuery.error instanceof Error
+          ? farmsQuery.error.message
           : "Không thể tải danh sách trang trại",
         "error",
       );
-    } finally {
-      setLoading(false);
     }
-  }, [showToast]);
+  }, [farmsQuery.error, showToast]);
 
-  useEffect(() => {
-    loadFarms();
-  }, [loadFarms]);
-
-  const handleView = (farm: Farm) => {
-    setSelectedFarm(farm);
-    setViewModalOpen(true);
-  };
-
-  const handleEdit = (farm: Farm) => {
-    setSelectedFarm(farm);
-    setEditModalOpen(true);
-  };
-
-  const handleDelete = (farm: Farm) => {
-    setFarmToDelete(farm);
-  };
-
-  const confirmDelete = async () => {
-    if (!farmToDelete) return;
-    setSubmitting(true);
-    try {
-      await api.deleteFarm(farmToDelete.id);
-      setFarmToDelete(null);
-      showToast("Xóa trang trại thành công", "success");
-      await loadFarms();
-    } catch (err) {
-      showToast(
-        err instanceof Error ? err.message : "Không thể xóa trang trại",
-        "error",
-      );
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
+  // ── Coordinate update helper (fire-and-forget side effect) ─────────────
+  // Not wrapped in useMutation — it's a best-effort call that should not
+  // block or roll back the parent mutation's success state.
   async function maybeUpdateCoordinates(farmId: string, data: FarmFormData) {
     if (data.latitude == null || data.longitude == null) return;
     try {
@@ -1420,32 +1392,43 @@ export function FarmPage() {
     }
   }
 
-  const handleCreate = async (data: FarmFormData) => {
-    setSubmitting(true);
-    try {
+  // ── Mutation: create ───────────────────────────────────────────────────
+  const createMutation = useMutation({
+    mutationFn: async (data: FarmFormData) => {
       const created = await api.createFarm({
         farmName: data.name.trim(),
         farmLocation: data.location.trim(),
         farmArea: parseFloat(data.area) || 0,
         farmStatus: data.status === "Hoạt động" ? "Active" : "Inactive",
+        latitude: data.latitude ?? undefined,
+        longitude: data.longitude ?? undefined,
       });
-      await maybeUpdateCoordinates(created.farmId, data);
+      // created may be null if the API returns no body — guard before
+      // attempting the coordinate fallback call
+      if (
+        created?.farmId &&
+        (data.latitude != null || data.longitude != null)
+      ) {
+        await maybeUpdateCoordinates(created.farmId, data);
+      }
+      return created;
+    },
+    onSuccess: () => {
       setCreateModalOpen(false);
       showToast("Tạo trang trại thành công", "success");
-      await loadFarms();
-    } catch (err) {
+      queryClient.invalidateQueries({ queryKey: qk.farms.all });
+    },
+    onError: (err) => {
       showToast(
         err instanceof Error ? err.message : "Không thể tạo trang trại",
         "error",
       );
-    } finally {
-      setSubmitting(false);
-    }
-  };
+    },
+  });
 
-  const handleUpdate = async (id: string, data: FarmFormData) => {
-    setSubmitting(true);
-    try {
+  // ── Mutation: update ───────────────────────────────────────────────────
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: FarmFormData }) => {
       await api.updateFarm(id, {
         farmName: data.name.trim(),
         farmLocation: data.location.trim(),
@@ -1453,19 +1436,58 @@ export function FarmPage() {
         farmStatus: data.status === "Hoạt động" ? "Active" : "Inactive",
       });
       await maybeUpdateCoordinates(id, data);
+    },
+    onSuccess: () => {
       setEditModalOpen(false);
       setSelectedFarm(null);
       showToast("Cập nhật trang trại thành công", "success");
-      await loadFarms();
-    } catch (err) {
+      queryClient.invalidateQueries({ queryKey: qk.farms.all });
+    },
+    onError: (err) => {
       showToast(
         err instanceof Error ? err.message : "Không thể cập nhật trang trại",
         "error",
       );
-    } finally {
-      setSubmitting(false);
-    }
+    },
+  });
+
+  // ── Mutation: delete ───────────────────────────────────────────────────
+  const deleteMutation = useMutation({
+    mutationFn: (farmId: string) => api.deleteFarm(farmId),
+    onSuccess: () => {
+      setFarmToDelete(null);
+      showToast("Xóa trang trại thành công", "success");
+      queryClient.invalidateQueries({ queryKey: qk.farms.all });
+    },
+    onError: (err) => {
+      showToast(
+        err instanceof Error ? err.message : "Không thể xóa trang trại",
+        "error",
+      );
+    },
+  });
+
+  // ── Adapter handlers (keep downstream prop signatures unchanged) ────────
+  const handleView = (farm: Farm) => {
+    setSelectedFarm(farm);
+    setViewModalOpen(true);
   };
+
+  const handleEdit = (farm: Farm) => {
+    setSelectedFarm(farm);
+    setEditModalOpen(true);
+  };
+
+  const handleDelete = (farm: Farm) => setFarmToDelete(farm);
+
+  const confirmDelete = () => {
+    if (farmToDelete) deleteMutation.mutate(farmToDelete.id);
+  };
+
+  const handleCreate = (data: FarmFormData) => createMutation.mutate(data);
+
+  const handleUpdate = (id: string, data: FarmFormData) =>
+    updateMutation.mutate({ id, data });
 
   return (
     <div className="p-6 flex flex-col gap-6">
@@ -1521,7 +1543,7 @@ export function FarmPage() {
         open={createModalOpen}
         onClose={() => setCreateModalOpen(false)}
         onCreate={handleCreate}
-        submitting={submitting}
+        submitting={createMutation.isPending}
       />
 
       {selectedFarm && (
@@ -1533,7 +1555,7 @@ export function FarmPage() {
             setSelectedFarm(null);
           }}
           onUpdate={handleUpdate}
-          submitting={submitting}
+          submitting={updateMutation.isPending}
         />
       )}
 
@@ -1548,7 +1570,7 @@ export function FarmPage() {
             tác.
           </>
         }
-        loading={submitting}
+        loading={deleteMutation.isPending}
         onConfirm={confirmDelete}
       />
 

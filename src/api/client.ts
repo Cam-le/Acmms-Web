@@ -297,6 +297,8 @@ export interface FarmRequest {
   farmLocation?: string;
   farmArea?: number;
   farmStatus?: string;
+  latitude?: number;
+  longitude?: number;
 }
 
 export interface SeasonRequest {
@@ -1060,10 +1062,7 @@ export const api = {
       "GET",
       `/api/Maps/reverse?lat=${lat}&lng=${lng}`,
     ),
-  updateFarmCoordinates: (
-    farmId: string,
-    body: UpdateFarmCoordinatesRequest,
-  ) =>
+  updateFarmCoordinates: (farmId: string, body: UpdateFarmCoordinatesRequest) =>
     request<unknown>("PUT", `/api/Maps/farm/${farmId}/coordinates`, body),
 
   // Weather
