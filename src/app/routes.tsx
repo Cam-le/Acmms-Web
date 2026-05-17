@@ -14,12 +14,6 @@ import { SeasonsPage } from "./pages/SeasonsPage";
 import { PlotsPage } from "./pages/PlotsPage";
 import { AppLayout } from "./components/Layout";
 
-// Specialist pages
-import { SpecialistDashboardPage } from "./pages/specialist/SpecialistDashboardPage";
-import { SpecialistConsultationPage } from "./pages/specialist/SpecialistConsultationPage";
-import { SpecialistConsultationDetailPage } from "./pages/specialist/SpecialistConsultationDetailPage";
-import { SpecialistHistoryPage } from "./pages/specialist/SpecialistHistoryPage";
-
 function protectedLoader() {
   const isAuthenticated = localStorage.getItem("isAuthenticated");
   if (!isAuthenticated) {
@@ -30,9 +24,6 @@ function protectedLoader() {
 
 function roleBasedIndex() {
   const role = localStorage.getItem("userRole");
-  if (role === "Specialist") {
-    return <Navigate to="/specialist/dashboard" replace />;
-  }
   return <Navigate to="/dashboard" replace />;
 }
 
@@ -99,24 +90,6 @@ export const router = createBrowserRouter([
       {
         path: "billing",
         Component: BillingPage,
-      },
-
-      // ── Specialist routes ─────────────────────────────────────────────────
-      {
-        path: "specialist/dashboard",
-        Component: SpecialistDashboardPage,
-      },
-      {
-        path: "specialist/consultations",
-        Component: SpecialistConsultationPage,
-      },
-      {
-        path: "specialist/consultations/:id",
-        Component: SpecialistConsultationDetailPage,
-      },
-      {
-        path: "specialist/history",
-        Component: SpecialistHistoryPage,
       },
 
       {

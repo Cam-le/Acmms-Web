@@ -315,7 +315,7 @@ function GrowthTrackingModal({
                       </td>
                       <td className="px-3 py-2.5 whitespace-nowrap">
                         <StatusBadge
-                          label={trackingStatusLabel(t.trackingStatus)}
+                          label={t.trackingStatus}
                           tone={trackingStatusTone(t.trackingStatus)}
                           size="sm"
                         />
@@ -323,7 +323,7 @@ function GrowthTrackingModal({
                       <td className="px-3 py-2.5 whitespace-nowrap">
                         {t.healthStatus ? (
                           <StatusBadge
-                            label={healthStatusLabel(t.healthStatus)}
+                            label={t.healthStatus}
                             tone={healthStatusTone(t.healthStatus)}
                             size="sm"
                           />
@@ -365,13 +365,13 @@ function GrowthTrackingModal({
             {/* Status badges */}
             <div className="flex flex-wrap gap-2">
               <StatusBadge
-                label={trackingStatusLabel(selectedTracking.trackingStatus)}
+                label={selectedTracking.trackingStatus}
                 tone={trackingStatusTone(selectedTracking.trackingStatus)}
                 icon={Activity}
               />
               {selectedTracking.healthStatus && (
                 <StatusBadge
-                  label={`Sức khỏe: ${healthStatusLabel(selectedTracking.healthStatus)}`}
+                  label={`Sức khỏe: ${selectedTracking.healthStatus}`}
                   tone={healthStatusTone(selectedTracking.healthStatus)}
                 />
               )}
@@ -2058,7 +2058,6 @@ function CreateSeasonView({
                       expectedDate: "",
                       expectedQuantity: "",
                       bedIds: [],
-                      unit: "",
                     },
                   ]);
                 }}

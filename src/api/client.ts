@@ -33,6 +33,31 @@ async function request<T>(
   return data as T;
 }
 
+async function requestForm<T>(
+  method: string,
+  path: string,
+  body: FormData,
+): Promise<T> {
+  // Do NOT set Content-Type — browser sets it automatically with the correct
+  // multipart boundary when body is FormData.
+  const headers: Record<string, string> = {};
+  const token = localStorage.getItem("authToken");
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  const res = await fetch(`${BASE_URL}${path}`, { method, headers, body });
+
+  if (res.status === 204) return null as T;
+
+  const data = await res.json();
+
+  if (data && typeof data === "object" && "success" in data) {
+    if (!data.success) throw new Error(data.message ?? "API error");
+    return data.data as T;
+  }
+
+  return data as T;
+}
+
 // ==================== Response Types ====================
 
 export interface FarmResponse {
@@ -297,6 +322,8 @@ export interface FarmRequest {
   farmLocation?: string;
   farmArea?: number;
   farmStatus?: string;
+  latitude?: number;
+  longitude?: number;
 }
 
 export interface SeasonRequest {
@@ -504,35 +531,6 @@ export interface DiagnosisRequest {
   severityLevel: string; // "LOW" | "MEDIUM" | "HIGH" | "CRITICAL"
 }
 
-export interface PriceSettingResponse {
-  priceSettingId: string;
-  farmName: string;
-  expertName: string;
-  month: string; // ISO date "2026-04-01T00:00:00"
-  pricePerDiagnosis: number;
-  totalDiagnoses: number;
-  totalAmount: number;
-  isPaid: boolean;
-}
-
-export interface PriceSettingCreateRequest {
-  farmId: string;
-  expertId: string;
-  month: string;
-  pricePerDiagnosis: number;
-  notes: string;
-}
-
-export interface PaymentCreateRequest {
-  priceSettingId: string;
-  provider: string;
-}
-
-export interface PaymentCreateResponse {
-  paymentUrl?: string;
-  paymentId?: string;
-}
-
 // Parsed shape of ReportResponse.aiResultsJson
 export interface AiResultParsed {
   diseaseName?: string;
@@ -541,6 +539,79 @@ export interface AiResultParsed {
   symptoms?: string[];
   treatment?: string[];
   isHealthy?: boolean;
+}
+
+// ── Contracts ─────────────────────────────────────────────────────────────────
+
+export interface ContractResponse {
+  id: string;
+  contractCode: string;
+  farmId: string;
+  farmName: string;
+  expertId: string;
+  expertName: string;
+  bankAccount: string;
+  bankName: string;
+  accountHolder: string;
+  pricePerDiagnosis: number;
+  startDate: string;
+  endDate?: string;
+  status: string; // "active" | "terminated"
+  notes?: string;
+  createdAt: string;
+}
+
+export interface ContractCreateRequest {
+  farmId: string;
+  expertId: string;
+  bankAccount: string;
+  bankName: string;
+  accountHolder: string;
+  pricePerDiagnosis: number;
+  startDate: string;
+  endDate?: string;
+  notes?: string;
+}
+
+export interface ContractUpdateRequest {
+  bankAccount: string;
+  bankName: string;
+  accountHolder: string;
+  pricePerDiagnosis: number;
+  endDate?: string;
+  notes?: string;
+}
+
+export interface ContractBillResponse {
+  contractId: string;
+  contractCode: string;
+  farmName: string;
+  expertName: string;
+  bankAccount: string;
+  bankName: string;
+  accountHolder: string;
+  month: string;
+  pricePerDiagnosis: number;
+  totalDiagnoses: number;
+  totalAmount: number;
+  isPaid: boolean;
+}
+
+// ── Payments ──────────────────────────────────────────────────────────────────
+
+export interface PaymentResponse {
+  id: string;
+  contractId: string;
+  contractCode: string;
+  farmName: string;
+  expertName: string;
+  month: string;
+  totalDiagnoses: number;
+  amount: number;
+  billImageUrl: string;
+  status: string; // "paid"
+  createdAt: string;
+  paidAt: string;
 }
 
 // ── Attachments ───────────────────────────────────────────────────────────────
@@ -1002,14 +1073,37 @@ export const api = {
       `/api/Attachments?objectType=${encodeURIComponent(objectType)}&objectId=${encodeURIComponent(objectId)}`,
     ),
 
-  // Payment / Billing
-  getPriceSettings: () =>
-    request<PriceSettingResponse[]>("GET", "/api/payment/price-settings"),
-  createPriceSetting: (body: PriceSettingCreateRequest) =>
-    request<unknown>("POST", "/api/payment/price-setting", body),
-  createPayment: (body: PaymentCreateRequest) =>
-    request<PaymentCreateResponse>("POST", "/api/payment/create", body),
+  // Contracts
+  getContracts: () => request<ContractResponse[]>("GET", "/api/contract/all"),
+  getContract: (id: string) =>
+    request<ContractResponse>("GET", `/api/contract/${id}`),
+  createContract: (body: ContractCreateRequest) =>
+    request<ContractResponse>("POST", "/api/contract", body),
+  updateContract: (id: string, body: ContractUpdateRequest) =>
+    request<ContractResponse>("PUT", `/api/contract/${id}`, body),
+  terminateContract: (id: string) =>
+    request<unknown>("POST", `/api/contract/${id}/terminate`),
+  getContractBill: (id: string, month?: string) =>
+    request<ContractBillResponse>(
+      "GET",
+      `/api/contract/${id}/bill${month ? `?month=${encodeURIComponent(month)}` : ""}`,
+    ),
 
+  // Payments
+  getPayments: () => request<PaymentResponse[]>("GET", "/api/payment/my"),
+  getPayment: (id: string) =>
+    request<PaymentResponse>("GET", `/api/payment/${id}`),
+  uploadPayment: (params: {
+    contractId: string;
+    month: string;
+    file: File;
+  }) => {
+    const form = new FormData();
+    form.append("ContractId", params.contractId);
+    form.append("Month", params.month);
+    form.append("BillFile", params.file);
+    return requestForm<PaymentResponse>("POST", "/api/payment/upload", form);
+  },
   // Harvests
   getHarvests: () => request<HarvestResponse[]>("GET", "/api/harvests"),
   getHarvest: (id: string) =>
@@ -1060,10 +1154,7 @@ export const api = {
       "GET",
       `/api/Maps/reverse?lat=${lat}&lng=${lng}`,
     ),
-  updateFarmCoordinates: (
-    farmId: string,
-    body: UpdateFarmCoordinatesRequest,
-  ) =>
+  updateFarmCoordinates: (farmId: string, body: UpdateFarmCoordinatesRequest) =>
     request<unknown>("PUT", `/api/Maps/farm/${farmId}/coordinates`, body),
 
   // Weather

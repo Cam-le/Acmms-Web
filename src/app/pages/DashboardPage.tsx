@@ -1,8 +1,8 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   FileText,
-  Receipt,
   Droplets,
   Wind,
   Sun,
@@ -21,15 +21,15 @@ import {
 import { api } from "../../api/client";
 import type {
   ReportResponse,
-  PriceSettingResponse,
   FarmResponse,
   WeatherCurrentResponse,
   WeatherForecastDayResponse,
 } from "../../api/client";
+import { qk } from "../../api/queryKeys";
 import { LoadingState } from "../components/ui/LoadingState";
 import { EmptyState } from "../components/ui/EmptyState";
 import { StatusBadge } from "../components/ui/StatusBadge";
-import { formatDate, formatMonth } from "../utils/format";
+import { formatDate } from "../utils/format";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -37,7 +37,6 @@ type ForecastDays = 1 | 3 | 7;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/** Prepend https: to WeatherAPI icon URLs that start with // */
 function weatherIcon(url: string | undefined): string | undefined {
   if (!url) return undefined;
   return url.startsWith("//") ? `https:${url}` : url;
@@ -83,141 +82,98 @@ function shortDay(isoDate: string): string {
 
 export function DashboardPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
-  // ── Summary data ─────────────────────────────────────────────────────────
-  const [reports, setReports] = useState<ReportResponse[]>([]);
-  const [bills, setBills] = useState<PriceSettingResponse[]>([]);
-  const [loadingReports, setLoadingReports] = useState(true);
-  const [loadingBills, setLoadingBills] = useState(true);
-
-  // ── Farm / weather ────────────────────────────────────────────────────────
-  const [farms, setFarms] = useState<FarmResponse[]>([]);
-  const [loadingFarms, setLoadingFarms] = useState(true);
+  // ── UI state ─────────────────────────────────────────────────────────────
   const [selectedFarmId, setSelectedFarmId] = useState<string>("");
   const [forecastDays, setForecastDays] = useState<ForecastDays>(3);
+  // Forecast is opt-in: only fetched after user clicks "Xem dự báo"
+  const [forecastEnabled, setForecastEnabled] = useState(false);
 
-  // Current weather — auto-fetches when farm changes
-  const [currentWeather, setCurrentWeather] =
-    useState<WeatherCurrentResponse | null>(null);
-  const [loadingCurrent, setLoadingCurrent] = useState(false);
-  const [currentError, setCurrentError] = useState<string | null>(null);
+  // ── Reports query ─────────────────────────────────────────────────────────
+  const reportsQuery = useQuery({
+    queryKey: qk.reports.list(),
+    queryFn: api.getReports as () => Promise<ReportResponse[]>,
+    retry: 1,
+  });
 
-  // Forecast — only fetched when user explicitly clicks "Xem dự báo"
-  const [forecast, setForecast] = useState<WeatherForecastDayResponse[]>([]);
-  const [loadingForecast, setLoadingForecast] = useState(false);
-  const [forecastError, setForecastError] = useState<string | null>(null);
-  const [forecastLoaded, setForecastLoaded] = useState(false);
+  // ── Farms query — default selectedFarmId to first farm ───────────────────
+  const farmsQuery = useQuery({
+    queryKey: qk.farms.list(),
+    queryFn: api.getFarms as () => Promise<FarmResponse[]>,
+    retry: 1,
+  });
 
-  // Separate ref counters to guard stale responses for each fetch type
-  const currentFetchId = useRef(0);
-  const forecastFetchId = useRef(0);
-
-  // ── Load reports ─────────────────────────────────────────────────────────
   useEffect(() => {
-    api
-      .getReports()
-      .then((data) => setReports(data ?? []))
-      .catch(() => setReports([]))
-      .finally(() => setLoadingReports(false));
-  }, []);
-
-  // ── Load bills ───────────────────────────────────────────────────────────
-  useEffect(() => {
-    api
-      .getPriceSettings()
-      .then((data) => setBills(data ?? []))
-      .catch(() => setBills([]))
-      .finally(() => setLoadingBills(false));
-  }, []);
-
-  // ── Load farms once ───────────────────────────────────────────────────────
-  useEffect(() => {
-    api
-      .getFarms()
-      .then((data) => {
-        const list = data ?? [];
-        setFarms(list);
-        if (list.length > 0) setSelectedFarmId(list[0].farmId);
-      })
-      .catch(() => setFarms([]))
-      .finally(() => setLoadingFarms(false));
-  }, []);
-
-  // ── Auto-fetch current weather when farm changes ──────────────────────────
-  useEffect(() => {
-    if (!selectedFarmId) {
-      setCurrentWeather(null);
-      setCurrentError(null);
-      // Also clear any previously loaded forecast when farm switches
-      setForecast([]);
-      setForecastError(null);
-      setForecastLoaded(false);
-      return;
+    if (farmsQuery.data && farmsQuery.data.length > 0 && !selectedFarmId) {
+      setSelectedFarmId(farmsQuery.data[0].farmId);
     }
+  }, [farmsQuery.data, selectedFarmId]);
 
-    const fetchId = ++currentFetchId.current;
-    setLoadingCurrent(true);
-    setCurrentError(null);
-    setCurrentWeather(null);
-    // Clear stale forecast from previous farm
-    setForecast([]);
-    setForecastError(null);
-    setForecastLoaded(false);
+  // ── Current weather — auto-fetches when farm changes ─────────────────────
+  const currentWeatherQuery = useQuery({
+    queryKey: qk.weather.current(selectedFarmId),
+    queryFn: () =>
+      api.getWeatherCurrentByFarm(
+        selectedFarmId,
+      ) as Promise<WeatherCurrentResponse>,
+    enabled: !!selectedFarmId,
+    // 5-minute stale time — weather doesn't change second-by-second
+    staleTime: 5 * 60_000,
+    retry: 1,
+  });
 
-    api
-      .getWeatherCurrentByFarm(selectedFarmId)
-      .then((data: WeatherCurrentResponse) => {
-        if (fetchId !== currentFetchId.current) return;
-        setCurrentWeather(data ?? null);
-      })
-      .catch((err: unknown) => {
-        if (fetchId !== currentFetchId.current) return;
-        setCurrentError(
-          err instanceof Error
-            ? err.message
-            : "Không thể tải dữ liệu thời tiết.",
-        );
-      })
-      .finally(() => {
-        if (fetchId !== currentFetchId.current) return;
-        setLoadingCurrent(false);
-      });
+  // Clear forecast whenever farm changes
+  useEffect(() => {
+    setForecastEnabled(false);
   }, [selectedFarmId]);
 
-  // ── Manual forecast fetch — called only when user clicks the button ───────
-  function loadForecast() {
-    if (!selectedFarmId || loadingForecast) return;
+  // ── Forecast — only when user explicitly enables ──────────────────────────
+  const forecastQuery = useQuery({
+    queryKey: qk.weather.forecast(selectedFarmId, forecastDays),
+    queryFn: () =>
+      api.getWeatherForecastByFarm(selectedFarmId, forecastDays) as Promise<{
+        forecast: WeatherForecastDayResponse[];
+      }>,
+    enabled: forecastEnabled && !!selectedFarmId,
+    staleTime: 5 * 60_000,
+    retry: 1,
+  });
 
-    const fetchId = ++forecastFetchId.current;
-    setLoadingForecast(true);
-    setForecastError(null);
-    setForecast([]);
-
-    api
-      .getWeatherForecastByFarm(selectedFarmId, forecastDays)
-      .then((data) => {
-        if (fetchId !== forecastFetchId.current) return;
-        setForecast(data?.forecast ?? []);
-        setForecastLoaded(true);
-      })
-      .catch((err: unknown) => {
-        if (fetchId !== forecastFetchId.current) return;
-        setForecastError(
-          err instanceof Error
-            ? err.message
-            : "Không thể tải dự báo thời tiết.",
-        );
-      })
-      .finally(() => {
-        if (fetchId !== forecastFetchId.current) return;
-        setLoadingForecast(false);
-      });
+  // When forecastDays changes while forecast is shown, reset so user re-triggers
+  function handleForecastDaysChange(d: ForecastDays) {
+    setForecastDays(d);
+    setForecastEnabled(false);
   }
 
+  function loadForecast() {
+    if (!selectedFarmId) return;
+    if (forecastEnabled) {
+      // Already enabled — re-fetch with latest key
+      queryClient.invalidateQueries({
+        queryKey: qk.weather.forecast(selectedFarmId, forecastDays),
+      });
+    } else {
+      setForecastEnabled(true);
+    }
+  }
+
+  // ── Derived values ────────────────────────────────────────────────────────
+  const reports = reportsQuery.data ?? [];
+  const farms = farmsQuery.data ?? [];
   const sentToOwnerReports = reports.filter(
     (r) => r.status.toUpperCase() === "SENT_TO_OWNER",
   );
-  const unpaidBills = bills.filter((b) => !b.isPaid);
+
+  const currentWeather = currentWeatherQuery.data ?? null;
+  const forecast = forecastQuery.data?.forecast ?? [];
+  const forecastLoaded =
+    forecastEnabled &&
+    !forecastQuery.isLoading &&
+    !forecastQuery.isError &&
+    forecast.length > 0;
+
+  const selectedFarm = farms.find((f) => f.farmId === selectedFarmId) ?? null;
 
   const today = new Date().toLocaleDateString("vi-VN", {
     weekday: "long",
@@ -225,8 +181,6 @@ export function DashboardPage() {
     month: "long",
     year: "numeric",
   });
-
-  const selectedFarm = farms.find((f) => f.farmId === selectedFarmId) ?? null;
 
   return (
     <div className="flex flex-col gap-6 p-4 sm:p-6 bg-surface-page min-h-screen">
@@ -240,12 +194,12 @@ export function DashboardPage() {
         </h1>
       </div>
 
-      {/* 2 Summary Cards */}
+      {/* Summary Card — reports only (billing card removed: no suitable API) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <SummaryCard
           icon={FileText}
           label="Báo cáo chờ xử lý"
-          count={loadingReports ? null : sentToOwnerReports.length}
+          count={reportsQuery.isLoading ? null : sentToOwnerReports.length}
           hint={
             sentToOwnerReports.length > 0
               ? "Cần xem xét và phản hồi"
@@ -255,16 +209,16 @@ export function DashboardPage() {
           onClick={() => navigate("/advisory")}
         />
         <SummaryCard
-          icon={Receipt}
-          label="Hóa đơn chưa thanh toán"
-          count={loadingBills ? null : unpaidBills.length}
+          icon={FileText}
+          label="Tổng trang trại"
+          count={farmsQuery.isLoading ? null : farms.length}
           hint={
-            unpaidBills.length > 0
-              ? "Cần thanh toán cho chuyên gia"
-              : "Tất cả hóa đơn đã thanh toán"
+            farms.length > 0
+              ? `${farms.filter((f) => f.farmStatus === "Active").length} đang hoạt động`
+              : "Chưa có trang trại nào"
           }
-          tone={unpaidBills.length > 0 ? "warning" : "primary"}
-          onClick={() => navigate("/billing")}
+          tone="primary"
+          onClick={() => navigate("/farms")}
         />
       </div>
 
@@ -286,10 +240,9 @@ export function DashboardPage() {
             </div>
           </div>
 
-          {/* Controls: farm selector */}
+          {/* Farm picker */}
           <div className="flex flex-wrap items-center gap-2 shrink-0">
-            {/* Farm picker */}
-            {loadingFarms ? (
+            {farmsQuery.isLoading ? (
               <div className="h-9 w-44 rounded-btn bg-surface-subtle animate-pulse" />
             ) : farms.length === 0 ? null : (
               <select
@@ -309,19 +262,23 @@ export function DashboardPage() {
 
         {/* Body */}
         <div className="p-6">
-          {farms.length === 0 && !loadingFarms ? (
+          {farms.length === 0 && !farmsQuery.isLoading ? (
             <EmptyState
               icon={MapPin}
               message="Chưa có trang trại nào. Hãy tạo trang trại trước."
             />
-          ) : loadingCurrent ? (
+          ) : currentWeatherQuery.isLoading ? (
             <LoadingState message="Đang tải dữ liệu thời tiết..." />
-          ) : currentError ? (
+          ) : currentWeatherQuery.isError ? (
             <div className="flex flex-col items-center gap-3 py-10 text-center">
               <div className="w-10 h-10 rounded-card bg-status-warning-bg flex items-center justify-center">
                 <AlertTriangle className="w-5 h-5 text-status-warning-fg" />
               </div>
-              <p className="text-sm text-ink-500 max-w-xs">{currentError}</p>
+              <p className="text-sm text-ink-500 max-w-xs">
+                {currentWeatherQuery.error instanceof Error
+                  ? currentWeatherQuery.error.message
+                  : "Không thể tải dữ liệu thời tiết."}
+              </p>
               {selectedFarm && (
                 <button
                   type="button"
@@ -465,10 +422,10 @@ export function DashboardPage() {
 
               {/* ── Forecast panel — opt-in ──────────────────────────────────── */}
               <div className="border-t border-border pt-4">
-                {!forecastLoaded && !loadingForecast ? (
+                {!forecastEnabled && !forecastQuery.isLoading ? (
                   /* Prompt row */
                   <div className="flex flex-wrap items-center justify-between gap-3">
-                    <p className="text-xs text-ink-400"></p>
+                    <p className="text-xs text-ink-400" />
                     <div className="flex items-center gap-2">
                       {/* Days selector */}
                       <div className="flex items-center gap-1 bg-surface-subtle p-1 rounded-btn">
@@ -498,12 +455,14 @@ export function DashboardPage() {
                       </button>
                     </div>
                   </div>
-                ) : loadingForecast ? (
+                ) : forecastQuery.isLoading ? (
                   <LoadingState message="Đang tải dự báo..." variant="inline" />
-                ) : forecastError ? (
+                ) : forecastQuery.isError ? (
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <p className="text-xs text-status-danger-fg">
-                      {forecastError}
+                      {forecastQuery.error instanceof Error
+                        ? forecastQuery.error.message
+                        : "Không thể tải dự báo thời tiết."}
                     </p>
                     <button
                       type="button"
@@ -513,24 +472,19 @@ export function DashboardPage() {
                       Thử lại
                     </button>
                   </div>
-                ) : forecast.length > 0 ? (
+                ) : forecastLoaded ? (
                   <div>
                     <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
                       <p className="text-xs font-semibold text-ink-400 uppercase tracking-widest">
                         Dự báo {forecastDays} ngày tới
                       </p>
-                      {/* Allow reloading with a different day count */}
                       <div className="flex items-center gap-2">
                         <div className="flex items-center gap-1 bg-surface-subtle p-1 rounded-btn">
                           {([1, 3, 7] as ForecastDays[]).map((d) => (
                             <button
                               key={d}
                               type="button"
-                              onClick={() => {
-                                setForecastDays(d);
-                                setForecastLoaded(false);
-                                setForecast([]);
-                              }}
+                              onClick={() => handleForecastDaysChange(d)}
                               className={[
                                 "px-2.5 py-1 text-xs font-medium rounded-btn transition-colors",
                                 forecastDays === d
@@ -576,7 +530,7 @@ export function DashboardPage() {
         subtitle="Các báo cáo từ nhân viên đang chờ tư vấn chuyên gia"
         onViewAll={() => navigate("/advisory")}
       >
-        {loadingReports ? (
+        {reportsQuery.isLoading ? (
           <LoadingState />
         ) : sentToOwnerReports.length === 0 ? (
           <EmptyState message="Không có báo cáo chờ xử lý" />
@@ -625,60 +579,6 @@ export function DashboardPage() {
                         tone="warning"
                         icon={AlertTriangle}
                       />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </SectionCard>
-
-      {/* Unpaid bills table */}
-      <SectionCard
-        icon={<Receipt className="w-4 h-4 text-status-warning-fg" />}
-        iconBg="bg-status-warning-bg"
-        title="Hóa đơn chưa thanh toán"
-        subtitle="Phí tư vấn chuyên gia chưa được thanh toán"
-        onViewAll={() => navigate("/billing")}
-      >
-        {loadingBills ? (
-          <LoadingState />
-        ) : unpaidBills.length === 0 ? (
-          <EmptyState message="Tất cả hóa đơn đã được thanh toán" />
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[400px] text-sm">
-              <thead>
-                <tr className="bg-surface-alt">
-                  <th className="text-left px-6 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider">
-                    Trang trại
-                  </th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider">
-                    Chuyên gia
-                  </th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider hidden sm:table-cell">
-                    Tháng
-                  </th>
-                  <th className="px-4 py-3" />
-                </tr>
-              </thead>
-              <tbody>
-                {unpaidBills.slice(0, 5).map((b, i) => (
-                  <tr
-                    key={b.priceSettingId}
-                    className={`cursor-pointer hover:bg-primary-50 transition-colors ${i % 2 === 0 ? "bg-surface" : "bg-surface-alt"}`}
-                    onClick={() => navigate("/billing")}
-                  >
-                    <td className="px-6 py-3.5 text-primary-800 font-semibold">
-                      {b.farmName}
-                    </td>
-                    <td className="px-4 py-3.5 text-ink-500">{b.expertName}</td>
-                    <td className="px-4 py-3.5 text-ink-500 hidden sm:table-cell">
-                      {formatMonth(b.month)}
-                    </td>
-                    <td className="px-4 py-3.5">
-                      <StatusBadge label="Chưa thanh toán" tone="warning" />
                     </td>
                   </tr>
                 ))}
@@ -747,7 +647,6 @@ function ForecastCard({ day }: { day: WeatherForecastDayResponse }) {
         {day.condition?.text ?? "—"}
       </p>
 
-      {/* High / low */}
       <div className="flex items-center gap-2 text-xs font-semibold">
         <span className="text-red-500">
           {day.maxTempC != null ? `${Math.round(day.maxTempC)}°` : "—"}
@@ -758,19 +657,16 @@ function ForecastCard({ day }: { day: WeatherForecastDayResponse }) {
         </span>
       </div>
 
-      {/* Rain chance */}
       <div className="flex items-center gap-1 text-xs text-ink-500">
         <Waves className="w-3 h-3 text-blue-400 shrink-0" />
         <span>{rainLabel(day.chanceOfRain)} mưa</span>
       </div>
 
-      {/* Humidity */}
       <div className="flex items-center gap-1 text-xs text-ink-500">
         <Droplets className="w-3 h-3 text-blue-500 shrink-0" />
         <span>{day.avgHumidity != null ? `${day.avgHumidity}%` : "—"}</span>
       </div>
 
-      {/* Sunrise / sunset if available */}
       {(day.sunrise || day.sunset) && (
         <div className="flex flex-col gap-0.5 w-full border-t border-border pt-2 mt-1">
           {day.sunrise && (
