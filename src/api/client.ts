@@ -33,6 +33,31 @@ async function request<T>(
   return data as T;
 }
 
+async function requestForm<T>(
+  method: string,
+  path: string,
+  body: FormData,
+): Promise<T> {
+  // Do NOT set Content-Type — browser sets it automatically with the correct
+  // multipart boundary when body is FormData.
+  const headers: Record<string, string> = {};
+  const token = localStorage.getItem("authToken");
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  const res = await fetch(`${BASE_URL}${path}`, { method, headers, body });
+
+  if (res.status === 204) return null as T;
+
+  const data = await res.json();
+
+  if (data && typeof data === "object" && "success" in data) {
+    if (!data.success) throw new Error(data.message ?? "API error");
+    return data.data as T;
+  }
+
+  return data as T;
+}
+
 // ==================== Response Types ====================
 
 export interface FarmResponse {
@@ -1064,10 +1089,21 @@ export const api = {
       `/api/contract/${id}/bill${month ? `?month=${encodeURIComponent(month)}` : ""}`,
     ),
 
-  // Payments (upload is multipart — handled directly in BillingPage)
+  // Payments
   getPayments: () => request<PaymentResponse[]>("GET", "/api/payment/my"),
   getPayment: (id: string) =>
     request<PaymentResponse>("GET", `/api/payment/${id}`),
+  uploadPayment: (params: {
+    contractId: string;
+    month: string;
+    file: File;
+  }) => {
+    const form = new FormData();
+    form.append("ContractId", params.contractId);
+    form.append("Month", params.month);
+    form.append("BillFile", params.file);
+    return requestForm<PaymentResponse>("POST", "/api/payment/upload", form);
+  },
   // Harvests
   getHarvests: () => request<HarvestResponse[]>("GET", "/api/harvests"),
   getHarvest: (id: string) =>

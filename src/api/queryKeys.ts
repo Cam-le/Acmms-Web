@@ -87,10 +87,20 @@ export const qk = {
     roles: () => [...qk.staffs.all, "roles"] as const,
   },
 
-  // ── Billing ────────────────────────────────────────────────────────────
-  billing: {
-    all: ["billing"] as const,
-    priceSettings: () => [...qk.billing.all, "priceSettings"] as const,
+  // ── Contracts ──────────────────────────────────────────────────────────
+  contracts: {
+    all: ["contracts"] as const,
+    list: () => [...qk.contracts.all, "list"] as const,
+    detail: (id: string) => [...qk.contracts.all, "detail", id] as const,
+    bill: (id: string, month: string) =>
+      [...qk.contracts.all, "bill", id, month] as const,
+  },
+
+  // ── Payments ───────────────────────────────────────────────────────────
+  payments: {
+    all: ["payments"] as const,
+    list: () => [...qk.payments.all, "list"] as const,
+    detail: (id: string) => [...qk.payments.all, "detail", id] as const,
   },
 
   // ── Weather ────────────────────────────────────────────────────────────
