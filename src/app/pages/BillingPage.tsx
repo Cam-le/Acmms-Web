@@ -13,6 +13,7 @@ import {
   Ban,
   Upload,
   Eye,
+  Pencil,
   CreditCard,
   FileCheck,
 } from "lucide-react";
@@ -43,7 +44,6 @@ import { SearchInput } from "../components/ui/SearchInput";
 import { Pagination } from "../components/ui/Pagination";
 import { Tabs } from "../components/ui/Tabs";
 import { PageHeader } from "../components/ui/PageHeader";
-import { RowActions } from "../components/ui/RowActions";
 import { useCrudModals } from "../hooks/useCrudModals";
 import { usePagination } from "../hooks/usePagination";
 import { formatDate, formatVND } from "../utils/format";
@@ -85,21 +85,139 @@ function contractStatusLabel(s: string | null | undefined): string {
   return s?.toLowerCase() === "active" ? "Đang hiệu lực" : "Đã kết thúc";
 }
 
-// ─── MonthSelect — two native dropdowns, fully Vietnamese ────────────────────
+/**
+ * Parse an ISO date string into { year, month } (1-indexed month).
+ * Returns null if the string is falsy or unparseable.
+ */
+function parseYearMonth(
+  iso: string | null | undefined,
+): { year: number; month: number } | null {
+  if (!iso) return null;
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime()) || d.getFullYear() <= 1) return null;
+    return { year: d.getFullYear(), month: d.getMonth() + 1 };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Given a year/month selection and optional contract date bounds, return
+ * whether the selection is out of bounds and a human-readable reason.
+ */
+function getMonthOutOfBoundsReason(
+  selectedYear: number,
+  selectedMonth: number,
+  startDate: string | null | undefined,
+  endDate: string | null | undefined,
+): string | null {
+  const sel = selectedYear * 12 + selectedMonth;
+
+  const start = parseYearMonth(startDate);
+  if (start !== null) {
+    const startFlat = start.year * 12 + start.month;
+    if (sel < startFlat) {
+      return `Tháng này trước ngày bắt đầu hợp đồng (${start.month}/${start.year}).`;
+    }
+  }
+
+  const end = parseYearMonth(endDate);
+  if (end !== null) {
+    const endFlat = end.year * 12 + end.month;
+    if (sel > endFlat) {
+      return `Tháng này sau ngày kết thúc hợp đồng (${end.month}/${end.year}).`;
+    }
+  }
+
+  return null;
+}
+
+// ─── MonthSelect — constrained by contract date bounds ───────────────────────
 
 function MonthSelect({
   year,
   month,
   onChange,
   label,
+  startDate,
+  endDate,
 }: {
   year: number;
   month: number;
   onChange: (year: number, month: number) => void;
   label?: string;
+  /** ISO date string — months before this are disabled */
+  startDate?: string | null;
+  /** ISO date string — months after this are disabled */
+  endDate?: string | null;
 }) {
   const now = new Date();
-  const years = Array.from({ length: 5 }, (_, i) => now.getFullYear() - 2 + i);
+
+  // Build year range: always include the contract start/end years so the
+  // user isn't left with an empty dropdown.
+  const parsedStart = parseYearMonth(startDate);
+  const parsedEnd = parseYearMonth(endDate);
+
+  const rangeMin = parsedStart ? parsedStart.year : now.getFullYear() - 2;
+  const rangeMax = parsedEnd ? parsedEnd.year : now.getFullYear() + 2;
+
+  // Ensure we show at least a 1-year window around "now", but always honour
+  // the contract bounds when they're narrower.
+  const yearMin = Math.min(rangeMin, now.getFullYear() - 2);
+  const yearMax = Math.max(rangeMax, now.getFullYear() + 2);
+  const years = Array.from(
+    { length: yearMax - yearMin + 1 },
+    (_, i) => yearMin + i,
+  );
+
+  // Determine which months are disabled for the currently selected year.
+  function isMonthDisabled(m: number): boolean {
+    const flat = year * 12 + m;
+    if (
+      parsedStart !== null &&
+      flat < parsedStart.year * 12 + parsedStart.month
+    )
+      return true;
+    if (parsedEnd !== null && flat > parsedEnd.year * 12 + parsedEnd.month)
+      return true;
+    return false;
+  }
+
+  // Determine which years are entirely out of bounds (all 12 months disabled).
+  function isYearDisabled(y: number): boolean {
+    if (parsedStart !== null && y < parsedStart.year) return true;
+    if (parsedEnd !== null && y > parsedEnd.year) return true;
+    return false;
+  }
+
+  // When the user changes year, clamp the month to a valid value for that year.
+  function handleYearChange(newYear: number) {
+    let newMonth = month;
+    const flat = newYear * 12 + newMonth;
+    if (parsedStart !== null) {
+      const startFlat = parsedStart.year * 12 + parsedStart.month;
+      if (flat < startFlat) newMonth = parsedStart.month;
+    }
+    if (parsedEnd !== null) {
+      const endFlat = parsedEnd.year * 12 + parsedEnd.month;
+      if (newYear * 12 + newMonth > endFlat) newMonth = parsedEnd.month;
+    }
+    onChange(newYear, newMonth);
+  }
+
+  // When the user changes month, just propagate directly (month options are
+  // disabled so invalid values can't be selected natively, but guard anyway).
+  function handleMonthChange(newMonth: number) {
+    if (!isMonthDisabled(newMonth)) onChange(year, newMonth);
+  }
+
+  const outOfBoundsReason = getMonthOutOfBoundsReason(
+    year,
+    month,
+    startDate,
+    endDate,
+  );
 
   return (
     <div>
@@ -111,27 +229,39 @@ function MonthSelect({
       <div className="flex gap-2">
         <select
           value={month}
-          onChange={(e) => onChange(year, Number(e.target.value))}
+          onChange={(e) => handleMonthChange(Number(e.target.value))}
           className="flex-1 px-3 py-2.5 border border-border-strong rounded-btn text-sm text-ink-700 bg-surface focus:outline-none focus:ring-2 focus:ring-primary appearance-none cursor-pointer"
         >
-          {Array.from({ length: 12 }, (_, i) => (
-            <option key={i + 1} value={i + 1}>
-              Tháng {i + 1}
-            </option>
-          ))}
+          {Array.from({ length: 12 }, (_, i) => {
+            const m = i + 1;
+            const disabled = isMonthDisabled(m);
+            return (
+              <option key={m} value={m} disabled={disabled}>
+                Tháng {m}
+              </option>
+            );
+          })}
         </select>
         <select
           value={year}
-          onChange={(e) => onChange(Number(e.target.value), month)}
+          onChange={(e) => handleYearChange(Number(e.target.value))}
           className="w-24 px-3 py-2.5 border border-border-strong rounded-btn text-sm text-ink-700 bg-surface focus:outline-none focus:ring-2 focus:ring-primary appearance-none cursor-pointer"
         >
           {years.map((y) => (
-            <option key={y} value={y}>
+            <option key={y} value={y} disabled={isYearDisabled(y)}>
               {y}
             </option>
           ))}
         </select>
       </div>
+
+      {/* Out-of-bounds warning (safety net for edge cases) */}
+      {outOfBoundsReason && (
+        <div className="mt-2 flex items-start gap-1.5 text-xs text-status-warning-fg bg-status-warning-bg rounded-lg px-3 py-2">
+          <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+          <span>{outOfBoundsReason}</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -164,22 +294,60 @@ function InfoRow({
 function BillPreviewPanel({
   contractId,
   contractCode,
+  startDate,
+  endDate,
   onClose,
 }: {
   contractId: string;
   contractCode: string;
+  /** ISO date string for contract start — used to constrain month picker */
+  startDate: string | null | undefined;
+  /** ISO date string for contract end — used to constrain month picker */
+  endDate: string | null | undefined;
   onClose: () => void;
 }) {
   const { showToast } = useToast();
   const queryClient = useQueryClient();
 
+  // Default to the current month, but clamp to the contract's valid range.
   const now = new Date();
-  const [selectedYear, setSelectedYear] = useState(now.getFullYear());
-  const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1);
+  function clampInitialMonth(): { year: number; month: number } {
+    const parsedStart = parseYearMonth(startDate);
+    const parsedEnd = parseYearMonth(endDate);
+    let y = now.getFullYear();
+    let m = now.getMonth() + 1;
+    const flat = y * 12 + m;
+    if (parsedStart !== null) {
+      const sf = parsedStart.year * 12 + parsedStart.month;
+      if (flat < sf) {
+        y = parsedStart.year;
+        m = parsedStart.month;
+      }
+    }
+    if (parsedEnd !== null) {
+      const ef = parsedEnd.year * 12 + parsedEnd.month;
+      if (y * 12 + m > ef) {
+        y = parsedEnd.year;
+        m = parsedEnd.month;
+      }
+    }
+    return { year: y, month: m };
+  }
+
+  const initial = clampInitialMonth();
+  const [selectedYear, setSelectedYear] = useState(initial.year);
+  const [selectedMonth, setSelectedMonth] = useState(initial.month);
   const [file, setFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const monthKey = `${selectedYear}-${String(selectedMonth).padStart(2, "0")}`;
+
+  const outOfBounds = getMonthOutOfBoundsReason(
+    selectedYear,
+    selectedMonth,
+    startDate,
+    endDate,
+  );
 
   const billQuery = useQuery({
     queryKey: qk.contracts.bill(contractId, monthKey),
@@ -189,6 +357,8 @@ function BillPreviewPanel({
         monthToISO(selectedYear, selectedMonth),
       ) as Promise<ContractBillResponse>,
     retry: 1,
+    // Don't fetch if the month is clearly out of range — avoids spurious errors.
+    enabled: outOfBounds === null,
   });
 
   useEffect(() => {
@@ -262,7 +432,7 @@ function BillPreviewPanel({
             <Button
               variant="primary"
               loading={uploadMutation.isPending}
-              disabled={!file || !bill}
+              disabled={!file || !bill || !!outOfBounds}
               onClick={() => file && uploadMutation.mutate(file)}
               leadingIcon={Upload}
             >
@@ -279,11 +449,15 @@ function BillPreviewPanel({
           onChange={(y, m) => {
             setSelectedYear(y);
             setSelectedMonth(m);
+            setFile(null); // reset file when month changes
           }}
           label="Chọn tháng thanh toán"
+          startDate={startDate}
+          endDate={endDate}
         />
 
-        {billQuery.isLoading ? (
+        {/* Only show bill panel when month is in bounds */}
+        {outOfBounds ? null : billQuery.isLoading ? (
           <LoadingState message="Đang tải hóa đơn..." />
         ) : bill ? (
           <div className="bg-primary-50 rounded-xl border border-primary/20 p-4 space-y-2.5">
@@ -330,7 +504,7 @@ function BillPreviewPanel({
           </div>
         ) : null}
 
-        {bill && !bill.isPaid && (
+        {bill && !bill.isPaid && !outOfBounds && (
           <>
             <div
               onClick={() => fileInputRef.current?.click()}
@@ -855,43 +1029,79 @@ function ContractRow({
           <span className="text-sm text-ink-700">{contract.expertName}</span>
         </div>
       </td>
-      <td className="px-4 py-3 text-sm font-mono text-ink-700">
+      <td className="px-4 py-3 text-sm font-mono text-ink-700 whitespace-nowrap">
         {formatVND(contract.pricePerDiagnosis)}
       </td>
-      <td className="px-4 py-3 text-sm text-ink-700">
+      <td className="px-4 py-3 text-sm text-ink-700 whitespace-nowrap">
         {formatDate(contract.startDate)}
       </td>
-      <td className="px-4 py-3 text-sm text-ink-700 hidden sm:table-cell">
+      <td className="px-4 py-3 text-sm text-ink-700 whitespace-nowrap hidden sm:table-cell">
         {contract.endDate ? formatDate(contract.endDate) : "—"}
       </td>
-      <td className="px-4 py-3">
-        <div className="flex items-center gap-1 justify-end">
-          <RowActions
-            onView={() => onView(contract)}
-            onEdit={isActive ? () => onEdit(contract) : undefined}
-          />
-          {isActive && (
-            <>
-              <button
-                onClick={() => onPay(contract)}
-                title="Thanh toán"
-                className="p-1.5 rounded-btn text-ink-500 hover:text-primary hover:bg-primary-50 transition-colors"
-              >
-                <CreditCard className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => onTerminate(contract)}
-                disabled={isTerminating}
-                title="Kết thúc hợp đồng"
-                className="p-1.5 rounded-btn text-ink-500 hover:text-status-danger-fg hover:bg-status-danger-bg transition-colors disabled:opacity-40"
-              >
-                {isTerminating ? (
-                  <div className="w-4 h-4 border-2 border-status-danger-fg border-t-transparent rounded-full animate-spin" />
-                ) : (
-                  <Ban className="w-4 h-4" />
-                )}
-              </button>
-            </>
+
+      {/* Fixed-width actions cell — always renders 4 slots so the column
+          never shifts. Inactive rows get transparent spacers for slots 2-4. */}
+      <td className="px-4 py-3 w-[132px]">
+        <div className="flex items-center justify-end gap-0.5">
+          {/* Slot 1: View (always shown) */}
+          <button
+            type="button"
+            onClick={() => onView(contract)}
+            title="Xem"
+            aria-label="Xem"
+            className="p-1.5 rounded-btn text-ink-500 hover:text-primary hover:bg-primary-50 transition-colors"
+          >
+            <Eye className="w-4 h-4" />
+          </button>
+
+          {/* Slot 2: Edit (active only) */}
+          {isActive ? (
+            <button
+              type="button"
+              onClick={() => onEdit(contract)}
+              title="Chỉnh sửa"
+              aria-label="Chỉnh sửa"
+              className="p-1.5 rounded-btn text-ink-500 hover:text-primary hover:bg-primary-50 transition-colors"
+            >
+              <Pencil className="w-4 h-4" />
+            </button>
+          ) : (
+            <span className="w-7 shrink-0" />
+          )}
+
+          {/* Slot 3: Pay (active only) */}
+          {isActive ? (
+            <button
+              type="button"
+              onClick={() => onPay(contract)}
+              title="Thanh toán"
+              aria-label="Thanh toán"
+              className="p-1.5 rounded-btn text-ink-500 hover:text-primary hover:bg-primary-50 transition-colors"
+            >
+              <CreditCard className="w-4 h-4" />
+            </button>
+          ) : (
+            <span className="w-7 shrink-0" />
+          )}
+
+          {/* Slot 4: Terminate (active only) */}
+          {isActive ? (
+            <button
+              type="button"
+              onClick={() => onTerminate(contract)}
+              disabled={isTerminating}
+              title="Kết thúc hợp đồng"
+              aria-label="Kết thúc hợp đồng"
+              className="p-1.5 rounded-btn text-ink-500 hover:text-status-danger-fg hover:bg-status-danger-bg transition-colors disabled:opacity-40"
+            >
+              {isTerminating ? (
+                <div className="w-4 h-4 border-2 border-status-danger-fg border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <Ban className="w-4 h-4" />
+              )}
+            </button>
+          ) : (
+            <span className="w-7 shrink-0" />
           )}
         </div>
       </td>
@@ -944,7 +1154,7 @@ function PaymentHistoryTab() {
               ].map((h) => (
                 <th
                   key={h}
-                  className="px-4 py-3 text-left text-xs font-semibold text-ink-500 uppercase tracking-wide"
+                  className="px-4 py-3 text-left text-xs font-semibold text-ink-500 uppercase tracking-wide whitespace-nowrap"
                 >
                   {h}
                 </th>
@@ -963,13 +1173,13 @@ function PaymentHistoryTab() {
                 <td className="px-4 py-3 text-sm text-ink-700">
                   {p.expertName}
                 </td>
-                <td className="px-4 py-3 text-sm text-ink-700">
+                <td className="px-4 py-3 text-sm text-ink-700 whitespace-nowrap">
                   {formatMonthISO(p.month)}
                 </td>
                 <td className="px-4 py-3 text-sm font-mono text-ink-700 text-right">
                   {p.totalDiagnoses}
                 </td>
-                <td className="px-4 py-3 text-sm font-mono font-bold text-ink-800 text-right">
+                <td className="px-4 py-3 text-sm font-mono font-bold text-ink-800 text-right whitespace-nowrap">
                   {formatVND(p.amount)}
                 </td>
                 <td className="px-4 py-3">
@@ -1155,7 +1365,7 @@ export function BillingPage() {
             ) : (
               <>
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[860px] text-sm">
+                  <table className="w-full min-w-[920px] text-sm">
                     <thead className="bg-surface-alt border-b border-border">
                       <tr>
                         {[
@@ -1165,7 +1375,6 @@ export function BillingPage() {
                           "Đơn giá",
                           "Bắt đầu",
                           "Kết thúc",
-                          "Thao tác",
                         ].map((h) => (
                           <th
                             key={h}
@@ -1174,6 +1383,10 @@ export function BillingPage() {
                             {h}
                           </th>
                         ))}
+                        {/* Fixed-width header for the actions column */}
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-ink-500 uppercase tracking-wide whitespace-nowrap w-[132px]">
+                          Thao tác
+                        </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border">
@@ -1266,6 +1479,8 @@ export function BillingPage() {
         <BillPreviewPanel
           contractId={payContract.id}
           contractCode={payContract.contractCode}
+          startDate={payContract.startDate}
+          endDate={payContract.endDate}
           onClose={() => setPayContract(null)}
         />
       )}
