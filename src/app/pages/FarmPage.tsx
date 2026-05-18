@@ -77,11 +77,11 @@ interface MapPickerResult {
 
 function mapFarm(f: FarmResponse): Farm {
   return {
-    id: f.farmId,
+    id: f.farmId ?? `farm-${Math.random().toString(36).slice(2)}`,
     name: f.farmName ?? "",
     location: stripPlusCode(f.farmLocation ?? ""),
     status: f.farmStatus === "Active" ? "Hoạt động" : "Không hoạt động",
-    area: f.farmArea ?? 0,
+    area: Number(f.farmArea ?? 0) || 0,
     createdAt: f.farmCreatedAt
       ? new Date(f.farmCreatedAt).toLocaleDateString("vi-VN")
       : "",
@@ -925,7 +925,7 @@ function FarmCard({
               tone={farmStatusTone(farm.status)}
             />
             <span className="text-sm text-ink-500">
-              {farm.area.toLocaleString()} m²
+              {(farm.area ?? 0).toLocaleString()} m²
             </span>
             <RowActions
               onView={() => onView(farm)}
@@ -951,7 +951,7 @@ function FarmCard({
                   Diện tích
                 </div>
                 <div className="font-medium text-primary-700">
-                  {farm.area.toLocaleString()} m²
+                  {(farm.area ?? 0).toLocaleString()} m²
                 </div>
               </div>
               <div>
@@ -1034,7 +1034,7 @@ function ViewFarmModal({
 
   const infoRows: Array<{ label: string; value: string }> = [
     { label: "Địa chỉ", value: farm.location },
-    { label: "Diện tích", value: `${farm.area.toLocaleString()} m²` },
+    { label: "Diện tích", value: `${(farm.area ?? 0).toLocaleString()} m²` },
     { label: "Trạng thái", value: farmStatusLabel(farm.status) },
     { label: "Ngày tạo", value: farm.createdAt },
   ];
@@ -1159,12 +1159,14 @@ function ViewFarmModal({
               </div>
               <p className="text-xs text-ink-400 pt-1">
                 Cập nhật lúc{" "}
-                {new Date(weather.lastUpdated).toLocaleString("vi-VN", {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                  day: "2-digit",
-                  month: "2-digit",
-                })}
+                {weather.lastUpdated
+                  ? new Date(weather.lastUpdated).toLocaleString("vi-VN", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                      day: "2-digit",
+                      month: "2-digit",
+                    })
+                  : "—"}
                 {" · "}
                 {weather.location?.name}
                 {weather.location?.region ? `, ${weather.location.region}` : ""}
@@ -1276,7 +1278,7 @@ function EditFarmModal({
     name: farm.name,
     location: farm.location,
     status: farm.status,
-    area: farm.area.toString(),
+    area: (farm.area ?? 0).toString(),
     latitude: farm.latitude,
     longitude: farm.longitude,
   });
@@ -1287,7 +1289,7 @@ function EditFarmModal({
       name: farm.name,
       location: farm.location,
       status: farm.status,
-      area: farm.area.toString(),
+      area: (farm.area ?? 0).toString(),
       latitude: farm.latitude,
       longitude: farm.longitude,
     });
@@ -1348,20 +1350,32 @@ export function FarmPage() {
   // ── Read: farm list ────────────────────────────────────────────────────
   const farmsQuery = useQuery({
     queryKey: qk.farms.list(),
-    queryFn: async () => {
-      const data = await api.getFarms();
-      return data
-        .sort(
-          (a, b) =>
-            new Date(a.farmCreatedAt ?? 0).getTime() -
-            new Date(b.farmCreatedAt ?? 0).getTime(),
-        )
-        .map(mapFarm);
-    },
+    // Store raw API data in cache — mapping happens below at render time.
+    // This prevents stale-cache issues when other pages write raw FarmResponse[]
+    // to the same key (["farms","list"]) before FarmPage mounts.
+    queryFn: () => api.getFarms(),
   });
 
-  const farms = farmsQuery.data ?? [];
-  const loading = farmsQuery.isLoading;
+  // Map + sort + dedup at render time so we always work from raw cache data.
+  const farms: Farm[] = (farmsQuery.data ?? [])
+    .slice()
+    .sort(
+      (a, b) =>
+        new Date(a.farmCreatedAt ?? 0).getTime() -
+        new Date(b.farmCreatedAt ?? 0).getTime(),
+    )
+    .map(mapFarm)
+    .filter((f, i, arr) => arr.findIndex((x) => x.id === f.id) === i);
+  // isLoading: no cache + fetching (true first load spinner)
+  // Also guard: if data is still undefined while fetching, avoid empty-state flash
+  const loading =
+    farmsQuery.isLoading ||
+    (farmsQuery.isFetching && farmsQuery.data === undefined);
+  // Expose fetch error only when we have no cached data to show
+  const fetchError =
+    farmsQuery.isError && farmsQuery.data === undefined
+      ? farmsQuery.error
+      : null;
 
   useEffect(() => {
     if (farmsQuery.error) {
@@ -1504,6 +1518,21 @@ export function FarmPage() {
 
       {loading ? (
         <LoadingState />
+      ) : fetchError ? (
+        <EmptyState
+          icon={Home}
+          title="Không thể tải danh sách trang trại"
+          message={
+            fetchError instanceof Error
+              ? fetchError.message
+              : "Đã xảy ra lỗi. Vui lòng thử lại."
+          }
+          action={
+            <Button variant="secondary" onClick={() => farmsQuery.refetch()}>
+              Thử lại
+            </Button>
+          }
+        />
       ) : farms.length === 0 ? (
         <EmptyState
           icon={Home}
@@ -1518,7 +1547,7 @@ export function FarmPage() {
         <div className="grid grid-cols-1 gap-4">
           {farms.map((farm) => (
             <FarmCard
-              key={farm.id}
+              key={farm.id ?? farm.name}
               farm={farm}
               onView={handleView}
               onEdit={handleEdit}
