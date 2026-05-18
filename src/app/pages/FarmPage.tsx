@@ -1350,23 +1350,22 @@ export function FarmPage() {
   // ── Read: farm list ────────────────────────────────────────────────────
   const farmsQuery = useQuery({
     queryKey: qk.farms.list(),
-    queryFn: async () => {
-      const data = await api.getFarms();
-      return (
-        data
-          .sort(
-            (a, b) =>
-              new Date(a.farmCreatedAt ?? 0).getTime() -
-              new Date(b.farmCreatedAt ?? 0).getTime(),
-          )
-          .map(mapFarm)
-          // Dedup by id in case the API returns duplicate entries (prevents key warning)
-          .filter((f, i, arr) => arr.findIndex((x) => x.id === f.id) === i)
-      );
-    },
+    // Store raw API data in cache — mapping happens below at render time.
+    // This prevents stale-cache issues when other pages write raw FarmResponse[]
+    // to the same key (["farms","list"]) before FarmPage mounts.
+    queryFn: () => api.getFarms(),
   });
 
-  const farms = farmsQuery.data ?? [];
+  // Map + sort + dedup at render time so we always work from raw cache data.
+  const farms: Farm[] = (farmsQuery.data ?? [])
+    .slice()
+    .sort(
+      (a, b) =>
+        new Date(a.farmCreatedAt ?? 0).getTime() -
+        new Date(b.farmCreatedAt ?? 0).getTime(),
+    )
+    .map(mapFarm)
+    .filter((f, i, arr) => arr.findIndex((x) => x.id === f.id) === i);
   // isLoading: no cache + fetching (true first load spinner)
   // Also guard: if data is still undefined while fetching, avoid empty-state flash
   const loading =
