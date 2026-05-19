@@ -60,7 +60,7 @@ interface WorkerRow {
 const PAGE_SIZE = 5;
 
 const ROLE_LABEL: Record<string, string> = {
-  Worker: "Nhân viên",
+  Worker: "Công nhân",
   Specialist: "Chuyên gia",
 };
 const getRoleLabel = (role: string) => ROLE_LABEL[role] ?? role;
