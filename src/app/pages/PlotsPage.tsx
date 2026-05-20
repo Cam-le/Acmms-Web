@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Plus,
   ChevronDown,
@@ -26,6 +27,7 @@ import {
   IotDeviceRequest,
   AutoAllocatePreviewResponse,
 } from "../../api/client";
+import { qk } from "../../api/queryKeys";
 import { Modal } from "../components/ui/Modal";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { Button } from "../components/ui/Button";
@@ -110,14 +112,9 @@ function validateBedForm(data: BedRequest): BedFormErrors {
 
 export function PlotsPage() {
   const { toasts, showToast, dismissToast } = useToast();
+  const queryClient = useQueryClient();
 
-  const [plots, setPlots] = useState<PlotResponse[]>([]);
-  const [beds, setBeds] = useState<BedResponse[]>([]);
-  const [farms, setFarms] = useState<FarmResponse[]>([]);
-  const [soils, setSoils] = useState<SoilResponse[]>([]);
-  const [crops, setCrops] = useState<CropResponse[]>([]);
-  const [loading, setLoading] = useState(true);
-
+  // ── UI state ──
   const [selectedFarmId, setSelectedFarmId] = useState<string>("");
   const [openPlotIds, setOpenPlotIds] = useState<string[]>([]);
 
@@ -136,47 +133,201 @@ export function PlotsPage() {
   const [deleteBedDialogOpen, setDeleteBedDialogOpen] = useState(false);
   const [plotToDeleteId, setPlotToDeleteId] = useState<string | null>(null);
   const [bedToDeleteId, setBedToDeleteId] = useState<string | null>(null);
-  const [deletingPlot, setDeletingPlot] = useState(false);
-  const [deletingBed, setDeletingBed] = useState(false);
 
   // IoT quick-add: bedId to pre-fill the modal launched from a bed row
   const [iotBedTarget, setIotBedTarget] = useState<string | null>(null);
 
+  // ── Queries ──
+  const plotsQuery = useQuery({
+    queryKey: qk.plots.list(),
+    queryFn: () => api.getPlots(),
+  });
+
+  const bedsQuery = useQuery({
+    queryKey: qk.beds.list(),
+    queryFn: () => api.getBeds(),
+  });
+
+  const farmsQuery = useQuery({
+    queryKey: qk.farms.list(),
+    queryFn: () => api.getFarms(),
+  });
+
+  const soilsQuery = useQuery({
+    queryKey: qk.soils.list(),
+    queryFn: () => api.getSoils(),
+  });
+
+  const cropsQuery = useQuery({
+    queryKey: qk.crops.list(),
+    queryFn: () => api.getCrops(),
+  });
+
+  // Surface fetch errors as toasts (TanStack Query v5: no onError on useQuery)
   useEffect(() => {
-    async function loadAll() {
-      setLoading(true);
-      try {
-        const [plotsData, bedsData] = await Promise.all([
-          api.getPlots(),
-          api.getBeds(),
-        ]);
-        setPlots(plotsData);
-        setBeds(bedsData);
-      } catch {
-        setPlots([]);
-        setBeds([]);
-      }
-      try {
-        const farmsData = await api.getFarms();
-        setFarms(farmsData);
-        if (farmsData.length > 0) setSelectedFarmId(farmsData[0].farmId);
-      } catch {
-        setFarms([]);
-      }
-      try {
-        setSoils(await api.getSoils());
-      } catch {
-        setSoils([]);
-      }
-      try {
-        setCrops(await api.getCrops());
-      } catch {
-        // crops list is optional for display; proceed without
-      }
-      setLoading(false);
+    if (plotsQuery.error)
+      showToast(
+        plotsQuery.error instanceof Error
+          ? plotsQuery.error.message
+          : "Không thể tải danh sách vuông đất",
+        "error",
+      );
+  }, [plotsQuery.error, showToast]);
+
+  useEffect(() => {
+    if (bedsQuery.error)
+      showToast(
+        bedsQuery.error instanceof Error
+          ? bedsQuery.error.message
+          : "Không thể tải danh sách luống",
+        "error",
+      );
+  }, [bedsQuery.error, showToast]);
+
+  useEffect(() => {
+    if (farmsQuery.error)
+      showToast(
+        farmsQuery.error instanceof Error
+          ? farmsQuery.error.message
+          : "Không thể tải danh sách trang trại",
+        "error",
+      );
+  }, [farmsQuery.error, showToast]);
+
+  // Default selectedFarmId to first farm when farms load for the first time
+  useEffect(() => {
+    if (farmsQuery.data && farmsQuery.data.length > 0 && !selectedFarmId) {
+      setSelectedFarmId(farmsQuery.data[0].farmId);
     }
-    loadAll();
-  }, []);
+  }, [farmsQuery.data, selectedFarmId]);
+
+  // Derived data — always safe arrays
+  const plots = plotsQuery.data ?? [];
+  const beds = bedsQuery.data ?? [];
+  const farms = farmsQuery.data ?? [];
+  const soils = soilsQuery.data ?? [];
+  const crops = cropsQuery.data ?? [];
+
+  // Only show the full-page loader on the very first load (no cached data yet).
+  // isLoading = true only when there's no data AND it's fetching.
+  // This prevents the page from going blank on background refetches.
+  const initialLoading =
+    plotsQuery.isLoading ||
+    bedsQuery.isLoading ||
+    farmsQuery.isLoading ||
+    soilsQuery.isLoading;
+
+  // ── Mutations: Plot ──
+
+  const createPlotMutation = useMutation({
+    mutationFn: (data: PlotRequest) => api.createPlot(data),
+    onSuccess: () => {
+      setCreatePlotOpen(false);
+      showToast("Tạo vuông đất thành công", "success");
+      queryClient.invalidateQueries({ queryKey: qk.plots.all });
+    },
+    onError: (err) => {
+      showToast(
+        "Tạo vuông đất thất bại: " +
+          (err instanceof Error ? err.message : "Lỗi không xác định"),
+        "error",
+      );
+    },
+  });
+
+  const updatePlotMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: PlotRequest }) =>
+      api.updatePlot(id, data),
+    onSuccess: () => {
+      setEditPlotOpen(false);
+      showToast("Cập nhật vuông đất thành công", "success");
+      queryClient.invalidateQueries({ queryKey: qk.plots.all });
+    },
+    onError: (err) => {
+      showToast(
+        "Cập nhật vuông đất thất bại: " +
+          (err instanceof Error ? err.message : "Lỗi không xác định"),
+        "error",
+      );
+    },
+  });
+
+  const deletePlotMutation = useMutation({
+    mutationFn: (plotId: string) => api.deletePlot(plotId),
+    onSuccess: () => {
+      setDeletePlotDialogOpen(false);
+      setPlotToDeleteId(null);
+      showToast("Xóa vuông đất thành công", "success");
+      // Deleting a plot also deletes its beds — invalidate both
+      queryClient.invalidateQueries({ queryKey: qk.plots.all });
+      queryClient.invalidateQueries({ queryKey: qk.beds.all });
+    },
+    onError: (err) => {
+      showToast(
+        "Xóa vuông đất thất bại: " +
+          (err instanceof Error ? err.message : "Lỗi không xác định"),
+        "error",
+      );
+    },
+  });
+
+  // ── Mutations: Bed ──
+
+  const createBedMutation = useMutation({
+    mutationFn: (data: BedRequest) => api.createBed(data),
+    onSuccess: () => {
+      setCreateBedOpen(false);
+      showToast("Tạo luống thành công", "success");
+      // Creating a bed updates plot bedsCount — invalidate both
+      queryClient.invalidateQueries({ queryKey: qk.beds.all });
+      queryClient.invalidateQueries({ queryKey: qk.plots.all });
+    },
+    onError: (err) => {
+      showToast(
+        "Tạo luống thất bại: " +
+          (err instanceof Error ? err.message : "Lỗi không xác định"),
+        "error",
+      );
+    },
+  });
+
+  const updateBedMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: BedRequest }) =>
+      api.updateBed(id, data),
+    onSuccess: () => {
+      setEditBedOpen(false);
+      showToast("Cập nhật luống thành công", "success");
+      queryClient.invalidateQueries({ queryKey: qk.beds.all });
+    },
+    onError: (err) => {
+      showToast(
+        "Cập nhật luống thất bại: " +
+          (err instanceof Error ? err.message : "Lỗi không xác định"),
+        "error",
+      );
+    },
+  });
+
+  const deleteBedMutation = useMutation({
+    mutationFn: (bedId: string) => api.deleteBed(bedId),
+    onSuccess: () => {
+      setDeleteBedDialogOpen(false);
+      setBedToDeleteId(null);
+      showToast("Xóa luống thành công", "success");
+      // Deleting a bed updates plot bedsCount — invalidate both
+      queryClient.invalidateQueries({ queryKey: qk.beds.all });
+      queryClient.invalidateQueries({ queryKey: qk.plots.all });
+    },
+    onError: (err) => {
+      showToast(
+        "Xóa luống thất bại: " +
+          (err instanceof Error ? err.message : "Lỗi không xác định"),
+        "error",
+      );
+    },
+  });
+
+  // ── Derived ──
 
   const togglePlot = (plotId: string) => {
     setOpenPlotIds((prev) =>
@@ -198,116 +349,47 @@ export function PlotsPage() {
         new Date(b.plotCreatedAt).getTime(),
     );
 
-  // ── Plot CRUD ──
-  const handleCreatePlot = async (data: PlotRequest) => {
-    try {
-      await api.createPlot(data);
-      const refreshed = await api.getPlots();
-      setPlots(refreshed);
-      setCreatePlotOpen(false);
-      showToast("Tạo vuông đất thành công", "success");
-    } catch (err) {
-      showToast("Tạo vuông đất thất bại: " + (err as Error).message, "error");
-    }
-  };
+  // ── Handler adapters (keep modal prop signatures unchanged) ──
 
-  const handleUpdatePlot = async (id: string, data: PlotRequest) => {
-    try {
-      await api.updatePlot(id, data);
-      const refreshed = await api.getPlots();
-      setPlots(refreshed);
-      setEditPlotOpen(false);
-      showToast("Cập nhật vuông đất thành công", "success");
-    } catch (err) {
-      showToast(
-        "Cập nhật vuông đất thất bại: " + (err as Error).message,
-        "error",
-      );
-    }
-  };
+  const handleCreatePlot = (data: PlotRequest) =>
+    createPlotMutation.mutate(data);
+
+  const handleUpdatePlot = (id: string, data: PlotRequest) =>
+    updatePlotMutation.mutate({ id, data });
 
   const handleDeletePlot = (plotId: string) => {
     setPlotToDeleteId(plotId);
     setDeletePlotDialogOpen(true);
   };
 
-  const confirmDeletePlot = async () => {
-    if (!plotToDeleteId) return;
-    setDeletingPlot(true);
-    try {
-      await api.deletePlot(plotToDeleteId);
-      setPlots(plots.filter((p) => p.plotId !== plotToDeleteId));
-      setBeds(beds.filter((b) => b.plotId !== plotToDeleteId));
-      setDeletePlotDialogOpen(false);
-      setPlotToDeleteId(null);
-      showToast("Xóa vuông đất thành công", "success");
-    } catch (err) {
-      showToast("Xóa vuông đất thất bại: " + (err as Error).message, "error");
-    } finally {
-      setDeletingPlot(false);
-    }
+  const confirmDeletePlot = () => {
+    if (plotToDeleteId) deletePlotMutation.mutate(plotToDeleteId);
   };
 
-  // ── Bed CRUD ──
-  const handleCreateBed = async (data: BedRequest) => {
-    try {
-      await api.createBed(data);
-      const [refreshedBeds, refreshedPlots] = await Promise.all([
-        api.getBeds(),
-        api.getPlots(),
-      ]);
-      setBeds(refreshedBeds);
-      setPlots(refreshedPlots);
-      setCreateBedOpen(false);
-      showToast("Tạo luống thành công", "success");
-    } catch (err) {
-      showToast("Tạo luống thất bại: " + (err as Error).message, "error");
-    }
-  };
+  const handleCreateBed = (data: BedRequest) => createBedMutation.mutate(data);
 
-  const handleUpdateBed = async (id: string, data: BedRequest) => {
-    try {
-      await api.updateBed(id, data);
-      const refreshed = await api.getBeds();
-      setBeds(refreshed);
-      setEditBedOpen(false);
-      showToast("Cập nhật luống thành công", "success");
-    } catch (err) {
-      showToast("Cập nhật luống thất bại: " + (err as Error).message, "error");
-    }
-  };
+  const handleUpdateBed = (id: string, data: BedRequest) =>
+    updateBedMutation.mutate({ id, data });
 
   const handleDeleteBed = (bedId: string) => {
     setBedToDeleteId(bedId);
     setDeleteBedDialogOpen(true);
   };
 
-  const confirmDeleteBed = async () => {
-    if (!bedToDeleteId) return;
-    const bed = beds.find((b) => b.bedId === bedToDeleteId);
-    setDeletingBed(true);
-    try {
-      await api.deleteBed(bedToDeleteId);
-      setBeds(beds.filter((b) => b.bedId !== bedToDeleteId));
-      if (bed)
-        setPlots(
-          plots.map((p) =>
-            p.plotId === bed.plotId
-              ? { ...p, bedsCount: Math.max(0, p.bedsCount - 1) }
-              : p,
-          ),
-        );
-      setDeleteBedDialogOpen(false);
-      setBedToDeleteId(null);
-      showToast("Xóa luống thành công", "success");
-    } catch (err) {
-      showToast("Xóa luống thất bại: " + (err as Error).message, "error");
-    } finally {
-      setDeletingBed(false);
-    }
+  const confirmDeleteBed = () => {
+    if (bedToDeleteId) deleteBedMutation.mutate(bedToDeleteId);
   };
 
-  if (loading) {
+  // ── Auto-allocate confirmed: invalidate via query cache ──
+  const handleAutoConfirmed = async () => {
+    queryClient.invalidateQueries({ queryKey: qk.beds.all });
+    queryClient.invalidateQueries({ queryKey: qk.plots.all });
+    setAutoPlotOpen(false);
+  };
+
+  // ── Render ──
+
+  if (initialLoading) {
     return <LoadingState message="Đang tải dữ liệu..." />;
   }
 
@@ -607,6 +689,7 @@ export function PlotsPage() {
         farms={farms}
         soils={soils}
         onCreate={handleCreatePlot}
+        submitting={createPlotMutation.isPending}
       />
 
       {selectedPlot && (
@@ -623,6 +706,7 @@ export function PlotsPage() {
             farms={farms}
             soils={soils}
             onUpdate={handleUpdatePlot}
+            submitting={updatePlotMutation.isPending}
           />
           <CreateBedModal
             open={createBedOpen}
@@ -630,21 +714,14 @@ export function PlotsPage() {
             plot={selectedPlot}
             crops={crops}
             onCreate={handleCreateBed}
+            submitting={createBedMutation.isPending}
           />
           <AutoBedModal
             open={autoPlotOpen}
             onClose={() => setAutoPlotOpen(false)}
             plot={selectedPlot}
             crops={crops}
-            onConfirmed={async () => {
-              const [refreshedBeds, refreshedPlots] = await Promise.all([
-                api.getBeds(),
-                api.getPlots(),
-              ]);
-              setBeds(refreshedBeds);
-              setPlots(refreshedPlots);
-              setAutoPlotOpen(false);
-            }}
+            onConfirmed={handleAutoConfirmed}
           />
         </>
       )}
@@ -663,6 +740,7 @@ export function PlotsPage() {
             bed={selectedBed}
             crops={crops}
             onUpdate={handleUpdateBed}
+            submitting={updateBedMutation.isPending}
           />
         </>
       )}
@@ -684,7 +762,7 @@ export function PlotsPage() {
           </>
         }
         confirmLabel="Xóa vuông đất"
-        loading={deletingPlot}
+        loading={deletePlotMutation.isPending}
         onConfirm={confirmDeletePlot}
       />
 
@@ -699,7 +777,7 @@ export function PlotsPage() {
         title="Xóa luống"
         description="Bạn có chắc chắn muốn xóa luống này? Hành động này không thể hoàn tác."
         confirmLabel="Xóa luống"
-        loading={deletingBed}
+        loading={deleteBedMutation.isPending}
         onConfirm={confirmDeleteBed}
       />
 
@@ -724,12 +802,14 @@ function CreatePlotModal({
   farms,
   soils,
   onCreate,
+  submitting,
 }: {
   open: boolean;
   onClose: () => void;
   farms: FarmResponse[];
   soils: SoilResponse[];
   onCreate: (data: PlotRequest) => void;
+  submitting?: boolean;
 }) {
   const [formData, setFormData] = useState<PlotRequest>({
     farmId: "",
@@ -784,10 +864,12 @@ function CreatePlotModal({
       size="lg"
       footer={
         <>
-          <Button variant="secondary" onClick={onClose}>
+          <Button variant="secondary" onClick={onClose} disabled={submitting}>
             Hủy Bỏ
           </Button>
-          <Button onClick={handleSubmit}>Tạo Vuông Đất</Button>
+          <Button onClick={handleSubmit} loading={submitting}>
+            Tạo Vuông Đất
+          </Button>
         </>
       }
     >
@@ -984,6 +1066,7 @@ function EditPlotModal({
   farms,
   soils,
   onUpdate,
+  submitting,
 }: {
   open: boolean;
   onClose: () => void;
@@ -991,6 +1074,7 @@ function EditPlotModal({
   farms: FarmResponse[];
   soils: SoilResponse[];
   onUpdate: (id: string, data: PlotRequest) => void;
+  submitting?: boolean;
 }) {
   const [formData, setFormData] = useState<PlotRequest>({
     farmId: plot.farmId,
@@ -1044,10 +1128,12 @@ function EditPlotModal({
       size="lg"
       footer={
         <>
-          <Button variant="secondary" onClick={onClose}>
+          <Button variant="secondary" onClick={onClose} disabled={submitting}>
             Hủy Bỏ
           </Button>
-          <Button onClick={handleSubmit}>Lưu Thay Đổi</Button>
+          <Button onClick={handleSubmit} loading={submitting}>
+            Lưu Thay Đổi
+          </Button>
         </>
       }
     >
@@ -1291,12 +1377,14 @@ function CreateBedModal({
   plot,
   crops,
   onCreate,
+  submitting,
 }: {
   open: boolean;
   onClose: () => void;
   plot: PlotResponse;
   crops: CropResponse[];
   onCreate: (data: BedRequest) => void;
+  submitting?: boolean;
 }) {
   const emptyForm = (): BedRequest => ({
     plotId: plot.plotId,
@@ -1366,10 +1454,12 @@ function CreateBedModal({
       size="lg"
       footer={
         <>
-          <Button variant="secondary" onClick={onClose}>
+          <Button variant="secondary" onClick={onClose} disabled={submitting}>
             Hủy bỏ
           </Button>
-          <Button onClick={handleSubmit}>Tạo Luống</Button>
+          <Button onClick={handleSubmit} loading={submitting}>
+            Tạo Luống
+          </Button>
         </>
       }
     >
@@ -1587,12 +1677,14 @@ function EditBedModal({
   bed,
   crops,
   onUpdate,
+  submitting,
 }: {
   open: boolean;
   onClose: () => void;
   bed: BedResponse;
   crops: CropResponse[];
   onUpdate: (id: string, data: BedRequest) => void;
+  submitting?: boolean;
 }) {
   const [formData, setFormData] = useState<BedRequest>({
     plotId: bed.plotId,
@@ -1643,10 +1735,12 @@ function EditBedModal({
       size="lg"
       footer={
         <>
-          <Button variant="secondary" onClick={onClose}>
+          <Button variant="secondary" onClick={onClose} disabled={submitting}>
             Hủy Bỏ
           </Button>
-          <Button onClick={handleSubmit}>Lưu Thay Đổi</Button>
+          <Button onClick={handleSubmit} loading={submitting}>
+            Lưu Thay Đổi
+          </Button>
         </>
       }
     >
@@ -1804,7 +1898,8 @@ function AutoBedModal({
   onClose: () => void;
   plot: PlotResponse;
   crops: CropResponse[];
-  onConfirmed: () => Promise<void>;
+  // Changed from `() => Promise<void>` — now sync; invalidation handled in parent
+  onConfirmed: () => void;
 }) {
   const [step, setStep] = useState<"form" | "preview">("form");
 
@@ -1914,7 +2009,8 @@ function AutoBedModal({
         cropId: preview.cropId,
         beds: preview.beds,
       });
-      await onConfirmed();
+      // Parent handles cache invalidation and closes the modal
+      onConfirmed();
     } catch (err) {
       setError("Xác nhận thất bại: " + (err as Error).message);
       setConfirming(false);
