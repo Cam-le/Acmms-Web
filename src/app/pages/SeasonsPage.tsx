@@ -2058,6 +2058,7 @@ function CreateSeasonView({
                       expectedDate: "",
                       expectedQuantity: "",
                       bedIds: [],
+                      unit: "",
                     },
                   ]);
                 }}
