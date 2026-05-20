@@ -23,6 +23,8 @@ import {
   Thermometer,
   Droplet,
 } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { qk } from "../../api/queryKeys";
 import { api } from "../../api/client";
 import type { ReportAttachment } from "../../api/client";
 import { useToast } from "../components/ui/useToast";
@@ -229,34 +231,35 @@ function ReportTypeBadge({ type }: { type: string }) {
 const PAGE_SIZE = 5;
 
 function ListView() {
-  const [reports, setReports] = useState<ReportResponse[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { toasts, showToast, dismissToast } = useToast();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("SENT_TO_OWNER");
-  const { toasts, showToast, dismissToast } = useToast();
 
-  async function fetchReports(): Promise<boolean> {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await api.getReports();
-      setReports(data);
-      return true;
-    } catch (e) {
-      const msg =
-        e instanceof Error ? e.message : "Không thể tải danh sách báo cáo.";
-      setError(msg);
-      showToast(msg, "error");
-      return false;
-    } finally {
-      setLoading(false);
-    }
-  }
+  // ── Read: reports list ────────────────────────────────────────────────────
+  const reportsQuery = useQuery({
+    queryKey: qk.reports.list(),
+    queryFn: () => api.getReports(),
+  });
+
+  const reports: ReportResponse[] = reportsQuery.data ?? [];
+  const loading =
+    reportsQuery.isLoading ||
+    (reportsQuery.isFetching && reportsQuery.data === undefined);
+  const fetchError =
+    reportsQuery.isError && reportsQuery.data === undefined
+      ? reportsQuery.error
+      : null;
 
   useEffect(() => {
-    fetchReports();
-  }, []);
+    if (reportsQuery.error) {
+      showToast(
+        reportsQuery.error instanceof Error
+          ? reportsQuery.error.message
+          : "Không thể tải danh sách báo cáo.",
+        "error",
+      );
+    }
+  }, [reportsQuery.error, showToast]);
 
   const filtered = reports
     .filter((r) => {
@@ -294,10 +297,12 @@ function ListView() {
           <Button
             variant="secondary"
             leadingIcon={RefreshCw}
-            loading={loading}
-            onClick={async () => {
-              const ok = await fetchReports();
-              if (ok) showToast("Đã làm mới danh sách.", "success");
+            loading={reportsQuery.isFetching}
+            onClick={() => {
+              reportsQuery.refetch().then((result) => {
+                if (result.status === "success")
+                  showToast("Đã làm mới danh sách.", "success");
+              });
             }}
           >
             Làm mới
@@ -328,11 +333,15 @@ function ListView() {
       {/* Content */}
       {loading ? (
         <LoadingState />
-      ) : error ? (
+      ) : fetchError ? (
         <div className="flex flex-col items-center justify-center py-16 text-center">
           <AlertTriangle className="w-10 h-10 text-status-warning-fg mb-3" />
-          <p className="text-sm text-ink-500 mb-4">{error}</p>
-          <Button onClick={fetchReports}>Thử lại</Button>
+          <p className="text-sm text-ink-500 mb-4">
+            {fetchError instanceof Error
+              ? fetchError.message
+              : "Đã xảy ra lỗi. Vui lòng thử lại."}
+          </p>
+          <Button onClick={() => reportsQuery.refetch()}>Thử lại</Button>
         </div>
       ) : (
         <div className="bg-surface rounded-card border border-border shadow-card overflow-x-auto">
@@ -442,99 +451,80 @@ function ListView() {
 
 function DetailView({ reportId }: { reportId: string }) {
   const navigate = useNavigate();
-  const [report, setReport] = useState<ReportResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [assigning, setAssigning] = useState(false);
-  const [assignSuccess, setAssignSuccess] = useState(false);
-  const [assignError, setAssignError] = useState<string | null>(null);
   const { toasts, showToast, dismissToast } = useToast();
+  const queryClient = useQueryClient();
 
-  const [specialists, setSpecialists] = useState<
-    import("../../api/client").UserResponse[]
-  >([]);
   const [selectedSpecialistId, setSelectedSpecialistId] = useState("");
-  const [specialistsLoading, setSpecialistsLoading] = useState(false);
+  const [assignSuccess, setAssignSuccess] = useState(false);
 
-  const [diagnoses, setDiagnoses] = useState<DiagnosisResponse[]>([]);
-  const [diagnosesLoading, setDiagnosesLoading] = useState(false);
+  // ── Read: report detail ────────────────────────────────────────────────────
+  const reportQuery = useQuery({
+    queryKey: qk.reports.detail(reportId),
+    queryFn: () => api.getReport(reportId),
+  });
 
+  const report: ReportResponse | undefined = reportQuery.data;
+  const loading =
+    reportQuery.isLoading ||
+    (reportQuery.isFetching && reportQuery.data === undefined);
+  const fetchError =
+    reportQuery.isError && reportQuery.data === undefined
+      ? reportQuery.error
+      : null;
+
+  // Derive assignSuccess from loaded report status
   useEffect(() => {
-    async function fetchReport() {
-      setLoading(true);
-      setError(null);
-      try {
-        const data = await api.getReport(reportId);
-        setReport(data);
-        if (data.status !== "SENT_TO_OWNER") setAssignSuccess(true);
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Không thể tải báo cáo.");
-      } finally {
-        setLoading(false);
-      }
+    if (report && report.status !== "SENT_TO_OWNER") {
+      setAssignSuccess(true);
     }
-    fetchReport();
-  }, [reportId]);
-
-  useEffect(() => {
-    if (!report || report.status !== "SENT_TO_OWNER") return;
-    async function fetchSpecialists() {
-      setSpecialistsLoading(true);
-      try {
-        const all = await api.getStaffs();
-        const filtered = all.filter(
-          (u) => u.roleName === "Specialist" && u.status === "Active",
-        );
-        setSpecialists(filtered);
-        if (filtered.length > 0) setSelectedSpecialistId(filtered[0].userId);
-      } catch {
-        /* non-critical */
-      } finally {
-        setSpecialistsLoading(false);
-      }
-    }
-    fetchSpecialists();
   }, [report?.status]);
 
+  // ── Read: specialists (only when report is SENT_TO_OWNER) ─────────────────
+  const specialistsQuery = useQuery({
+    queryKey: qk.staffs.list(),
+    queryFn: () => api.getStaffs(),
+    enabled: !!report && report.status === "SENT_TO_OWNER" && !assignSuccess,
+  });
+
+  const specialists = (specialistsQuery.data ?? []).filter(
+    (u) => u.roleName === "Specialist" && u.status === "Active",
+  );
+
+  // Default-select first specialist when list loads
   useEffect(() => {
-    if (!report || report.status !== "DIAGNOSED") return;
-    async function fetchDiagnoses() {
-      setDiagnosesLoading(true);
-      try {
-        const data = await api.getReportDiagnosis(report!.reportId);
-        setDiagnoses(data);
-      } catch {
-        /* non-critical */
-      } finally {
-        setDiagnosesLoading(false);
-      }
+    if (specialists.length > 0 && !selectedSpecialistId) {
+      setSelectedSpecialistId(specialists[0].userId);
     }
-    fetchDiagnoses();
-  }, [report?.status]);
+  }, [specialists, selectedSpecialistId]);
+
+  // ── Read: diagnoses (only when DIAGNOSED) ─────────────────────────────────
+  const diagnosesQuery = useQuery({
+    queryKey: qk.reports.diagnosis(reportId),
+    queryFn: () => api.getReportDiagnosis(reportId),
+    enabled: !!report && report.status === "DIAGNOSED",
+  });
+
+  const diagnoses: DiagnosisResponse[] = diagnosesQuery.data ?? [];
+
+  // ── Mutation: assign specialist ───────────────────────────────────────────
+  const assignMutation = useMutation({
+    mutationFn: (specialistId: string) =>
+      api.assignReport(reportId, { assignedTo: specialistId, note: "" }),
+    onSuccess: () => {
+      setAssignSuccess(true);
+      showToast("Đã gửi báo cáo đến chuyên gia thành công.", "success");
+      // Invalidate both list and this report's detail so status refreshes
+      queryClient.invalidateQueries({ queryKey: qk.reports.all });
+    },
+    onError: (err) => {
+      showToast(
+        err instanceof Error ? err.message : "Không thể gửi đến chuyên gia.",
+        "error",
+      );
+    },
+  });
 
   const reportImageUrl = report ? getReportImageUrl(report.attachments) : null;
-
-  async function handleAssign() {
-    if (!report || !selectedSpecialistId) return;
-    setAssigning(true);
-    setAssignError(null);
-    try {
-      await api.assignReport(report.reportId, {
-        assignedTo: selectedSpecialistId,
-        note: "",
-      });
-      setAssignSuccess(true);
-      setReport((r) => (r ? { ...r, status: "ASSIGNED_FOR_DIAGNOSIS" } : r));
-      showToast("Đã gửi báo cáo đến chuyên gia thành công.", "success");
-    } catch (e) {
-      const msg =
-        e instanceof Error ? e.message : "Không thể gửi đến chuyên gia.";
-      setAssignError(msg);
-      showToast(msg, "error");
-    } finally {
-      setAssigning(false);
-    }
-  }
 
   if (loading)
     return (
@@ -543,12 +533,14 @@ function DetailView({ reportId }: { reportId: string }) {
       </div>
     );
 
-  if (error || !report) {
+  if (fetchError || !report) {
     return (
       <div className="flex flex-col items-center justify-center py-20 p-6">
         <AlertTriangle className="w-10 h-10 text-status-warning-fg mb-3" />
         <p className="text-sm text-ink-500 mb-4">
-          {error ?? "Không tìm thấy báo cáo."}
+          {fetchError instanceof Error
+            ? fetchError.message
+            : "Không tìm thấy báo cáo."}
         </p>
         <Link
           to="/advisory"
@@ -673,7 +665,7 @@ function DetailView({ reportId }: { reportId: string }) {
               <h2 className="text-sm font-semibold text-ink-700 flex items-center gap-2">
                 <Send className="w-4 h-4" /> Gửi đến chuyên gia
               </h2>
-              {specialistsLoading ? (
+              {specialistsQuery.isLoading ? (
                 <LoadingState
                   message="Đang tải danh sách chuyên gia..."
                   variant="inline"
@@ -695,16 +687,14 @@ function DetailView({ reportId }: { reportId: string }) {
                       </option>
                     ))}
                   </select>
-                  {assignError && (
-                    <p className="text-xs text-status-danger-fg">
-                      {assignError}
-                    </p>
-                  )}
                   <Button
                     fullWidth
                     leadingIcon={Send}
-                    loading={assigning}
-                    onClick={handleAssign}
+                    loading={assignMutation.isPending}
+                    onClick={() => {
+                      if (selectedSpecialistId)
+                        assignMutation.mutate(selectedSpecialistId);
+                    }}
                   >
                     Gửi đến chuyên gia
                   </Button>
@@ -731,7 +721,7 @@ function DetailView({ reportId }: { reportId: string }) {
                 đoán chuyên gia
               </h2>
               <div className="space-y-3">
-                {diagnosesLoading ? (
+                {diagnosesQuery.isLoading ? (
                   <LoadingState message="Đang tải kết quả..." />
                 ) : diagnoses.length === 0 ? (
                   <EmptyState message="Chưa có kết quả chẩn đoán." size="sm" />
@@ -801,7 +791,7 @@ function DetailView({ reportId }: { reportId: string }) {
                 )}
               </div>
 
-              {!diagnosesLoading && diagnoses.length > 0 && (
+              {!diagnosesQuery.isLoading && diagnoses.length > 0 && (
                 <Button
                   fullWidth
                   leadingIcon={PlusCircle}
