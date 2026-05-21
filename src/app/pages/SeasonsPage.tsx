@@ -1,5 +1,7 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect } from "react";
 import { Link, useSearchParams } from "react-router";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { qk } from "../../api/queryKeys";
 import {
   Plus,
   Calendar,
@@ -179,6 +181,10 @@ function healthStatusLabel(s: string | undefined): string {
 }
 
 // ─── GrowthTrackingModal ──────────────────────────────────────────────────────
+// This component has non-standard fetch behavior (fire-and-forget with
+// side-effect callback). Kept as useEffect rather than useQuery because
+// onFetched needs to report count back to parent — TanStack Query's
+// onSuccess was removed in v5. The pattern here is intentional.
 
 function GrowthTrackingModal({
   harvestDetailId,
@@ -521,65 +527,171 @@ export function SeasonsPage() {
   const seasonId = searchParams.get("id");
 
   const { toasts, showToast, dismissToast } = useToast();
+  const queryClient = useQueryClient();
 
-  const [seasons, setSeasons] = useState<Season[]>([]);
-  const [farms, setFarms] = useState<FarmResponse[]>([]);
-  const [allPlots, setAllPlots] = useState<PlotResponse[]>([]);
-  const [beds, setBeds] = useState<BedResponse[]>([]);
-  const [crops, setCrops] = useState<CropResponse[]>([]);
-  const [loading, setLoading] = useState(true);
-
+  // ── UI state ──────────────────────────────────────────────────────────────
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [seasonToDelete, setSeasonToDelete] = useState<Season | null>(null);
-  const [deleting, setDeleting] = useState(false);
 
-  // ── Load all data ──────────────────────────────────────────────────────────
-  const loadData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [apiSeasons, apiFarms, apiBeds, apiCrops, apiPlots] =
-        await Promise.all([
-          api.getSeasons(),
-          api.getFarms(),
-          api.getBeds(),
-          api.getCrops(),
-          api.getPlots(),
-        ]);
-      const safeFarms = Array.isArray(apiFarms) ? apiFarms : [];
-      const safeBeds = Array.isArray(apiBeds) ? apiBeds : [];
-      const safePlots = Array.isArray(apiPlots) ? apiPlots : [];
-      const safeCrops = Array.isArray(apiCrops)
-        ? apiCrops.filter(
-            (c) => (c.cropStatus ?? "").toLowerCase() !== "inactive",
-          )
-        : [];
-      const safeSeasons = Array.isArray(apiSeasons) ? apiSeasons : [];
+  // ── Parallel queries for list data ───────────────────────────────────────
+  // Raw data stored in cache; mapped at render time (same pattern as FarmPage).
+  const seasonsQuery = useQuery({
+    queryKey: qk.seasons.list(),
+    queryFn: () => api.getSeasons(),
+  });
 
-      setFarms(safeFarms);
-      setBeds(safeBeds);
-      setAllPlots(safePlots);
-      setCrops(safeCrops);
-      setSeasons(
-        [...safeSeasons]
-          .sort((a, b) => {
-            const da = a.seasonStartDate ?? "";
-            const db = b.seasonStartDate ?? "";
-            return db.localeCompare(da); // most recent first
-          })
-          .map((s) => mapSeasonResponse(s, safeFarms)),
+  const farmsQuery = useQuery({
+    queryKey: qk.farms.list(),
+    queryFn: () => api.getFarms(),
+  });
+
+  const bedsQuery = useQuery({
+    queryKey: qk.beds.list(),
+    queryFn: () => api.getBeds(),
+  });
+
+  const cropsQuery = useQuery({
+    queryKey: qk.crops.list(),
+    queryFn: () => api.getCrops(),
+  });
+
+  const plotsQuery = useQuery({
+    queryKey: qk.plots.list(),
+    queryFn: () => api.getPlots(),
+  });
+
+  // Map + sort at render time so cache always holds raw API data.
+  const rawFarms = farmsQuery.data ?? [];
+  const farms: FarmResponse[] = Array.isArray(rawFarms) ? rawFarms : [];
+
+  const seasons: Season[] = (() => {
+    const raw = seasonsQuery.data;
+    if (!Array.isArray(raw)) return [];
+    return [...raw]
+      .sort((a, b) => {
+        const da = a.seasonStartDate ?? "";
+        const db = b.seasonStartDate ?? "";
+        return db.localeCompare(da); // most recent first
+      })
+      .map((s) => mapSeasonResponse(s, farms));
+  })();
+
+  const beds: BedResponse[] = (() => {
+    const raw = bedsQuery.data;
+    return Array.isArray(raw) ? raw : [];
+  })();
+
+  const crops: CropResponse[] = (() => {
+    const raw = cropsQuery.data;
+    if (!Array.isArray(raw)) return [];
+    return raw.filter((c) => (c.cropStatus ?? "").toLowerCase() !== "inactive");
+  })();
+
+  const allPlots: PlotResponse[] = (() => {
+    const raw = plotsQuery.data;
+    return Array.isArray(raw) ? raw : [];
+  })();
+
+  // loading: true until all 5 parallel queries have resolved at least once.
+  // Guard: if any is still fetching with no data yet, stay in loading state.
+  const loading =
+    seasonsQuery.isLoading ||
+    farmsQuery.isLoading ||
+    bedsQuery.isLoading ||
+    cropsQuery.isLoading ||
+    plotsQuery.isLoading ||
+    // Avoid empty-state flash: if still fetching with no cached data yet
+    (seasonsQuery.isFetching && seasonsQuery.data === undefined) ||
+    (farmsQuery.isFetching && farmsQuery.data === undefined);
+
+  // Expose fetch error only when we have no cached data to show
+  const fetchError =
+    seasonsQuery.isError && seasonsQuery.data === undefined
+      ? seasonsQuery.error
+      : farmsQuery.isError && farmsQuery.data === undefined
+        ? farmsQuery.error
+        : null;
+
+  // Surface errors as toasts (v5 removed onError from useQuery)
+  useEffect(() => {
+    if (seasonsQuery.error) {
+      showToast(
+        seasonsQuery.error instanceof Error
+          ? seasonsQuery.error.message
+          : "Không thể tải danh sách mùa vụ",
+        "error",
       );
-    } catch (err) {
-      showToast("Không thể tải dữ liệu. Vui lòng thử lại.", "error");
-    } finally {
-      setLoading(false);
     }
-  }, []);
+  }, [seasonsQuery.error, showToast]);
 
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    if (farmsQuery.error) {
+      showToast(
+        farmsQuery.error instanceof Error
+          ? farmsQuery.error.message
+          : "Không thể tải danh sách trang trại",
+        "error",
+      );
+    }
+  }, [farmsQuery.error, showToast]);
+
+  // ── Single-season query (for detail/edit sub-views) ───────────────────────
+  // enabled when navigating to detail or edit views with an id.
+  const isSubView = !!seasonId && view !== "list" && view !== "create";
+
+  const selectedSeasonQuery = useQuery({
+    queryKey: qk.seasons.detail(seasonId ?? ""),
+    queryFn: () => api.getSeason(seasonId!),
+    enabled: isSubView,
+    // Seed cache from list if available — avoids flash when navigating from list
+    placeholderData: () => {
+      if (!seasonId) return undefined;
+      const cached = queryClient.getQueryData<SeasonResponse[]>(
+        qk.seasons.list(),
+      );
+      return cached?.find((s) => s.seasonId === seasonId);
+    },
+  });
+
+  // Map the selected season using current farms data
+  const selectedSeason: Season | null = selectedSeasonQuery.data
+    ? mapSeasonResponse(selectedSeasonQuery.data, farms)
+    : null;
+
+  const selectedSeasonLoading =
+    isSubView && selectedSeasonQuery.isLoading && !selectedSeason;
+
+  // ── Delete mutation ───────────────────────────────────────────────────────
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => api.deleteSeason(id),
+    onSuccess: (_data, id) => {
+      const name = seasonToDelete?.name ?? "";
+      setDeleteDialogOpen(false);
+      setSeasonToDelete(null);
+      showToast(`Đã xóa mùa vụ "${name}"`, "success");
+      // Invalidate seasons AND beds (beds freed after season deletion)
+      queryClient.invalidateQueries({ queryKey: qk.seasons.all });
+      queryClient.invalidateQueries({ queryKey: qk.beds.all });
+    },
+    onError: (err) => {
+      showToast(
+        err instanceof Error ? err.message : "Xóa mùa vụ thất bại.",
+        "error",
+      );
+    },
+  });
+
+  // ── CRUD handlers ──────────────────────────────────────────────────────────
+  const handleDelete = (season: Season) => {
+    setSeasonToDelete(season);
+    setDeleteDialogOpen(true);
+  };
+
+  const confirmDelete = () => {
+    if (seasonToDelete) deleteMutation.mutate(seasonToDelete.id);
+  };
 
   // ── Filter + paginate ──────────────────────────────────────────────────────
   const filtered = seasons.filter((s) => {
@@ -599,52 +711,7 @@ export function SeasonsPage() {
     reset();
   }, [searchQuery, filterStatus]);
 
-  // ── CRUD handlers ──────────────────────────────────────────────────────────
-  const handleDelete = (season: Season) => {
-    setSeasonToDelete(season);
-    setDeleteDialogOpen(true);
-  };
-
-  const confirmDelete = async () => {
-    if (!seasonToDelete) return;
-    setDeleting(true);
-    try {
-      await api.deleteSeason(seasonToDelete.id);
-      setDeleteDialogOpen(false);
-      setSeasonToDelete(null);
-      showToast(`Đã xóa mùa vụ "${seasonToDelete.name}"`, "success");
-      await loadData();
-    } catch (err) {
-      showToast(
-        err instanceof Error ? err.message : "Xóa mùa vụ thất bại.",
-        "error",
-      );
-    } finally {
-      setDeleting(false);
-    }
-  };
-
   // ── Route to sub-views ─────────────────────────────────────────────────────
-  const [selectedSeason, setSelectedSeason] = useState<Season | null>(null);
-  const [selectedSeasonLoading, setSelectedSeasonLoading] = useState(false);
-
-  useEffect(() => {
-    if (!seasonId || view === "list" || view === "create") {
-      setSelectedSeason(null);
-      return;
-    }
-    setSelectedSeasonLoading(true);
-    api
-      .getSeason(seasonId)
-      .then((apiSeason) => {
-        setSelectedSeason(mapSeasonResponse(apiSeason, farms));
-      })
-      .catch(() => {
-        setSelectedSeason(seasons.find((s) => s.id === seasonId) ?? null);
-      })
-      .finally(() => setSelectedSeasonLoading(false));
-  }, [seasonId, view, farms, seasons]);
-
   if (view === "create")
     return (
       <CreateSeasonView
@@ -653,7 +720,8 @@ export function SeasonsPage() {
         plots={allPlots}
         crops={crops}
         onCreated={() => {
-          loadData();
+          queryClient.invalidateQueries({ queryKey: qk.seasons.all });
+          queryClient.invalidateQueries({ queryKey: qk.beds.all });
           setSearchParams({ view: "list" });
         }}
         showToast={showToast}
@@ -662,7 +730,7 @@ export function SeasonsPage() {
 
   const subViewLoading =
     selectedSeasonLoading ||
-    (!!seasonId && view !== "list" && view !== "create" && !selectedSeason);
+    (isSubView && view !== "list" && view !== "create" && !selectedSeason);
 
   if ((view === "detail" || view === "edit") && subViewLoading)
     return (
@@ -680,10 +748,9 @@ export function SeasonsPage() {
         plots={allPlots}
         crops={crops}
         onRefresh={() =>
-          api
-            .getSeason(selectedSeason.id)
-            .then((s) => setSelectedSeason(mapSeasonResponse(s, farms)))
-            .catch(() => {})
+          queryClient.invalidateQueries({
+            queryKey: qk.seasons.detail(selectedSeason.id),
+          })
         }
         showToast={showToast}
       />
@@ -696,7 +763,7 @@ export function SeasonsPage() {
         season={selectedSeason}
         farms={farms}
         onUpdated={() => {
-          loadData();
+          queryClient.invalidateQueries({ queryKey: qk.seasons.all });
           setSearchParams({ view: "list" });
         }}
         showToast={showToast}
@@ -753,6 +820,27 @@ export function SeasonsPage() {
       <div className="bg-surface rounded-card border border-border shadow-card overflow-hidden">
         {loading ? (
           <LoadingState />
+        ) : fetchError ? (
+          <EmptyState
+            icon={Calendar}
+            title="Không thể tải danh sách mùa vụ"
+            message={
+              fetchError instanceof Error
+                ? fetchError.message
+                : "Đã xảy ra lỗi. Vui lòng thử lại."
+            }
+            action={
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  seasonsQuery.refetch();
+                  farmsQuery.refetch();
+                }}
+              >
+                Thử lại
+              </Button>
+            }
+          />
         ) : filtered.length === 0 ? (
           <EmptyState
             icon={Calendar}
@@ -772,7 +860,7 @@ export function SeasonsPage() {
         ) : (
           <>
             <div className="overflow-x-auto">
-              <table className="w-full">
+              <table className="w-full min-w-[640px]">
                 <thead className="bg-surface-alt border-b border-border">
                   <tr>
                     {[
@@ -890,7 +978,7 @@ export function SeasonsPage() {
       <ConfirmDialog
         open={deleteDialogOpen}
         onOpenChange={(o) => {
-          if (!o && !deleting) {
+          if (!o && !deleteMutation.isPending) {
             setDeleteDialogOpen(false);
             setSeasonToDelete(null);
           }
@@ -903,7 +991,7 @@ export function SeasonsPage() {
           </>
         }
         confirmLabel="Xóa mùa vụ"
-        loading={deleting}
+        loading={deleteMutation.isPending}
         onConfirm={confirmDelete}
       />
     </div>
@@ -928,53 +1016,15 @@ function DetailSeasonView({
   showToast: (msg: string, type: "success" | "error" | "info") => void;
 }) {
   const { toasts, showToast: localToast, dismissToast } = useToast();
+  const queryClient = useQueryClient();
 
-  // ── Harvests ────────────────────────────────────────────────────────────────
-  const [harvests, setHarvests] = useState<HarvestItem[]>([]);
-  const [harvestsLoading, setHarvestsLoading] = useState(true);
-  const [expandedHarvest, setExpandedHarvest] = useState<string | null>(null);
-  const [harvestDetails, setHarvestDetails] = useState<
-    Record<string, HarvestDetailResponse[]>
-  >({});
-  const [detailsLoading, setDetailsLoading] = useState<Record<string, boolean>>(
-    {},
-  );
-
-  // Cache of harvestDetailId → whether tracking records exist (populated on first modal open)
-  // undefined = never opened, true = has data, false = no data
-  const [trackingKnown, setTrackingKnown] = useState<Record<string, boolean>>(
-    {},
-  );
-
-  // Growth tracking modal target: { id: harvestDetailId, bedName }
-  const [growthTrackingTarget, setGrowthTrackingTarget] = React.useState<{
-    id: string;
-    bedName: string;
-  } | null>(null);
-
-  // Create harvest modal
-  const [createHarvestOpen, setCreateHarvestOpen] = useState(false);
-  const [editHarvest, setEditHarvest] = useState<HarvestItem | null>(null);
-  const [deleteHarvest, setDeleteHarvest] = useState<HarvestItem | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-  const [deletingHarvest, setDeletingHarvest] = useState(false);
-
-  // Harvest form
-  const [harvestForm, setHarvestForm] = useState({
-    plotId: "",
-    cropId: "",
-    expectedDate: "",
-    expectedQuantity: "",
-    unit: "kg",
-    status: "planned",
-  });
-
-  const loadHarvests = useCallback(async () => {
-    setHarvestsLoading(true);
-    try {
+  // ── Harvests query ──────────────────────────────────────────────────────────
+  const harvestsQuery = useQuery({
+    queryKey: qk.seasons.harvests(season.id),
+    queryFn: async () => {
       const data = await api.getHarvestsBySeason(season.id);
-      setHarvests(
-        (Array.isArray(data) ? data : []).map((h: HarvestResponse) => ({
+      return (Array.isArray(data) ? data : []).map(
+        (h: HarvestResponse): HarvestItem => ({
           harvestId: h.harvestId,
           plotId: h.plotId,
           plotName: h.plotName,
@@ -986,41 +1036,89 @@ function DetailSeasonView({
           status: h.status,
           detailsCount: h.detailsCount,
           harvestedBedsCount: h.harvestedBedsCount ?? 0,
-        })),
+        }),
       );
-    } catch {
-      localToast("Không thể tải danh sách thu hoạch.", "error");
-    } finally {
-      setHarvestsLoading(false);
-    }
-  }, [season.id]);
+    },
+  });
+
+  const harvests: HarvestItem[] = harvestsQuery.data ?? [];
+  const harvestsLoading =
+    harvestsQuery.isLoading ||
+    (harvestsQuery.isFetching && harvestsQuery.data === undefined);
 
   useEffect(() => {
-    loadHarvests();
-  }, [loadHarvests]);
+    if (harvestsQuery.error) {
+      localToast(
+        harvestsQuery.error instanceof Error
+          ? harvestsQuery.error.message
+          : "Không thể tải danh sách thu hoạch.",
+        "error",
+      );
+    }
+  }, [harvestsQuery.error]);
 
-  const toggleHarvest = async (harvestId: string) => {
+  // ── Harvest detail expand (on-demand) ──────────────────────────────────────
+  const [expandedHarvest, setExpandedHarvest] = useState<string | null>(null);
+
+  // Each harvest's details is a separate query, enabled only when expanded.
+  // We keep a map of harvestId → cached detail array derived from TQ cache.
+  const harvestDetailQuery = useQuery({
+    queryKey: qk.seasons.harvestDetails(expandedHarvest ?? ""),
+    queryFn: async () => {
+      const data = await api.getHarvestDetailsByHarvest(expandedHarvest!);
+      return Array.isArray(data) ? data : ([] as HarvestDetailResponse[]);
+    },
+    enabled: !!expandedHarvest,
+  });
+
+  // Map of harvestId → details (drawn from per-harvest caches)
+  // We use a local cache map so previously loaded details remain visible
+  // while a different harvest is being expanded.
+  const [detailsCache, setDetailsCache] = useState<
+    Record<string, HarvestDetailResponse[]>
+  >({});
+
+  useEffect(() => {
+    if (expandedHarvest && harvestDetailQuery.data) {
+      setDetailsCache((prev) => ({
+        ...prev,
+        [expandedHarvest]: harvestDetailQuery.data!,
+      }));
+    }
+  }, [expandedHarvest, harvestDetailQuery.data]);
+
+  const toggleHarvest = (harvestId: string) => {
     if (expandedHarvest === harvestId) {
       setExpandedHarvest(null);
-      return;
-    }
-    setExpandedHarvest(harvestId);
-    if (harvestDetails[harvestId]) return; // already loaded
-    setDetailsLoading((p) => ({ ...p, [harvestId]: true }));
-    try {
-      const data = await api.getHarvestDetailsByHarvest(harvestId);
-      setHarvestDetails((p) => ({
-        ...p,
-        [harvestId]: Array.isArray(data) ? data : [],
-      }));
-    } catch {
-      localToast("Không thể tải chi tiết thu hoạch.", "error");
-    } finally {
-      setDetailsLoading((p) => ({ ...p, [harvestId]: false }));
+    } else {
+      setExpandedHarvest(harvestId);
+      // Prefetch if not already cached
+      if (!detailsCache[harvestId]) {
+        queryClient.prefetchQuery({
+          queryKey: qk.seasons.harvestDetails(harvestId),
+          queryFn: async () => {
+            const data = await api.getHarvestDetailsByHarvest(harvestId);
+            return Array.isArray(data) ? data : ([] as HarvestDetailResponse[]);
+          },
+        });
+      }
     }
   };
 
-  // ── Create/Edit harvest ─────────────────────────────────────────────────────
+  // ── Harvest form state ──────────────────────────────────────────────────────
+  const [createHarvestOpen, setCreateHarvestOpen] = useState(false);
+  const [editHarvest, setEditHarvest] = useState<HarvestItem | null>(null);
+  const [deleteHarvest, setDeleteHarvest] = useState<HarvestItem | null>(null);
+
+  const [harvestForm, setHarvestForm] = useState({
+    plotId: "",
+    cropId: "",
+    expectedDate: "",
+    expectedQuantity: "",
+    unit: "kg",
+    status: "planned",
+  });
+
   const openCreateHarvest = () => {
     setHarvestForm({
       plotId: "",
@@ -1047,7 +1145,97 @@ function DetailSeasonView({
     setCreateHarvestOpen(true);
   };
 
-  const handleHarvestSubmit = async (e: React.FormEvent) => {
+  // ── Mutation: create harvest ────────────────────────────────────────────────
+  const createHarvestMutation = useMutation({
+    mutationFn: async () => {
+      const body: HarvestRequest = {
+        plotId: harvestForm.plotId,
+        seasonId: season.id,
+        cropId: harvestForm.cropId,
+        expectedDate: harvestForm.expectedDate,
+        expectedQuantity: parseFloat(harvestForm.expectedQuantity) || 0,
+        unit: harvestForm.unit,
+        status: harvestForm.status,
+        startDate: season.startDate,
+        endDate: season.endDate,
+      };
+      return api.createHarvest(body);
+    },
+    onSuccess: () => {
+      localToast("Thêm thu hoạch thành công.", "success");
+      setCreateHarvestOpen(false);
+      setEditHarvest(null);
+      queryClient.invalidateQueries({
+        queryKey: qk.seasons.harvests(season.id),
+      });
+    },
+    onError: (err) => {
+      localToast(
+        err instanceof Error ? err.message : "Lưu thu hoạch thất bại.",
+        "error",
+      );
+    },
+  });
+
+  // ── Mutation: update harvest ────────────────────────────────────────────────
+  const updateHarvestMutation = useMutation({
+    mutationFn: async () => {
+      if (!editHarvest) throw new Error("Không có thu hoạch để cập nhật");
+      const body: HarvestUpdateRequest = {
+        expectedDate: harvestForm.expectedDate,
+        expectedQuantity: parseFloat(harvestForm.expectedQuantity) || 0,
+        unit: harvestForm.unit,
+        status: harvestForm.status,
+      };
+      return api.updateHarvest(editHarvest.harvestId, body);
+    },
+    onSuccess: () => {
+      localToast("Cập nhật thu hoạch thành công.", "success");
+      setCreateHarvestOpen(false);
+      setEditHarvest(null);
+      queryClient.invalidateQueries({
+        queryKey: qk.seasons.harvests(season.id),
+      });
+    },
+    onError: (err) => {
+      localToast(
+        err instanceof Error ? err.message : "Lưu thu hoạch thất bại.",
+        "error",
+      );
+    },
+  });
+
+  // ── Mutation: delete harvest ────────────────────────────────────────────────
+  const deleteHarvestMutation = useMutation({
+    mutationFn: (harvestId: string) => api.deleteHarvest(harvestId),
+    onSuccess: (_data, harvestId) => {
+      setDeleteHarvest(null);
+      localToast("Đã xóa thu hoạch.", "success");
+      queryClient.invalidateQueries({
+        queryKey: qk.seasons.harvests(season.id),
+      });
+      // Also drop the detail cache for that harvest
+      queryClient.removeQueries({
+        queryKey: qk.seasons.harvestDetails(harvestId),
+      });
+      setDetailsCache((prev) => {
+        const next = { ...prev };
+        delete next[harvestId];
+        return next;
+      });
+    },
+    onError: (err) => {
+      localToast(
+        err instanceof Error ? err.message : "Xóa thu hoạch thất bại.",
+        "error",
+      );
+    },
+  });
+
+  const harvestSubmitting =
+    createHarvestMutation.isPending || updateHarvestMutation.isPending;
+
+  const handleHarvestSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (
       !harvestForm.plotId ||
@@ -1057,64 +1245,14 @@ function DetailSeasonView({
       localToast("Vui lòng điền đầy đủ thông tin bắt buộc.", "error");
       return;
     }
-    setSubmitting(true);
-    try {
-      if (editHarvest) {
-        const body: HarvestUpdateRequest = {
-          expectedDate: harvestForm.expectedDate,
-          expectedQuantity: parseFloat(harvestForm.expectedQuantity) || 0,
-          unit: harvestForm.unit,
-          status: harvestForm.status,
-        };
-        await api.updateHarvest(editHarvest.harvestId, body);
-        localToast("Cập nhật thu hoạch thành công.", "success");
-      } else {
-        const body: HarvestRequest = {
-          plotId: harvestForm.plotId,
-          seasonId: season.id,
-          cropId: harvestForm.cropId,
-          expectedDate: harvestForm.expectedDate,
-          expectedQuantity: parseFloat(harvestForm.expectedQuantity) || 0,
-          unit: harvestForm.unit,
-          status: harvestForm.status,
-          startDate: season.startDate,
-          endDate: season.endDate,
-        };
-        await api.createHarvest(body);
-        localToast("Thêm thu hoạch thành công.", "success");
-      }
-      setCreateHarvestOpen(false);
-      setEditHarvest(null);
-      await loadHarvests();
-    } catch (err) {
-      localToast(
-        err instanceof Error ? err.message : "Lưu thu hoạch thất bại.",
-        "error",
-      );
-    } finally {
-      setSubmitting(false);
+    if (editHarvest) {
+      updateHarvestMutation.mutate();
+    } else {
+      createHarvestMutation.mutate();
     }
   };
 
-  const confirmDeleteHarvest = async () => {
-    if (!deleteHarvest) return;
-    setDeletingHarvest(true);
-    try {
-      await api.deleteHarvest(deleteHarvest.harvestId);
-      setDeleteHarvest(null);
-      localToast("Đã xóa thu hoạch.", "success");
-      await loadHarvests();
-    } catch (err) {
-      localToast(
-        err instanceof Error ? err.message : "Xóa thu hoạch thất bại.",
-        "error",
-      );
-    } finally {
-      setDeletingHarvest(false);
-    }
-  };
-
-  // ── IoT sensor data ─────────────────────────────────────────────────────────
+  // ── IoT sensor data (non-critical, keep as useEffect) ─────────────────────
   const [iotRows, setIotRows] = useState<IotRow[]>([]);
   const [iotLoading, setIotLoading] = useState(true);
 
@@ -1164,7 +1302,16 @@ function DetailSeasonView({
     };
   }, [season.id]);
 
-  // ── Plots for this season's farm ────────────────────────────────────────────
+  // ── Growth tracking indicator ──────────────────────────────────────────────
+  const [trackingKnown, setTrackingKnown] = useState<Record<string, boolean>>(
+    {},
+  );
+  const [growthTrackingTarget, setGrowthTrackingTarget] = React.useState<{
+    id: string;
+    bedName: string;
+  } | null>(null);
+
+  // ── Derived ────────────────────────────────────────────────────────────────
   const farmPlots = plots.filter((p) => p.farmId === season.farmId);
   const activeCrops = crops;
 
@@ -1186,7 +1333,7 @@ function DetailSeasonView({
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
 
       {/* Header */}
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-3">
           <Link
             to="/seasons"
@@ -1289,8 +1436,12 @@ function DetailSeasonView({
           <div className="divide-y divide-border">
             {harvests.map((h) => {
               const isExpanded = expandedHarvest === h.harvestId;
-              const details = harvestDetails[h.harvestId];
-              const isLoadingDetails = detailsLoading[h.harvestId];
+              const details = detailsCache[h.harvestId];
+              const isLoadingDetails =
+                isExpanded &&
+                harvestDetailQuery.isFetching &&
+                expandedHarvest === h.harvestId &&
+                !details;
 
               return (
                 <div key={h.harvestId}>
@@ -1513,7 +1664,7 @@ function DetailSeasonView({
           <EmptyState size="sm" message="Chưa có dữ liệu cảm biến" />
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm min-w-[640px]">
               <thead className="bg-surface-alt border-b border-border">
                 <tr>
                   {[
@@ -1617,7 +1768,7 @@ function DetailSeasonView({
       <Modal
         open={createHarvestOpen}
         onOpenChange={(o) => {
-          if (!o && !submitting) {
+          if (!o && !harvestSubmitting) {
             setCreateHarvestOpen(false);
             setEditHarvest(null);
           }
@@ -1633,11 +1784,11 @@ function DetailSeasonView({
                 setCreateHarvestOpen(false);
                 setEditHarvest(null);
               }}
-              disabled={submitting}
+              disabled={harvestSubmitting}
             >
               Hủy
             </Button>
-            <Button type="submit" loading={submitting}>
+            <Button type="submit" loading={harvestSubmitting}>
               {editHarvest ? "Lưu thay đổi" : "Thêm thu hoạch"}
             </Button>
           </>
@@ -1733,7 +1884,7 @@ function DetailSeasonView({
       <ConfirmDialog
         open={deleteHarvest !== null}
         onOpenChange={(o) => {
-          if (!o && !deletingHarvest) setDeleteHarvest(null);
+          if (!o && !deleteHarvestMutation.isPending) setDeleteHarvest(null);
         }}
         title="Xóa thu hoạch"
         description={
@@ -1744,8 +1895,11 @@ function DetailSeasonView({
           </>
         }
         confirmLabel="Xóa"
-        loading={deletingHarvest}
-        onConfirm={confirmDeleteHarvest}
+        loading={deleteHarvestMutation.isPending}
+        onConfirm={() => {
+          if (deleteHarvest)
+            deleteHarvestMutation.mutate(deleteHarvest.harvestId);
+        }}
       />
     </div>
   );
@@ -1771,7 +1925,6 @@ function CreateSeasonView({
   const { toasts, showToast: localToast, dismissToast } = useToast();
 
   const [step, setStep] = useState(1);
-  const [submitting, setSubmitting] = useState(false);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
   const [formData, setFormData] = useState({
@@ -1784,7 +1937,6 @@ function CreateSeasonView({
     status: "Planned",
   });
 
-  // Harvest groups: each group = one harvest record (one plot+crop+date)
   interface HarvestGroup {
     id: string;
     plotId: string;
@@ -1792,7 +1944,6 @@ function CreateSeasonView({
     expectedDate: string;
     expectedQuantity: string;
     unit: string;
-    // Which beds to assign to this harvest (for UI display; actual HarvestDetails are auto-created by backend)
     bedIds: string[];
   }
 
@@ -1828,8 +1979,6 @@ function CreateSeasonView({
 
   const farmPlots = plots.filter((p) => p.farmId === formData.farmId);
   const activeCrops = crops;
-
-  // All bed IDs claimed across all groups
   const allClaimedBedIds = harvestGroups.flatMap((g) => g.bedIds);
 
   const validateStep1 = () => {
@@ -1849,12 +1998,10 @@ function CreateSeasonView({
     return errors;
   };
 
-  // Bỏ qua: create season only, no harvests, then navigate
-  const handleSkip = async () => {
-    if (submitting) return;
-    setSubmitting(true);
-    try {
-      const created = await api.createSeason({
+  // ── Mutation: skip (create season only) ───────────────────────────────────
+  const skipMutation = useMutation({
+    mutationFn: () =>
+      api.createSeason({
         farmId: formData.farmId,
         seasonName: formData.name.trim(),
         seasonStartDate: formData.startDate,
@@ -1862,37 +2009,36 @@ function CreateSeasonView({
         description: formData.description.trim(),
         seasonNotes: formData.seasonNotes.trim(),
         status: formData.status,
-      });
+      }),
+    onSuccess: (created) => {
       const msg =
         (created as any)?.message ||
         `Đã tạo mùa vụ "${formData.name.trim()}" thành công.`;
       localToast(msg, "success");
       setTimeout(onCreated, 800);
-    } catch (err) {
+    },
+    onError: (err) => {
       localToast(
         err instanceof Error ? err.message : "Tạo mùa vụ thất bại.",
         "error",
       );
-      setSubmitting(false);
-    }
-  };
+    },
+  });
 
-  const handleStep2Submit = async () => {
-    if (submitting) return; // guard against double-click
-
-    const hasInvalid = harvestGroups.some(
-      (g) => !g.plotId || !g.cropId || !g.expectedDate,
-    );
-    if (hasInvalid) {
-      localToast(
-        "Mỗi đợt thu hoạch cần có vuông đất, cây trồng và ngày dự kiến.",
-        "error",
+  // ── Mutation: full create with harvests ────────────────────────────────────
+  // Complex orchestrated mutation — kept in one mutationFn to keep the
+  // create-then-harvest sequencing atomic from the user's perspective.
+  const createWithHarvestsMutation = useMutation({
+    mutationFn: async () => {
+      const hasInvalid = harvestGroups.some(
+        (g) => !g.plotId || !g.cropId || !g.expectedDate,
       );
-      return;
-    }
+      if (hasInvalid) {
+        throw new Error(
+          "Mỗi đợt thu hoạch cần có vuông đất, cây trồng và ngày dự kiến.",
+        );
+      }
 
-    setSubmitting(true);
-    try {
       // Step 1: create the season
       const created = await api.createSeason({
         farmId: formData.farmId,
@@ -1920,12 +2066,12 @@ function CreateSeasonView({
       }
 
       if (!resolvedSeasonId) {
-        localToast(
-          "Tạo mùa vụ thành công nhưng không thể gán thu hoạch. Vui lòng thêm thủ công.",
-          "info",
-        );
-        setTimeout(onCreated, 800);
-        return;
+        return {
+          created,
+          partialFail: true,
+          failedCount: 0,
+          total: 0,
+        };
       }
 
       // Step 3: create harvest records
@@ -1933,49 +2079,72 @@ function CreateSeasonView({
         (g) => g.plotId && g.cropId && g.expectedDate,
       );
 
-      if (harvestsToCreate.length > 0) {
-        const results = await Promise.allSettled(
-          harvestsToCreate.map((g) =>
-            api.createHarvest({
-              plotId: g.plotId,
-              seasonId: resolvedSeasonId!,
-              cropId: g.cropId,
-              expectedDate: g.expectedDate,
-              expectedQuantity: parseFloat(g.expectedQuantity) || 0,
-              unit: g.unit,
-              status: "planned",
-              startDate: formData.startDate,
-              endDate: formData.endDate,
-            }),
-          ),
+      if (harvestsToCreate.length === 0) {
+        return { created, partialFail: false, failedCount: 0, total: 0 };
+      }
+
+      const results = await Promise.allSettled(
+        harvestsToCreate.map((g) =>
+          api.createHarvest({
+            plotId: g.plotId,
+            seasonId: resolvedSeasonId!,
+            cropId: g.cropId,
+            expectedDate: g.expectedDate,
+            expectedQuantity: parseFloat(g.expectedQuantity) || 0,
+            unit: g.unit,
+            status: "planned",
+            startDate: formData.startDate,
+            endDate: formData.endDate,
+          }),
+        ),
+      );
+
+      const failed = results.filter((r) => r.status === "rejected").length;
+      return {
+        created,
+        partialFail: failed > 0,
+        failedCount: failed,
+        total: harvestsToCreate.length,
+      };
+    },
+    onSuccess: ({ created, partialFail, failedCount, total }) => {
+      if ((created as any)?.seasonId === undefined && total === 0) {
+        localToast(
+          "Tạo mùa vụ thành công nhưng không thể gán thu hoạch. Vui lòng thêm thủ công.",
+          "info",
         );
-        const failed = results.filter((r) => r.status === "rejected").length;
-        if (failed > 0) {
-          localToast(
-            `Tạo mùa vụ thành công. ${failed} đợt thu hoạch tạo thất bại — vui lòng thêm lại trong trang chi tiết.`,
-            "info",
-          );
-        } else {
-          const serverMsg =
-            (created as any)?.message ||
-            `Tạo mùa vụ "${formData.name.trim()}" và ${harvestsToCreate.length} đợt thu hoạch thành công.`;
-          localToast(serverMsg, "success");
-        }
+      } else if (partialFail) {
+        localToast(
+          `Tạo mùa vụ thành công. ${failedCount} đợt thu hoạch tạo thất bại — vui lòng thêm lại trong trang chi tiết.`,
+          "info",
+        );
       } else {
         const serverMsg =
           (created as any)?.message ||
-          `Đã tạo mùa vụ "${formData.name.trim()}" thành công.`;
+          `Tạo mùa vụ "${formData.name.trim()}" và ${total} đợt thu hoạch thành công.`;
         localToast(serverMsg, "success");
       }
-
       setTimeout(onCreated, 900);
-    } catch (err) {
+    },
+    onError: (err) => {
       localToast(
         err instanceof Error ? err.message : "Tạo mùa vụ thất bại.",
         "error",
       );
-      setSubmitting(false); // re-enable only on error so user can retry
-    }
+    },
+  });
+
+  const submitting =
+    skipMutation.isPending || createWithHarvestsMutation.isPending;
+
+  const handleSkip = () => {
+    if (submitting) return;
+    skipMutation.mutate();
+  };
+
+  const handleStep2Submit = () => {
+    if (submitting) return;
+    createWithHarvestsMutation.mutate();
   };
 
   return (
@@ -2319,12 +2488,16 @@ function CreateSeasonView({
               Quay lại
             </Button>
             <div className="flex items-center gap-3">
-              <Button variant="ghost" onClick={handleSkip} loading={submitting}>
+              <Button
+                variant="ghost"
+                onClick={handleSkip}
+                loading={skipMutation.isPending}
+              >
                 Bỏ qua (tạo sau)
               </Button>
               <Button
                 leadingIcon={CheckCircle}
-                loading={submitting}
+                loading={createWithHarvestsMutation.isPending}
                 onClick={handleStep2Submit}
               >
                 Tạo mùa vụ
@@ -2351,7 +2524,6 @@ function EditSeasonView({
   showToast: (msg: string, type: "success" | "error" | "info") => void;
 }) {
   const { toasts, showToast: localToast, dismissToast } = useToast();
-  const [submitting, setSubmitting] = useState(false);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
   const [formData, setFormData] = useState({
@@ -2379,15 +2551,9 @@ function EditSeasonView({
     return errors;
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const errors = validate();
-    setFormErrors(errors);
-    if (Object.keys(errors).length > 0) return;
-
-    setSubmitting(true);
-    try {
-      await api.updateSeason(season.id, {
+  const updateMutation = useMutation({
+    mutationFn: () =>
+      api.updateSeason(season.id, {
         farmId: formData.farmId,
         seasonName: formData.name.trim(),
         seasonStartDate: formData.startDate,
@@ -2395,17 +2561,25 @@ function EditSeasonView({
         description: formData.description.trim(),
         seasonNotes: formData.seasonNotes.trim(),
         status: formData.status,
-      });
+      }),
+    onSuccess: () => {
       localToast("Cập nhật mùa vụ thành công.", "success");
       setTimeout(onUpdated, 600);
-    } catch (err) {
+    },
+    onError: (err) => {
       localToast(
         err instanceof Error ? err.message : "Cập nhật thất bại.",
         "error",
       );
-    } finally {
-      setSubmitting(false);
-    }
+    },
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const errors = validate();
+    setFormErrors(errors);
+    if (Object.keys(errors).length > 0) return;
+    updateMutation.mutate();
   };
 
   return (
@@ -2519,7 +2693,7 @@ function EditSeasonView({
               Quay lại
             </Button>
           </Link>
-          <Button type="submit" loading={submitting}>
+          <Button type="submit" loading={updateMutation.isPending}>
             Lưu thay đổi
           </Button>
         </div>
