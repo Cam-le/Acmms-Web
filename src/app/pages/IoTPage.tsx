@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import { Plus, Cpu, Radio, MapPin } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { qk } from "../../api/queryKeys";
 import {
   api,
   IotDeviceResponse,
@@ -33,24 +35,18 @@ const PAGE_SIZE = 10;
 
 export function IoTPage() {
   const { toasts, showToast, dismissToast } = useToast();
+  const queryClient = useQueryClient();
 
-  const [devices, setDevices] = useState<IotDeviceResponse[]>([]);
-  const [seasons, setSeasons] = useState<SeasonResponse[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [bedNameCache, setBedNameCache] = useState<Record<string, string>>({});
-
+  // ── UI state (modals, form, selection) ──────────────────────────────────
   const [selectedSeasonId, setSelectedSeasonId] = useState<string>("");
 
-  // Modals
   const [addOpen, setAddOpen] = useState(false);
   const [viewTarget, setViewTarget] = useState<IotDeviceResponse | null>(null);
   const [editTarget, setEditTarget] = useState<IotDeviceResponse | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<IotDeviceResponse | null>(
     null,
   );
-  const [deleting, setDeleting] = useState(false);
 
-  // Form
   const emptyForm: IotDeviceRequest = {
     bedId: "",
     deviceCode: "",
@@ -62,59 +58,75 @@ export function IoTPage() {
     longitude: 0,
   };
   const [formData, setFormData] = useState<IotDeviceRequest>(emptyForm);
-  const [submitting, setSubmitting] = useState(false);
 
-  // Filter / search
   const [searchText, setSearchText] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
 
-  // ── Load ──────────────────────────────────────────────────────────────────
+  // ── Read: devices ──────────────────────────────────────────────────────
+  const devicesQuery = useQuery({
+    queryKey: qk.iot.devices(),
+    queryFn: () => api.getIotDevices(),
+  });
 
-  const loadDevices = async () => {
-    try {
-      const data = await api.getIotDevices();
-      setDevices(data);
-      const uniqueBedIds = [...new Set(data.map((d) => d.bedId))];
-      const entries = await Promise.all(
-        uniqueBedIds.map(async (id) => {
-          try {
-            const bed = await api.getBed(id);
-            return [id, bed.bedName] as [string, string];
-          } catch {
-            return [id, id.slice(0, 8) + "…"] as [string, string];
-          }
-        }),
-      );
-      setBedNameCache(Object.fromEntries(entries));
-    } catch (err) {
+  // ── Read: seasons ──────────────────────────────────────────────────────
+  const seasonsQuery = useQuery({
+    queryKey: qk.seasons.list(),
+    queryFn: () => api.getSeasons(),
+  });
+
+  const devices: IotDeviceResponse[] = devicesQuery.data ?? [];
+  const seasons: SeasonResponse[] = seasonsQuery.data ?? [];
+
+  const loading =
+    devicesQuery.isLoading ||
+    seasonsQuery.isLoading ||
+    (devicesQuery.isFetching && devicesQuery.data === undefined);
+
+  const fetchError =
+    devicesQuery.isError && devicesQuery.data === undefined
+      ? devicesQuery.error
+      : null;
+
+  // Default-select first season once loaded
+  useEffect(() => {
+    if (seasons.length > 0 && !selectedSeasonId) {
+      setSelectedSeasonId(seasons[0].seasonId);
+    }
+  }, [seasons, selectedSeasonId]);
+
+  // Surface device load errors as toast
+  useEffect(() => {
+    if (devicesQuery.error) {
       showToast(
-        "Không thể tải danh sách thiết bị: " + (err as Error).message,
+        devicesQuery.error instanceof Error
+          ? "Không thể tải danh sách thiết bị: " + devicesQuery.error.message
+          : "Không thể tải danh sách thiết bị",
         "error",
       );
     }
-  };
+  }, [devicesQuery.error, showToast]);
+
+  // ── Bed name cache (derived from device list) ──────────────────────────
+  // We fetch bed names on-demand in a single pass whenever the device list changes.
+  const [bedNameCache, setBedNameCache] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    async function init() {
-      setLoading(true);
-      await loadDevices();
-      try {
-        const s = await api.getSeasons();
-        setSeasons(s);
-        if (s.length > 0) setSelectedSeasonId(s[0].seasonId);
-      } catch {
-        // seasons failed — bed picker won't work but page still loads
-      }
-      setLoading(false);
-    }
-    init();
-  }, []);
+    if (!devicesQuery.data) return;
+    const uniqueBedIds = [...new Set(devicesQuery.data.map((d) => d.bedId))];
+    if (uniqueBedIds.length === 0) return;
+    Promise.all(
+      uniqueBedIds.map(async (id) => {
+        try {
+          const bed = await api.getBed(id);
+          return [id, bed.bedName] as [string, string];
+        } catch {
+          return [id, id.slice(0, 8) + "…"] as [string, string];
+        }
+      }),
+    ).then((entries) => setBedNameCache(Object.fromEntries(entries)));
+  }, [devicesQuery.data]);
 
-  useEffect(() => {
-    // Reset bed when season changes (passed down to form modal)
-  }, [selectedSeasonId]);
-
-  // ── Derived ──────────────────────────────────────────────────────────────
+  // ── Derived / filtered ─────────────────────────────────────────────────
 
   const filtered = devices.filter((d) => {
     const matchSearch =
@@ -130,8 +142,7 @@ export function IoTPage() {
     PAGE_SIZE,
   );
 
-  // ── CRUD ─────────────────────────────────────────────────────────────────
-
+  // ── Derived: beds for selected season ─────────────────────────────────
   const activeSeason = seasons.find((s) => s.seasonId === selectedSeasonId);
   const bedsForSeason = activeSeason?.seasonsDetails ?? [];
 
@@ -141,62 +152,6 @@ export function IoTPage() {
       bedId: bedsForSeason[0]?.bedId ?? "",
     });
     setAddOpen(true);
-  };
-
-  const handleCreate = async () => {
-    if (!formData.bedId || !formData.name.trim() || !formData.deviceCode.trim())
-      return;
-    setSubmitting(true);
-    try {
-      await api.createIotDevice({
-        ...formData,
-        installationDate: new Date(formData.installationDate).toISOString(),
-      });
-      await loadDevices();
-      setAddOpen(false);
-      setFormData(emptyForm);
-      showToast("Thêm thiết bị thành công!", "success");
-    } catch (err) {
-      showToast("Thêm thiết bị thất bại: " + (err as Error).message, "error");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleUpdate = async () => {
-    if (!editTarget) return;
-    setSubmitting(true);
-    try {
-      await api.updateIotDevice(editTarget.deviceId, {
-        ...formData,
-        installationDate: new Date(formData.installationDate).toISOString(),
-      });
-      await loadDevices();
-      setEditTarget(null);
-      showToast("Cập nhật thiết bị thành công!", "success");
-    } catch (err) {
-      showToast(
-        "Cập nhật thiết bị thất bại: " + (err as Error).message,
-        "error",
-      );
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleDelete = async () => {
-    if (!deleteTarget) return;
-    setDeleting(true);
-    try {
-      await api.deleteIotDevice(deleteTarget.deviceId);
-      await loadDevices();
-      setDeleteTarget(null);
-      showToast("Xóa thiết bị thành công!", "success");
-    } catch (err) {
-      showToast("Xóa thiết bị thất bại: " + (err as Error).message, "error");
-    } finally {
-      setDeleting(false);
-    }
   };
 
   const openEdit = (device: IotDeviceResponse) => {
@@ -213,12 +168,86 @@ export function IoTPage() {
     setEditTarget(device);
   };
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  // ── Mutation: create ────────────────────────────────────────────────────
+  const createMutation = useMutation({
+    mutationFn: () =>
+      api.createIotDevice({
+        ...formData,
+        installationDate: new Date(formData.installationDate).toISOString(),
+      }),
+    onSuccess: () => {
+      setAddOpen(false);
+      setFormData(emptyForm);
+      showToast("Thêm thiết bị thành công!", "success");
+      queryClient.invalidateQueries({ queryKey: qk.iot.all });
+    },
+    onError: (err) => {
+      showToast("Thêm thiết bị thất bại: " + (err as Error).message, "error");
+    },
+  });
+
+  // ── Mutation: update ────────────────────────────────────────────────────
+  const updateMutation = useMutation({
+    mutationFn: () => {
+      if (!editTarget) throw new Error("No edit target");
+      return api.updateIotDevice(editTarget.deviceId, {
+        ...formData,
+        installationDate: new Date(formData.installationDate).toISOString(),
+      });
+    },
+    onSuccess: () => {
+      setEditTarget(null);
+      showToast("Cập nhật thiết bị thành công!", "success");
+      queryClient.invalidateQueries({ queryKey: qk.iot.all });
+    },
+    onError: (err) => {
+      showToast(
+        "Cập nhật thiết bị thất bại: " + (err as Error).message,
+        "error",
+      );
+    },
+  });
+
+  // ── Mutation: delete ────────────────────────────────────────────────────
+  const deleteMutation = useMutation({
+    mutationFn: (deviceId: string) => api.deleteIotDevice(deviceId),
+    onSuccess: () => {
+      setDeleteTarget(null);
+      showToast("Xóa thiết bị thành công!", "success");
+      queryClient.invalidateQueries({ queryKey: qk.iot.all });
+    },
+    onError: (err) => {
+      showToast("Xóa thiết bị thất bại: " + (err as Error).message, "error");
+    },
+  });
+
+  // ── Render ────────────────────────────────────────────────────────────
 
   if (loading) {
     return (
       <div className="p-6">
         <LoadingState />
+      </div>
+    );
+  }
+
+  if (fetchError) {
+    return (
+      <div className="p-6">
+        <EmptyState
+          icon={Cpu}
+          title="Không thể tải danh sách thiết bị"
+          message={
+            fetchError instanceof Error
+              ? fetchError.message
+              : "Đã xảy ra lỗi. Vui lòng thử lại."
+          }
+          action={
+            <Button variant="secondary" onClick={() => devicesQuery.refetch()}>
+              Thử lại
+            </Button>
+          }
+        />
       </div>
     );
   }
@@ -374,8 +403,12 @@ export function IoTPage() {
         seasons={seasons}
         selectedSeasonId={selectedSeasonId}
         setSelectedSeasonId={setSelectedSeasonId}
-        submitting={submitting}
-        onSubmit={editTarget ? handleUpdate : handleCreate}
+        submitting={createMutation.isPending || updateMutation.isPending}
+        onSubmit={
+          editTarget
+            ? () => updateMutation.mutate()
+            : () => createMutation.mutate()
+        }
         onClose={() => {
           setAddOpen(false);
           setEditTarget(null);
@@ -406,9 +439,9 @@ export function IoTPage() {
           </>
         }
         confirmLabel="Xóa thiết bị"
-        loading={deleting}
-        onConfirm={async () => {
-          await handleDelete();
+        loading={deleteMutation.isPending}
+        onConfirm={() => {
+          if (deleteTarget) deleteMutation.mutate(deleteTarget.deviceId);
         }}
       />
     </div>

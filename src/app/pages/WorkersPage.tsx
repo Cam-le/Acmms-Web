@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { qk } from "../../api/queryKeys";
 import {
   Users,
   Plus,
@@ -51,14 +53,14 @@ interface WorkerRow {
   phone: string;
   role: string;
   status: WorkerStatus;
-  dateJoined: string; // already formatted vi-VN on map
-  dateJoinedRaw: string; // ISO for sort
+  dateJoined: string;
+  dateJoinedRaw: string;
 }
 
 const PAGE_SIZE = 5;
 
 const ROLE_LABEL: Record<string, string> = {
-  Worker: "Nhân viên",
+  Worker: "Công nhân",
   Specialist: "Chuyên gia",
 };
 const getRoleLabel = (role: string) => ROLE_LABEL[role] ?? role;
@@ -127,32 +129,21 @@ function validateForm(
 
 export function WorkersPage() {
   const { toasts, showToast, dismissToast } = useToast();
+  const queryClient = useQueryClient();
 
-  // ── Data ──
-  const [workers, setWorkers] = useState<WorkerRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [apiRoles, setApiRoles] = useState<RoleResponse[]>([]);
-  const [rolesLoaded, setRolesLoaded] = useState(false);
-
-  // ── Pending accounts ──
-  const [pending, setPending] = useState<UnassignedStaff[]>([]);
-  const [pendingLoading, setPendingLoading] = useState(false);
-  const [approvingId, setApprovingId] = useState<string | null>(null);
-  const [rejectTarget, setRejectTarget] = useState<UnassignedStaff | null>(
-    null,
-  );
-  const [rejectSubmitting, setRejectSubmitting] = useState(false);
-  const [pendingRowError, setPendingRowError] = useState<
-    Record<string, string>
-  >({});
-
-  // ── UI state ──
+  // ── UI-only state ──
   const [activeTab, setActiveTab] = useState<"staff" | "pending">("staff");
   const [searchTerm, setSearchTerm] = useState("");
   const [filterRole, setFilterRole] = useState("all");
-  const [submitting, setSubmitting] = useState(false);
   const [formErrors, setFormErrors] = useState<FormErrors>({});
   const [apiError, setApiError] = useState<string | null>(null);
+  const [rejectTarget, setRejectTarget] = useState<UnassignedStaff | null>(
+    null,
+  );
+  const [pendingRowError, setPendingRowError] = useState<
+    Record<string, string>
+  >({});
+  const [approvingId, setApprovingId] = useState<string | null>(null);
 
   const modals = useCrudModals<WorkerRow>();
 
@@ -164,49 +155,57 @@ export function WorkersPage() {
     status: "Active" as WorkerStatus,
   });
 
-  // ── Loaders ──
-  const loadRoles = useCallback(async () => {
-    try {
+  // ── Read: roles ────────────────────────────────────────────────────────────
+  const rolesQuery = useQuery({
+    queryKey: qk.staffs.roles(),
+    queryFn: async () => {
       const data = await api.getRoles();
-      setApiRoles(
-        (data ?? []).filter((r) => r.roleName.toLowerCase() !== "owner"),
-      );
-    } catch {
-      // form will show warning
-    } finally {
-      setRolesLoaded(true);
-    }
-  }, []);
+      return (data ?? []).filter((r) => r.roleName.toLowerCase() !== "owner");
+    },
+  });
 
-  const loadWorkers = useCallback(async () => {
-    setLoading(true);
-    try {
+  const apiRoles: RoleResponse[] = rolesQuery.data ?? [];
+  const rolesLoaded = !rolesQuery.isLoading;
+  const availableRoleNames = apiRoles.map((r) => r.roleName);
+  const getRoleId = (roleName: string) =>
+    apiRoles.find((r) => r.roleName === roleName)?.roleId;
+
+  // ── Read: staff list ───────────────────────────────────────────────────────
+  const staffsQuery = useQuery({
+    queryKey: qk.staffs.list(),
+    queryFn: async () => {
       const data = await api.getStaffs();
-      setWorkers((data ?? []).filter(Boolean).map(mapUser));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+      return (data ?? []).filter(Boolean).map(mapUser);
+    },
+  });
 
-  const loadPending = useCallback(async () => {
-    setPendingLoading(true);
-    try {
-      const data = await api.getUnassignedStaffs();
-      setPending(data ?? []);
-    } catch {
-      setPending([]);
-    } finally {
-      setPendingLoading(false);
-    }
-  }, []);
+  const workers: WorkerRow[] = staffsQuery.data ?? [];
+  const loading = staffsQuery.isLoading;
 
   useEffect(() => {
-    loadRoles();
-    loadWorkers();
-    loadPending();
-  }, [loadRoles, loadWorkers, loadPending]);
+    if (staffsQuery.error) {
+      showToast(
+        staffsQuery.error instanceof Error
+          ? staffsQuery.error.message
+          : "Không thể tải danh sách nhân viên",
+        "error",
+      );
+    }
+  }, [staffsQuery.error, showToast]);
 
-  // ── Sort ──
+  // ── Read: pending (unassigned) ─────────────────────────────────────────────
+  const pendingQuery = useQuery({
+    queryKey: qk.staffs.unassigned(),
+    queryFn: async () => {
+      const data = await api.getUnassignedStaffs();
+      return data ?? [];
+    },
+  });
+
+  const pending: UnassignedStaff[] = pendingQuery.data ?? [];
+  const pendingLoading = pendingQuery.isLoading;
+
+  // ── Sort ───────────────────────────────────────────────────────────────────
   const sort = useTableSort(workers, {
     dateJoined: {
       compare: (a, b) => {
@@ -223,7 +222,6 @@ export function WorkersPage() {
     },
   });
 
-  // ── Filter (applied after sort) ──
   const filteredWorkers = sort.sortedItems.filter((w) => {
     const term = searchTerm.toLowerCase();
     const matchSearch =
@@ -237,11 +235,7 @@ export function WorkersPage() {
 
   const pagination = usePagination(filteredWorkers, PAGE_SIZE);
 
-  // ── Helpers ──
-  const availableRoleNames = apiRoles.map((r) => r.roleName);
-  const getRoleId = (roleName: string) =>
-    apiRoles.find((r) => r.roleName === roleName)?.roleId;
-
+  // ── Form helpers ───────────────────────────────────────────────────────────
   const resetForm = useCallback(() => {
     setFormData({
       name: "",
@@ -254,20 +248,14 @@ export function WorkersPage() {
     setApiError(null);
   }, [availableRoleNames]);
 
-  // ── CRUD handlers ──
-  const handleAddWorker = async () => {
-    setApiError(null);
-    const errors = validateForm(formData, apiRoles);
-    setFormErrors(errors);
-    if (Object.keys(errors).length > 0) return;
-
-    setSubmitting(true);
-    try {
+  // ── Mutation: create staff ─────────────────────────────────────────────────
+  const createMutation = useMutation({
+    mutationFn: async () => {
       const roleId = getRoleId(formData.role);
-      if (!roleId) {
-        setApiError("Không tìm thấy ID vai trò. Vui lòng thử tải lại trang.");
-        return;
-      }
+      if (!roleId)
+        throw new Error(
+          "Không tìm thấy ID vai trò. Vui lòng thử tải lại trang.",
+        );
       await api.createStaff({
         email: formData.email.trim(),
         password: "123456",
@@ -276,42 +264,34 @@ export function WorkersPage() {
         status: "Active",
         roleId,
       });
-      await loadWorkers();
+    },
+    onSuccess: () => {
       modals.closeCreate();
       resetForm();
       showToast("Thêm nhân viên thành công", "success");
-    } catch (err) {
+      queryClient.invalidateQueries({ queryKey: qk.staffs.all });
+    },
+    onError: (err) => {
       setApiError(
         "Không thể tạo nhân viên: " +
           (err instanceof Error ? err.message : "Đã xảy ra lỗi"),
       );
-    } finally {
-      setSubmitting(false);
-    }
-  };
+    },
+  });
 
-  const handleEditWorker = async () => {
-    if (!modals.editItem) return;
-    setApiError(null);
-    const errors = validateForm(formData, apiRoles);
-    setFormErrors(errors);
-    if (Object.keys(errors).length > 0) return;
+  // ── Mutation: update staff ─────────────────────────────────────────────────
+  const updateMutation = useMutation({
+    mutationFn: async () => {
+      if (!modals.editItem) return;
+      const roleChanged = formData.role !== modals.editItem.role;
+      const infoChanged =
+        formData.name.trim() !== modals.editItem.name ||
+        formData.email.trim() !== modals.editItem.email ||
+        formData.phone.trim() !== modals.editItem.phone ||
+        formData.status !== modals.editItem.status;
 
-    const roleChanged = formData.role !== modals.editItem.role;
-    const infoChanged =
-      formData.name.trim() !== modals.editItem.name ||
-      formData.email.trim() !== modals.editItem.email ||
-      formData.phone.trim() !== modals.editItem.phone ||
-      formData.status !== modals.editItem.status;
+      if (!roleChanged && !infoChanged) return;
 
-    if (!roleChanged && !infoChanged) {
-      modals.closeEdit();
-      resetForm();
-      return;
-    }
-
-    setSubmitting(true);
-    try {
       if (infoChanged) {
         await api.updateStaff(modals.editItem.id, {
           email: formData.email.trim(),
@@ -323,40 +303,80 @@ export function WorkersPage() {
       if (roleChanged) {
         await api.assignStaffRole(modals.editItem.id, formData.role);
       }
-      await loadWorkers();
+    },
+    onSuccess: () => {
       modals.closeEdit();
       resetForm();
       showToast("Cập nhật nhân viên thành công", "success");
-    } catch (err) {
+      queryClient.invalidateQueries({ queryKey: qk.staffs.all });
+    },
+    onError: (err) => {
       setApiError(
         "Không thể cập nhật: " +
           (err instanceof Error ? err.message : "Đã xảy ra lỗi"),
       );
-    } finally {
-      setSubmitting(false);
-    }
-  };
+    },
+  });
 
-  const handleDeleteWorker = async () => {
-    if (!modals.deleteItem) return;
-    setSubmitting(true);
-    try {
-      await api.deleteStaff(modals.deleteItem.id);
-      setWorkers((prev) => prev.filter((w) => w.id !== modals.deleteItem!.id));
+  // ── Mutation: delete staff ─────────────────────────────────────────────────
+  const deleteMutation = useMutation({
+    mutationFn: (workerId: string) => api.deleteStaff(workerId),
+    onSuccess: () => {
       modals.closeDelete();
       showToast("Xóa nhân viên thành công", "success");
-    } catch (err) {
+      queryClient.invalidateQueries({ queryKey: qk.staffs.all });
+    },
+    onError: (err) => {
       showToast(
         "Không thể xóa: " +
           (err instanceof Error ? err.message : "Đã xảy ra lỗi"),
         "error",
       );
-    } finally {
-      setSubmitting(false);
-    }
+    },
+  });
+
+  // ── Mutation: reject pending ───────────────────────────────────────────────
+  const rejectMutation = useMutation({
+    mutationFn: (userId: string) => api.deleteStaff(userId),
+    onSuccess: () => {
+      setRejectTarget(null);
+      showToast("Đã từ chối tài khoản", "success");
+      queryClient.invalidateQueries({ queryKey: qk.staffs.unassigned() });
+    },
+    onError: (err) => {
+      if (rejectTarget) {
+        setPendingRowError((p) => ({
+          ...p,
+          [rejectTarget.userId]:
+            err instanceof Error ? err.message : "Xóa thất bại",
+        }));
+      }
+    },
+  });
+
+  // ── Handlers: form submissions ─────────────────────────────────────────────
+  const handleAddWorker = () => {
+    setApiError(null);
+    const errors = validateForm(formData, apiRoles);
+    setFormErrors(errors);
+    if (Object.keys(errors).length > 0) return;
+    createMutation.mutate();
   };
 
-  // ── Pending handlers ──
+  const handleEditWorker = () => {
+    if (!modals.editItem) return;
+    setApiError(null);
+    const errors = validateForm(formData, apiRoles);
+    setFormErrors(errors);
+    if (Object.keys(errors).length > 0) return;
+    updateMutation.mutate();
+  };
+
+  const handleDeleteWorker = () => {
+    if (modals.deleteItem) deleteMutation.mutate(modals.deleteItem.id);
+  };
+
+  // ── Handler: approve pending (per-row loading — keep local state) ──────────
   const handleApprovePending = async (staff: UnassignedStaff) => {
     if (!staff.requestedRole) {
       setPendingRowError((p) => ({
@@ -373,7 +393,8 @@ export function WorkersPage() {
     });
     try {
       await api.assignStaffRole(staff.userId, staff.requestedRole);
-      await Promise.all([loadPending(), loadWorkers()]);
+      // Invalidate both lists — approved user moves from pending → staff
+      queryClient.invalidateQueries({ queryKey: qk.staffs.all });
       showToast("Duyệt tài khoản thành công", "success");
     } catch (err) {
       setPendingRowError((p) => ({
@@ -386,26 +407,11 @@ export function WorkersPage() {
     }
   };
 
-  const handleRejectPending = async () => {
-    if (!rejectTarget) return;
-    setRejectSubmitting(true);
-    try {
-      await api.deleteStaff(rejectTarget.userId);
-      await loadPending();
-      showToast("Đã từ chối tài khoản", "success");
-    } catch (err) {
-      setPendingRowError((p) => ({
-        ...p,
-        [rejectTarget.userId]:
-          err instanceof Error ? err.message : "Xóa thất bại",
-      }));
-    } finally {
-      setRejectSubmitting(false);
-      setRejectTarget(null);
-    }
+  const handleRejectPending = () => {
+    if (rejectTarget) rejectMutation.mutate(rejectTarget.userId);
   };
 
-  // ── Sort header helper ──
+  // ── Sort header helper ─────────────────────────────────────────────────────
   type SortKey = "dateJoined" | "status";
   function SortIcon({ field }: { field: SortKey }) {
     if (sort.sortField !== field)
@@ -456,7 +462,7 @@ export function WorkersPage() {
       {/* ===== STAFF TAB ===== */}
       {activeTab === "staff" ? (
         <div className="flex flex-col gap-3">
-          {/* Filters — flex-wrap so select drops below search on narrow viewports */}
+          {/* Filters */}
           <div className="flex items-center gap-3 flex-wrap">
             <SearchInput
               value={searchTerm}
@@ -492,7 +498,7 @@ export function WorkersPage() {
             </div>
           </div>
 
-          {/* Table — overflow-x-auto on inner wrapper so card border-radius is preserved */}
+          {/* Table */}
           <div className="bg-surface rounded-card border border-border shadow-card">
             {loading ? (
               <LoadingState />
@@ -799,7 +805,10 @@ export function WorkersPage() {
             >
               Hủy
             </Button>
-            <Button onClick={handleAddWorker} loading={submitting}>
+            <Button
+              onClick={handleAddWorker}
+              loading={createMutation.isPending}
+            >
               Thêm nhân viên
             </Button>
           </>
@@ -850,7 +859,10 @@ export function WorkersPage() {
             >
               Hủy
             </Button>
-            <Button onClick={handleEditWorker} loading={submitting}>
+            <Button
+              onClick={handleEditWorker}
+              loading={updateMutation.isPending}
+            >
               Lưu thay đổi
             </Button>
           </>
@@ -887,7 +899,7 @@ export function WorkersPage() {
             Hành động này không thể hoàn tác.
           </>
         }
-        loading={submitting}
+        loading={deleteMutation.isPending}
         onConfirm={handleDeleteWorker}
       />
 
@@ -904,7 +916,7 @@ export function WorkersPage() {
           </>
         }
         confirmLabel="Xóa tài khoản"
-        loading={rejectSubmitting}
+        loading={rejectMutation.isPending}
         onConfirm={handleRejectPending}
       />
 
@@ -967,7 +979,6 @@ function WorkerForm({
         error={errors.phone}
       />
 
-      {/* Role field — special handling for loading/error states */}
       {!rolesLoaded ? (
         <div className="flex items-center gap-2 px-3 py-2.5 border border-border rounded-btn text-sm text-ink-400">
           <Loader2 className="w-4 h-4 animate-spin text-primary" />

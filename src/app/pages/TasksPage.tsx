@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { qk } from "../../api/queryKeys";
 import { useSearchParams } from "react-router";
 import {
   Plus,
@@ -26,6 +28,8 @@ import type {
   BedResponse,
   PlotResponse,
   UserResponse,
+  HarvestResponse,
+  HarvestDetailResponse,
 } from "../../api/client";
 import { Modal } from "../components/ui/Modal";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
@@ -642,22 +646,128 @@ function getTaskStatusInfo(status: string | undefined) {
 
 export function TasksPage() {
   const { toasts, showToast, dismissToast } = useToast();
+  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<"schedule" | "allTasks" | "tasks">(
     "schedule",
   );
 
-  // ── API data ─────────────────────────────────────────────────────────────
-  const [tasks, setTasks] = useState<TaskResponse[]>([]);
-  const [taskDetails, setTaskDetails] = useState<TaskDetailResponse[]>([]);
-  const [seasons, setSeasons] = useState<SeasonResponse[]>([]);
-  const [allBeds, setAllBeds] = useState<BedResponse[]>([]);
-  const [allPlots, setAllPlots] = useState<PlotResponse[]>([]);
-  const [staffList, setStaffList] = useState<UserResponse[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  // ── Queries ─────────────────────────────────────────────────────────────
+  // Store raw API data in cache; sorting/mapping happens at render time.
+  // This matches the FarmPage pattern — avoids stale-cache shape mismatches.
+  const tasksQuery = useQuery({
+    queryKey: qk.tasks.list(),
+    queryFn: () => api.getTasks(),
+  });
+  const seasonsQuery = useQuery({
+    queryKey: qk.seasons.list(),
+    queryFn: () => api.getSeasons(),
+  });
+  const bedsQuery = useQuery({
+    queryKey: qk.beds.list(),
+    queryFn: () => api.getBeds(),
+  });
+  const plotsQuery = useQuery({
+    queryKey: qk.plots.list(),
+    queryFn: () => api.getPlots(),
+  });
+  const staffQuery = useQuery({
+    queryKey: qk.staffs.list(),
+    queryFn: () => api.getStaffs(),
+  });
+
+  // ── Derived data from query cache ────────────────────────────────────────
+  // Apply sorting/dedup here — never in the queryFn — so cache always holds raw.
+  const tasks: TaskResponse[] = (tasksQuery.data ?? [])
+    .slice()
+    .sort(
+      (a, b) =>
+        new Date(a.taskCreatedAt).getTime() -
+        new Date(b.taskCreatedAt).getTime(),
+    );
+  const seasons: SeasonResponse[] = seasonsQuery.data ?? [];
+  const allBeds: BedResponse[] = bedsQuery.data ?? [];
+  const allPlots: PlotResponse[] = plotsQuery.data ?? [];
+  const staffList: UserResponse[] = staffQuery.data ?? [];
+
+  // Task details are loaded per-season after seasons are known.
+  // Key includes the joined season IDs so it re-fetches when seasons change.
+  // invalidateQueries({ queryKey: qk.tasks.all }) covers this key too since
+  // TanStack does prefix matching (["tasks"] ⊂ ["tasks", "allDetails", ...]).
+  const allSeasonIds = seasons.map((s) => s.seasonId);
+  const taskDetailsQuery = useQuery({
+    queryKey: [...qk.tasks.all, "allDetails", allSeasonIds.join(",")],
+    queryFn: async () => {
+      const detailArrays = await Promise.all(
+        allSeasonIds.map((id) =>
+          api
+            .getTaskDetailsBySeason(id)
+            .catch(() => [] as TaskDetailResponse[]),
+        ),
+      );
+      const all = detailArrays.flat();
+      const seen = new Set<string>();
+      return all.filter((d) => {
+        if (seen.has(d.taskDetailId)) return false;
+        seen.add(d.taskDetailId);
+        return true;
+      });
+    },
+    // Don't fire until seasons are loaded; having 0 seasons means no details.
+    enabled: allSeasonIds.length > 0,
+  });
+  const taskDetails: TaskDetailResponse[] = taskDetailsQuery.data ?? [];
+
+  // ── Loading / error states ───────────────────────────────────────────────
+  // isLoading is true only on the FIRST fetch (data === undefined).
+  // isFetching stays true on background refetches — we don't block UI for those.
+  // Guard: isFetching && data===undefined catches the edge case where isLoading
+  // is already false but data hasn't arrived yet (e.g., staleTime expired).
+  const isLoading =
+    tasksQuery.isLoading ||
+    (tasksQuery.isFetching && tasksQuery.data === undefined) ||
+    seasonsQuery.isLoading ||
+    (seasonsQuery.isFetching && seasonsQuery.data === undefined) ||
+    bedsQuery.isLoading ||
+    (bedsQuery.isFetching && bedsQuery.data === undefined) ||
+    plotsQuery.isLoading ||
+    (plotsQuery.isFetching && plotsQuery.data === undefined) ||
+    staffQuery.isLoading ||
+    (staffQuery.isFetching && staffQuery.data === undefined) ||
+    // Task details only block on first load if seasons are actually present.
+    (allSeasonIds.length > 0 &&
+      taskDetailsQuery.isLoading &&
+      taskDetailsQuery.data === undefined);
+
+  // Surface fetch errors via toast (v5 dropped onError from useQuery options).
+  useEffect(() => {
+    if (tasksQuery.error)
+      showToast(
+        tasksQuery.error instanceof Error
+          ? tasksQuery.error.message
+          : "Không thể tải danh sách công việc",
+        "error",
+      );
+  }, [tasksQuery.error, showToast]);
+  useEffect(() => {
+    if (seasonsQuery.error)
+      showToast(
+        seasonsQuery.error instanceof Error
+          ? seasonsQuery.error.message
+          : "Không thể tải danh sách mùa vụ",
+        "error",
+      );
+  }, [seasonsQuery.error, showToast]);
+  useEffect(() => {
+    if (taskDetailsQuery.error)
+      showToast(
+        taskDetailsQuery.error instanceof Error
+          ? taskDetailsQuery.error.message
+          : "Không thể tải lịch trình công việc",
+        "error",
+      );
+  }, [taskDetailsQuery.error, showToast]);
 
   const [isCalendarEditMode, setIsCalendarEditMode] = useState(false);
-
-  // Calendar filter
   const [calWorkerFilter, setCalWorkerFilter] = useState("");
   const [calFromDate, setCalFromDate] = useState(() => {
     const d = new Date();
@@ -693,9 +803,6 @@ export function TasksPage() {
     useState<TaskDetailResponse | null>(null);
   const [detailToDelete, setDetailToDelete] =
     useState<TaskDetailResponse | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
-  const [isDeletingDetail, setIsDeletingDetail] = useState(false);
-  const [isDeletingTpl, setIsDeletingTpl] = useState(false);
 
   // Auto-open from Advisory page
   const [searchParams, setSearchParams] = useSearchParams();
@@ -775,27 +882,6 @@ export function TasksPage() {
     multiEndMinute: "00",
   });
   const [singleConflict, setSingleConflict] = useState<string[]>([]);
-
-  const getBedsForPlot = (seasonId: string, plotId: string) => {
-    if (!seasonId || !plotId) return [];
-    const season = seasons.find((s) => s.seasonId === seasonId);
-    if (!season) return [];
-    const seasonBedIds = new Set(season.seasonsDetails.map((sd) => sd.bedId));
-    return allBeds.filter(
-      (b) => seasonBedIds.has(b.bedId) && b.plotId === plotId,
-    );
-  };
-
-  const getPlotsForSeason = (seasonId: string) => {
-    if (!seasonId) return [];
-    const season = seasons.find((s) => s.seasonId === seasonId);
-    if (!season) return [];
-    const seasonBedIds = new Set(season.seasonsDetails.map((sd) => sd.bedId));
-    const plotIds = new Set(
-      allBeds.filter((b) => seasonBedIds.has(b.bedId)).map((b) => b.plotId),
-    );
-    return allPlots.filter((p) => plotIds.has(p.plotId));
-  };
 
   const bulkPreviewCount = (() => {
     if (!bulkForm.fromDate || !bulkForm.toDate || !bulkForm.selectedDays.length)
@@ -879,124 +965,378 @@ export function TasksPage() {
     setSingleConflict([]);
     setAssignMode("bulk");
   };
+  const [editDetail, setEditDetail] = useState<{
+    taskId: string;
+    seasonId: string;
+    date: string;
+    startHour: string;
+    startMinute: string;
+    endHour: string;
+    endMinute: string;
+    notes: string;
+    workerId: string;
+    status: string;
+    bedIds: string[];
+    plotIds: string[];
+    selectedPlotIds: string[];
+  } | null>(null);
 
-  // ── Data loading ──────────────────────────────────────────────────────────
+  const [editShowSchedule, setEditShowSchedule] = useState(false);
 
-  const loadAllData = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const [tasksRes, seasonsRes, bedsRes, plotsRes, staffRes] =
-        await Promise.all([
-          api.getTasks(),
-          api.getSeasons(),
-          api.getBeds(),
-          api.getPlots(),
-          api.getStaffs(),
-        ]);
-      setTasks(
-        (tasksRes ?? []).sort(
-          (a, b) =>
-            new Date(a.taskCreatedAt).getTime() -
-            new Date(b.taskCreatedAt).getTime(),
+  const assignSeasonId =
+    assignMode === "bulk" ? bulkForm.seasonId : singleForm.seasonId;
+  const assignPlotId =
+    assignMode === "bulk" ? bulkForm.plotId : singleForm.plotId;
+
+  // Assign modal — harvests for the selected season
+  const assignHarvestsQuery = useQuery({
+    queryKey: [...qk.seasons.harvests(assignSeasonId ?? ""), "assign"],
+    queryFn: () => api.getHarvestsBySeason(assignSeasonId!),
+    enabled: isAssignOpen && !!assignSeasonId,
+    staleTime: 60_000,
+  });
+  const assignHarvests: HarvestResponse[] = assignHarvestsQuery.data ?? [];
+  const assignHarvestsLoading =
+    assignHarvestsQuery.isLoading ||
+    (assignHarvestsQuery.isFetching && !assignHarvestsQuery.data);
+
+  // Assign modal — bed details for the selected plot (fan-out across plot harvests)
+  const assignPlotHarvestIds = assignHarvests
+    .filter((h) => h.plotId === assignPlotId)
+    .map((h) => h.harvestId);
+
+  const assignPlotBedsQuery = useQuery({
+    queryKey: [
+      ...qk.seasons.harvests(assignSeasonId ?? ""),
+      "assign-plot-beds",
+      assignPlotId ?? "",
+      assignPlotHarvestIds.join(","),
+    ],
+    queryFn: async () => {
+      const results = await Promise.all(
+        assignPlotHarvestIds.map((id) =>
+          api
+            .getHarvestDetailsByHarvest(id)
+            .catch(() => [] as HarvestDetailResponse[]),
         ),
       );
-      setSeasons(seasonsRes ?? []);
-      setAllBeds(bedsRes ?? []);
-      setAllPlots(plotsRes ?? []);
-      setStaffList(staffRes ?? []);
+      const all = results.flat();
+      const seen = new Set<string>();
+      return all.filter((d) => {
+        if (seen.has(d.bedId)) return false;
+        seen.add(d.bedId);
+        return true;
+      });
+    },
+    enabled: isAssignOpen && !!assignPlotId && assignPlotHarvestIds.length > 0,
+    staleTime: 60_000,
+  });
+  const assignPlotBeds: HarvestDetailResponse[] =
+    assignPlotBedsQuery.data ?? [];
+  const assignPlotBedsLoading =
+    assignPlotBedsQuery.isLoading ||
+    (assignPlotBedsQuery.isFetching && !assignPlotBedsQuery.data);
 
-      if (seasonsRes && seasonsRes.length > 0) {
-        const detailArrays = await Promise.all(
-          seasonsRes.map((s) =>
-            api
-              .getTaskDetailsBySeason(s.seasonId)
-              .catch(() => [] as TaskDetailResponse[]),
-          ),
-        );
-        const allDetails = detailArrays.flat();
-        const seen = new Set<string>();
-        setTaskDetails(
-          allDetails.filter((d) => {
-            if (seen.has(d.taskDetailId)) return false;
-            seen.add(d.taskDetailId);
-            return true;
-          }),
-        );
+  // Edit-detail modal — harvests for the season in editDetail
+  const editSeasonId = editDetail?.seasonId ?? "";
+  const editDetailHarvestsQuery = useQuery({
+    queryKey: [...qk.seasons.harvests(editSeasonId), "edit-detail"],
+    queryFn: () => api.getHarvestsBySeason(editSeasonId),
+    enabled: isEditDetailOpen && !!editSeasonId,
+    staleTime: 60_000,
+  });
+  const editDetailHarvests: HarvestResponse[] =
+    editDetailHarvestsQuery.data ?? [];
+
+  // Edit-detail modal — all beds across all harvests for that season
+  const editDetailHarvestIds = editDetailHarvests.map((h) => h.harvestId);
+  const editDetailBedsQuery = useQuery({
+    queryKey: [
+      ...qk.seasons.harvests(editSeasonId),
+      "edit-detail-beds",
+      editDetailHarvestIds.join(","),
+    ],
+    queryFn: async () => {
+      const results = await Promise.all(
+        editDetailHarvestIds.map((id) =>
+          api
+            .getHarvestDetailsByHarvest(id)
+            .catch(() => [] as HarvestDetailResponse[]),
+        ),
+      );
+      const all = results.flat();
+      const seen = new Set<string>();
+      return all.filter((d) => {
+        if (seen.has(d.bedId)) return false;
+        seen.add(d.bedId);
+        return true;
+      });
+    },
+    enabled: isEditDetailOpen && editDetailHarvestIds.length > 0,
+    staleTime: 60_000,
+  });
+  const editDetailBeds: HarvestDetailResponse[] =
+    editDetailBedsQuery.data ?? [];
+  const editDetailBedsLoading =
+    editDetailBedsQuery.isLoading ||
+    (editDetailBedsQuery.isFetching && !editDetailBedsQuery.data);
+
+  // ── Season → Plot / Plot → Bed helpers (synchronous, read from state above) ──
+
+  /** Returns the plots that have harvests for the given season. */
+  const getPlotsForSeason = (seasonId: string): PlotResponse[] => {
+    if (!seasonId) return [];
+    const seen = new Set<string>();
+    const plotIds: string[] = [];
+    for (const h of assignHarvests) {
+      if (h.seasonId === seasonId && !seen.has(h.plotId)) {
+        seen.add(h.plotId);
+        plotIds.push(h.plotId);
       }
-    } catch (err) {
-      console.error("Failed to load task data:", err);
-    } finally {
-      setIsLoading(false);
     }
-  }, []);
+    return plotIds
+      .map((id) => allPlots.find((p) => p.plotId === id))
+      .filter((p): p is PlotResponse => !!p);
+  };
 
-  useEffect(() => {
-    loadAllData();
-  }, [loadAllData]);
+  /** Returns beds for the given plot within the current season, using fetched harvest details. */
+  const getBedsForPlot = (_seasonId: string, plotId: string): BedResponse[] => {
+    if (!plotId) return [];
+    return assignPlotBeds
+      .map((d) => allBeds.find((b) => b.bedId === d.bedId))
+      .filter((b): b is BedResponse => !!b);
+  };
+  // Each mutation invalidates qk.tasks.all — prefix matching covers task
+  // templates (["tasks","list"]) AND task details (["tasks","allDetails",...]).
+
+  const createTemplateMutation = useMutation({
+    mutationFn: (data: { name: string; description: string }) =>
+      api.createTask({
+        taskTitle: data.name.trim(),
+        taskStatus: "Active",
+        taskNotes: data.description,
+      }),
+    onSuccess: () => {
+      setNewTemplate({ name: "", type: "", description: "" });
+      setIsCreateTemplateOpen(false);
+      showToast("Tạo công việc thành công", "success");
+      queryClient.invalidateQueries({ queryKey: qk.tasks.all });
+    },
+    onError: (err) => {
+      showToast(
+        "Tạo công việc thất bại: " + (err instanceof Error ? err.message : ""),
+        "error",
+      );
+    },
+  });
+
+  const updateTemplateMutation = useMutation({
+    mutationFn: (tpl: TaskResponse) =>
+      api.updateTask(tpl.taskId, {
+        taskTitle: tpl.taskTitle,
+        taskStatus: tpl.taskStatus,
+        taskNotes: tpl.taskNotes,
+      }),
+    onSuccess: () => {
+      setEditTplOpen(false);
+      setEditTpl(null);
+      showToast("Cập nhật công việc thành công", "success");
+      queryClient.invalidateQueries({ queryKey: qk.tasks.all });
+    },
+    onError: (err) => {
+      showToast(
+        "Cập nhật công việc thất bại: " +
+          (err instanceof Error ? err.message : ""),
+        "error",
+      );
+    },
+  });
+
+  const deleteTemplateMutation = useMutation({
+    mutationFn: (taskId: string) => api.deleteTask(taskId),
+    onSuccess: () => {
+      setDeleteTplOpen(false);
+      setTplToDelete(null);
+      setTplPage((p) => Math.max(1, p));
+      showToast("Xóa công việc thành công", "success");
+      queryClient.invalidateQueries({ queryKey: qk.tasks.all });
+    },
+    onError: (err) => {
+      showToast(
+        "Xóa công việc thất bại: " + (err instanceof Error ? err.message : ""),
+        "error",
+      );
+    },
+  });
+
+  const bulkAssignMutation = useMutation({
+    mutationFn: async (params: {
+      dates: string[];
+      taskId: string;
+      seasonId: string;
+      farmId: string;
+      workerId: string;
+      bedIds: string[];
+      plotIds: string[];
+      startHour: string;
+      startMinute: string;
+      endHour: string;
+      endMinute: string;
+      notes: string;
+    }) => {
+      await Promise.all(
+        params.dates.map((dateStr) =>
+          api.createTaskDetail({
+            taskId: params.taskId,
+            seasonId: params.seasonId,
+            farmId: params.farmId,
+            assignedToWorkerIds: [params.workerId],
+            bedIds: params.bedIds,
+            plotIds: params.plotIds,
+            startDate: `${dateStr}T${params.startHour}:${params.startMinute}:00.000Z`,
+            endDate: `${dateStr}T${params.endHour}:${params.endMinute}:00.000Z`,
+            notes: params.notes,
+            status: "Pending",
+          }),
+        ),
+      );
+      return params.dates.length;
+    },
+    onSuccess: (count) => {
+      resetAssignModal();
+      setIsAssignOpen(false);
+      showToast(`Đã giao ${count} việc thành công`, "success");
+      queryClient.invalidateQueries({ queryKey: qk.tasks.all });
+    },
+    onError: (err) => {
+      showToast(
+        "Giao việc thất bại: " + (err instanceof Error ? err.message : ""),
+        "error",
+      );
+    },
+  });
+
+  const singleAssignMutation = useMutation({
+    mutationFn: async (payload: {
+      taskId: string;
+      seasonId: string;
+      farmId: string;
+      workerId: string;
+      bedIds: string[];
+      plotIds: string[];
+      startISO: string;
+      endISO: string;
+      notes: string;
+    }) =>
+      api.createTaskDetail({
+        taskId: payload.taskId,
+        seasonId: payload.seasonId,
+        farmId: payload.farmId,
+        assignedToWorkerIds: [payload.workerId],
+        bedIds: payload.bedIds,
+        plotIds: payload.plotIds,
+        startDate: payload.startISO,
+        endDate: payload.endISO,
+        notes: payload.notes,
+        status: "Pending",
+      }),
+    onSuccess: () => {
+      resetAssignModal();
+      setIsAssignOpen(false);
+      showToast("Giao việc thành công", "success");
+      queryClient.invalidateQueries({ queryKey: qk.tasks.all });
+    },
+    onError: (err) => {
+      showToast(
+        "Giao việc thất bại: " + (err instanceof Error ? err.message : ""),
+        "error",
+      );
+    },
+  });
+
+  const updateDetailMutation = useMutation({
+    mutationFn: async (params: {
+      detailId: string;
+      taskId: string;
+      seasonId: string;
+      farmId: string;
+      workerId: string;
+      bedIds: string[];
+      plotIds: string[];
+      startISO: string;
+      endISO: string;
+      notes: string;
+    }) =>
+      api.updateTaskDetail(params.detailId, {
+        taskId: params.taskId,
+        seasonId: params.seasonId,
+        farmId: params.farmId,
+        assignedToWorkerIds: [params.workerId],
+        bedIds: params.bedIds,
+        plotIds: params.plotIds,
+        startDate: params.startISO,
+        endDate: params.endISO,
+        notes: params.notes,
+      }),
+    onSuccess: () => {
+      setIsEditDetailOpen(false);
+      setEditDetail(null);
+      setIsViewOpen(false);
+      showToast("Cập nhật lịch trình thành công", "success");
+      queryClient.invalidateQueries({ queryKey: qk.tasks.all });
+    },
+    onError: (err) => {
+      showToast(
+        "Cập nhật thất bại: " + (err instanceof Error ? err.message : ""),
+        "error",
+      );
+    },
+  });
+
+  const deleteDetailMutation = useMutation({
+    mutationFn: (taskDetailId: string) => api.deleteTaskDetail(taskDetailId),
+    onSuccess: () => {
+      setIsDeleteOpen(false);
+      setDetailToDelete(null);
+      showToast("Đã xóa lịch trình", "success");
+      queryClient.invalidateQueries({ queryKey: qk.tasks.all });
+    },
+    onError: (err) => {
+      // Show error but still close the dialog so user isn't stuck
+      showToast(
+        err instanceof Error ? err.message : "Xóa lịch trình thất bại",
+        "error",
+      );
+      setIsDeleteOpen(false);
+      setDetailToDelete(null);
+    },
+  });
+
+  // Convenience flag: assign modal has two modes but one submit button
+  const isAssignSaving =
+    bulkAssignMutation.isPending || singleAssignMutation.isPending;
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
-  const handleCreateTemplate = async () => {
+  const handleCreateTemplate = () => {
     if (!newTemplate.name) return;
-    setIsSaving(true);
-    try {
-      await api.createTask({
-        taskTitle: newTemplate.name,
-        taskStatus: "Active",
-        taskNotes: newTemplate.description,
-      });
-      await loadAllData();
-      showToast("Tạo công việc thành công", "success");
-    } catch (err) {
-      showToast("Tạo công việc thất bại: " + (err as Error).message, "error");
-    } finally {
-      setIsSaving(false);
-    }
-    setNewTemplate({ name: "", type: "", description: "" });
-    setIsCreateTemplateOpen(false);
+    createTemplateMutation.mutate({
+      name: newTemplate.name,
+      description: newTemplate.description,
+    });
   };
 
-  const handleDeleteTemplate = async () => {
+  const handleDeleteTemplate = () => {
     if (!tplToDelete) return;
-    setIsDeletingTpl(true);
-    try {
-      await api.deleteTask(tplToDelete.taskId);
-      await loadAllData();
-      setDeleteTplOpen(false);
-      setTplToDelete(null);
-      showToast("Xóa công việc thành công", "success");
-    } catch (err) {
-      showToast("Xóa công việc thất bại: " + (err as Error).message, "error");
-    } finally {
-      setIsDeletingTpl(false);
-    }
-    setTplPage((p) => Math.max(1, p));
+    deleteTemplateMutation.mutate(tplToDelete.taskId);
   };
 
-  const handleSaveEdit = async () => {
+  const handleSaveEdit = () => {
     if (!editTpl) return;
-    setIsSaving(true);
-    try {
-      await api.updateTask(editTpl.taskId, {
-        taskTitle: editTpl.taskTitle,
-        taskStatus: editTpl.taskStatus,
-        taskNotes: editTpl.taskNotes,
-      });
-      await loadAllData();
-      showToast("Cập nhật công việc thành công", "success");
-    } catch (err) {
-      showToast(
-        "Cập nhật công việc thất bại: " + (err as Error).message,
-        "error",
-      );
-    } finally {
-      setIsSaving(false);
-    }
-    setEditTplOpen(false);
-    setEditTpl(null);
+    updateTemplateMutation.mutate(editTpl);
   };
 
-  const handleSubmitBulk = async () => {
+  const handleSubmitBulk = () => {
     const {
       workerId,
       taskId,
@@ -1046,36 +1386,23 @@ export function TasksPage() {
     if (bulkEndMins <= bulkStartMins) return;
     if (fromDate > toDate) return;
 
-    setIsSaving(true);
-    try {
-      await Promise.all(
-        dates.map((dateStr) =>
-          api.createTaskDetail({
-            taskId,
-            seasonId,
-            farmId,
-            assignedToWorkerIds: [workerId],
-            bedIds,
-            plotIds,
-            startDate: `${dateStr}T${startHour}:${startMinute}:00.000Z`,
-            endDate: `${dateStr}T${endHour}:${endMinute}:00.000Z`,
-            notes,
-            status: "Pending",
-          }),
-        ),
-      );
-      await loadAllData();
-      resetAssignModal();
-      setIsAssignOpen(false);
-      showToast(`Đã giao ${dates.length} việc thành công`, "success");
-    } catch (err) {
-      showToast("Giao việc thất bại: " + (err as Error).message, "error");
-    } finally {
-      setIsSaving(false);
-    }
+    bulkAssignMutation.mutate({
+      dates,
+      taskId,
+      seasonId,
+      farmId,
+      workerId,
+      bedIds,
+      plotIds,
+      startHour,
+      startMinute,
+      endHour,
+      endMinute,
+      notes,
+    });
   };
 
-  const handleSubmitSingle = async () => {
+  const handleSubmitSingle = () => {
     const {
       workerId,
       taskId,
@@ -1130,71 +1457,57 @@ export function TasksPage() {
       endISO = `${date}T${endHour}:${endMinute}:00.000Z`;
     }
 
-    setIsSaving(true);
-    try {
-      await api.createTaskDetail({
-        taskId,
-        seasonId,
-        farmId,
-        assignedToWorkerIds: [workerId],
-        bedIds,
-        plotIds,
-        startDate: startISO,
-        endDate: endISO,
-        notes,
-        status: "Pending",
-      });
-      await loadAllData();
-      resetAssignModal();
-      setIsAssignOpen(false);
-      showToast("Giao việc thành công", "success");
-    } catch (err) {
-      showToast("Giao việc thất bại: " + (err as Error).message, "error");
-    } finally {
-      setIsSaving(false);
-    }
+    singleAssignMutation.mutate({
+      taskId,
+      seasonId,
+      farmId,
+      workerId,
+      bedIds,
+      plotIds,
+      startISO,
+      endISO,
+      notes,
+    });
   };
 
-  const handleDeleteAssignment = async () => {
+  const handleDeleteAssignment = () => {
     if (!detailToDelete) return;
-    setIsDeletingDetail(true);
-    try {
-      await api.deleteTaskDetail(detailToDelete.taskDetailId);
-      await loadAllData();
-      setIsDeleteOpen(false);
-      setDetailToDelete(null);
-      showToast("Đã xóa lịch trình", "success");
-    } catch (err) {
-      // Fallback: remove from local state
-      setTaskDetails((prev) =>
-        prev.filter((d) => d.taskDetailId !== detailToDelete.taskDetailId),
-      );
-      setIsDeleteOpen(false);
-      setDetailToDelete(null);
-    } finally {
-      setIsDeletingDetail(false);
-    }
+    deleteDetailMutation.mutate(detailToDelete.taskDetailId);
   };
 
-  // ── Edit task detail ───────────────────────────────────────────────────────
+  const handleUpdateAssignment = () => {
+    if (!selectedDetail || !editDetail) return;
+    const editStartMins =
+      parseInt(editDetail.startHour) * 60 + parseInt(editDetail.startMinute);
+    const editEndMins =
+      parseInt(editDetail.endHour) * 60 + parseInt(editDetail.endMinute);
+    if (editEndMins <= editStartMins) return;
 
-  const [editDetail, setEditDetail] = useState<{
-    taskId: string;
-    seasonId: string;
-    date: string;
-    startHour: string;
-    startMinute: string;
-    endHour: string;
-    endMinute: string;
-    notes: string;
-    workerId: string;
-    status: string;
-    bedIds: string[];
-    plotIds: string[];
-    selectedPlotIds: string[];
-  } | null>(null);
+    const startISO = `${editDetail.date}T${editDetail.startHour}:${editDetail.startMinute}:00.000`;
+    const endISO = `${editDetail.date}T${editDetail.endHour}:${editDetail.endMinute}:00.000`;
+    const plotIds = Array.from(
+      new Set(
+        editDetail.bedIds
+          .map((bid) => allBeds.find((b) => b.bedId === bid)?.plotId)
+          .filter(Boolean) as string[],
+      ),
+    );
+    const farmId =
+      allPlots.find((p) => plotIds.includes(p.plotId))?.farmId ?? "";
 
-  const [editShowSchedule, setEditShowSchedule] = useState(false);
+    updateDetailMutation.mutate({
+      detailId: selectedDetail.taskDetailId,
+      taskId: editDetail.taskId,
+      seasonId: editDetail.seasonId,
+      farmId,
+      workerId: editDetail.workerId,
+      bedIds: editDetail.bedIds,
+      plotIds,
+      startISO,
+      endISO,
+      notes: editDetail.notes,
+    });
+  };
 
   const openEditDetail = (detail: TaskDetailResponse) => {
     const dateStr = detail.startDate.slice(0, 10);
@@ -1225,49 +1538,6 @@ export function TasksPage() {
       selectedPlotIds: plotIdsFromBeds,
     });
     setIsEditDetailOpen(true);
-  };
-
-  const handleUpdateAssignment = async () => {
-    if (!selectedDetail || !editDetail) return;
-    const editStartMins =
-      parseInt(editDetail.startHour) * 60 + parseInt(editDetail.startMinute);
-    const editEndMins =
-      parseInt(editDetail.endHour) * 60 + parseInt(editDetail.endMinute);
-    if (editEndMins <= editStartMins) return;
-    setIsSaving(true);
-    try {
-      const startISO = `${editDetail.date}T${editDetail.startHour}:${editDetail.startMinute}:00.000`;
-      const endISO = `${editDetail.date}T${editDetail.endHour}:${editDetail.endMinute}:00.000`;
-      const plotIds = Array.from(
-        new Set(
-          editDetail.bedIds
-            .map((bid) => allBeds.find((b) => b.bedId === bid)?.plotId)
-            .filter(Boolean) as string[],
-        ),
-      );
-      const farmId =
-        allPlots.find((p) => plotIds.includes(p.plotId))?.farmId ?? "";
-      await api.updateTaskDetail(selectedDetail.taskDetailId, {
-        taskId: editDetail.taskId,
-        seasonId: editDetail.seasonId,
-        farmId,
-        assignedToWorkerIds: [editDetail.workerId],
-        bedIds: editDetail.bedIds,
-        plotIds,
-        startDate: startISO,
-        endDate: endISO,
-        notes: editDetail.notes,
-      });
-      await loadAllData();
-      showToast("Cập nhật lịch trình thành công", "success");
-    } catch (err) {
-      showToast("Cập nhật thất bại: " + (err as Error).message, "error");
-    } finally {
-      setIsSaving(false);
-    }
-    setIsEditDetailOpen(false);
-    setEditDetail(null);
-    setIsViewOpen(false);
   };
 
   // ── All-tasks derived data ─────────────────────────────────────────────────
@@ -1906,10 +2176,12 @@ export function TasksPage() {
             <Button
               leadingIcon={CheckCircle2}
               onClick={handleCreateTemplate}
-              disabled={!newTemplate.name || isSaving}
-              loading={isSaving}
+              disabled={!newTemplate.name || createTemplateMutation.isPending}
+              loading={createTemplateMutation.isPending}
             >
-              {isSaving ? "Đang lưu..." : "Lưu công việc"}
+              {createTemplateMutation.isPending
+                ? "Đang lưu..."
+                : "Lưu công việc"}
             </Button>
           </>
         }
@@ -2093,10 +2365,14 @@ export function TasksPage() {
                             bedIds: [],
                           }))
                         }
-                        disabled={!bulkForm.seasonId}
+                        disabled={!bulkForm.seasonId || assignHarvestsLoading}
                         className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#009689] disabled:opacity-50"
                       >
-                        <option value="">-- Chọn vuông --</option>
+                        <option value="">
+                          {assignHarvestsLoading
+                            ? "Đang tải..."
+                            : "-- Chọn vuông --"}
+                        </option>
                         {getPlotsForSeason(bulkForm.seasonId).map((p) => (
                           <option key={p.plotId} value={p.plotId}>
                             {p.plotName}
@@ -2117,64 +2393,75 @@ export function TasksPage() {
                             </span>
                           )}
                         </label>
-                        <button
-                          onClick={() => {
-                            const all = getBedsForPlot(
-                              bulkForm.seasonId,
-                              bulkForm.plotId,
-                            ).map((b) => b.bedId);
-                            setBulkForm((p) => ({
-                              ...p,
-                              bedIds: p.bedIds.length === all.length ? [] : all,
-                            }));
-                          }}
-                          className="text-xs text-[#009689] hover:underline"
-                        >
-                          {bulkForm.bedIds.length ===
-                          getBedsForPlot(bulkForm.seasonId, bulkForm.plotId)
-                            .length
-                            ? "Bỏ chọn tất cả"
-                            : "Chọn tất cả"}
-                        </button>
+                        {!assignPlotBedsLoading && (
+                          <button
+                            onClick={() => {
+                              const all = getBedsForPlot(
+                                bulkForm.seasonId,
+                                bulkForm.plotId,
+                              ).map((b) => b.bedId);
+                              setBulkForm((p) => ({
+                                ...p,
+                                bedIds:
+                                  p.bedIds.length === all.length ? [] : all,
+                              }));
+                            }}
+                            className="text-xs text-[#009689] hover:underline"
+                          >
+                            {bulkForm.bedIds.length ===
+                            getBedsForPlot(bulkForm.seasonId, bulkForm.plotId)
+                              .length
+                              ? "Bỏ chọn tất cả"
+                              : "Chọn tất cả"}
+                          </button>
+                        )}
                       </div>
                       <div className="flex flex-wrap gap-1.5 p-3 bg-[#f8fafc] rounded-lg border border-[#e2e8f0]">
-                        {sortBedsByBedName(
-                          getBedsForPlot(bulkForm.seasonId, bulkForm.plotId),
-                        ).map((bed) => {
-                          const sel = bulkForm.bedIds.includes(bed.bedId);
-                          return (
-                            <button
-                              key={bed.bedId}
-                              onClick={() =>
-                                setBulkForm((p) => ({
-                                  ...p,
-                                  bedIds: sel
-                                    ? p.bedIds.filter((id) => id !== bed.bedId)
-                                    : [...p.bedIds, bed.bedId],
-                                }))
-                              }
-                              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all"
-                              style={
-                                sel
-                                  ? {
-                                      background: "#009689",
-                                      color: "#fff",
-                                      borderColor: "#009689",
-                                    }
-                                  : {
-                                      background: "#fff",
-                                      color: "#475569",
-                                      borderColor: "#e2e8f0",
-                                    }
-                              }
-                            >
-                              {bed.bedName}
-                              {sel && (
-                                <CheckCircle2 className="w-3 h-3 shrink-0" />
-                              )}
-                            </button>
-                          );
-                        })}
+                        {assignPlotBedsLoading ? (
+                          <span className="text-xs text-[#94a3b8] italic">
+                            Đang tải luống...
+                          </span>
+                        ) : (
+                          sortBedsByBedName(
+                            getBedsForPlot(bulkForm.seasonId, bulkForm.plotId),
+                          ).map((bed) => {
+                            const sel = bulkForm.bedIds.includes(bed.bedId);
+                            return (
+                              <button
+                                key={bed.bedId}
+                                onClick={() =>
+                                  setBulkForm((p) => ({
+                                    ...p,
+                                    bedIds: sel
+                                      ? p.bedIds.filter(
+                                          (id) => id !== bed.bedId,
+                                        )
+                                      : [...p.bedIds, bed.bedId],
+                                  }))
+                                }
+                                className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all"
+                                style={
+                                  sel
+                                    ? {
+                                        background: "#009689",
+                                        color: "#fff",
+                                        borderColor: "#009689",
+                                      }
+                                    : {
+                                        background: "#fff",
+                                        color: "#475569",
+                                        borderColor: "#e2e8f0",
+                                      }
+                                }
+                              >
+                                {bed.bedName}
+                                {sel && (
+                                  <CheckCircle2 className="w-3 h-3 shrink-0" />
+                                )}
+                              </button>
+                            );
+                          })
+                        )}
                       </div>
                     </div>
                   )}
@@ -2514,10 +2801,14 @@ export function TasksPage() {
                             bedIds: [],
                           }))
                         }
-                        disabled={!singleForm.seasonId}
+                        disabled={!singleForm.seasonId || assignHarvestsLoading}
                         className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#009689] disabled:opacity-50"
                       >
-                        <option value="">-- Chọn vuông --</option>
+                        <option value="">
+                          {assignHarvestsLoading
+                            ? "Đang tải..."
+                            : "-- Chọn vuông --"}
+                        </option>
                         {getPlotsForSeason(singleForm.seasonId).map((p) => (
                           <option key={p.plotId} value={p.plotId}>
                             {p.plotName}
@@ -2539,67 +2830,80 @@ export function TasksPage() {
                             </span>
                           )}
                         </label>
-                        <button
-                          onClick={() => {
-                            const all = getBedsForPlot(
+                        {!assignPlotBedsLoading && (
+                          <button
+                            onClick={() => {
+                              const all = getBedsForPlot(
+                                singleForm.seasonId,
+                                singleForm.plotId,
+                              ).map((b) => b.bedId);
+                              setSingleForm((p) => ({
+                                ...p,
+                                bedIds:
+                                  p.bedIds.length === all.length ? [] : all,
+                              }));
+                            }}
+                            className="text-xs text-[#009689] hover:underline"
+                          >
+                            {singleForm.bedIds.length ===
+                            getBedsForPlot(
                               singleForm.seasonId,
                               singleForm.plotId,
-                            ).map((b) => b.bedId);
-                            setSingleForm((p) => ({
-                              ...p,
-                              bedIds: p.bedIds.length === all.length ? [] : all,
-                            }));
-                          }}
-                          className="text-xs text-[#009689] hover:underline"
-                        >
-                          {singleForm.bedIds.length ===
-                          getBedsForPlot(singleForm.seasonId, singleForm.plotId)
-                            .length
-                            ? "Bỏ chọn tất cả"
-                            : "Chọn tất cả"}
-                        </button>
+                            ).length
+                              ? "Bỏ chọn tất cả"
+                              : "Chọn tất cả"}
+                          </button>
+                        )}
                       </div>
                       <div className="flex flex-wrap gap-1.5 p-3 bg-[#f8fafc] rounded-lg border border-[#e2e8f0]">
-                        {sortBedsByBedName(
-                          getBedsForPlot(
-                            singleForm.seasonId,
-                            singleForm.plotId,
-                          ),
-                        ).map((bed) => {
-                          const sel = singleForm.bedIds.includes(bed.bedId);
-                          return (
-                            <button
-                              key={bed.bedId}
-                              onClick={() =>
-                                setSingleForm((p) => ({
-                                  ...p,
-                                  bedIds: sel
-                                    ? p.bedIds.filter((id) => id !== bed.bedId)
-                                    : [...p.bedIds, bed.bedId],
-                                }))
-                              }
-                              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all"
-                              style={
-                                sel
-                                  ? {
-                                      background: "#009689",
-                                      color: "#fff",
-                                      borderColor: "#009689",
-                                    }
-                                  : {
-                                      background: "#fff",
-                                      color: "#475569",
-                                      borderColor: "#e2e8f0",
-                                    }
-                              }
-                            >
-                              {bed.bedName}
-                              {sel && (
-                                <CheckCircle2 className="w-3 h-3 shrink-0" />
-                              )}
-                            </button>
-                          );
-                        })}
+                        {assignPlotBedsLoading ? (
+                          <span className="text-xs text-[#94a3b8] italic">
+                            Đang tải luống...
+                          </span>
+                        ) : (
+                          sortBedsByBedName(
+                            getBedsForPlot(
+                              singleForm.seasonId,
+                              singleForm.plotId,
+                            ),
+                          ).map((bed) => {
+                            const sel = singleForm.bedIds.includes(bed.bedId);
+                            return (
+                              <button
+                                key={bed.bedId}
+                                onClick={() =>
+                                  setSingleForm((p) => ({
+                                    ...p,
+                                    bedIds: sel
+                                      ? p.bedIds.filter(
+                                          (id) => id !== bed.bedId,
+                                        )
+                                      : [...p.bedIds, bed.bedId],
+                                  }))
+                                }
+                                className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all"
+                                style={
+                                  sel
+                                    ? {
+                                        background: "#009689",
+                                        color: "#fff",
+                                        borderColor: "#009689",
+                                      }
+                                    : {
+                                        background: "#fff",
+                                        color: "#475569",
+                                        borderColor: "#e2e8f0",
+                                      }
+                                }
+                              >
+                                {bed.bedName}
+                                {sel && (
+                                  <CheckCircle2 className="w-3 h-3 shrink-0" />
+                                )}
+                              </button>
+                            );
+                          })
+                        )}
                       </div>
                     </div>
                   )}
@@ -2822,7 +3126,7 @@ export function TasksPage() {
                   assignMode === "bulk" ? handleSubmitBulk : handleSubmitSingle
                 }
                 disabled={
-                  isSaving ||
+                  isAssignSaving ||
                   (assignMode === "bulk"
                     ? !bulkForm.workerId ||
                       !bulkForm.taskId ||
@@ -2859,7 +3163,7 @@ export function TasksPage() {
                 className="flex-1 px-4 py-2 rounded-lg text-sm font-medium bg-[#009689] text-white hover:bg-[#007f73] disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
               >
                 <CheckCircle2 className="w-4 h-4" />
-                {isSaving
+                {isAssignSaving
                   ? "Đang lưu..."
                   : assignMode === "bulk"
                     ? bulkPreviewCount > 0
@@ -3043,19 +3347,13 @@ export function TasksPage() {
                 const editFarmName =
                   allPlots.find((p) => p.farmId === editSeason?.farmId)
                     ?.farmName ?? null;
-                const editSeasonBeds = (() => {
-                  if (!editDetail.seasonId) return [];
-                  const season = seasons.find(
-                    (s) => s.seasonId === editDetail.seasonId,
+                const editSeasonBeds: BedResponse[] = editDetailBeds
+                  .map((d) => allBeds.find((b) => b.bedId === d.bedId))
+                  .filter((b): b is BedResponse => !!b);
+                const editSeasonPlots: PlotResponse[] = (() => {
+                  const plotIds = new Set(
+                    editDetailHarvests.map((h) => h.plotId),
                   );
-                  if (!season) return [];
-                  const bedIds = new Set(
-                    season.seasonsDetails.map((sd) => sd.bedId),
-                  );
-                  return allBeds.filter((b) => bedIds.has(b.bedId));
-                })();
-                const editSeasonPlots = (() => {
-                  const plotIds = new Set(editSeasonBeds.map((b) => b.plotId));
                   return allPlots.filter((p) => plotIds.has(p.plotId));
                 })();
 
@@ -3262,6 +3560,10 @@ export function TasksPage() {
                           {!editDetail.seasonId ? (
                             <div className="px-3 py-2 bg-[#f8fafc] border border-dashed border-[#e2e8f0] rounded-lg text-xs text-[#94a3b8] italic">
                               Chọn mùa vụ trước
+                            </div>
+                          ) : editDetailBedsLoading ? (
+                            <div className="px-3 py-2 bg-[#f8fafc] border border-dashed border-[#e2e8f0] rounded-lg text-xs text-[#94a3b8] italic">
+                              Đang tải vuông...
                             </div>
                           ) : editSeasonPlots.length === 0 ? (
                             <div className="px-3 py-2 bg-[#f8fafc] border border-dashed border-[#e2e8f0] rounded-lg text-xs text-[#94a3b8] italic">
@@ -3609,12 +3911,16 @@ export function TasksPage() {
                 <button
                   onClick={handleUpdateAssignment}
                   disabled={
-                    !editDetail?.date || !editDetail?.workerId || isSaving
+                    !editDetail?.date ||
+                    !editDetail?.workerId ||
+                    updateDetailMutation.isPending
                   }
                   className="px-4 py-2 rounded-lg text-sm font-medium bg-[#009689] text-white hover:bg-[#007f73] disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
                 >
                   <CheckCircle2 className="w-4 h-4" />
-                  {isSaving ? "Đang lưu..." : "Lưu thay đổi"}
+                  {updateDetailMutation.isPending
+                    ? "Đang lưu..."
+                    : "Lưu thay đổi"}
                 </button>
               )}
             </div>
@@ -3647,7 +3953,7 @@ export function TasksPage() {
           </>
         }
         confirmLabel="Xoá"
-        loading={isDeletingDetail}
+        loading={deleteDetailMutation.isPending}
         onConfirm={handleDeleteAssignment}
       />
 
@@ -3722,10 +4028,10 @@ export function TasksPage() {
             <Button
               leadingIcon={CheckCircle2}
               onClick={handleSaveEdit}
-              disabled={!editTpl?.taskTitle || isSaving}
-              loading={isSaving}
+              disabled={!editTpl?.taskTitle || updateTemplateMutation.isPending}
+              loading={updateTemplateMutation.isPending}
             >
-              {isSaving ? "Đang lưu..." : "Lưu"}
+              {updateTemplateMutation.isPending ? "Đang lưu..." : "Lưu"}
             </Button>
           </>
         }
@@ -3800,7 +4106,7 @@ export function TasksPage() {
           </>
         }
         confirmLabel="Xoá"
-        loading={isDeletingTpl}
+        loading={deleteTemplateMutation.isPending}
         onConfirm={handleDeleteTemplate}
       />
     </div>

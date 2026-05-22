@@ -1,4 +1,6 @@
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useMemo, useEffect } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { qk } from "../../api/queryKeys";
 import {
   Plus,
   Pencil,
@@ -8,7 +10,6 @@ import {
   AlertTriangle,
   Layers,
   ChevronsUpDown,
-  Loader2,
 } from "lucide-react";
 import {
   api,
@@ -48,7 +49,6 @@ interface SoilFormState {
 const emptySoilForm: SoilFormState = { name: "", scienceName: "" };
 
 // ─── Compatibility config ─────────────────────────────────────────────────
-// Kept as-is — domain-specific styling for CompatPanel inline rows
 
 const compatConfig: Record<
   string,
@@ -85,16 +85,10 @@ const fallbackCompatConfig = {
 
 export function SoilsPage() {
   const { toasts, showToast, dismissToast } = useToast();
+  const queryClient = useQueryClient();
 
-  const [soils, setSoils] = useState<Soil[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [compatibilities, setCompatibilities] = useState<
-    SoilCropCompatibilityResponse[]
-  >([]);
-  const [crops, setCrops] = useState<CropResponse[]>([]);
+  // ── UI-only state ──────────────────────────────────────────────────────
   const [search, setSearch] = useState("");
-
-  // Accordion: set of expanded soilIds
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   // Soil CRUD modal state
@@ -103,31 +97,40 @@ export function SoilsPage() {
   const [soilToDelete, setSoilToDelete] = useState<Soil | null>(null);
   const [form, setForm] = useState<SoilFormState>(emptySoilForm);
   const [formErrors, setFormErrors] = useState<Partial<SoilFormState>>({});
-  const [submitting, setSubmitting] = useState(false);
 
-  // ── Load on mount ───────────────────────────────────────────────────────
-  const loadAll = useCallback(async () => {
-    try {
-      const [soilData, compatData, cropData] = await Promise.all([
-        api.getSoils(),
-        api.getSoilCropCompatibilities(),
-        api.getCrops(),
-      ]);
-      setSoils(soilData);
-      setCompatibilities(compatData);
-      setCrops(cropData);
-    } catch {
-      showToast("Không thể tải dữ liệu. Vui lòng thử lại.", "error");
-    } finally {
-      setLoading(false);
-    }
-  }, [showToast]);
+  // ── Read: soils ────────────────────────────────────────────────────────
+  const soilsQuery = useQuery({
+    queryKey: qk.soils.list(),
+    queryFn: () => api.getSoils(),
+  });
+
+  const soils: Soil[] = soilsQuery.data ?? [];
+  const loading = soilsQuery.isLoading;
 
   useEffect(() => {
-    void loadAll();
-  }, [loadAll]);
+    if (soilsQuery.error) {
+      showToast("Không thể tải dữ liệu loại đất. Vui lòng thử lại.", "error");
+    }
+  }, [soilsQuery.error, showToast]);
 
-  // ── Filter + paginate ───────────────────────────────────────────────────
+  // ── Read: compatibilities ──────────────────────────────────────────────
+  const compatsQuery = useQuery({
+    queryKey: qk.soils.compatibilities(),
+    queryFn: () => api.getSoilCropCompatibilities(),
+  });
+
+  const compatibilities: SoilCropCompatibilityResponse[] =
+    compatsQuery.data ?? [];
+
+  // ── Read: crops (read-only, for CompatPanel dropdowns) ─────────────────
+  const cropsQuery = useQuery({
+    queryKey: qk.crops.list(),
+    queryFn: () => api.getCrops(),
+  });
+
+  const crops: CropResponse[] = cropsQuery.data ?? [];
+
+  // ── Filter + paginate ──────────────────────────────────────────────────
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return soils;
@@ -148,7 +151,7 @@ export function SoilsPage() {
     reset();
   }
 
-  // ── Accordion helpers ───────────────────────────────────────────────────
+  // ── Accordion helpers ──────────────────────────────────────────────────
   function toggle(soilId: string) {
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -169,59 +172,12 @@ export function SoilsPage() {
   const allExpanded =
     pagedItems.length > 0 && pagedItems.every((s) => expanded.has(s.soilId));
 
-  // ── Compat helpers ──────────────────────────────────────────────────────
+  // ── Compat helpers ─────────────────────────────────────────────────────
   function getCompatForSoil(soilId: string) {
     return compatibilities.filter((c) => c.soilId === soilId);
   }
 
-  async function handleAddCompat(
-    soilId: string,
-    cropId: string,
-    compatibility: string,
-    note: string,
-  ) {
-    await api.createSoilCropCompatibility({
-      soilId,
-      cropId,
-      compatibility,
-      note,
-    });
-    const [refreshedCompat, refreshedSoils] = await Promise.all([
-      api.getSoilCropCompatibilities(),
-      api.getSoils(),
-    ]);
-    setCompatibilities(refreshedCompat);
-    setSoils(refreshedSoils);
-    showToast("Thêm tương thích cây trồng thành công.", "success");
-  }
-
-  async function handleEditCompat(
-    comptId: string,
-    soilId: string,
-    cropId: string,
-    compatibility: string,
-    note: string,
-  ) {
-    await api.updateSoilCropCompatibility(comptId, {
-      soilId,
-      cropId,
-      compatibility,
-      note,
-    });
-    const refreshed = await api.getSoilCropCompatibilities();
-    setCompatibilities(refreshed);
-    showToast("Cập nhật tương thích thành công.", "success");
-  }
-
-  async function handleDeleteCompat(comptId: string) {
-    await api.deleteSoilCropCompatibility(comptId);
-    setCompatibilities((prev) => prev.filter((c) => c.comptId !== comptId));
-    const refreshedSoils = await api.getSoils();
-    setSoils(refreshedSoils);
-    showToast("Đã xóa tương thích cây trồng.", "success");
-  }
-
-  // ── Soil CRUD helpers ───────────────────────────────────────────────────
+  // ── Soil CRUD modal helpers ────────────────────────────────────────────
   function openCreate() {
     setForm(emptySoilForm);
     setFormErrors({});
@@ -256,74 +212,172 @@ export function SoilsPage() {
     return Object.keys(e).length === 0;
   }
 
-  async function handleCreate() {
-    if (!validate()) return;
-    setSubmitting(true);
-    try {
-      await api.createSoil({
+  // ── Mutation: create soil ──────────────────────────────────────────────
+  const createSoilMutation = useMutation({
+    mutationFn: () =>
+      api.createSoil({
         name: form.name.trim(),
         scienceName: form.scienceName.trim(),
-      });
-      setSoils(await api.getSoils());
+      }),
+    onSuccess: () => {
       reset();
       closeModal();
       showToast("Thêm loại đất thành công.", "success");
-    } catch (err) {
+      queryClient.invalidateQueries({ queryKey: qk.soils.all });
+    },
+    onError: (err) => {
       showToast(
         err instanceof Error
           ? err.message
           : "Tạo loại đất thất bại. Vui lòng thử lại.",
         "error",
       );
-    } finally {
-      setSubmitting(false);
-    }
-  }
+    },
+  });
 
-  async function handleEdit() {
-    if (!validate() || !selectedSoil) return;
-    setSubmitting(true);
-    try {
-      await api.updateSoil(selectedSoil.soilId, {
+  // ── Mutation: update soil ──────────────────────────────────────────────
+  const updateSoilMutation = useMutation({
+    mutationFn: () => {
+      if (!selectedSoil) throw new Error("Không tìm thấy loại đất");
+      return api.updateSoil(selectedSoil.soilId, {
         name: form.name.trim(),
         scienceName: form.scienceName.trim(),
       });
-      setSoils(await api.getSoils());
+    },
+    onSuccess: () => {
       closeModal();
       showToast("Cập nhật loại đất thành công.", "success");
-    } catch (err) {
+      queryClient.invalidateQueries({ queryKey: qk.soils.all });
+    },
+    onError: (err) => {
       showToast(
         err instanceof Error
           ? err.message
           : "Cập nhật loại đất thất bại. Vui lòng thử lại.",
         "error",
       );
-    } finally {
-      setSubmitting(false);
-    }
-  }
+    },
+  });
 
-  async function handleDelete() {
-    if (!soilToDelete) return;
-    setSubmitting(true);
-    try {
-      await api.deleteSoil(soilToDelete.soilId);
-      setSoils((prev) => prev.filter((s) => s.soilId !== soilToDelete.soilId));
+  // ── Mutation: delete soil ──────────────────────────────────────────────
+  const deleteSoilMutation = useMutation({
+    mutationFn: (soilId: string) => api.deleteSoil(soilId),
+    onSuccess: (_data, soilId) => {
+      // Find the name from current list before it's gone from cache
+      const name = soils.find((s) => s.soilId === soilId)?.name ?? "";
       setSoilToDelete(null);
-      showToast(`Đã xóa loại đất "${soilToDelete.name}".`, "success");
-    } catch (err) {
+      showToast(`Đã xóa loại đất${name ? ` "${name}"` : ""}.`, "success");
+      queryClient.invalidateQueries({ queryKey: qk.soils.all });
+    },
+    onError: (err) => {
       showToast(
         err instanceof Error
           ? err.message
           : "Xóa loại đất thất bại. Vui lòng thử lại.",
         "error",
       );
-    } finally {
-      setSubmitting(false);
-    }
+    },
+  });
+
+  // ── Mutation: create compatibility ────────────────────────────────────
+  const createCompatMutation = useMutation({
+    mutationFn: (payload: {
+      soilId: string;
+      cropId: string;
+      compatibility: string;
+      note: string;
+    }) => api.createSoilCropCompatibility(payload),
+    onSuccess: () => {
+      showToast("Thêm tương thích cây trồng thành công.", "success");
+      // Soil list shows compat counts — invalidate both
+      queryClient.invalidateQueries({ queryKey: qk.soils.all });
+    },
+    onError: (err) => {
+      throw err; // re-throw so CompatPanel's try/catch can show its own toast
+    },
+  });
+
+  // ── Mutation: update compatibility ────────────────────────────────────
+  const updateCompatMutation = useMutation({
+    mutationFn: (payload: {
+      comptId: string;
+      soilId: string;
+      cropId: string;
+      compatibility: string;
+      note: string;
+    }) =>
+      api.updateSoilCropCompatibility(payload.comptId, {
+        soilId: payload.soilId,
+        cropId: payload.cropId,
+        compatibility: payload.compatibility,
+        note: payload.note,
+      }),
+    onSuccess: () => {
+      showToast("Cập nhật tương thích thành công.", "success");
+      queryClient.invalidateQueries({ queryKey: qk.soils.all });
+    },
+    onError: (err) => {
+      throw err;
+    },
+  });
+
+  // ── Mutation: delete compatibility ────────────────────────────────────
+  const deleteCompatMutation = useMutation({
+    mutationFn: (comptId: string) => api.deleteSoilCropCompatibility(comptId),
+    onSuccess: () => {
+      showToast("Đã xóa tương thích cây trồng.", "success");
+      queryClient.invalidateQueries({ queryKey: qk.soils.all });
+    },
+    onError: (err) => {
+      throw err;
+    },
+  });
+
+  // ── Compat handler adapters passed to CompatPanel ─────────────────────
+  // These maintain the same async function signatures as before so
+  // CompatPanel's internal try/catch flow is unchanged.
+  async function handleAddCompat(
+    soilId: string,
+    cropId: string,
+    compatibility: string,
+    note: string,
+  ) {
+    await createCompatMutation.mutateAsync({ soilId, cropId, compatibility, note });
   }
 
-  // ── Render ──────────────────────────────────────────────────────────────
+  async function handleEditCompat(
+    comptId: string,
+    soilId: string,
+    cropId: string,
+    compatibility: string,
+    note: string,
+  ) {
+    await updateCompatMutation.mutateAsync({ comptId, soilId, cropId, compatibility, note });
+  }
+
+  async function handleDeleteCompat(comptId: string) {
+    await deleteCompatMutation.mutateAsync(comptId);
+  }
+
+  // ── Form submission dispatchers ────────────────────────────────────────
+  function handleCreate() {
+    if (!validate()) return;
+    createSoilMutation.mutate();
+  }
+
+  function handleEdit() {
+    if (!validate() || !selectedSoil) return;
+    updateSoilMutation.mutate();
+  }
+
+  function handleDelete() {
+    if (soilToDelete) deleteSoilMutation.mutate(soilToDelete.soilId);
+  }
+
+  const soilSubmitting =
+    createSoilMutation.isPending || updateSoilMutation.isPending;
+
+  // ── Render ─────────────────────────────────────────────────────────────
 
   return (
     <div className="flex flex-col gap-6 p-6">
@@ -477,14 +531,19 @@ export function SoilsPage() {
         size="md"
         footer={
           <>
-            <Button variant="ghost" onClick={closeModal} disabled={submitting}>
+            <Button
+              variant="ghost"
+              onClick={closeModal}
+              disabled={soilSubmitting}
+            >
               Hủy
             </Button>
             <Button
               onClick={() => {
-                void (modalMode === "edit" ? handleEdit() : handleCreate());
+                if (modalMode === "edit") handleEdit();
+                else handleCreate();
               }}
-              loading={submitting}
+              loading={soilSubmitting}
             >
               {modalMode === "edit" ? "Lưu thay đổi" : "Thêm mới"}
             </Button>
@@ -542,7 +601,7 @@ export function SoilsPage() {
             </>
           ) : null
         }
-        loading={submitting}
+        loading={deleteSoilMutation.isPending}
         onConfirm={handleDelete}
       />
 

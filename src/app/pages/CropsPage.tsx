@@ -1,4 +1,10 @@
 import { useState, useEffect } from "react";
+import {
+  useQuery,
+  useMutation,
+  useQueryClient,
+  useQueries,
+} from "@tanstack/react-query";
 import { useToast } from "../components/ui/useToast";
 import { ToastContainer } from "../components/ui/ToastContainer";
 import {
@@ -6,7 +12,7 @@ import {
   Image as ImageIcon,
   ChevronUp,
   ChevronDown,
-  ChevronLeft,
+  RefreshCw,
   ChevronRight,
   ArrowUpDown,
   X,
@@ -24,7 +30,6 @@ import {
 } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
-import * as Select from "@radix-ui/react-select";
 import {
   api,
   CropResponse,
@@ -32,6 +37,7 @@ import {
   CropGrowthStageResponse,
   CropGrowthTaskResponse,
 } from "../../api/client";
+import { qk } from "../../api/queryKeys";
 import { Button } from "../components/ui/Button";
 import { Modal } from "../components/ui/Modal";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
@@ -104,9 +110,8 @@ const CROP_TABS = [
 
 export function CropsPage() {
   const { toasts, showToast, dismissToast } = useToast();
+  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<"list" | "growth">("list");
-  const [crops, setCrops] = useState<CropEx[]>([]);
-  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [sortField, setSortField] = useState<"growthPeriod" | "status" | null>(
     null,
@@ -120,28 +125,108 @@ export function CropsPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedCrop, setSelectedCrop] = useState<CropEx | null>(null);
   const [cropToDelete, setCropToDelete] = useState<CropEx | null>(null);
-  const [submitting, setSubmitting] = useState(false);
 
+  // ── Read: crop list ──
+  const cropsQuery = useQuery({
+    queryKey: qk.crops.list(),
+    queryFn: () => api.getCrops(),
+  });
+
+  // Map + filter at render time so we always work from raw cache data.
+  const crops = (cropsQuery.data ?? [])
+    .filter((c) => c != null && c.cropId)
+    .map(mapCrop);
+  const loading =
+    cropsQuery.isLoading ||
+    (cropsQuery.isFetching && cropsQuery.data === undefined);
+  // Expose fetch error only when we have no cached data to show
+  const fetchError =
+    cropsQuery.isError && cropsQuery.data === undefined
+      ? cropsQuery.error
+      : null;
   useEffect(() => {
-    loadCrops();
-  }, []);
-
-  const loadCrops = async () => {
-    setLoading(true);
-    try {
-      const data = await api.getCrops();
-      setCrops(data.map(mapCrop));
-    } catch (err) {
+    if (cropsQuery.error) {
       showToast(
-        err instanceof Error
-          ? err.message
+        cropsQuery.error instanceof Error
+          ? cropsQuery.error.message
           : "Không thể tải danh sách cây trồng",
         "error",
       );
-    } finally {
-      setLoading(false);
     }
-  };
+  }, [cropsQuery.error, showToast]);
+
+  // ── Mutation: create ──
+  const createMutation = useMutation({
+    mutationFn: (cropData: Omit<CropEx, "id">) =>
+      api.createCrop({
+        cropName: cropData.name,
+        cropScientificName: cropData.scientificName || undefined,
+        cropDefaultGrowthDays: cropData.growthPeriod || undefined,
+        plantSpacing: cropData.plantSpacing || undefined,
+        bedWidthDefault: cropData.bedWidthDefault || undefined,
+        pathWidthDefault: cropData.pathWidthDefault || undefined,
+        rowsPerBed: cropData.rowsPerBed || undefined,
+        rowSpacing: cropData.rowSpacing || undefined,
+        cropStatus: cropData.status === "Đang sử dụng" ? "Active" : "Inactive",
+      }),
+    onSuccess: () => {
+      setCreateModalOpen(false);
+      showToast("Tạo cây trồng thành công", "success");
+      queryClient.invalidateQueries({ queryKey: qk.crops.all });
+    },
+    onError: (err) => {
+      showToast(
+        err instanceof Error ? err.message : "Không thể tạo cây trồng",
+        "error",
+      );
+    },
+  });
+
+  // ── Mutation: update ──
+  const updateMutation = useMutation({
+    mutationFn: (updatedCrop: CropEx) =>
+      api.updateCrop(updatedCrop.id, {
+        cropName: updatedCrop.name,
+        cropScientificName: updatedCrop.scientificName || undefined,
+        cropDefaultGrowthDays: updatedCrop.growthPeriod || undefined,
+        plantSpacing: updatedCrop.plantSpacing || undefined,
+        bedWidthDefault: updatedCrop.bedWidthDefault || undefined,
+        pathWidthDefault: updatedCrop.pathWidthDefault || undefined,
+        rowsPerBed: updatedCrop.rowsPerBed || undefined,
+        rowSpacing: updatedCrop.rowSpacing || undefined,
+        cropStatus:
+          updatedCrop.status === "Đang sử dụng" ? "Active" : "Inactive",
+      }),
+    onSuccess: () => {
+      setEditModalOpen(false);
+      setSelectedCrop(null);
+      showToast("Cập nhật cây trồng thành công", "success");
+      queryClient.invalidateQueries({ queryKey: qk.crops.all });
+    },
+    onError: (err) => {
+      showToast(
+        err instanceof Error ? err.message : "Không thể cập nhật cây trồng",
+        "error",
+      );
+    },
+  });
+
+  // ── Mutation: delete ──
+  const deleteMutation = useMutation({
+    mutationFn: (cropId: string) => api.deleteCrop(cropId),
+    onSuccess: () => {
+      setDeleteDialogOpen(false);
+      setCropToDelete(null);
+      showToast("Xóa cây trồng thành công", "success");
+      queryClient.invalidateQueries({ queryKey: qk.crops.all });
+    },
+    onError: (err) => {
+      showToast(
+        err instanceof Error ? err.message : "Không thể xóa cây trồng",
+        "error",
+      );
+    },
+  });
 
   const handleSort = (field: "growthPeriod" | "status") => {
     if (sortField === field)
@@ -155,8 +240,10 @@ export function CropsPage() {
   const filteredCrops = crops
     .filter(
       (c) =>
-        c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        c.scientificName.toLowerCase().includes(searchQuery.toLowerCase()),
+        (c.name ?? "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (c.scientificName ?? "")
+          .toLowerCase()
+          .includes(searchQuery.toLowerCase()),
     )
     .sort((a, b) => {
       if (!sortField) return 0;
@@ -182,81 +269,6 @@ export function CropsPage() {
   useEffect(() => {
     reset();
   }, [searchQuery]);
-
-  const handleCreate = async (cropData: Omit<CropEx, "id">) => {
-    setSubmitting(true);
-    try {
-      await api.createCrop({
-        cropName: cropData.name,
-        cropScientificName: cropData.scientificName || undefined,
-        cropDefaultGrowthDays: cropData.growthPeriod || undefined,
-        plantSpacing: cropData.plantSpacing || undefined,
-        bedWidthDefault: cropData.bedWidthDefault || undefined,
-        pathWidthDefault: cropData.pathWidthDefault || undefined,
-        rowsPerBed: cropData.rowsPerBed || undefined,
-        rowSpacing: cropData.rowSpacing || undefined,
-        cropStatus: cropData.status === "Đang sử dụng" ? "Active" : "Inactive",
-      });
-      await loadCrops();
-      setCreateModalOpen(false);
-      showToast("Tạo cây trồng thành công", "success");
-    } catch (err) {
-      showToast(
-        err instanceof Error ? err.message : "Không thể tạo cây trồng",
-        "error",
-      );
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleUpdate = async (updatedCrop: CropEx) => {
-    setSubmitting(true);
-    try {
-      await api.updateCrop(updatedCrop.id, {
-        cropName: updatedCrop.name,
-        cropScientificName: updatedCrop.scientificName || undefined,
-        cropDefaultGrowthDays: updatedCrop.growthPeriod || undefined,
-        plantSpacing: updatedCrop.plantSpacing || undefined,
-        bedWidthDefault: updatedCrop.bedWidthDefault || undefined,
-        pathWidthDefault: updatedCrop.pathWidthDefault || undefined,
-        rowsPerBed: updatedCrop.rowsPerBed || undefined,
-        rowSpacing: updatedCrop.rowSpacing || undefined,
-        cropStatus:
-          updatedCrop.status === "Đang sử dụng" ? "Active" : "Inactive",
-      });
-      await loadCrops();
-      setEditModalOpen(false);
-      setSelectedCrop(null);
-      showToast("Cập nhật cây trồng thành công", "success");
-    } catch (err) {
-      showToast(
-        err instanceof Error ? err.message : "Không thể cập nhật cây trồng",
-        "error",
-      );
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleDelete = async () => {
-    if (!cropToDelete) return;
-    setSubmitting(true);
-    try {
-      await api.deleteCrop(cropToDelete.id);
-      await loadCrops();
-      setDeleteDialogOpen(false);
-      setCropToDelete(null);
-      showToast("Xóa cây trồng thành công", "success");
-    } catch (err) {
-      showToast(
-        err instanceof Error ? err.message : "Không thể xóa cây trồng",
-        "error",
-      );
-    } finally {
-      setSubmitting(false);
-    }
-  };
 
   const SortIcon = ({ field }: { field: "growthPeriod" | "status" }) => {
     if (sortField !== field)
@@ -293,16 +305,44 @@ export function CropsPage() {
 
       {activeTab === "list" && (
         <>
-          <SearchInput
-            value={searchQuery}
-            onChange={(v) => setSearchQuery(v)}
-            placeholder="Tìm kiếm cây trồng..."
-            className="max-w-md"
-          />
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <SearchInput
+              value={searchQuery}
+              onChange={(v) => setSearchQuery(v)}
+              placeholder="Tìm kiếm theo tên cây trồng..."
+              className="flex-1 min-w-[200px]"
+            />
+            <Button
+              variant="secondary"
+              leadingIcon={RefreshCw}
+              onClick={() => cropsQuery.refetch()}
+              loading={cropsQuery.isFetching}
+            >
+              Cập nhật
+            </Button>
+          </div>
 
           <div className="bg-surface rounded-card border border-border shadow-card overflow-hidden">
             {loading ? (
               <LoadingState />
+            ) : fetchError ? (
+              <EmptyState
+                icon={Sprout}
+                title="Không thể tải danh sách cây trồng"
+                message={
+                  fetchError instanceof Error
+                    ? fetchError.message
+                    : "Đã xảy ra lỗi. Vui lòng thử lại."
+                }
+                action={
+                  <Button
+                    variant="secondary"
+                    onClick={() => cropsQuery.refetch()}
+                  >
+                    Thử lại
+                  </Button>
+                }
+              />
             ) : filteredCrops.length === 0 ? (
               <EmptyState
                 icon={Sprout}
@@ -529,8 +569,8 @@ export function CropsPage() {
           <CreateCropModal
             open={createModalOpen}
             onClose={() => setCreateModalOpen(false)}
-            onCreate={handleCreate}
-            submitting={submitting}
+            onCreate={(cropData) => createMutation.mutate(cropData)}
+            submitting={createMutation.isPending}
           />
 
           {/* Edit Modal */}
@@ -542,8 +582,8 @@ export function CropsPage() {
                 setEditModalOpen(false);
                 setSelectedCrop(null);
               }}
-              onUpdate={handleUpdate}
-              submitting={submitting}
+              onUpdate={(updatedCrop) => updateMutation.mutate(updatedCrop)}
+              submitting={updateMutation.isPending}
             />
           )}
 
@@ -561,9 +601,9 @@ export function CropsPage() {
                 động này không thể hoàn tác.
               </>
             }
-            loading={submitting}
-            onConfirm={async () => {
-              await handleDelete();
+            loading={deleteMutation.isPending}
+            onConfirm={() => {
+              if (cropToDelete) deleteMutation.mutate(cropToDelete.id);
             }}
           />
         </>
@@ -571,6 +611,8 @@ export function CropsPage() {
     </div>
   );
 }
+
+// ─── GrowthStagesTab ──────────────────────────────────────────────────────────
 
 function GrowthStagesTab({
   crops,
@@ -580,16 +622,8 @@ function GrowthStagesTab({
   loading: boolean;
 }) {
   const { toasts, showToast, dismissToast } = useToast();
+  const queryClient = useQueryClient();
   const [selectedCropId, setSelectedCropId] = useState<string | null>(null);
-
-  // API-driven state
-  const [stages, setStages] = useState<CropGrowthStageResponse[]>([]);
-  const [tasksMap, setTasksMap] = useState<
-    Record<string, CropGrowthTaskResponse[]>
-  >({});
-  const [stagesLoading, setStagesLoading] = useState(false);
-  const [stagesError, setStagesError] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
 
   // Stage modal state
   const [createStageOpen, setCreateStageOpen] = useState(false);
@@ -610,54 +644,37 @@ function GrowthStagesTab({
 
   const selectedCrop = crops.find((c) => c.id === selectedCropId) ?? null;
 
-  // Load stages + tasks when crop selection changes
-  useEffect(() => {
-    if (!selectedCropId) {
-      setStages([]);
-      setTasksMap({});
-      return;
-    }
-    loadStagesForCrop(selectedCropId);
-  }, [selectedCropId]);
+  // ── Read: stages for selected crop ──
+  const stagesQuery = useQuery({
+    queryKey: qk.crops.stages(selectedCropId ?? ""),
+    queryFn: () => api.getCropGrowthStagesByCrop(selectedCropId!),
+    enabled: !!selectedCropId,
+  });
 
-  const loadStagesForCrop = async (cropId: string) => {
-    setStagesLoading(true);
-    setStagesError(false);
-    try {
-      const stageList = await api.getCropGrowthStagesByCrop(cropId);
-      setStages(stageList);
-      // Load tasks for all stages in parallel
-      const entries = await Promise.all(
-        stageList.map(async (s) => {
-          try {
-            const tasks = await api.getCropGrowthTasksByStage(s.stageId);
-            return [s.stageId, tasks] as [string, CropGrowthTaskResponse[]];
-          } catch {
-            return [s.stageId, []] as [string, CropGrowthTaskResponse[]];
-          }
-        }),
-      );
-      setTasksMap(Object.fromEntries(entries));
-    } catch {
-      setStagesError(true);
-      setStages([]);
-      setTasksMap({});
-    } finally {
-      setStagesLoading(false);
-    }
-  };
+  const stages = stagesQuery.data ?? [];
+  const stagesLoading = stagesQuery.isLoading;
+  const stagesError = !!stagesQuery.error;
 
-  const reloadStages = () => {
-    if (selectedCropId) loadStagesForCrop(selectedCropId);
-  };
+  // ── Read: tasks for each stage (parallel) ──
+  const taskQueries = useQueries({
+    queries: stages.map((s) => ({
+      queryKey: qk.crops.stageTasks(s.stageId),
+      queryFn: () => api.getCropGrowthTasksByStage(s.stageId),
+      // Keep previous task data when stages change, to avoid flash
+      placeholderData: [] as CropGrowthTaskResponse[],
+    })),
+  });
 
-  // ---- Stage CRUD ----
-  const handleCreateStage = async (data: StageFormData) => {
-    if (!selectedCropId) return;
-    setSubmitting(true);
-    try {
-      await api.createCropGrowthStage({
-        cropId: selectedCropId,
+  // Build the same tasksMap shape the UI already uses
+  const tasksMap: Record<string, CropGrowthTaskResponse[]> = Object.fromEntries(
+    stages.map((s, i) => [s.stageId, taskQueries[i]?.data ?? []]),
+  );
+
+  // ── Stage mutations ──
+  const createStageMutation = useMutation({
+    mutationFn: (data: StageFormData) =>
+      api.createCropGrowthStage({
+        cropId: selectedCropId!,
         stageName: data.stageName,
         stageDescription: data.stageDescription || undefined,
         temperatureMin: data.temperatureMin,
@@ -666,26 +683,26 @@ function GrowthStagesTab({
         growthIndicators: data.growthIndicators || undefined,
         commonDiseases: data.commonDiseases || undefined,
         notes: data.notes || undefined,
-      });
+      }),
+    onSuccess: () => {
       setCreateStageOpen(false);
-      reloadStages();
       showToast("Tạo giai đoạn thành công", "success");
-    } catch (err) {
+      queryClient.invalidateQueries({
+        queryKey: qk.crops.stages(selectedCropId!),
+      });
+    },
+    onError: (err) => {
       showToast(
         err instanceof Error ? err.message : "Không thể tạo giai đoạn",
         "error",
       );
-    } finally {
-      setSubmitting(false);
-    }
-  };
+    },
+  });
 
-  const handleUpdateStage = async (data: StageFormData) => {
-    if (!selectedStage) return;
-    setSubmitting(true);
-    try {
-      await api.updateCropGrowthStage(selectedStage.stageId, {
-        cropId: selectedStage.cropId,
+  const updateStageMutation = useMutation({
+    mutationFn: (data: StageFormData) =>
+      api.updateCropGrowthStage(selectedStage!.stageId, {
+        cropId: selectedStage!.cropId,
         stageName: data.stageName,
         stageDescription: data.stageDescription || undefined,
         temperatureMin: data.temperatureMin,
@@ -694,45 +711,47 @@ function GrowthStagesTab({
         growthIndicators: data.growthIndicators || undefined,
         commonDiseases: data.commonDiseases || undefined,
         notes: data.notes || undefined,
-      });
+      }),
+    onSuccess: () => {
       setEditStageOpen(false);
       setSelectedStage(null);
-      reloadStages();
       showToast("Cập nhật giai đoạn thành công", "success");
-    } catch (err) {
+      queryClient.invalidateQueries({
+        queryKey: qk.crops.stages(selectedCropId!),
+      });
+    },
+    onError: (err) => {
       showToast(
         err instanceof Error ? err.message : "Không thể cập nhật giai đoạn",
         "error",
       );
-    } finally {
-      setSubmitting(false);
-    }
-  };
+    },
+  });
 
-  const handleDeleteStage = async () => {
-    if (!selectedStage) return;
-    setSubmitting(true);
-    try {
-      await api.deleteCropGrowthStage(selectedStage.stageId);
+  const deleteStageMutation = useMutation({
+    mutationFn: (stageId: string) => api.deleteCropGrowthStage(stageId),
+    onSuccess: (_data, stageId) => {
       setDeleteStageOpen(false);
       setSelectedStage(null);
-      reloadStages();
       showToast("Xóa giai đoạn thành công", "success");
-    } catch (err) {
+      queryClient.invalidateQueries({
+        queryKey: qk.crops.stages(selectedCropId!),
+      });
+      // Also remove the now-orphaned task cache entry
+      queryClient.removeQueries({ queryKey: qk.crops.stageTasks(stageId) });
+    },
+    onError: (err) => {
       showToast(
         err instanceof Error ? err.message : "Không thể xóa giai đoạn",
         "error",
       );
-    } finally {
-      setSubmitting(false);
-    }
-  };
+    },
+  });
 
-  // ---- Task CRUD ----
-  const handleCreateTask = async (stageId: string, data: TaskFormData) => {
-    setSubmitting(true);
-    try {
-      await api.createCropGrowthTask({
+  // ── Task mutations ──
+  const createTaskMutation = useMutation({
+    mutationFn: ({ stageId, data }: { stageId: string; data: TaskFormData }) =>
+      api.createCropGrowthTask({
         stageId,
         taskName: data.taskName,
         taskDescription: data.taskDescription || undefined,
@@ -745,26 +764,26 @@ function GrowthStagesTab({
         priority: data.priority,
         isMandatory: data.isMandatory,
         notes: data.notes || undefined,
-      });
+      }),
+    onSuccess: (_data, variables) => {
       setCreateTaskOpen(false);
-      reloadStages();
       showToast("Tạo nhiệm vụ thành công", "success");
-    } catch (err) {
+      queryClient.invalidateQueries({
+        queryKey: qk.crops.stageTasks(variables.stageId),
+      });
+    },
+    onError: (err) => {
       showToast(
         err instanceof Error ? err.message : "Không thể tạo nhiệm vụ",
         "error",
       );
-    } finally {
-      setSubmitting(false);
-    }
-  };
+    },
+  });
 
-  const handleUpdateTask = async (data: TaskFormData) => {
-    if (!selectedTask) return;
-    setSubmitting(true);
-    try {
-      await api.updateCropGrowthTask(selectedTask.growthTaskId, {
-        stageId: selectedTask.stageId,
+  const updateTaskMutation = useMutation({
+    mutationFn: (data: TaskFormData) =>
+      api.updateCropGrowthTask(selectedTask!.growthTaskId, {
+        stageId: selectedTask!.stageId,
         taskName: data.taskName,
         taskDescription: data.taskDescription || undefined,
         frequency: data.frequency || undefined,
@@ -776,39 +795,43 @@ function GrowthStagesTab({
         priority: data.priority,
         isMandatory: data.isMandatory,
         notes: data.notes || undefined,
-      });
+      }),
+    onSuccess: () => {
       setEditTaskOpen(false);
       setSelectedTask(null);
-      reloadStages();
       showToast("Cập nhật nhiệm vụ thành công", "success");
-    } catch (err) {
+      if (selectedTask) {
+        queryClient.invalidateQueries({
+          queryKey: qk.crops.stageTasks(selectedTask.stageId),
+        });
+      }
+    },
+    onError: (err) => {
       showToast(
         err instanceof Error ? err.message : "Không thể cập nhật nhiệm vụ",
         "error",
       );
-    } finally {
-      setSubmitting(false);
-    }
-  };
+    },
+  });
 
-  const handleDeleteTask = async () => {
-    if (!selectedTask) return;
-    setSubmitting(true);
-    try {
-      await api.deleteCropGrowthTask(selectedTask.growthTaskId);
+  const deleteTaskMutation = useMutation({
+    mutationFn: ({ taskId, stageId }: { taskId: string; stageId: string }) =>
+      api.deleteCropGrowthTask(taskId),
+    onSuccess: (_data, variables) => {
       setDeleteTaskOpen(false);
       setSelectedTask(null);
-      reloadStages();
       showToast("Xóa nhiệm vụ thành công", "success");
-    } catch (err) {
+      queryClient.invalidateQueries({
+        queryKey: qk.crops.stageTasks(variables.stageId),
+      });
+    },
+    onError: (err) => {
       showToast(
         err instanceof Error ? err.message : "Không thể xóa nhiệm vụ",
         "error",
       );
-    } finally {
-      setSubmitting(false);
-    }
-  };
+    },
+  });
 
   if (loading) {
     return (
@@ -877,7 +900,11 @@ function GrowthStagesTab({
             <WifiOff className="w-8 h-8 opacity-40" />
             <p className="text-sm">Không thể tải dữ liệu giai đoạn</p>
             <button
-              onClick={reloadStages}
+              onClick={() =>
+                queryClient.invalidateQueries({
+                  queryKey: qk.crops.stages(selectedCropId!),
+                })
+              }
               className="px-3 py-1.5 bg-[#f1f5f9] text-[#62748e] rounded-lg text-xs hover:bg-[#e2e8f0]"
             >
               Thử lại
@@ -969,8 +996,8 @@ function GrowthStagesTab({
           open={createStageOpen}
           mode="create"
           onClose={() => setCreateStageOpen(false)}
-          onSubmit={handleCreateStage}
-          submitting={submitting}
+          onSubmit={(data) => createStageMutation.mutate(data)}
+          submitting={createStageMutation.isPending}
         />
       )}
       {selectedStage && (
@@ -982,8 +1009,8 @@ function GrowthStagesTab({
             setEditStageOpen(false);
             setSelectedStage(null);
           }}
-          onSubmit={handleUpdateStage}
-          submitting={submitting}
+          onSubmit={(data) => updateStageMutation.mutate(data)}
+          submitting={updateStageMutation.isPending}
         />
       )}
       <AlertDialog.Root
@@ -1005,11 +1032,17 @@ function GrowthStagesTab({
                 Hủy
               </AlertDialog.Cancel>
               <AlertDialog.Action
-                onClick={handleDeleteStage}
-                disabled={submitting}
+                onClick={(e) => {
+                  e.preventDefault();
+                  if (selectedStage)
+                    deleteStageMutation.mutate(selectedStage.stageId);
+                }}
+                disabled={deleteStageMutation.isPending}
                 className="px-4 py-2 bg-red-500 text-white text-sm rounded-lg hover:bg-red-600 flex items-center gap-2 disabled:opacity-50"
               >
-                {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                {deleteStageMutation.isPending && (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                )}
                 Xóa
               </AlertDialog.Action>
             </div>
@@ -1027,8 +1060,10 @@ function GrowthStagesTab({
             setCreateTaskOpen(false);
             setTaskParentStageId(null);
           }}
-          onSubmit={(data) => handleCreateTask(taskParentStageId, data)}
-          submitting={submitting}
+          onSubmit={(data) =>
+            createTaskMutation.mutate({ stageId: taskParentStageId, data })
+          }
+          submitting={createTaskMutation.isPending}
         />
       )}
       {selectedTask && (
@@ -1041,8 +1076,8 @@ function GrowthStagesTab({
             setEditTaskOpen(false);
             setSelectedTask(null);
           }}
-          onSubmit={handleUpdateTask}
-          submitting={submitting}
+          onSubmit={(data) => updateTaskMutation.mutate(data)}
+          submitting={updateTaskMutation.isPending}
         />
       )}
       <AlertDialog.Root open={deleteTaskOpen} onOpenChange={setDeleteTaskOpen}>
@@ -1060,11 +1095,20 @@ function GrowthStagesTab({
                 Hủy
               </AlertDialog.Cancel>
               <AlertDialog.Action
-                onClick={handleDeleteTask}
-                disabled={submitting}
+                onClick={(e) => {
+                  e.preventDefault();
+                  if (selectedTask)
+                    deleteTaskMutation.mutate({
+                      taskId: selectedTask.growthTaskId,
+                      stageId: selectedTask.stageId,
+                    });
+                }}
+                disabled={deleteTaskMutation.isPending}
                 className="px-4 py-2 bg-red-500 text-white text-sm rounded-lg hover:bg-red-600 flex items-center gap-2 disabled:opacity-50"
               >
-                {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                {deleteTaskMutation.isPending && (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                )}
                 Xóa
               </AlertDialog.Action>
             </div>
@@ -1328,6 +1372,7 @@ function StageCard({
     </div>
   );
 }
+
 // ---- StageFormData ----
 interface StageFormData {
   stageName: string;
@@ -1535,6 +1580,7 @@ function StageFormModal({
     </Dialog.Root>
   );
 }
+
 // ---- TaskFormData ----
 interface TaskFormData {
   taskName: string;
@@ -1545,7 +1591,7 @@ interface TaskFormData {
   requiredMaterials: string;
   quantityPerUnit: number;
   quantityUnit: string;
-  priority: number; // 1 = High, 2 = Medium, 3 = Low
+  priority: number;
   isMandatory: boolean;
   notes: string;
 }
@@ -1629,7 +1675,6 @@ function TaskFormModal({
     onSubmit(form);
   };
 
-  // stageId is passed in props but not needed in form state (caller handles it)
   void stageId;
 
   return (
@@ -1832,10 +1877,6 @@ interface CropFormErrors {
   growthPeriod?: string;
   plantSpacing?: string;
 }
-
-// ─── CropFormFields (kept intact — domain-specific form) ──────────────────────
-
-// CropFormErrors interface is declared above in the GrowthStagesTab section
 
 type CropFormData = {
   name: string;

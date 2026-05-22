@@ -1339,7 +1339,7 @@ export function BillingPage() {
                 queryClient.invalidateQueries({ queryKey: qk.contracts.all })
               }
             >
-              Làm mới
+              Cập nhật
             </Button>
           </div>
 
