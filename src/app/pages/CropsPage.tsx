@@ -129,21 +129,21 @@ export function CropsPage() {
   // ── Read: crop list ──
   const cropsQuery = useQuery({
     queryKey: qk.crops.list(),
-    queryFn: async () => {
-      const data = await api.getCrops();
-      // API sometimes returns entries with null/undefined cropName despite
-      // the type saying string. Filter those out defensively so downstream
-      // .toLowerCase() calls never crash.
-      return data.filter((c) => c != null && c.cropId).map(mapCrop);
-    },
+    queryFn: () => api.getCrops(),
   });
 
-  const crops = cropsQuery.data ?? [];
-  // Show spinner only on first load (no cached data). isFetching alone would
-  // also flash the spinner on every background refetch.
+  // Map + filter at render time so we always work from raw cache data.
+  const crops = (cropsQuery.data ?? [])
+    .filter((c) => c != null && c.cropId)
+    .map(mapCrop);
   const loading =
     cropsQuery.isLoading ||
     (cropsQuery.isFetching && cropsQuery.data === undefined);
+  // Expose fetch error only when we have no cached data to show
+  const fetchError =
+    cropsQuery.isError && cropsQuery.data === undefined
+      ? cropsQuery.error
+      : null;
   useEffect(() => {
     if (cropsQuery.error) {
       showToast(
@@ -325,6 +325,24 @@ export function CropsPage() {
           <div className="bg-surface rounded-card border border-border shadow-card overflow-hidden">
             {loading ? (
               <LoadingState />
+            ) : fetchError ? (
+              <EmptyState
+                icon={Sprout}
+                title="Không thể tải danh sách cây trồng"
+                message={
+                  fetchError instanceof Error
+                    ? fetchError.message
+                    : "Đã xảy ra lỗi. Vui lòng thử lại."
+                }
+                action={
+                  <Button
+                    variant="secondary"
+                    onClick={() => cropsQuery.refetch()}
+                  >
+                    Thử lại
+                  </Button>
+                }
+              />
             ) : filteredCrops.length === 0 ? (
               <EmptyState
                 icon={Sprout}
