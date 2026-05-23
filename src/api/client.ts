@@ -546,8 +546,6 @@ export interface AiResultParsed {
 export interface ContractResponse {
   id: string;
   contractCode: string;
-  farmId: string;
-  farmName: string;
   expertId: string;
   expertName: string;
   bankAccount: string;
@@ -562,7 +560,6 @@ export interface ContractResponse {
 }
 
 export interface ContractCreateRequest {
-  farmId: string;
   expertId: string;
   bankAccount: string;
   bankName: string;
@@ -577,34 +574,56 @@ export interface ContractUpdateRequest {
   bankAccount: string;
   bankName: string;
   accountHolder: string;
-  pricePerDiagnosis: number;
   endDate?: string;
   notes?: string;
 }
 
+export interface PaymentItem {
+  id?: string;
+  diagnosisResultId: string;
+  diseaseName?: string;
+  diagnosedAt?: string;
+  reportId?: string;
+  reportNo?: string;
+  contractId?: string;
+  contractCode?: string;
+  unitPrice?: number;
+  farmId?: string;
+  farmName?: string;
+}
+
+export interface BillItem {
+  diagnosisResultId: string;
+  diseaseName?: string;
+  diagnosedAt?: string;
+  reportId?: string;
+  reportNo?: string;
+  contractId?: string;
+  contractCode?: string;
+  unitPrice?: number;
+  farmId?: string;
+  farmName?: string;
+}
+
 export interface ContractBillResponse {
-  contractId: string;
-  contractCode: string;
-  farmName: string;
-  expertName: string;
+  specialistId: string;
+  specialistName: string;
+  month: string;
   bankAccount: string;
   bankName: string;
   accountHolder: string;
-  month: string;
-  pricePerDiagnosis: number;
   totalDiagnoses: number;
   totalAmount: number;
   isPaid: boolean;
+  items: BillItem[];
 }
 
 // ── Payments ──────────────────────────────────────────────────────────────────
 
 export interface PaymentResponse {
   id: string;
-  contractId: string;
-  contractCode: string;
-  farmName: string;
-  expertName: string;
+  specialistId: string;
+  specialistName: string;
   month: string;
   totalDiagnoses: number;
   amount: number;
@@ -612,6 +631,7 @@ export interface PaymentResponse {
   status: string; // "paid"
   createdAt: string;
   paidAt: string;
+  items: PaymentItem[];
 }
 
 // ── Attachments ───────────────────────────────────────────────────────────────
@@ -1059,6 +1079,8 @@ export const api = {
     request<DiagnosisResponse[]>("GET", `/api/Reports/${reportId}/diagnosis`),
   getAllDiagnoses: () =>
     request<DiagnosisResponse[]>("GET", "/api/Reports/diagnosis"),
+  getDiagnosisById: (diagnosisId: string) =>
+    request<DiagnosisResponse>("GET", `/api/Reports/diagnosis/${diagnosisId}`),
   createDiagnosis: (reportId: string, body: DiagnosisRequest) =>
     request<DiagnosisResponse>(
       "POST",
@@ -1083,10 +1105,12 @@ export const api = {
     request<ContractResponse>("PUT", `/api/contract/${id}`, body),
   terminateContract: (id: string) =>
     request<unknown>("POST", `/api/contract/${id}/terminate`),
-  getContractBill: (id: string, month?: string) =>
+  // O6: GET /api/payment/bill?specialistId=&month=
+  // month should be formatted as "DD-MM-YYYY" per the API sample
+  getPaymentBill: (specialistId: string, month: string) =>
     request<ContractBillResponse>(
       "GET",
-      `/api/contract/${id}/bill${month ? `?month=${encodeURIComponent(month)}` : ""}`,
+      `/api/payment/bill?specialistId=${encodeURIComponent(specialistId)}&month=${encodeURIComponent(month)}`,
     ),
 
   // Payments
@@ -1094,12 +1118,12 @@ export const api = {
   getPayment: (id: string) =>
     request<PaymentResponse>("GET", `/api/payment/${id}`),
   uploadPayment: (params: {
-    contractId: string;
+    specialistId: string;
     month: string;
     file: File;
   }) => {
     const form = new FormData();
-    form.append("ContractId", params.contractId);
+    form.append("SpecialistId", params.specialistId);
     form.append("Month", params.month);
     form.append("BillFile", params.file);
     return requestForm<PaymentResponse>("POST", "/api/payment/upload", form);

@@ -29,6 +29,8 @@ import { qk } from "../../api/queryKeys";
 import { LoadingState } from "../components/ui/LoadingState";
 import { EmptyState } from "../components/ui/EmptyState";
 import { StatusBadge } from "../components/ui/StatusBadge";
+import { useToast } from "../components/ui/useToast";
+import { ToastContainer } from "../components/ui/ToastContainer";
 import { formatDate } from "../utils/format";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -83,6 +85,7 @@ function shortDay(isoDate: string): string {
 export function DashboardPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { toasts, showToast, dismissToast } = useToast();
 
   // ── UI state ─────────────────────────────────────────────────────────────
   const [selectedFarmId, setSelectedFarmId] = useState<string>("");
@@ -91,19 +94,46 @@ export function DashboardPage() {
   const [forecastEnabled, setForecastEnabled] = useState(false);
 
   // ── Reports query ─────────────────────────────────────────────────────────
+  // Store raw ReportResponse[] in cache — no mapper, so no type-mismatch risk
+  // when other pages populate this same key.
   const reportsQuery = useQuery({
     queryKey: qk.reports.list(),
-    queryFn: api.getReports as () => Promise<ReportResponse[]>,
-    retry: 1,
+    queryFn: (): Promise<ReportResponse[]> => api.getReports(),
   });
+
+  useEffect(() => {
+    if (reportsQuery.error) {
+      showToast(
+        reportsQuery.error instanceof Error
+          ? reportsQuery.error.message
+          : "Không thể tải danh sách báo cáo",
+        "error",
+      );
+    }
+  }, [reportsQuery.error, showToast]);
 
   // ── Farms query — default selectedFarmId to first farm ───────────────────
+  // Store raw FarmResponse[] in cache — mapping to display type happens at
+  // render time below. This prevents the stale-cache type-mismatch bug where
+  // another page (PlotsPage, SeasonsPage, etc.) writes raw FarmResponse[] to
+  // ["farms","list"] and this page receives it while expecting a different shape.
   const farmsQuery = useQuery({
     queryKey: qk.farms.list(),
-    queryFn: api.getFarms as () => Promise<FarmResponse[]>,
-    retry: 1,
+    queryFn: (): Promise<FarmResponse[]> => api.getFarms(),
   });
 
+  useEffect(() => {
+    if (farmsQuery.error) {
+      showToast(
+        farmsQuery.error instanceof Error
+          ? farmsQuery.error.message
+          : "Không thể tải danh sách trang trại",
+        "error",
+      );
+    }
+  }, [farmsQuery.error, showToast]);
+
+  // Default to first farm once data arrives, but don't override user selection
   useEffect(() => {
     if (farmsQuery.data && farmsQuery.data.length > 0 && !selectedFarmId) {
       setSelectedFarmId(farmsQuery.data[0].farmId);
@@ -113,14 +143,11 @@ export function DashboardPage() {
   // ── Current weather — auto-fetches when farm changes ─────────────────────
   const currentWeatherQuery = useQuery({
     queryKey: qk.weather.current(selectedFarmId),
-    queryFn: () =>
-      api.getWeatherCurrentByFarm(
-        selectedFarmId,
-      ) as Promise<WeatherCurrentResponse>,
+    queryFn: (): Promise<WeatherCurrentResponse> =>
+      api.getWeatherCurrentByFarm(selectedFarmId),
     enabled: !!selectedFarmId,
     // 5-minute stale time — weather doesn't change second-by-second
     staleTime: 5 * 60_000,
-    retry: 1,
   });
 
   // Clear forecast whenever farm changes
@@ -131,13 +158,10 @@ export function DashboardPage() {
   // ── Forecast — only when user explicitly enables ──────────────────────────
   const forecastQuery = useQuery({
     queryKey: qk.weather.forecast(selectedFarmId, forecastDays),
-    queryFn: () =>
-      api.getWeatherForecastByFarm(selectedFarmId, forecastDays) as Promise<{
-        forecast: WeatherForecastDayResponse[];
-      }>,
+    queryFn: (): Promise<{ forecast: WeatherForecastDayResponse[] }> =>
+      api.getWeatherForecastByFarm(selectedFarmId, forecastDays),
     enabled: forecastEnabled && !!selectedFarmId,
     staleTime: 5 * 60_000,
-    retry: 1,
   });
 
   // When forecastDays changes while forecast is shown, reset so user re-triggers
@@ -149,7 +173,7 @@ export function DashboardPage() {
   function loadForecast() {
     if (!selectedFarmId) return;
     if (forecastEnabled) {
-      // Already enabled — re-fetch with latest key
+      // Already enabled — invalidate to force a fresh fetch
       queryClient.invalidateQueries({
         queryKey: qk.weather.forecast(selectedFarmId, forecastDays),
       });
@@ -159,8 +183,19 @@ export function DashboardPage() {
   }
 
   // ── Derived values ────────────────────────────────────────────────────────
+  // Raw data straight from cache — no mapping needed on this page
   const reports = reportsQuery.data ?? [];
   const farms = farmsQuery.data ?? [];
+
+  // isLoading: true only on first load (no cached data at all)
+  // Guard against empty-state flash while first fetch is in flight
+  const reportsLoading =
+    reportsQuery.isLoading ||
+    (reportsQuery.isFetching && reportsQuery.data === undefined);
+  const farmsLoading =
+    farmsQuery.isLoading ||
+    (farmsQuery.isFetching && farmsQuery.data === undefined);
+
   const sentToOwnerReports = reports.filter(
     (r) => r.status.toUpperCase() === "SENT_TO_OWNER",
   );
@@ -184,6 +219,8 @@ export function DashboardPage() {
 
   return (
     <div className="flex flex-col gap-6 p-4 sm:p-6 bg-surface-page min-h-screen">
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+
       {/* Page Header */}
       <div>
         <p className="text-xs font-medium text-primary uppercase tracking-widest mb-1">
@@ -194,12 +231,12 @@ export function DashboardPage() {
         </h1>
       </div>
 
-      {/* Summary Card — reports only (billing card removed: no suitable API) */}
+      {/* Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <SummaryCard
           icon={FileText}
           label="Báo cáo chờ xử lý"
-          count={reportsQuery.isLoading ? null : sentToOwnerReports.length}
+          count={reportsLoading ? null : sentToOwnerReports.length}
           hint={
             sentToOwnerReports.length > 0
               ? "Cần xem xét và phản hồi"
@@ -211,7 +248,7 @@ export function DashboardPage() {
         <SummaryCard
           icon={FileText}
           label="Tổng trang trại"
-          count={farmsQuery.isLoading ? null : farms.length}
+          count={farmsLoading ? null : farms.length}
           hint={
             farms.length > 0
               ? `${farms.filter((f) => f.farmStatus === "Active").length} đang hoạt động`
@@ -242,7 +279,7 @@ export function DashboardPage() {
 
           {/* Farm picker */}
           <div className="flex flex-wrap items-center gap-2 shrink-0">
-            {farmsQuery.isLoading ? (
+            {farmsLoading ? (
               <div className="h-9 w-44 rounded-btn bg-surface-subtle animate-pulse" />
             ) : farms.length === 0 ? null : (
               <select
@@ -262,7 +299,7 @@ export function DashboardPage() {
 
         {/* Body */}
         <div className="p-6">
-          {farms.length === 0 && !farmsQuery.isLoading ? (
+          {farms.length === 0 && !farmsLoading ? (
             <EmptyState
               icon={MapPin}
               message="Chưa có trang trại nào. Hãy tạo trang trại trước."
@@ -530,8 +567,18 @@ export function DashboardPage() {
         subtitle="Các báo cáo từ nhân viên đang chờ tư vấn chuyên gia"
         onViewAll={() => navigate("/advisory")}
       >
-        {reportsQuery.isLoading ? (
+        {reportsLoading ? (
           <LoadingState />
+        ) : reportsQuery.isError && reports.length === 0 ? (
+          // Show error state only when there's no cached data to fall back on
+          <EmptyState
+            icon={AlertTriangle}
+            message={
+              reportsQuery.error instanceof Error
+                ? reportsQuery.error.message
+                : "Không thể tải báo cáo"
+            }
+          />
         ) : sentToOwnerReports.length === 0 ? (
           <EmptyState message="Không có báo cáo chờ xử lý" />
         ) : (
