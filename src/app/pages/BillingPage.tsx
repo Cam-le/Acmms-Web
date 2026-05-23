@@ -16,16 +16,20 @@ import {
   Pencil,
   CreditCard,
   FileCheck,
+  ChevronRight,
+  Stethoscope,
 } from "lucide-react";
 import { api } from "../../api/client";
 import type {
-  FarmResponse,
   UserResponse,
   ContractResponse,
   ContractCreateRequest,
   ContractUpdateRequest,
   ContractBillResponse,
   PaymentResponse,
+  DiagnosisResponse,
+  BillItem,
+  PaymentItem,
 } from "../../api/client";
 import { qk } from "../../api/queryKeys";
 import { useToast } from "../components/ui/useToast";
@@ -46,7 +50,8 @@ import { Tabs } from "../components/ui/Tabs";
 import { PageHeader } from "../components/ui/PageHeader";
 import { useCrudModals } from "../hooks/useCrudModals";
 import { usePagination } from "../hooks/usePagination";
-import { formatDate, formatVND } from "../utils/format";
+import { formatDate, formatDateTime, formatVND } from "../utils/format";
+import { severityTone, severityLabel } from "../utils/status";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -73,8 +78,9 @@ function formatMonthISO(iso: string | null | undefined): string {
   }
 }
 
-function monthToISO(year: number, month: number): string {
-  return `${year}-${String(month).padStart(2, "0")}-01T00:00:00.000Z`;
+/** Format for /api/payment/bill?month= and /api/payment/upload Month field: YYYY-MM-DD */
+function monthToBillParam(year: number, month: number): string {
+  return `${year}-${String(month).padStart(2, "0")}-01`;
 }
 
 function contractStatusTone(s: string | null | undefined): BadgeTone {
@@ -289,17 +295,132 @@ function InfoRow({
   );
 }
 
+// ─── DiagnosisDetailPanel ─────────────────────────────────────────────────────
+// Fetches and shows full diagnosis info for a single diagnosis item.
+
+function DiagnosisDetailPanel({
+  diagnosisId,
+  onClose,
+}: {
+  diagnosisId: string;
+  onClose: () => void;
+}) {
+  const diagnosisQuery = useQuery({
+    queryKey: ["diagnosis", diagnosisId],
+    queryFn: () =>
+      api.getDiagnosisById(diagnosisId) as Promise<DiagnosisResponse>,
+    staleTime: 5 * 60_000,
+  });
+
+  const d = diagnosisQuery.data;
+
+  return (
+    <div className="flex flex-col h-full border-l border-border">
+      {/* Header row — matches "Chọn tháng thanh toán" label + MonthSelect height on the left */}
+      <div className="shrink-0 px-4 pt-0 pb-3">
+        {/* Label row — same text style as MonthSelect's label */}
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-1.5">
+            <Stethoscope className="w-3.5 h-3.5 text-primary shrink-0" />
+            <span className="text-sm font-medium text-ink-600">
+              Chi tiết chẩn đoán
+            </span>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1 rounded-btn text-ink-400 hover:text-ink-700 hover:bg-surface-subtle transition-colors shrink-0"
+            aria-label="Đóng"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        {/* Report No — occupies the same vertical space as the MonthSelect inputs */}
+        <div className="flex items-center h-[44px] px-3 rounded-btn border border-border bg-surface-subtle">
+          <span className="text-sm font-mono font-semibold text-ink-800 truncate">
+            {diagnosisQuery.isLoading ? "Đang tải..." : (d?.reportNo ?? "—")}
+          </span>
+        </div>
+      </div>
+
+      {/* Divider — aligns with where the teal card starts on the left */}
+      <div className="border-t border-border mx-4 mb-3" />
+
+      {/* Panel body — scrollable content aligned with bill card start */}
+      <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-3">
+        {diagnosisQuery.isLoading ? (
+          <LoadingState message="Đang tải..." />
+        ) : diagnosisQuery.isError ? (
+          <div className="text-center py-8">
+            <AlertTriangle className="w-7 h-7 text-ink-300 mx-auto mb-2" />
+            <p className="text-sm text-ink-500">Không thể tải thông tin.</p>
+          </div>
+        ) : d ? (
+          <>
+            <div className="space-y-0.5">
+              <p className="text-sm font-semibold text-ink-800 leading-snug">
+                {d.reportTitle ?? "—"}
+              </p>
+            </div>
+
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <StatusBadge
+                label={severityLabel(d.severityLevel)}
+                tone={severityTone(d.severityLevel)}
+              />
+              <span className="text-xs text-ink-400">
+                {d.createdAt ? formatDateTime(d.createdAt) : "—"}
+              </span>
+            </div>
+
+            <div className="space-y-0.5">
+              <p className="text-xs text-ink-400">Chuyên gia</p>
+              <p className="text-sm text-ink-700">{d.diagnoserName ?? "—"}</p>
+            </div>
+
+            <div className="border-t border-border pt-2.5 space-y-1">
+              <p className="text-xs font-semibold text-ink-400 uppercase tracking-wide">
+                Tên bệnh
+              </p>
+              <p className="text-sm font-medium text-ink-800">
+                {d.diseaseName ?? "—"}
+              </p>
+            </div>
+
+            <div className="border-t border-border pt-2.5 space-y-1">
+              <p className="text-xs font-semibold text-ink-400 uppercase tracking-wide">
+                Kết luận
+              </p>
+              <p className="text-sm text-ink-700 leading-relaxed whitespace-pre-wrap">
+                {d.conclusion || "—"}
+              </p>
+            </div>
+
+            <div className="border-t border-border pt-2.5 space-y-1">
+              <p className="text-xs font-semibold text-ink-400 uppercase tracking-wide">
+                Hướng xử lý
+              </p>
+              <p className="text-sm text-ink-700 leading-relaxed whitespace-pre-wrap">
+                {d.recommendedAction || "—"}
+              </p>
+            </div>
+          </>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 // ─── BillPreviewPanel ─────────────────────────────────────────────────────────
 
 function BillPreviewPanel({
-  contractId,
-  contractCode,
+  specialistId,
+  expertName,
   startDate,
   endDate,
   onClose,
 }: {
-  contractId: string;
-  contractCode: string;
+  specialistId: string;
+  expertName: string;
   /** ISO date string for contract start — used to constrain month picker */
   startDate: string | null | undefined;
   /** ISO date string for contract end — used to constrain month picker */
@@ -339,6 +460,9 @@ function BillPreviewPanel({
   const [selectedMonth, setSelectedMonth] = useState(initial.month);
   const [file, setFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [selectedDiagnosis, setSelectedDiagnosis] = useState<BillItem | null>(
+    null,
+  );
 
   const monthKey = `${selectedYear}-${String(selectedMonth).padStart(2, "0")}`;
 
@@ -350,11 +474,11 @@ function BillPreviewPanel({
   );
 
   const billQuery = useQuery({
-    queryKey: qk.contracts.bill(contractId, monthKey),
+    queryKey: qk.contracts.bill(specialistId, monthKey),
     queryFn: () =>
-      api.getContractBill(
-        contractId,
-        monthToISO(selectedYear, selectedMonth),
+      api.getPaymentBill(
+        specialistId,
+        monthToBillParam(selectedYear, selectedMonth),
       ) as Promise<ContractBillResponse>,
     retry: 1,
     // Don't fetch if the month is clearly out of range — avoids spurious errors.
@@ -374,14 +498,14 @@ function BillPreviewPanel({
   const uploadMutation = useMutation({
     mutationFn: (f: File) =>
       api.uploadPayment({
-        contractId,
-        month: monthToISO(selectedYear, selectedMonth),
+        specialistId,
+        month: monthToBillParam(selectedYear, selectedMonth),
         file: f,
       }),
     onSuccess: () => {
       showToast("Tải lên hóa đơn thành công", "success");
       queryClient.invalidateQueries({
-        queryKey: qk.contracts.bill(contractId, monthKey),
+        queryKey: qk.contracts.bill(specialistId, monthKey),
       });
       queryClient.invalidateQueries({ queryKey: qk.payments.all });
       setFile(null);
@@ -412,9 +536,9 @@ function BillPreviewPanel({
     <Modal
       open
       onOpenChange={(o) => !o && onClose()}
-      title="Thanh toán hợp đồng"
-      description={contractCode}
-      size="md"
+      title="Thanh toán"
+      description={expertName}
+      size={selectedDiagnosis ? "3xl" : "md"}
       footer={
         bill?.isPaid ? (
           <Button variant="secondary" onClick={onClose}>
@@ -442,120 +566,183 @@ function BillPreviewPanel({
         )
       }
     >
-      <div className="space-y-4">
-        <MonthSelect
-          year={selectedYear}
-          month={selectedMonth}
-          onChange={(y, m) => {
-            setSelectedYear(y);
-            setSelectedMonth(m);
-            setFile(null); // reset file when month changes
-          }}
-          label="Chọn tháng thanh toán"
-          startDate={startDate}
-          endDate={endDate}
-        />
+      <div className={`flex gap-0 ${selectedDiagnosis ? "min-h-[420px]" : ""}`}>
+        {/* Left pane — always visible */}
+        <div
+          className={`space-y-4 ${selectedDiagnosis ? "w-[52%] overflow-y-auto pr-4" : "w-full"}`}
+        >
+          <MonthSelect
+            year={selectedYear}
+            month={selectedMonth}
+            onChange={(y, m) => {
+              setSelectedYear(y);
+              setSelectedMonth(m);
+              setFile(null); // reset file when month changes
+            }}
+            label="Chọn tháng thanh toán"
+            startDate={startDate}
+            endDate={endDate}
+          />
 
-        {/* Only show bill panel when month is in bounds */}
-        {outOfBounds ? null : billQuery.isLoading ? (
-          <LoadingState message="Đang tải hóa đơn..." />
-        ) : bill ? (
-          <div className="bg-primary-50 rounded-xl border border-primary/20 p-4 space-y-2.5">
-            <div className="flex items-center justify-between mb-1">
-              <h4 className="text-sm font-semibold text-ink-800">
-                Thông tin hóa đơn
-              </h4>
-              {bill.isPaid && (
-                <StatusBadge
-                  label="Đã thanh toán"
-                  tone="success"
-                  icon={CheckCircle}
-                  size="sm"
-                />
-              )}
-            </div>
-            <InfoRow label="Trang trại" value={bill.farmName} />
-            <InfoRow label="Chuyên gia" value={bill.expertName} />
-            <InfoRow label="Kỳ thanh toán" value={formatMonthISO(bill.month)} />
-            <InfoRow
-              label="Số chẩn đoán"
-              value={`${bill.totalDiagnoses} lượt`}
-            />
-            <InfoRow
-              label="Đơn giá / lượt"
-              value={formatVND(bill.pricePerDiagnosis)}
-            />
-            <div className="border-t border-primary/20 pt-2 flex justify-between items-center">
-              <span className="text-sm font-semibold text-ink-800">
-                Tổng cộng
-              </span>
-              <span className="text-base font-bold text-primary">
-                {formatVND(bill.totalAmount)}
-              </span>
-            </div>
-            <div className="pt-2 border-t border-primary/20 space-y-1.5">
-              <p className="text-xs font-semibold text-ink-500 uppercase tracking-wide">
-                Thông tin chuyển khoản
-              </p>
-              <InfoRow label="Ngân hàng" value={bill.bankName} />
-              <InfoRow label="Số tài khoản" value={bill.bankAccount} mono />
-              <InfoRow label="Chủ tài khoản" value={bill.accountHolder} />
-            </div>
-          </div>
-        ) : null}
-
-        {bill && !bill.isPaid && !outOfBounds && (
-          <>
-            <div
-              onClick={() => fileInputRef.current?.click()}
-              className={`border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-colors ${
-                file
-                  ? "border-primary bg-primary-50"
-                  : "border-border hover:border-primary/50"
-              }`}
-            >
-              {file ? (
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <FileCheck className="w-4 h-4 text-primary shrink-0" />
-                    <span className="text-xs text-ink-800 font-medium truncate">
-                      {file.name}
-                    </span>
-                  </div>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setFile(null);
-                    }}
-                    className="text-ink-400 hover:text-status-danger-fg shrink-0"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              ) : (
-                <div className="space-y-1">
-                  <Upload className="w-6 h-6 text-ink-400 mx-auto" />
-                  <p className="text-xs text-ink-500">
-                    Nhấn để chọn ảnh hóa đơn (≤ 5MB)
+          {/* Only show bill panel when month is in bounds */}
+          {outOfBounds ? null : billQuery.isLoading ? (
+            <LoadingState message="Đang tải hóa đơn..." />
+          ) : bill ? (
+            <div className="bg-primary-50 rounded-xl border border-primary/20 p-4 space-y-2.5">
+              <div className="flex items-center justify-between mb-1">
+                <h4 className="text-sm font-semibold text-ink-800">
+                  Thông tin hóa đơn
+                </h4>
+                {bill.isPaid && (
+                  <StatusBadge
+                    label="Đã thanh toán"
+                    tone="success"
+                    icon={CheckCircle}
+                    size="sm"
+                  />
+                )}
+              </div>
+              <InfoRow label="Chuyên gia" value={bill.specialistName} />
+              <InfoRow
+                label="Kỳ thanh toán"
+                value={formatMonthISO(bill.month)}
+              />
+              <InfoRow
+                label="Số chẩn đoán"
+                value={`${bill.totalDiagnoses} lượt`}
+              />
+              <div className="border-t border-primary/20 pt-2 flex justify-between items-center">
+                <span className="text-sm font-semibold text-ink-800">
+                  Tổng cộng
+                </span>
+                <span className="text-base font-bold text-primary">
+                  {formatVND(bill.totalAmount)}
+                </span>
+              </div>
+              <div className="pt-2 border-t border-primary/20 space-y-1.5">
+                <p className="text-xs font-semibold text-ink-500 uppercase tracking-wide">
+                  Thông tin chuyển khoản
+                </p>
+                <InfoRow label="Ngân hàng" value={bill.bankName} />
+                <InfoRow label="Số tài khoản" value={bill.bankAccount} mono />
+                <InfoRow label="Chủ tài khoản" value={bill.accountHolder} />
+              </div>
+              {bill.items.length > 0 && (
+                <div className="pt-2 border-t border-primary/20">
+                  <p className="text-xs font-semibold text-ink-500 uppercase tracking-wide mb-2">
+                    Chẩn đoán ({bill.items.length} lượt)
                   </p>
+                  <div className="space-y-1 max-h-44 overflow-y-auto pr-1">
+                    {bill.items.map((item, idx) => {
+                      const isActive =
+                        selectedDiagnosis?.diagnosisResultId ===
+                        item.diagnosisResultId;
+                      return (
+                        <button
+                          key={item.diagnosisResultId}
+                          type="button"
+                          onClick={() =>
+                            isActive
+                              ? setSelectedDiagnosis(null)
+                              : setSelectedDiagnosis(item)
+                          }
+                          className={`w-full flex items-center justify-between gap-2 text-xs rounded-lg px-2 py-1.5 transition-colors group text-left ${
+                            isActive
+                              ? "bg-primary/10 text-primary"
+                              : "hover:bg-primary/10 text-ink-700"
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="text-ink-400 shrink-0 w-4 text-center">
+                              {idx + 1}.
+                            </span>
+                            <span className="font-mono truncate">
+                              {item.reportNo ??
+                                item.reportId?.slice(-8).toUpperCase() ??
+                                "—"}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <span className="font-mono">
+                              {formatVND(item.unitPrice ?? 0)}
+                            </span>
+                            <ChevronRight
+                              className={`w-3 h-3 transition-colors ${isActive ? "text-primary" : "text-ink-300 group-hover:text-primary"}`}
+                            />
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
             </div>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={handleFileChange}
+          ) : null}
+
+          {bill && !bill.isPaid && !outOfBounds && (
+            <>
+              <div
+                onClick={() => fileInputRef.current?.click()}
+                className={`border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-colors ${
+                  file
+                    ? "border-primary bg-primary-50"
+                    : "border-border hover:border-primary/50"
+                }`}
+              >
+                {file ? (
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <FileCheck className="w-4 h-4 text-primary shrink-0" />
+                      <span className="text-xs text-ink-800 font-medium truncate">
+                        {file.name}
+                      </span>
+                    </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setFile(null);
+                      }}
+                      className="text-ink-400 hover:text-status-danger-fg shrink-0"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    <Upload className="w-6 h-6 text-ink-400 mx-auto" />
+                    <p className="text-xs text-ink-500">
+                      Nhấn để chọn ảnh hóa đơn (≤ 5MB)
+                    </p>
+                  </div>
+                )}
+              </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleFileChange}
+              />
+              <div className="flex items-start gap-2 text-xs text-ink-500 bg-surface-subtle rounded-lg p-3 border border-border">
+                <Info className="w-3.5 h-3.5 mt-0.5 shrink-0 text-primary" />
+                <span>
+                  Chụp ảnh biên lai hoặc screenshot giao dịch ngân hàng rồi tải
+                  lên để xác nhận thanh toán.
+                </span>
+              </div>
+            </>
+          )}
+        </div>
+        {/* end left pane */}
+
+        {/* Right pane — slides in when a diagnosis is selected */}
+        {selectedDiagnosis && (
+          <div className="w-[48%] -my-5 -mr-6 flex flex-col">
+            <DiagnosisDetailPanel
+              diagnosisId={selectedDiagnosis.diagnosisResultId}
+              onClose={() => setSelectedDiagnosis(null)}
             />
-            <div className="flex items-start gap-2 text-xs text-ink-500 bg-surface-subtle rounded-lg p-3 border border-border">
-              <Info className="w-3.5 h-3.5 mt-0.5 shrink-0 text-primary" />
-              <span>
-                Chụp ảnh biên lai hoặc screenshot giao dịch ngân hàng rồi tải
-                lên để xác nhận thanh toán.
-              </span>
-            </div>
-          </>
+          </div>
         )}
       </div>
     </Modal>
@@ -568,27 +755,15 @@ function CreateContractModal({ onClose }: { onClose: () => void }) {
   const { showToast } = useToast();
   const queryClient = useQueryClient();
 
-  const farmsQuery = useQuery({
-    queryKey: qk.farms.list(),
-    queryFn: api.getFarms,
-  });
   const staffsQuery = useQuery({
     queryKey: qk.staffs.list(),
     queryFn: api.getStaffs,
   });
 
   useEffect(() => {
-    if (farmsQuery.error)
-      showToast("Không thể tải danh sách trang trại", "error");
-  }, [farmsQuery.error, showToast]);
-  useEffect(() => {
     if (staffsQuery.error)
       showToast("Không thể tải danh sách chuyên gia", "error");
   }, [staffsQuery.error, showToast]);
-
-  const farmOptions = (farmsQuery.data ?? [])
-    .filter((f: FarmResponse) => f.farmStatus === "Active")
-    .map((f: FarmResponse) => ({ value: f.farmId, label: f.farmName }));
 
   const expertOptions = (staffsQuery.data ?? [])
     .filter((s: UserResponse) => s.roleName === "Specialist")
@@ -596,7 +771,6 @@ function CreateContractModal({ onClose }: { onClose: () => void }) {
 
   const defaultStartDate = new Date().toISOString().slice(0, 10);
   const [form, setForm] = useState({
-    farmId: "",
     expertId: "",
     bankAccount: "",
     bankName: "",
@@ -625,7 +799,6 @@ function CreateContractModal({ onClose }: { onClose: () => void }) {
 
   function validate(): boolean {
     const e: Partial<typeof form> = {};
-    if (!form.farmId) e.farmId = "Vui lòng chọn trang trại";
     if (!form.expertId) e.expertId = "Vui lòng chọn chuyên gia";
     if (!form.bankAccount.trim()) e.bankAccount = "Vui lòng nhập số tài khoản";
     if (!form.bankName.trim()) e.bankName = "Vui lòng nhập tên ngân hàng";
@@ -645,7 +818,6 @@ function CreateContractModal({ onClose }: { onClose: () => void }) {
     e.preventDefault();
     if (!validate()) return;
     createMutation.mutate({
-      farmId: form.farmId,
       expertId: form.expertId,
       bankAccount: form.bankAccount.trim(),
       bankName: form.bankName.trim(),
@@ -679,30 +851,19 @@ function CreateContractModal({ onClose }: { onClose: () => void }) {
         </>
       }
     >
-      {farmsQuery.isLoading || staffsQuery.isLoading ? (
+      {staffsQuery.isLoading ? (
         <LoadingState message="Đang tải..." />
       ) : (
         <div className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <FormSelect
-              label="Trang trại"
-              required
-              value={form.farmId}
-              onChange={(v) => setForm((f) => ({ ...f, farmId: v }))}
-              options={farmOptions}
-              placeholder="— Chọn trang trại —"
-              error={errors.farmId}
-            />
-            <FormSelect
-              label="Chuyên gia"
-              required
-              value={form.expertId}
-              onChange={(v) => setForm((f) => ({ ...f, expertId: v }))}
-              options={expertOptions}
-              placeholder="— Chọn chuyên gia —"
-              error={errors.expertId}
-            />
-          </div>
+          <FormSelect
+            label="Chuyên gia"
+            required
+            value={form.expertId}
+            onChange={(v) => setForm((f) => ({ ...f, expertId: v }))}
+            options={expertOptions}
+            placeholder="— Chọn chuyên gia —"
+            error={errors.expertId}
+          />
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <FormField
               label="Số tài khoản"
@@ -794,7 +955,6 @@ function EditContractModal({
     bankAccount: contract.bankAccount,
     bankName: contract.bankName,
     accountHolder: contract.accountHolder,
-    pricePerDiagnosis: String(contract.pricePerDiagnosis),
     endDate: contract.endDate ? contract.endDate.slice(0, 10) : "",
     notes: contract.notes ?? "",
   });
@@ -820,8 +980,6 @@ function EditContractModal({
     if (!form.bankAccount.trim()) e.bankAccount = "Bắt buộc";
     if (!form.bankName.trim()) e.bankName = "Bắt buộc";
     if (!form.accountHolder.trim()) e.accountHolder = "Bắt buộc";
-    const price = parseFloat(form.pricePerDiagnosis);
-    if (isNaN(price) || price <= 0) e.pricePerDiagnosis = "Đơn giá phải > 0";
     setErrors(e);
     return Object.keys(e).length === 0;
   }
@@ -833,7 +991,6 @@ function EditContractModal({
       bankAccount: form.bankAccount.trim(),
       bankName: form.bankName.trim(),
       accountHolder: form.accountHolder.trim(),
-      pricePerDiagnosis: parseFloat(form.pricePerDiagnosis),
       endDate: form.endDate ? `${form.endDate}T00:00:00.000Z` : undefined,
       notes: form.notes.trim() || undefined,
     });
@@ -886,15 +1043,6 @@ function EditContractModal({
             value={form.accountHolder}
             onChange={(v) => setForm((f) => ({ ...f, accountHolder: v }))}
             error={errors.accountHolder}
-          />
-          <FormField
-            label="Đơn giá / chẩn đoán (₫)"
-            required
-            type="number"
-            value={form.pricePerDiagnosis}
-            onChange={(v) => setForm((f) => ({ ...f, pricePerDiagnosis: v }))}
-            inputProps={{ min: "1", step: "1" }}
-            error={errors.pricePerDiagnosis}
           />
         </div>
         <FormField
@@ -962,7 +1110,6 @@ function ViewContractModal({
         </div>
         <div className="bg-surface-alt rounded-xl border border-border p-4 space-y-2.5">
           <InfoRow label="Mã hợp đồng" value={contract.contractCode} mono />
-          <InfoRow label="Trang trại" value={contract.farmName} />
           <InfoRow label="Chuyên gia" value={contract.expertName} />
           <InfoRow
             label="Đơn giá / chẩn đoán"
@@ -1020,14 +1167,14 @@ function ContractRow({
           {contract.contractCode}
         </span>
       </td>
-      <td className="px-4 py-3 text-sm font-medium text-ink-800">
-        {contract.farmName}
-      </td>
       <td className="px-4 py-3">
         <div className="flex items-center gap-2">
           <UserCheck className="w-3.5 h-3.5 text-ink-400 shrink-0" />
           <span className="text-sm text-ink-700">{contract.expertName}</span>
         </div>
+      </td>
+      <td className="px-4 py-3 text-sm text-ink-500 whitespace-nowrap">
+        {contract.bankName}
       </td>
       <td className="px-4 py-3 text-sm font-mono text-ink-700 whitespace-nowrap">
         {formatVND(contract.pricePerDiagnosis)}
@@ -1109,11 +1256,193 @@ function ContractRow({
   );
 }
 
+// ─── PaymentDetailModal ───────────────────────────────────────────────────────
+
+function PaymentDetailModal({
+  payment,
+  onClose,
+}: {
+  payment: PaymentResponse;
+  onClose: () => void;
+}) {
+  const [previewImg, setPreviewImg] = useState<string | null>(null);
+  const [selectedDiagnosis, setSelectedDiagnosis] =
+    useState<PaymentItem | null>(null);
+
+  return (
+    <>
+      <Modal
+        open
+        onOpenChange={(o) => !o && onClose()}
+        title="Chi tiết thanh toán"
+        description={`${payment.specialistName} — ${formatMonthISO(payment.month)}`}
+        size="2xl"
+        footer={
+          <Button variant="secondary" onClick={onClose}>
+            Đóng
+          </Button>
+        }
+      >
+        <div
+          className={`flex gap-0 ${selectedDiagnosis ? "min-h-[480px]" : ""}`}
+        >
+          {/* Left pane */}
+          <div
+            className={`space-y-4 ${selectedDiagnosis ? "w-[55%] overflow-y-auto pr-4" : "w-full"}`}
+          >
+            {/* Summary strip */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {[
+                { label: "Chuyên gia", value: payment.specialistName },
+                {
+                  label: "Kỳ thanh toán",
+                  value: formatMonthISO(payment.month),
+                },
+                {
+                  label: "Số chẩn đoán",
+                  value: `${payment.totalDiagnoses} lượt`,
+                },
+                { label: "Tổng tiền", value: formatVND(payment.amount) },
+              ].map(({ label, value }) => (
+                <div
+                  key={label}
+                  className="bg-surface-subtle rounded-lg px-3 py-2.5 border border-border"
+                >
+                  <p className="text-xs text-ink-400 mb-0.5">{label}</p>
+                  <p className="text-sm font-semibold text-ink-800 truncate">
+                    {value}
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            {/* Bill image */}
+            {payment.billImageUrl && (
+              <div>
+                <p className="text-xs font-semibold text-ink-500 uppercase tracking-wide mb-2">
+                  Ảnh hóa đơn
+                </p>
+                <button
+                  onClick={() => setPreviewImg(payment.billImageUrl)}
+                  className="block w-full"
+                >
+                  <img
+                    src={payment.billImageUrl}
+                    alt="Hóa đơn"
+                    className="w-full max-h-40 object-cover rounded-lg border border-border hover:opacity-90 transition-opacity"
+                  />
+                </button>
+                <p className="text-xs text-ink-400 mt-1 text-center">
+                  Nhấn để xem toàn màn hình
+                </p>
+              </div>
+            )}
+
+            {/* Diagnosis items */}
+            <div>
+              <p className="text-xs font-semibold text-ink-500 uppercase tracking-wide mb-2">
+                Chẩn đoán ({payment.items.length} lượt)
+              </p>
+              {payment.items.length === 0 ? (
+                <EmptyState message="Không có dữ liệu chi tiết." size="sm" />
+              ) : (
+                <div className="rounded-lg border border-border overflow-hidden">
+                  {payment.items.map((item, idx) => {
+                    const isActive =
+                      selectedDiagnosis?.diagnosisResultId ===
+                      item.diagnosisResultId;
+                    return (
+                      <button
+                        key={item.id ?? item.diagnosisResultId}
+                        type="button"
+                        onClick={() =>
+                          isActive
+                            ? setSelectedDiagnosis(null)
+                            : setSelectedDiagnosis(item)
+                        }
+                        className={`w-full flex items-center justify-between gap-3 px-3 py-2.5 text-sm transition-colors group text-left border-b border-border last:border-b-0 ${
+                          isActive ? "bg-primary/10" : "hover:bg-surface-alt"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="text-ink-400 text-xs shrink-0 w-5 text-right">
+                            {idx + 1}.
+                          </span>
+                          <span
+                            className={`text-xs font-mono ${isActive ? "text-primary font-semibold" : "text-ink-600"}`}
+                          >
+                            {item.reportNo ??
+                              item.reportId?.slice(-8).toUpperCase() ??
+                              "—"}
+                          </span>
+                          {item.farmName && (
+                            <span className="text-xs text-ink-400 truncate hidden sm:block">
+                              {item.farmName}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <span className="text-xs font-mono text-ink-700">
+                            {formatVND(item.unitPrice ?? 0)}
+                          </span>
+                          <ChevronRight
+                            className={`w-3.5 h-3.5 transition-colors ${isActive ? "text-primary" : "text-ink-300 group-hover:text-primary"}`}
+                          />
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+          {/* end left pane */}
+
+          {/* Right pane */}
+          {selectedDiagnosis && (
+            <div className="w-[45%] -my-5 -mr-6 flex flex-col">
+              <DiagnosisDetailPanel
+                diagnosisId={selectedDiagnosis.diagnosisResultId}
+                onClose={() => setSelectedDiagnosis(null)}
+              />
+            </div>
+          )}
+        </div>
+      </Modal>
+      {previewImg && (
+        <div
+          className="fixed inset-0 z-[70] bg-black/80 flex items-center justify-center p-4"
+          onClick={() => setPreviewImg(null)}
+        >
+          <div
+            className="relative max-w-2xl w-full"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <img
+              src={previewImg}
+              alt="Hóa đơn"
+              className="w-full rounded-xl shadow-2xl object-contain max-h-[85vh]"
+            />
+            <button
+              onClick={() => setPreviewImg(null)}
+              className="absolute top-2 right-2 w-8 h-8 flex items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80 transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 // ─── PaymentHistoryTab ────────────────────────────────────────────────────────
 
 function PaymentHistoryTab() {
   const { showToast } = useToast();
-  const [previewImg, setPreviewImg] = useState<string | null>(null);
+  const [detailPayment, setDetailPayment] = useState<PaymentResponse | null>(
+    null,
+  );
 
   const paymentsQuery = useQuery({
     queryKey: qk.payments.list(),
@@ -1140,17 +1469,16 @@ function PaymentHistoryTab() {
   return (
     <>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[700px] text-sm">
+        <table className="w-full min-w-[560px] text-sm">
           <thead className="bg-surface-alt border-b border-border">
             <tr>
               {[
-                "Hợp đồng",
-                "Trang trại",
                 "Chuyên gia",
                 "Tháng",
                 "Chẩn đoán",
                 "Số tiền",
-                "Hóa đơn",
+                "Ngày tạo",
+                "Chi tiết",
               ].map((h) => (
                 <th
                   key={h}
@@ -1164,14 +1492,8 @@ function PaymentHistoryTab() {
           <tbody className="divide-y divide-border">
             {payments.map((p) => (
               <tr key={p.id} className="hover:bg-surface-alt transition-colors">
-                <td className="px-4 py-3">
-                  <span className="text-xs font-mono text-ink-500">
-                    {p.contractCode}
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-sm text-ink-700">{p.farmName}</td>
-                <td className="px-4 py-3 text-sm text-ink-700">
-                  {p.expertName}
+                <td className="px-4 py-3 text-sm font-medium text-ink-800">
+                  {p.specialistName}
                 </td>
                 <td className="px-4 py-3 text-sm text-ink-700 whitespace-nowrap">
                   {formatMonthISO(p.month)}
@@ -1182,10 +1504,13 @@ function PaymentHistoryTab() {
                 <td className="px-4 py-3 text-sm font-mono font-bold text-ink-800 text-right whitespace-nowrap">
                   {formatVND(p.amount)}
                 </td>
+                <td className="px-4 py-3 text-sm text-ink-500 whitespace-nowrap">
+                  {formatDate(p.createdAt)}
+                </td>
                 <td className="px-4 py-3">
                   <button
-                    onClick={() => setPreviewImg(p.billImageUrl)}
-                    className="flex items-center gap-1 text-xs text-primary hover:underline"
+                    onClick={() => setDetailPayment(p)}
+                    className="flex items-center gap-1 text-xs text-primary hover:underline whitespace-nowrap"
                   >
                     <Eye className="w-3.5 h-3.5" />
                     Xem
@@ -1197,28 +1522,11 @@ function PaymentHistoryTab() {
         </table>
       </div>
 
-      {previewImg && (
-        <div
-          className="fixed inset-0 z-[60] bg-black/70 flex items-center justify-center p-4"
-          onClick={() => setPreviewImg(null)}
-        >
-          <div
-            className="relative max-w-lg w-full"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <img
-              src={previewImg}
-              alt="Hóa đơn"
-              className="w-full rounded-xl shadow-2xl object-contain max-h-[80vh]"
-            />
-            <button
-              onClick={() => setPreviewImg(null)}
-              className="absolute top-2 right-2 w-8 h-8 flex items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80 transition-colors"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
+      {detailPayment && (
+        <PaymentDetailModal
+          payment={detailPayment}
+          onClose={() => setDetailPayment(null)}
+        />
       )}
     </>
   );
@@ -1277,20 +1585,22 @@ export function BillingPage() {
 
   // ── Derived ───────────────────────────────────────────────────────────────
 
-  const contracts = contractsQuery.data ?? [];
+  const contracts: ContractResponse[] = contractsQuery.data ?? [];
 
-  const filtered = contracts
-    .filter((c) => {
-      if (activeTab === "history") return true; // handled by PaymentHistoryTab
-      const q = search.toLowerCase();
-      const matchSearch =
-        c.farmName.toLowerCase().includes(q) ||
-        c.expertName.toLowerCase().includes(q) ||
-        c.contractCode.toLowerCase().includes(q);
-      const matchTab = c.status === activeTab;
-      return matchSearch && matchTab;
-    })
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const filtered = contractsQuery.isLoading
+    ? []
+    : contracts
+        .filter((c) => {
+          if (activeTab === "history") return true; // handled by PaymentHistoryTab
+          const q = search.toLowerCase();
+          const matchSearch =
+            (c.expertName ?? "").toLowerCase().includes(q) ||
+            (c.contractCode ?? "").toLowerCase().includes(q) ||
+            (c.bankName ?? "").toLowerCase().includes(q);
+          const matchTab = c.status === activeTab;
+          return matchSearch && matchTab;
+        })
+        .sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
 
   const { page, totalPages, pagedItems, setPage, reset } = usePagination(
     filtered,
@@ -1329,7 +1639,7 @@ export function BillingPage() {
             <SearchInput
               value={search}
               onChange={setSearch}
-              placeholder="Tìm trang trại, chuyên gia, mã HĐ..."
+              placeholder="Tìm chuyên gia, mã HĐ, ngân hàng..."
               className="flex-1 min-w-[200px]"
             />
             <Button
@@ -1365,13 +1675,13 @@ export function BillingPage() {
             ) : (
               <>
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[920px] text-sm">
+                  <table className="w-full min-w-[780px] text-sm">
                     <thead className="bg-surface-alt border-b border-border">
                       <tr>
                         {[
                           "Mã HĐ",
-                          "Trang trại",
                           "Chuyên gia",
+                          "Ngân hàng",
                           "Đơn giá",
                           "Bắt đầu",
                           "Kết thúc",
@@ -1477,8 +1787,8 @@ export function BillingPage() {
       )}
       {payContract && (
         <BillPreviewPanel
-          contractId={payContract.id}
-          contractCode={payContract.contractCode}
+          specialistId={payContract.expertId}
+          expertName={payContract.expertName}
           startDate={payContract.startDate}
           endDate={payContract.endDate}
           onClose={() => setPayContract(null)}
