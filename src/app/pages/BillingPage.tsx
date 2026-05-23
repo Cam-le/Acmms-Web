@@ -315,38 +315,35 @@ function DiagnosisDetailPanel({
   const d = diagnosisQuery.data;
 
   return (
-    <div className="flex flex-col h-full border-l border-border">
-      {/* Header row — matches "Chọn tháng thanh toán" label + MonthSelect height on the left */}
-      <div className="shrink-0 px-4 pt-0 pb-3">
-        {/* Label row — same text style as MonthSelect's label */}
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-1.5">
-            <Stethoscope className="w-3.5 h-3.5 text-primary shrink-0" />
-            <span className="text-sm font-medium text-ink-600">
-              Chi tiết chẩn đoán
-            </span>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-1 rounded-btn text-ink-400 hover:text-ink-700 hover:bg-surface-subtle transition-colors shrink-0"
-            aria-label="Đóng"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-        {/* Report No — occupies the same vertical space as the MonthSelect inputs */}
-        <div className="flex items-center h-[44px] px-3 rounded-btn border border-border bg-surface-subtle">
-          <span className="text-sm font-mono font-semibold text-ink-800 truncate">
-            {diagnosisQuery.isLoading ? "Đang tải..." : (d?.reportNo ?? "—")}
+    <div className="flex flex-col h-full">
+      {/* Header */}
+      <div className="shrink-0 flex items-center justify-between gap-2 pb-3 border-b border-border mb-3">
+        <div className="flex items-center gap-1.5">
+          <Stethoscope className="w-4 h-4 text-primary shrink-0" />
+          <span className="text-sm font-semibold text-ink-700">
+            Chi tiết chẩn đoán
           </span>
         </div>
+        <button
+          onClick={onClose}
+          className="p-1 rounded-btn text-ink-400 hover:text-ink-700 hover:bg-surface-subtle transition-colors shrink-0"
+          aria-label="Đóng"
+        >
+          <X className="w-4 h-4" />
+        </button>
       </div>
 
-      {/* Divider — aligns with where the teal card starts on the left */}
-      <div className="border-t border-border mx-4 mb-3" />
+      {/* Report badge */}
+      {!diagnosisQuery.isLoading && d?.reportNo && (
+        <div className="shrink-0 mb-3 px-3 py-2 rounded-btn border border-border bg-surface-subtle">
+          <span className="text-sm font-mono font-semibold text-ink-800">
+            {d.reportNo}
+          </span>
+        </div>
+      )}
 
-      {/* Panel body — scrollable content aligned with bill card start */}
-      <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-3">
+      {/* Panel body — scrollable */}
+      <div className="flex-1 overflow-y-auto space-y-3">
         {diagnosisQuery.isLoading ? (
           <LoadingState message="Đang tải..." />
         ) : diagnosisQuery.isError ? (
@@ -566,10 +563,10 @@ function BillPreviewPanel({
         )
       }
     >
-      <div className={`flex gap-0 ${selectedDiagnosis ? "min-h-[420px]" : ""}`}>
+      <div className={`flex gap-5 ${selectedDiagnosis ? "min-h-[440px]" : ""}`}>
         {/* Left pane — always visible */}
         <div
-          className={`space-y-4 ${selectedDiagnosis ? "w-[52%] overflow-y-auto pr-4" : "w-full"}`}
+          className={`space-y-4 ${selectedDiagnosis ? "w-[52%] overflow-y-auto" : "w-full"}`}
         >
           <MonthSelect
             year={selectedYear}
@@ -737,12 +734,16 @@ function BillPreviewPanel({
 
         {/* Right pane — slides in when a diagnosis is selected */}
         {selectedDiagnosis && (
-          <div className="w-[48%] -my-5 -mr-6 flex flex-col">
-            <DiagnosisDetailPanel
-              diagnosisId={selectedDiagnosis.diagnosisResultId}
-              onClose={() => setSelectedDiagnosis(null)}
-            />
-          </div>
+          <>
+            {/* Vertical divider */}
+            <div className="w-px bg-border shrink-0" />
+            <div className="w-[48%] flex flex-col min-h-0">
+              <DiagnosisDetailPanel
+                diagnosisId={selectedDiagnosis.diagnosisResultId}
+                onClose={() => setSelectedDiagnosis(null)}
+              />
+            </div>
+          </>
         )}
       </div>
     </Modal>
