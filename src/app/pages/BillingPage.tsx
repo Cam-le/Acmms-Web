@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Plus,
@@ -517,6 +518,28 @@ function BillPreviewPanel({
 
   const bill = billQuery.data;
 
+  // When the bill is marked paid, the /payment/bill endpoint returns
+  // totalAmount: 0. Fetch the real paid amount from /payment/my and match
+  // by specialistId + month. The list is likely already in cache from
+  // PaymentHistoryTab, so this adds no extra network round-trip in most cases.
+  const paymentsQuery = useQuery({
+    queryKey: qk.payments.list(),
+    queryFn: api.getPayments as () => Promise<PaymentResponse[]>,
+    enabled: bill?.isPaid === true,
+    staleTime: 60_000,
+  });
+
+  const matchedPayment: PaymentResponse | null = React.useMemo(() => {
+    if (!bill?.isPaid || !paymentsQuery.data) return null;
+    const billMonth = bill.month ? bill.month.slice(0, 7) : null; // "YYYY-MM"
+    return (
+      paymentsQuery.data.find((p) => {
+        const pMonth = p.month ? p.month.slice(0, 7) : null;
+        return p.specialistId === specialistId && pMonth === billMonth;
+      }) ?? null
+    );
+  }, [bill, paymentsQuery.data, specialistId]);
+
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0] ?? null;
     if (f && f.size > 5 * 1024 * 1024) {
@@ -600,15 +623,21 @@ function BillPreviewPanel({
                   </p>
                 </div>
                 <span className="ml-auto text-base font-bold text-status-success-fg shrink-0">
-                  {formatVND(bill.totalAmount)}
+                  {formatVND(matchedPayment?.amount ?? bill.totalAmount)}
                 </span>
               </div>
               {/* Detail rows */}
               <div className="px-4 py-3 space-y-2">
                 <InfoRow
                   label="Số chẩn đoán"
-                  value={`${bill.totalDiagnoses} lượt`}
+                  value={`${matchedPayment?.totalDiagnoses ?? bill.totalDiagnoses} lượt`}
                 />
+                {matchedPayment?.paidAt && (
+                  <InfoRow
+                    label="Ngày thanh toán"
+                    value={formatDateTime(matchedPayment.paidAt)}
+                  />
+                )}
                 <InfoRow label="Ngân hàng" value={bill.bankName} />
                 <InfoRow label="Số tài khoản" value={bill.bankAccount} mono />
                 <InfoRow label="Chủ tài khoản" value={bill.accountHolder} />
@@ -1342,6 +1371,26 @@ function PaymentDetailModal({
   const [selectedDiagnosis, setSelectedDiagnosis] =
     useState<PaymentItem | null>(null);
 
+  // Radix Dialog detects "clicked outside" via a capture-phase pointerdown
+  // listener on document and closes the modal when default is not prevented.
+  // While the lightbox is open we intercept in the capture phase first and
+  // call preventDefault(), telling Radix not to dismiss. The lightbox's own
+  // onClick still fires so backdrop-click-to-close and the X button both work.
+  useEffect(() => {
+    if (!previewImg) return;
+    function suppressRadixDismiss(e: PointerEvent) {
+      e.preventDefault();
+    }
+    document.addEventListener("pointerdown", suppressRadixDismiss, {
+      capture: true,
+    });
+    return () => {
+      document.removeEventListener("pointerdown", suppressRadixDismiss, {
+        capture: true,
+      });
+    };
+  }, [previewImg]);
+
   return (
     <>
       <Modal
@@ -1363,30 +1412,23 @@ function PaymentDetailModal({
           <div
             className={`space-y-4 ${selectedDiagnosis ? "w-[55%] overflow-y-auto pr-4" : "w-full"}`}
           >
-            {/* Summary strip */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {[
-                { label: "Chuyên gia", value: payment.specialistName },
-                {
-                  label: "Kỳ thanh toán",
-                  value: formatMonthISO(payment.month),
-                },
-                {
-                  label: "Số chẩn đoán",
-                  value: `${payment.totalDiagnoses} lượt`,
-                },
-                { label: "Tổng tiền", value: formatVND(payment.amount) },
-              ].map(({ label, value }) => (
-                <div
-                  key={label}
-                  className="bg-surface-subtle rounded-lg px-3 py-2.5 border border-border"
-                >
-                  <p className="text-xs text-ink-400 mb-0.5">{label}</p>
-                  <p className="text-sm font-semibold text-ink-800 truncate">
-                    {value}
-                  </p>
-                </div>
-              ))}
+            {/* Summary */}
+            <div className="bg-surface-alt rounded-xl border border-border p-4 space-y-2.5">
+              <InfoRow label="Chuyên gia" value={payment.specialistName} />
+              <InfoRow
+                label="Kỳ thanh toán"
+                value={formatMonthISO(payment.month)}
+              />
+              <InfoRow
+                label="Số chẩn đoán"
+                value={`${payment.totalDiagnoses} lượt`}
+              />
+              <div className="border-t border-border pt-2 flex justify-between items-center">
+                <span className="text-sm text-ink-500 shrink-0">Tổng tiền</span>
+                <span className="text-base font-bold text-primary">
+                  {formatVND(payment.amount)}
+                </span>
+              </div>
             </div>
 
             {/* Bill image */}
@@ -1448,11 +1490,6 @@ function PaymentDetailModal({
                               item.reportId?.slice(-8).toUpperCase() ??
                               "—"}
                           </span>
-                          {item.farmName && (
-                            <span className="text-xs text-ink-400 truncate hidden sm:block">
-                              {item.farmName}
-                            </span>
-                          )}
                         </div>
                         <div className="flex items-center gap-1.5 shrink-0">
                           <span className="text-xs font-mono text-ink-700">
@@ -1482,29 +1519,33 @@ function PaymentDetailModal({
           )}
         </div>
       </Modal>
-      {previewImg && (
-        <div
-          className="fixed inset-0 z-[70] bg-black/80 flex items-center justify-center p-4"
-          onClick={() => setPreviewImg(null)}
-        >
+      {previewImg &&
+        createPortal(
           <div
-            className="relative max-w-2xl w-full"
-            onClick={(e) => e.stopPropagation()}
+            className="fixed inset-0 z-[200] bg-black/80 flex items-center justify-center p-4"
+            onClick={() => setPreviewImg(null)}
           >
-            <img
-              src={previewImg}
-              alt="Hóa đơn"
-              className="w-full rounded-xl shadow-2xl object-contain max-h-[85vh]"
-            />
-            <button
-              onClick={() => setPreviewImg(null)}
-              className="absolute top-2 right-2 w-8 h-8 flex items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80 transition-colors"
+            <div
+              className="relative max-w-2xl w-full"
+              onClick={(e) => e.stopPropagation()}
             >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      )}
+              <img
+                src={previewImg}
+                alt="Hóa đơn"
+                className="w-full rounded-xl shadow-2xl object-contain max-h-[85vh]"
+              />
+              <button
+                type="button"
+                onClick={() => setPreviewImg(null)}
+                className="absolute top-2 right-2 w-8 h-8 flex items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80 transition-colors"
+                aria-label="Đóng ảnh"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>,
+          document.body,
+        )}
     </>
   );
 }
