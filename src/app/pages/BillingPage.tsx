@@ -506,6 +506,7 @@ function BillPreviewPanel({
       });
       queryClient.invalidateQueries({ queryKey: qk.payments.all });
       setFile(null);
+      setSelectedDiagnosis(null); // close detail panel after payment confirmed
     },
     onError: (err) =>
       showToast(
@@ -584,20 +585,91 @@ function BillPreviewPanel({
           {/* Only show bill panel when month is in bounds */}
           {outOfBounds ? null : billQuery.isLoading ? (
             <LoadingState message="Đang tải hóa đơn..." />
+          ) : bill?.isPaid ? (
+            /* ── Paid state — dedicated success panel ── */
+            <div className="rounded-xl border border-status-success-fg/20 bg-status-success-bg overflow-hidden">
+              {/* Success banner */}
+              <div className="flex items-center gap-2.5 px-4 py-3 bg-status-success-fg/10 border-b border-status-success-fg/15">
+                <CheckCircle className="w-5 h-5 text-status-success-fg shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-status-success-fg">
+                    Đã thanh toán
+                  </p>
+                  <p className="text-xs text-status-success-fg/70">
+                    {formatMonthISO(bill.month)} · {bill.specialistName}
+                  </p>
+                </div>
+                <span className="ml-auto text-base font-bold text-status-success-fg shrink-0">
+                  {formatVND(bill.totalAmount)}
+                </span>
+              </div>
+              {/* Detail rows */}
+              <div className="px-4 py-3 space-y-2">
+                <InfoRow
+                  label="Số chẩn đoán"
+                  value={`${bill.totalDiagnoses} lượt`}
+                />
+                <InfoRow label="Ngân hàng" value={bill.bankName} />
+                <InfoRow label="Số tài khoản" value={bill.bankAccount} mono />
+                <InfoRow label="Chủ tài khoản" value={bill.accountHolder} />
+              </div>
+              {bill.items.length > 0 && (
+                <div className="px-4 pb-3 pt-0 border-t border-status-success-fg/15 mt-0">
+                  <p className="text-xs font-semibold text-ink-500 uppercase tracking-wide mb-2 pt-3">
+                    Chẩn đoán ({bill.items.length} lượt)
+                  </p>
+                  <div className="space-y-1 max-h-44 overflow-y-auto pr-1">
+                    {bill.items.map((item, idx) => {
+                      const isActive =
+                        selectedDiagnosis?.diagnosisResultId ===
+                        item.diagnosisResultId;
+                      return (
+                        <button
+                          key={item.diagnosisResultId}
+                          type="button"
+                          onClick={() =>
+                            isActive
+                              ? setSelectedDiagnosis(null)
+                              : setSelectedDiagnosis(item)
+                          }
+                          className={`w-full flex items-center justify-between gap-2 text-xs rounded-lg px-2 py-1.5 transition-colors group text-left ${
+                            isActive
+                              ? "bg-primary/10 text-primary"
+                              : "hover:bg-primary/10 text-ink-700"
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="text-ink-400 shrink-0 w-4 text-center">
+                              {idx + 1}.
+                            </span>
+                            <span className="font-mono truncate">
+                              {item.reportNo ??
+                                item.reportId?.slice(-8).toUpperCase() ??
+                                "—"}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <span className="font-mono">
+                              {formatVND(item.unitPrice ?? 0)}
+                            </span>
+                            <ChevronRight
+                              className={`w-3 h-3 transition-colors ${isActive ? "text-primary" : "text-ink-300 group-hover:text-primary"}`}
+                            />
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
           ) : bill ? (
+            /* ── Unpaid state — existing card ── */
             <div className="bg-primary-50 rounded-xl border border-primary/20 p-4 space-y-2.5">
               <div className="flex items-center justify-between mb-1">
                 <h4 className="text-sm font-semibold text-ink-800">
                   Thông tin hóa đơn
                 </h4>
-                {bill.isPaid && (
-                  <StatusBadge
-                    label="Đã thanh toán"
-                    tone="success"
-                    icon={CheckCircle}
-                    size="sm"
-                  />
-                )}
               </div>
               <InfoRow label="Chuyên gia" value={bill.specialistName} />
               <InfoRow
