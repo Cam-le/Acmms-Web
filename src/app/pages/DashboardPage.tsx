@@ -17,13 +17,36 @@ import {
   Sunrise,
   Sunset,
   Waves,
+  BarChart2,
+  TrendingUp,
+  Layers,
+  MapPinned,
+  Search,
+  Sprout,
+  CheckCircle2,
+  Award,
 } from "lucide-react";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Cell,
+} from "recharts";
 import { api } from "../../api/client";
 import type {
   ReportResponse,
   FarmResponse,
   WeatherCurrentResponse,
   WeatherForecastDayResponse,
+  YieldStatisticsParams,
+  YieldSummaryResponse,
+  YieldByCropResponse,
+  YieldBySeasonResponse,
+  YieldByPlotResponse,
 } from "../../api/client";
 import { qk } from "../../api/queryKeys";
 import { LoadingState } from "../components/ui/LoadingState";
@@ -634,6 +657,9 @@ export function DashboardPage() {
           </div>
         )}
       </SectionCard>
+
+      {/* ── Yield Statistics ──────────────────────────────────────────────── */}
+      <YieldStatisticsSection farms={farms} farmsLoading={farmsLoading} />
     </div>
   );
 }
@@ -852,6 +878,833 @@ function SectionCard({
         </button>
       </div>
       {children}
+    </div>
+  );
+}
+
+// ─── YieldStatisticsSection ───────────────────────────────────────────────────
+
+type StatTab = "summary" | "by-crop" | "by-season" | "by-plot";
+
+const STAT_TABS: { value: StatTab; label: string; icon: React.ElementType }[] =
+  [
+    { value: "summary", label: "Tổng quan", icon: BarChart2 },
+    { value: "by-crop", label: "Theo cây trồng", icon: Sprout },
+    { value: "by-season", label: "Theo vụ mùa", icon: TrendingUp },
+    { value: "by-plot", label: "Theo lô đất", icon: MapPinned },
+  ];
+
+const CHART_COLORS = [
+  "#009689",
+  "#0ea5e9",
+  "#f59e0b",
+  "#8b5cf6",
+  "#ef4444",
+  "#14b8a6",
+  "#f97316",
+];
+
+/** Serialize filter params to a stable cache key (omit empty values) */
+function paramsToKey(p: YieldStatisticsParams): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (p.from) out.from = p.from;
+  if (p.to) out.to = p.to;
+  if (p.farmId) out.farmId = p.farmId;
+  if (p.cropId) out.cropId = p.cropId;
+  if (p.seasonId) out.seasonId = p.seasonId;
+  return out;
+}
+
+function fmt(n: number, decimals = 1): string {
+  return n.toLocaleString("vi-VN", {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
+}
+
+function YieldStatisticsSection({
+  farms,
+  farmsLoading,
+}: {
+  farms: FarmResponse[];
+  farmsLoading: boolean;
+}) {
+  const { showToast } = useToast();
+
+  // ── Filter state ───────────────────────────────────────────────────────
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [farmId, setFarmId] = useState("");
+  // cropId / seasonId are text inputs (no full list loaded here)
+  // We intentionally omit crop/season pickers to avoid extra API calls.
+  // Users can still filter by pasting IDs — advanced use only.
+  const [activeTab, setActiveTab] = useState<StatTab>("summary");
+
+  // Applied params — only set when user hits "Xem thống kê"
+  const [appliedParams, setAppliedParams] =
+    useState<YieldStatisticsParams | null>(null);
+
+  const paramKey = appliedParams ? paramsToKey(appliedParams) : null;
+
+  // ── TanStack queries — all disabled until user triggers ────────────────
+  const summaryQuery = useQuery({
+    queryKey: qk.statistics.yieldSummary(paramKey ?? {}),
+    queryFn: () => api.getYieldSummary(appliedParams!),
+    enabled: !!appliedParams && activeTab === "summary",
+    staleTime: 60_000,
+  });
+
+  const byCropQuery = useQuery({
+    queryKey: qk.statistics.yieldByCrop(paramKey ?? {}),
+    queryFn: () => api.getYieldByCrop(appliedParams!),
+    enabled: !!appliedParams && activeTab === "by-crop",
+    staleTime: 60_000,
+  });
+
+  const bySeasonQuery = useQuery({
+    queryKey: qk.statistics.yieldBySeason(paramKey ?? {}),
+    queryFn: () => api.getYieldBySeason(appliedParams!),
+    enabled: !!appliedParams && activeTab === "by-season",
+    staleTime: 60_000,
+  });
+
+  const byPlotQuery = useQuery({
+    queryKey: qk.statistics.yieldByPlot(paramKey ?? {}),
+    queryFn: () => api.getYieldByPlot(appliedParams!),
+    enabled: !!appliedParams && activeTab === "by-plot",
+    staleTime: 60_000,
+  });
+
+  // Surface errors
+  useEffect(() => {
+    const q =
+      activeTab === "summary"
+        ? summaryQuery
+        : activeTab === "by-crop"
+          ? byCropQuery
+          : activeTab === "by-season"
+            ? bySeasonQuery
+            : byPlotQuery;
+    if (q.error) {
+      showToast(
+        q.error instanceof Error ? q.error.message : "Không thể tải thống kê",
+        "error",
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    summaryQuery.error,
+    byCropQuery.error,
+    bySeasonQuery.error,
+    byPlotQuery.error,
+  ]);
+
+  function handleApply() {
+    // Basic date validation
+    if (from && to && from > to) {
+      showToast("Ngày bắt đầu phải trước ngày kết thúc", "error");
+      return;
+    }
+    setAppliedParams({
+      from: from || undefined,
+      to: to || undefined,
+      farmId: farmId || undefined,
+    });
+  }
+
+  function handleReset() {
+    setFrom("");
+    setTo("");
+    setFarmId("");
+    setAppliedParams(null);
+  }
+
+  const activeQuery =
+    activeTab === "summary"
+      ? summaryQuery
+      : activeTab === "by-crop"
+        ? byCropQuery
+        : activeTab === "by-season"
+          ? bySeasonQuery
+          : byPlotQuery;
+
+  const isLoading = activeQuery.isLoading && !!appliedParams;
+
+  return (
+    <div className="bg-surface rounded-2xl border border-border shadow-card overflow-hidden">
+      {/* Header */}
+      <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4 border-b border-border">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-8 h-8 rounded-lg bg-primary-50 flex items-center justify-center shrink-0">
+            <BarChart2 className="w-4 h-4 text-primary" />
+          </div>
+          <div className="min-w-0">
+            <h2 className="text-sm font-bold text-primary-800 truncate">
+              Thống kê năng suất
+            </h2>
+            <p className="text-xs text-ink-400 mt-0.5">
+              Phân tích sản lượng thu hoạch theo cây trồng, vụ mùa và lô đất
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Filter bar */}
+      <div className="px-6 py-4 border-b border-border bg-surface-alt">
+        <div className="flex flex-wrap items-end gap-3">
+          {/* From */}
+          <div className="flex flex-col gap-1 min-w-[130px]">
+            <label className="text-xs font-medium text-ink-500">Từ ngày</label>
+            <input
+              type="date"
+              value={from}
+              max={to || undefined}
+              onChange={(e) => setFrom(e.target.value)}
+              className="h-9 px-3 text-sm border border-border-strong rounded-btn bg-surface text-ink-700 focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+          </div>
+          {/* To */}
+          <div className="flex flex-col gap-1 min-w-[130px]">
+            <label className="text-xs font-medium text-ink-500">Đến ngày</label>
+            <input
+              type="date"
+              value={to}
+              min={from || undefined}
+              onChange={(e) => setTo(e.target.value)}
+              className="h-9 px-3 text-sm border border-border-strong rounded-btn bg-surface text-ink-700 focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+          </div>
+          {/* Farm picker */}
+          <div className="flex flex-col gap-1 min-w-[150px] max-w-[220px]">
+            <label className="text-xs font-medium text-ink-500">
+              Trang trại
+            </label>
+            {farmsLoading ? (
+              <div className="h-9 w-full rounded-btn bg-surface-subtle animate-pulse" />
+            ) : (
+              <select
+                value={farmId}
+                onChange={(e) => setFarmId(e.target.value)}
+                className="h-9 px-3 text-sm border border-border-strong rounded-btn bg-surface text-ink-700 focus:outline-none focus:ring-2 focus:ring-primary appearance-none cursor-pointer"
+              >
+                <option value="">Tất cả trang trại</option>
+                {farms.map((f) => (
+                  <option key={f.farmId} value={f.farmId}>
+                    {f.farmName}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+          {/* Actions */}
+          <div className="flex items-center gap-2 pb-0.5">
+            <button
+              type="button"
+              onClick={handleApply}
+              className="inline-flex items-center gap-1.5 h-9 px-4 text-sm font-semibold rounded-btn bg-primary text-primary-fg hover:bg-primary-hover transition-colors"
+            >
+              <Search className="w-4 h-4" />
+              Xem thống kê
+            </button>
+            {appliedParams && (
+              <button
+                type="button"
+                onClick={handleReset}
+                className="h-9 px-3 text-sm font-medium rounded-btn text-ink-500 hover:text-ink-700 hover:bg-surface-subtle border border-border transition-colors"
+              >
+                Xoá bộ lọc
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="px-6 pt-4 flex flex-wrap gap-1 bg-surface border-b border-border pb-0">
+        {STAT_TABS.map((tab) => {
+          const Icon = tab.icon;
+          const isActive = activeTab === tab.value;
+          return (
+            <button
+              key={tab.value}
+              type="button"
+              onClick={() => setActiveTab(tab.value)}
+              className={[
+                "inline-flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px",
+                isActive
+                  ? "border-primary text-primary"
+                  : "border-transparent text-ink-500 hover:text-ink-700",
+              ].join(" ")}
+            >
+              <Icon className="w-4 h-4" />
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Content area */}
+      <div className="p-6">
+        {!appliedParams ? (
+          <div className="flex flex-col items-center gap-3 py-12 text-center">
+            <div className="w-12 h-12 rounded-xl bg-primary-50 flex items-center justify-center">
+              <BarChart2 className="w-6 h-6 text-primary" />
+            </div>
+            <p className="text-sm font-semibold text-ink-700">
+              Chưa có dữ liệu thống kê
+            </p>
+            <p className="text-xs text-ink-400 max-w-xs">
+              Chọn bộ lọc phù hợp và nhấn{" "}
+              <span className="font-semibold text-primary">Xem thống kê</span>{" "}
+              để tải dữ liệu.
+            </p>
+          </div>
+        ) : isLoading ? (
+          <LoadingState message="Đang tải thống kê..." />
+        ) : activeQuery.isError ? (
+          <div className="flex flex-col items-center gap-3 py-10 text-center">
+            <AlertTriangle className="w-8 h-8 text-status-warning-fg" />
+            <p className="text-sm text-ink-500">
+              {activeQuery.error instanceof Error
+                ? activeQuery.error.message
+                : "Không thể tải thống kê"}
+            </p>
+          </div>
+        ) : activeTab === "summary" ? (
+          <SummaryTab data={summaryQuery.data ?? null} />
+        ) : activeTab === "by-crop" ? (
+          <ByCropTab data={byCropQuery.data ?? []} />
+        ) : activeTab === "by-season" ? (
+          <BySeasonTab data={bySeasonQuery.data ?? []} />
+        ) : (
+          <ByPlotTab data={byPlotQuery.data ?? []} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── SummaryTab ────────────────────────────────────────────────────────────────
+
+function SummaryTab({ data }: { data: YieldSummaryResponse | null }) {
+  if (!data) return <EmptyState message="Không có dữ liệu tổng quan" />;
+
+  const kpis = [
+    {
+      icon: BarChart2,
+      label: "Tổng lượt thu hoạch",
+      value: String(data.totalHarvests),
+      sub: `${data.completedHarvests} hoàn thành · ${data.ongoingHarvests} đang diễn ra`,
+      tone: "primary" as const,
+    },
+    {
+      icon: CheckCircle2,
+      label: "Sản lượng thực tế",
+      value: `${fmt(data.totalActualWeightKg)} kg`,
+      sub: `Kỳ vọng: ${data.totalExpectedQuantity.toLocaleString("vi-VN")}`,
+      tone: "primary" as const,
+    },
+    {
+      icon: TrendingUp,
+      label: "Tỷ lệ hoàn thành",
+      value: `${fmt(data.overallFulfillmentRate)}%`,
+      sub: data.overallFulfillmentRate >= 80 ? "Đạt mục tiêu" : "Dưới mục tiêu",
+      tone:
+        data.overallFulfillmentRate >= 80
+          ? ("success" as const)
+          : ("warning" as const),
+    },
+    {
+      icon: Layers,
+      label: "Phạm vi",
+      value: `${data.cropsCount} cây · ${data.seasonsCount} vụ · ${data.plotsCount} lô`,
+      sub: "Số loại cây / vụ mùa / lô đất",
+      tone: "primary" as const,
+    },
+  ];
+
+  return (
+    <div className="flex flex-col gap-6">
+      {/* KPI grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {kpis.map((k) => {
+          const Icon = k.icon;
+          const bgMap = {
+            primary: "bg-primary-50",
+            success: "bg-status-success-bg",
+            warning: "bg-status-warning-bg",
+          } as const;
+          const fgMap = {
+            primary: "text-primary",
+            success: "text-status-success-fg",
+            warning: "text-status-warning-fg",
+          } as const;
+          return (
+            <div
+              key={k.label}
+              className="bg-surface-alt rounded-xl border border-border p-4 flex items-start gap-3"
+            >
+              <div
+                className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${bgMap[k.tone]}`}
+              >
+                <Icon className={`w-4 h-4 ${fgMap[k.tone]}`} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs text-ink-400 truncate">{k.label}</p>
+                <p className="text-lg font-bold text-primary-800 leading-tight mt-0.5 truncate">
+                  {k.value}
+                </p>
+                <p className="text-xs text-ink-400 mt-0.5 truncate">{k.sub}</p>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Top crop callout */}
+      {data.topCropName && (
+        <div className="flex items-center gap-3 p-4 rounded-xl bg-primary-50 border border-primary/20">
+          <Award className="w-5 h-5 text-primary shrink-0" />
+          <div className="min-w-0">
+            <p className="text-xs text-ink-500">
+              Cây trồng đạt sản lượng cao nhất
+            </p>
+            <p className="text-sm font-bold text-primary-800">
+              {data.topCropName} —{" "}
+              <span className="font-semibold text-primary">
+                {fmt(data.topCropWeightKg)} kg
+              </span>
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── ByCropTab ─────────────────────────────────────────────────────────────────
+
+function ByCropTab({ data }: { data: YieldByCropResponse[] }) {
+  const [view, setView] = useState<"chart" | "table">("chart");
+
+  if (data.length === 0)
+    return <EmptyState message="Không có dữ liệu theo cây trồng" />;
+
+  const chartData = [...data]
+    .sort((a, b) => b.totalActualWeightKg - a.totalActualWeightKg)
+    .slice(0, 10)
+    .map((d) => ({
+      name: d.cropName,
+      kg: d.totalActualWeightKg,
+      rate: d.fulfillmentRate,
+    }));
+
+  return (
+    <div className="flex flex-col gap-4">
+      {/* View toggle */}
+      <div className="flex items-center gap-1 bg-surface-subtle p-1 rounded-btn w-fit">
+        {(["chart", "table"] as const).map((v) => (
+          <button
+            key={v}
+            type="button"
+            onClick={() => setView(v)}
+            className={[
+              "px-3 py-1.5 text-xs font-medium rounded-btn transition-colors",
+              view === v
+                ? "bg-surface text-ink-800 shadow-card"
+                : "text-ink-500 hover:text-ink-700",
+            ].join(" ")}
+          >
+            {v === "chart" ? "Biểu đồ" : "Bảng chi tiết"}
+          </button>
+        ))}
+      </div>
+
+      {view === "chart" ? (
+        <div className="w-full overflow-x-auto">
+          <div style={{ minWidth: Math.max(400, chartData.length * 80) }}>
+            <ResponsiveContainer width="100%" height={260}>
+              <BarChart
+                data={chartData}
+                margin={{ top: 4, right: 16, left: 0, bottom: 40 }}
+              >
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  stroke="var(--color-border)"
+                />
+                <XAxis
+                  dataKey="name"
+                  tick={{ fontSize: 11, fill: "var(--color-ink-500)" }}
+                  angle={-35}
+                  textAnchor="end"
+                  interval={0}
+                />
+                <YAxis
+                  tick={{ fontSize: 11, fill: "var(--color-ink-500)" }}
+                  unit=" kg"
+                  width={60}
+                />
+                <Tooltip
+                  formatter={(val: number) => [`${fmt(val)} kg`, "Sản lượng"]}
+                  contentStyle={{
+                    fontSize: 12,
+                    borderRadius: 8,
+                    border: "1px solid var(--color-border)",
+                  }}
+                />
+                <Bar dataKey="kg" radius={[4, 4, 0, 0]}>
+                  {chartData.map((_, i) => (
+                    <Cell
+                      key={i}
+                      fill={CHART_COLORS[i % CHART_COLORS.length]}
+                    />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      ) : (
+        <div className="overflow-x-auto rounded-xl border border-border">
+          <table className="w-full min-w-[700px] text-sm">
+            <thead>
+              <tr className="bg-surface-alt border-b border-border">
+                <th className="text-left px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider">
+                  Cây trồng
+                </th>
+                <th className="text-right px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider">
+                  Sản lượng (kg)
+                </th>
+                <th className="text-right px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider">
+                  Số lượng TT
+                </th>
+                <th className="text-right px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider">
+                  Kỳ vọng
+                </th>
+                <th className="text-right px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider">
+                  Tỷ lệ HT
+                </th>
+                <th className="text-right px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider hidden sm:table-cell">
+                  Lượt thu hoạch
+                </th>
+                <th className="text-right px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider hidden md:table-cell">
+                  Số vụ
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.map((row, i) => (
+                <tr
+                  key={row.cropId}
+                  className={i % 2 === 0 ? "bg-surface" : "bg-surface-alt"}
+                >
+                  <td className="px-4 py-3 font-semibold text-ink-700">
+                    {row.cropName}
+                  </td>
+                  <td className="px-4 py-3 text-right text-primary-800 font-semibold">
+                    {fmt(row.totalActualWeightKg)}
+                  </td>
+                  <td className="px-4 py-3 text-right text-ink-600">
+                    {row.totalActualQuantity.toLocaleString("vi-VN")}
+                  </td>
+                  <td className="px-4 py-3 text-right text-ink-500">
+                    {row.totalExpectedQuantity.toLocaleString("vi-VN")}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <span
+                      className={[
+                        "inline-block px-2 py-0.5 rounded-pill text-xs font-semibold",
+                        row.fulfillmentRate >= 80
+                          ? "bg-status-success-bg text-status-success-fg"
+                          : row.fulfillmentRate >= 50
+                            ? "bg-status-warning-bg text-status-warning-fg"
+                            : "bg-status-danger-bg text-status-danger-fg",
+                      ].join(" ")}
+                    >
+                      {fmt(row.fulfillmentRate)}%
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-right text-ink-500 hidden sm:table-cell">
+                    {row.harvestCount}
+                  </td>
+                  <td className="px-4 py-3 text-right text-ink-500 hidden md:table-cell">
+                    {row.seasonsCovered}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── BySeasonTab ───────────────────────────────────────────────────────────────
+
+function BySeasonTab({ data }: { data: YieldBySeasonResponse[] }) {
+  if (data.length === 0)
+    return <EmptyState message="Không có dữ liệu theo vụ mùa" />;
+
+  const sorted = [...data].sort((a, b) =>
+    a.seasonStartDate.localeCompare(b.seasonStartDate),
+  );
+
+  const chartData = sorted.map((d) => ({
+    name: d.seasonName,
+    actual: d.totalActualWeightKg,
+    expected: d.totalExpectedQuantity,
+  }));
+
+  return (
+    <div className="flex flex-col gap-6">
+      {/* Bar chart */}
+      <div className="w-full overflow-x-auto">
+        <div style={{ minWidth: Math.max(400, chartData.length * 120) }}>
+          <ResponsiveContainer width="100%" height={280}>
+            <BarChart
+              data={chartData}
+              margin={{ top: 4, right: 16, left: 0, bottom: 48 }}
+            >
+              <CartesianGrid
+                strokeDasharray="3 3"
+                stroke="var(--color-border)"
+              />
+              <XAxis
+                dataKey="name"
+                tick={{ fontSize: 10, fill: "var(--color-ink-500)" }}
+                angle={-30}
+                textAnchor="end"
+                interval={0}
+              />
+              <YAxis
+                tick={{ fontSize: 11, fill: "var(--color-ink-500)" }}
+                unit=" kg"
+                width={65}
+              />
+              <Tooltip
+                formatter={(val: number, name: string) => [
+                  `${fmt(val)} kg`,
+                  name === "actual" ? "Thực tế" : "Kỳ vọng",
+                ]}
+                contentStyle={{
+                  fontSize: 12,
+                  borderRadius: 8,
+                  border: "1px solid var(--color-border)",
+                }}
+              />
+              <Bar
+                dataKey="expected"
+                fill="#e2e8f0"
+                radius={[4, 4, 0, 0]}
+                name="expected"
+              />
+              <Bar
+                dataKey="actual"
+                fill="#009689"
+                radius={[4, 4, 0, 0]}
+                name="actual"
+              />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+      <p className="text-xs text-ink-400 text-center -mt-2">
+        <span className="inline-block w-3 h-3 rounded bg-[#e2e8f0] mr-1 align-middle" />
+        Kỳ vọng&nbsp;&nbsp;
+        <span className="inline-block w-3 h-3 rounded bg-primary mr-1 align-middle" />
+        Thực tế
+      </p>
+
+      {/* Table */}
+      <div className="overflow-x-auto rounded-xl border border-border">
+        <table className="w-full min-w-[620px] text-sm">
+          <thead>
+            <tr className="bg-surface-alt border-b border-border">
+              <th className="text-left px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider">
+                Vụ mùa
+              </th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider hidden sm:table-cell">
+                Thời gian
+              </th>
+              <th className="text-right px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider">
+                Sản lượng (kg)
+              </th>
+              <th className="text-right px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider">
+                Tỷ lệ HT
+              </th>
+              <th className="text-right px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider hidden md:table-cell">
+                Cây / Lô
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map((row, i) => (
+              <tr
+                key={row.seasonId}
+                className={i % 2 === 0 ? "bg-surface" : "bg-surface-alt"}
+              >
+                <td className="px-4 py-3 font-semibold text-ink-700 max-w-[180px] truncate">
+                  {row.seasonName}
+                </td>
+                <td className="px-4 py-3 text-ink-500 text-xs hidden sm:table-cell whitespace-nowrap">
+                  {row.seasonStartDate} → {row.seasonEndDate}
+                </td>
+                <td className="px-4 py-3 text-right text-primary-800 font-semibold">
+                  {fmt(row.totalActualWeightKg)}
+                </td>
+                <td className="px-4 py-3 text-right">
+                  <span
+                    className={[
+                      "inline-block px-2 py-0.5 rounded-pill text-xs font-semibold",
+                      row.fulfillmentRate >= 80
+                        ? "bg-status-success-bg text-status-success-fg"
+                        : row.fulfillmentRate >= 50
+                          ? "bg-status-warning-bg text-status-warning-fg"
+                          : "bg-status-danger-bg text-status-danger-fg",
+                    ].join(" ")}
+                  >
+                    {fmt(row.fulfillmentRate)}%
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-right text-ink-500 hidden md:table-cell">
+                  {row.cropsCovered} / {row.plotsCovered}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ─── ByPlotTab ─────────────────────────────────────────────────────────────────
+
+function ByPlotTab({ data }: { data: YieldByPlotResponse[] }) {
+  const [sortField, setSortField] = useState<
+    "totalActualWeightKg" | "yieldPerAreaKg"
+  >("totalActualWeightKg");
+
+  if (data.length === 0)
+    return <EmptyState message="Không có dữ liệu theo lô đất" />;
+
+  const sorted = [...data].sort((a, b) => b[sortField] - a[sortField]);
+
+  const maxYield = Math.max(...sorted.map((d) => d.totalActualWeightKg), 1);
+
+  return (
+    <div className="flex flex-col gap-4">
+      {/* Sort control */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-xs text-ink-500">Sắp xếp theo:</span>
+        <div className="flex items-center gap-1 bg-surface-subtle p-1 rounded-btn">
+          {(["totalActualWeightKg", "yieldPerAreaKg"] as const).map((f) => (
+            <button
+              key={f}
+              type="button"
+              onClick={() => setSortField(f)}
+              className={[
+                "px-3 py-1.5 text-xs font-medium rounded-btn transition-colors",
+                sortField === f
+                  ? "bg-surface text-ink-800 shadow-card"
+                  : "text-ink-500 hover:text-ink-700",
+              ].join(" ")}
+            >
+              {f === "totalActualWeightKg"
+                ? "Tổng sản lượng"
+                : "Sản lượng / m²"}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Heatmap-style bars */}
+      <div className="flex flex-col gap-2">
+        {sorted.map((row) => {
+          const pct = (row.totalActualWeightKg / maxYield) * 100;
+          return (
+            <div key={row.plotId} className="flex items-center gap-3 min-w-0">
+              <span className="w-24 shrink-0 text-xs font-semibold text-ink-600 truncate text-right">
+                {row.plotName}
+              </span>
+              <div className="flex-1 min-w-0 h-7 bg-surface-alt rounded-btn overflow-hidden relative border border-border">
+                <div
+                  className="absolute inset-y-0 left-0 bg-primary/80 transition-all duration-500"
+                  style={{ width: `${pct}%` }}
+                />
+                <span className="absolute inset-0 flex items-center px-2 text-xs font-semibold text-primary-800 mix-blend-multiply">
+                  {fmt(row.totalActualWeightKg)} kg
+                </span>
+              </div>
+              <span className="shrink-0 text-xs text-ink-400 w-20 text-right">
+                {fmt(row.yieldPerAreaKg, 2)} kg/m²
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Sortable table */}
+      <div className="overflow-x-auto rounded-xl border border-border mt-2">
+        <table className="w-full min-w-[500px] text-sm">
+          <thead>
+            <tr className="bg-surface-alt border-b border-border">
+              <th className="text-left px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider">
+                Lô đất
+              </th>
+              <th className="text-right px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider">
+                Diện tích (m²)
+              </th>
+              <th
+                className="text-right px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider cursor-pointer hover:text-primary transition-colors select-none"
+                onClick={() => setSortField("totalActualWeightKg")}
+              >
+                Tổng (kg) {sortField === "totalActualWeightKg" && "↓"}
+              </th>
+              <th
+                className="text-right px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider cursor-pointer hover:text-primary transition-colors select-none"
+                onClick={() => setSortField("yieldPerAreaKg")}
+              >
+                kg/m² {sortField === "yieldPerAreaKg" && "↓"}
+              </th>
+              <th className="text-right px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider hidden sm:table-cell">
+                Lượt TH
+              </th>
+              <th className="text-right px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider hidden sm:table-cell">
+                Cây trồng
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map((row, i) => (
+              <tr
+                key={row.plotId}
+                className={i % 2 === 0 ? "bg-surface" : "bg-surface-alt"}
+              >
+                <td className="px-4 py-3 font-semibold text-ink-700">
+                  {row.plotName}
+                </td>
+                <td className="px-4 py-3 text-right text-ink-500">
+                  {row.plotArea.toLocaleString("vi-VN")}
+                </td>
+                <td className="px-4 py-3 text-right text-primary-800 font-semibold">
+                  {fmt(row.totalActualWeightKg)}
+                </td>
+                <td className="px-4 py-3 text-right text-ink-600">
+                  {fmt(row.yieldPerAreaKg, 2)}
+                </td>
+                <td className="px-4 py-3 text-right text-ink-500 hidden sm:table-cell">
+                  {row.harvestCount}
+                </td>
+                <td className="px-4 py-3 text-right text-ink-500 hidden sm:table-cell">
+                  {row.cropsCovered}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
