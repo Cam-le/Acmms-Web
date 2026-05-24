@@ -891,7 +891,7 @@ const STAT_TABS: { value: StatTab; label: string; icon: React.ElementType }[] =
     { value: "summary", label: "Tổng quan", icon: BarChart2 },
     { value: "by-crop", label: "Theo cây trồng", icon: Sprout },
     { value: "by-season", label: "Theo vụ mùa", icon: TrendingUp },
-    { value: "by-plot", label: "Theo lô đất", icon: MapPinned },
+    { value: "by-plot", label: "Theo khu đất", icon: MapPinned },
   ];
 
 const CHART_COLORS = [
@@ -1043,7 +1043,7 @@ function YieldStatisticsSection({
               Thống kê năng suất
             </h2>
             <p className="text-xs text-ink-400 mt-0.5">
-              Phân tích sản lượng thu hoạch theo cây trồng, vụ mùa và lô đất
+              Phân tích sản lượng thu hoạch theo cây trồng, vụ mùa và khu đất
             </p>
           </div>
         </div>
@@ -1189,76 +1189,124 @@ function YieldStatisticsSection({
 function SummaryTab({ data }: { data: YieldSummaryResponse | null }) {
   if (!data) return <EmptyState message="Không có dữ liệu tổng quan" />;
 
-  const kpis = [
-    {
-      icon: BarChart2,
-      label: "Tổng lượt thu hoạch",
-      value: String(data.totalHarvests),
-      sub: `${data.completedHarvests} hoàn thành · ${data.ongoingHarvests} đang diễn ra`,
-      tone: "primary" as const,
-    },
-    {
-      icon: CheckCircle2,
-      label: "Sản lượng thực tế",
-      value: `${fmt(data.totalActualWeightKg)} kg`,
-      sub: `Kỳ vọng: ${data.totalExpectedQuantity.toLocaleString("vi-VN")}`,
-      tone: "primary" as const,
-    },
-    {
-      icon: TrendingUp,
-      label: "Tỷ lệ hoàn thành",
-      value: `${fmt(data.overallFulfillmentRate)}%`,
-      sub: data.overallFulfillmentRate >= 80 ? "Đạt mục tiêu" : "Dưới mục tiêu",
-      tone:
-        data.overallFulfillmentRate >= 80
-          ? ("success" as const)
-          : ("warning" as const),
-    },
-    {
-      icon: Layers,
-      label: "Phạm vi",
-      value: `${data.cropsCount} cây · ${data.seasonsCount} vụ · ${data.plotsCount} lô`,
-      sub: "Số loại cây / vụ mùa / lô đất",
-      tone: "primary" as const,
-    },
-  ];
+  const fulfillmentTone =
+    data.overallFulfillmentRate >= 80
+      ? "success"
+      : data.overallFulfillmentRate >= 50
+        ? "warning"
+        : "danger";
+
+  const fulfillmentBg =
+    fulfillmentTone === "success"
+      ? "bg-status-success-bg"
+      : fulfillmentTone === "warning"
+        ? "bg-status-warning-bg"
+        : "bg-status-danger-bg";
+  const fulfillmentFg =
+    fulfillmentTone === "success"
+      ? "text-status-success-fg"
+      : fulfillmentTone === "warning"
+        ? "text-status-warning-fg"
+        : "text-status-danger-fg";
 
   return (
-    <div className="flex flex-col gap-6">
-      {/* KPI grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {kpis.map((k) => {
-          const Icon = k.icon;
-          const bgMap = {
-            primary: "bg-primary-50",
-            success: "bg-status-success-bg",
-            warning: "bg-status-warning-bg",
-          } as const;
-          const fgMap = {
-            primary: "text-primary",
-            success: "text-status-success-fg",
-            warning: "text-status-warning-fg",
-          } as const;
-          return (
-            <div
-              key={k.label}
-              className="bg-surface-alt rounded-xl border border-border p-4 flex items-start gap-3"
+    <div className="flex flex-col gap-5">
+      {/* Row 1: harvests + weight — each a horizontal card, side-by-side on sm+ */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {/* Tổng lượt thu hoạch */}
+        <div className="bg-surface-alt rounded-xl border border-border p-4 flex items-start gap-3">
+          <div className="w-9 h-9 rounded-lg bg-primary-50 flex items-center justify-center shrink-0 mt-0.5">
+            <BarChart2 className="w-4 h-4 text-primary" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-xs text-ink-400">Tổng lượt thu hoạch</p>
+            <p className="text-2xl font-extrabold text-primary-800 leading-tight mt-0.5">
+              {data.totalHarvests}
+            </p>
+            <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
+              <span className="text-xs text-status-success-fg font-medium">
+                ✓ {data.completedHarvests} hoàn thành
+              </span>
+              <span className="text-xs text-status-warning-fg font-medium">
+                ◌ {data.ongoingHarvests} đang diễn ra
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Sản lượng thực tế */}
+        <div className="bg-surface-alt rounded-xl border border-border p-4 flex items-start gap-3">
+          <div className="w-9 h-9 rounded-lg bg-primary-50 flex items-center justify-center shrink-0 mt-0.5">
+            <CheckCircle2 className="w-4 h-4 text-primary" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-xs text-ink-400">Sản lượng thực tế</p>
+            <p className="text-2xl font-extrabold text-primary-800 leading-tight mt-0.5">
+              {fmt(data.totalActualWeightKg)}{" "}
+              <span className="text-sm font-semibold text-ink-500">kg</span>
+            </p>
+            <p className="text-xs text-ink-400 mt-1">
+              Kỳ vọng: {data.totalExpectedQuantity.toLocaleString("vi-VN")}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Row 2: fulfillment rate + scope */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {/* Tỷ lệ hoàn thành */}
+        <div className="bg-surface-alt rounded-xl border border-border p-4 flex items-start gap-3">
+          <div
+            className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${fulfillmentBg}`}
+          >
+            <TrendingUp className={`w-4 h-4 ${fulfillmentFg}`} />
+          </div>
+          <div className="min-w-0">
+            <p className="text-xs text-ink-400">Tỷ lệ hoàn thành</p>
+            <p
+              className={`text-2xl font-extrabold leading-tight mt-0.5 ${fulfillmentFg}`}
             >
-              <div
-                className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${bgMap[k.tone]}`}
-              >
-                <Icon className={`w-4 h-4 ${fgMap[k.tone]}`} />
+              {fmt(data.overallFulfillmentRate)}%
+            </p>
+            <p className={`text-xs mt-1 font-medium ${fulfillmentFg}`}>
+              {data.overallFulfillmentRate >= 80
+                ? "Đạt mục tiêu"
+                : data.overallFulfillmentRate >= 50
+                  ? "Gần đạt mục tiêu"
+                  : "Dưới mục tiêu"}
+            </p>
+          </div>
+        </div>
+
+        {/* Phạm vi */}
+        <div className="bg-surface-alt rounded-xl border border-border p-4 flex items-start gap-3">
+          <div className="w-9 h-9 rounded-lg bg-primary-50 flex items-center justify-center shrink-0 mt-0.5">
+            <Layers className="w-4 h-4 text-primary" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-xs text-ink-400 mb-2">Phạm vi thống kê</p>
+            <div className="flex flex-wrap gap-x-4 gap-y-1">
+              <div>
+                <span className="text-lg font-bold text-primary-800">
+                  {data.cropsCount}
+                </span>
+                <span className="text-xs text-ink-500 ml-1">loại cây</span>
               </div>
-              <div className="min-w-0">
-                <p className="text-xs text-ink-400 truncate">{k.label}</p>
-                <p className="text-lg font-bold text-primary-800 leading-tight mt-0.5 truncate">
-                  {k.value}
-                </p>
-                <p className="text-xs text-ink-400 mt-0.5 truncate">{k.sub}</p>
+              <div>
+                <span className="text-lg font-bold text-primary-800">
+                  {data.seasonsCount}
+                </span>
+                <span className="text-xs text-ink-500 ml-1">vụ mùa</span>
+              </div>
+              <div>
+                <span className="text-lg font-bold text-primary-800">
+                  {data.plotsCount}
+                </span>
+                <span className="text-xs text-ink-500 ml-1">khu đất</span>
               </div>
             </div>
-          );
-        })}
+          </div>
+        </div>
       </div>
 
       {/* Top crop callout */}
@@ -1269,10 +1317,10 @@ function SummaryTab({ data }: { data: YieldSummaryResponse | null }) {
             <p className="text-xs text-ink-500">
               Cây trồng đạt sản lượng cao nhất
             </p>
-            <p className="text-sm font-bold text-primary-800">
-              {data.topCropName} —{" "}
-              <span className="font-semibold text-primary">
-                {fmt(data.topCropWeightKg)} kg
+            <p className="text-sm font-bold text-primary-800 mt-0.5">
+              {data.topCropName}{" "}
+              <span className="text-primary font-semibold">
+                — {fmt(data.topCropWeightKg)} kg
               </span>
             </p>
           </div>
@@ -1366,28 +1414,28 @@ function ByCropTab({ data }: { data: YieldByCropResponse[] }) {
         </div>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-border">
-          <table className="w-full min-w-[700px] text-sm">
+          <table className="w-full min-w-[800px] text-sm">
             <thead>
               <tr className="bg-surface-alt border-b border-border">
                 <th className="text-left px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider">
                   Cây trồng
                 </th>
-                <th className="text-right px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider">
+                <th className="text-left px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider">
                   Sản lượng (kg)
                 </th>
-                <th className="text-right px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider">
-                  Số lượng TT
+                <th className="text-left px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider">
+                  Số lượng thực tế
                 </th>
-                <th className="text-right px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider">
+                <th className="text-left px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider">
                   Kỳ vọng
                 </th>
-                <th className="text-right px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider">
-                  Tỷ lệ HT
+                <th className="text-left px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider">
+                  Tỷ lệ hoàn thành
                 </th>
-                <th className="text-right px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider hidden sm:table-cell">
+                <th className="text-left px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider hidden sm:table-cell">
                   Lượt thu hoạch
                 </th>
-                <th className="text-right px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider hidden md:table-cell">
+                <th className="text-left px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider hidden md:table-cell">
                   Số vụ
                 </th>
               </tr>
@@ -1401,16 +1449,16 @@ function ByCropTab({ data }: { data: YieldByCropResponse[] }) {
                   <td className="px-4 py-3 font-semibold text-ink-700">
                     {row.cropName}
                   </td>
-                  <td className="px-4 py-3 text-right text-primary-800 font-semibold">
+                  <td className="px-4 py-3 text-left text-primary-800 font-semibold">
                     {fmt(row.totalActualWeightKg)}
                   </td>
-                  <td className="px-4 py-3 text-right text-ink-600">
+                  <td className="px-4 py-3 text-left text-ink-600">
                     {row.totalActualQuantity.toLocaleString("vi-VN")}
                   </td>
-                  <td className="px-4 py-3 text-right text-ink-500">
+                  <td className="px-4 py-3 text-left text-ink-500">
                     {row.totalExpectedQuantity.toLocaleString("vi-VN")}
                   </td>
-                  <td className="px-4 py-3 text-right">
+                  <td className="px-4 py-3 text-left">
                     <span
                       className={[
                         "inline-block px-2 py-0.5 rounded-pill text-xs font-semibold",
@@ -1424,10 +1472,10 @@ function ByCropTab({ data }: { data: YieldByCropResponse[] }) {
                       {fmt(row.fulfillmentRate)}%
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-right text-ink-500 hidden sm:table-cell">
+                  <td className="px-4 py-3 text-left text-ink-500 hidden sm:table-cell">
                     {row.harvestCount}
                   </td>
-                  <td className="px-4 py-3 text-right text-ink-500 hidden md:table-cell">
+                  <td className="px-4 py-3 text-left text-ink-500 hidden md:table-cell">
                     {row.seasonsCovered}
                   </td>
                 </tr>
@@ -1527,14 +1575,17 @@ function BySeasonTab({ data }: { data: YieldBySeasonResponse[] }) {
               <th className="text-left px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider hidden sm:table-cell">
                 Thời gian
               </th>
-              <th className="text-right px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider">
+              <th className="text-left px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider">
                 Sản lượng (kg)
               </th>
-              <th className="text-right px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider">
-                Tỷ lệ HT
+              <th className="text-left px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider">
+                Tỷ lệ hoàn thành
               </th>
-              <th className="text-right px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider hidden md:table-cell">
-                Cây / Lô
+              <th className="text-left px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider hidden md:table-cell">
+                Loại cây trồng
+              </th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider hidden md:table-cell">
+                Số khu đất
               </th>
             </tr>
           </thead>
@@ -1550,10 +1601,10 @@ function BySeasonTab({ data }: { data: YieldBySeasonResponse[] }) {
                 <td className="px-4 py-3 text-ink-500 text-xs hidden sm:table-cell whitespace-nowrap">
                   {row.seasonStartDate} → {row.seasonEndDate}
                 </td>
-                <td className="px-4 py-3 text-right text-primary-800 font-semibold">
+                <td className="px-4 py-3 text-left text-primary-800 font-semibold">
                   {fmt(row.totalActualWeightKg)}
                 </td>
-                <td className="px-4 py-3 text-right">
+                <td className="px-4 py-3 text-left">
                   <span
                     className={[
                       "inline-block px-2 py-0.5 rounded-pill text-xs font-semibold",
@@ -1567,8 +1618,11 @@ function BySeasonTab({ data }: { data: YieldBySeasonResponse[] }) {
                     {fmt(row.fulfillmentRate)}%
                   </span>
                 </td>
-                <td className="px-4 py-3 text-right text-ink-500 hidden md:table-cell">
-                  {row.cropsCovered} / {row.plotsCovered}
+                <td className="px-4 py-3 text-left text-ink-500 hidden md:table-cell">
+                  {row.cropsCovered}
+                </td>
+                <td className="px-4 py-3 text-left text-ink-500 hidden md:table-cell">
+                  {row.plotsCovered}
                 </td>
               </tr>
             ))}
@@ -1587,7 +1641,7 @@ function ByPlotTab({ data }: { data: YieldByPlotResponse[] }) {
   >("totalActualWeightKg");
 
   if (data.length === 0)
-    return <EmptyState message="Không có dữ liệu theo lô đất" />;
+    return <EmptyState message="Không có dữ liệu theo khu đất" />;
 
   const sorted = [...data].sort((a, b) => b[sortField] - a[sortField]);
 
@@ -1651,27 +1705,27 @@ function ByPlotTab({ data }: { data: YieldByPlotResponse[] }) {
           <thead>
             <tr className="bg-surface-alt border-b border-border">
               <th className="text-left px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider">
-                Lô đất
+                Khu đất
               </th>
-              <th className="text-right px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider">
+              <th className="text-left px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider">
                 Diện tích (m²)
               </th>
               <th
-                className="text-right px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider cursor-pointer hover:text-primary transition-colors select-none"
+                className="text-left px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider cursor-pointer hover:text-primary transition-colors select-none"
                 onClick={() => setSortField("totalActualWeightKg")}
               >
                 Tổng (kg) {sortField === "totalActualWeightKg" && "↓"}
               </th>
               <th
-                className="text-right px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider cursor-pointer hover:text-primary transition-colors select-none"
+                className="text-left px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider cursor-pointer hover:text-primary transition-colors select-none"
                 onClick={() => setSortField("yieldPerAreaKg")}
               >
                 kg/m² {sortField === "yieldPerAreaKg" && "↓"}
               </th>
-              <th className="text-right px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider hidden sm:table-cell">
-                Lượt TH
+              <th className="text-left px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider hidden sm:table-cell">
+                Lượt thu hoạch
               </th>
-              <th className="text-right px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider hidden sm:table-cell">
+              <th className="text-left px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider hidden sm:table-cell">
                 Cây trồng
               </th>
             </tr>
@@ -1685,19 +1739,19 @@ function ByPlotTab({ data }: { data: YieldByPlotResponse[] }) {
                 <td className="px-4 py-3 font-semibold text-ink-700">
                   {row.plotName}
                 </td>
-                <td className="px-4 py-3 text-right text-ink-500">
+                <td className="px-4 py-3 text-left text-ink-500">
                   {row.plotArea.toLocaleString("vi-VN")}
                 </td>
-                <td className="px-4 py-3 text-right text-primary-800 font-semibold">
+                <td className="px-4 py-3 text-left text-primary-800 font-semibold">
                   {fmt(row.totalActualWeightKg)}
                 </td>
-                <td className="px-4 py-3 text-right text-ink-600">
+                <td className="px-4 py-3 text-left text-ink-600">
                   {fmt(row.yieldPerAreaKg, 2)}
                 </td>
-                <td className="px-4 py-3 text-right text-ink-500 hidden sm:table-cell">
+                <td className="px-4 py-3 text-left text-ink-500 hidden sm:table-cell">
                   {row.harvestCount}
                 </td>
-                <td className="px-4 py-3 text-right text-ink-500 hidden sm:table-cell">
+                <td className="px-4 py-3 text-left text-ink-500 hidden sm:table-cell">
                   {row.cropsCovered}
                 </td>
               </tr>
