@@ -1,4 +1,3 @@
-// src/api/queryKeys.ts
 // Hierarchical query keys — single source of truth.
 // Invalidating a parent invalidates all children:
 //   qk.farms.all        → list + every detail
@@ -101,6 +100,19 @@ export const qk = {
     all: ["payments"] as const,
     list: () => [...qk.payments.all, "list"] as const,
     detail: (id: string) => [...qk.payments.all, "detail", id] as const,
+  },
+
+  // ── Statistics — Yield ──────────────────────────────────────────────────────────────
+  statistics: {
+    all: ["statistics"] as const,
+    yieldSummary: (params: Record<string, string>) =>
+      ["statistics", "yield", "summary", params] as const,
+    yieldByCrop: (params: Record<string, string>) =>
+      ["statistics", "yield", "by-crop", params] as const,
+    yieldBySeason: (params: Record<string, string>) =>
+      ["statistics", "yield", "by-season", params] as const,
+    yieldByPlot: (params: Record<string, string>) =>
+      ["statistics", "yield", "by-plot", params] as const,
   },
 
   // ── Weather ────────────────────────────────────────────────────────────
