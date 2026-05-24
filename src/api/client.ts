@@ -862,6 +862,80 @@ export interface WeatherForecastResponse {
   forecast: WeatherForecastDayResponse[];
 }
 
+// ── Statistics — Yield ────────────────────────────────────────────────────────
+
+export interface YieldStatisticsParams {
+  from?: string; // YYYY-MM-DD
+  to?: string; // YYYY-MM-DD
+  farmId?: string;
+  cropId?: string;
+  seasonId?: string;
+}
+
+export interface YieldSummaryResponse {
+  totalHarvests: number;
+  completedHarvests: number;
+  ongoingHarvests: number;
+  totalActualWeightKg: number;
+  totalExpectedQuantity: number;
+  overallFulfillmentRate: number;
+  cropsCount: number;
+  seasonsCount: number;
+  plotsCount: number;
+  topCropId: string | null;
+  topCropName: string | null;
+  topCropWeightKg: number;
+}
+
+export interface YieldByCropResponse {
+  cropId: string;
+  cropName: string;
+  harvestCount: number;
+  completedDetailsCount: number;
+  totalActualWeightKg: number;
+  totalActualQuantity: number;
+  totalExpectedQuantity: number;
+  avgWeightKgPerHarvest: number;
+  fulfillmentRate: number;
+  seasonsCovered: number;
+}
+
+export interface YieldBySeasonResponse {
+  seasonId: string;
+  seasonName: string;
+  seasonStartDate: string;
+  seasonEndDate: string;
+  harvestCount: number;
+  totalActualWeightKg: number;
+  totalActualQuantity: number;
+  totalExpectedQuantity: number;
+  fulfillmentRate: number;
+  cropsCovered: number;
+  plotsCovered: number;
+}
+
+export interface YieldByPlotResponse {
+  plotId: string;
+  plotName: string;
+  plotArea: number;
+  harvestCount: number;
+  totalActualWeightKg: number;
+  yieldPerAreaKg: number;
+  cropsCovered: number;
+}
+
+/** Build query string for yield statistics endpoints, omitting empty params */
+function buildYieldQuery(path: string, params: YieldStatisticsParams): string {
+  const q = new URLSearchParams();
+  if (params.from) q.set("From", params.from);
+  if (params.to) q.set("To", params.to);
+  if (params.farmId) q.set("FarmId", params.farmId);
+  if (params.cropId) q.set("CropId", params.cropId);
+  if (params.seasonId) q.set("SeasonId", params.seasonId);
+  const qs = q.toString();
+  return qs ? `${path}?${qs}` : path;
+}
+
 // ==================== API Methods ====================
 
 export const api = {
@@ -1165,6 +1239,28 @@ export const api = {
     request<GrowthTrackingResponse[]>(
       "GET",
       `/api/growth-trackings/harvest-detail/${harvestDetailId}`,
+    ),
+
+  // Statistics — Yield
+  getYieldSummary: (params: YieldStatisticsParams) =>
+    request<YieldSummaryResponse>(
+      "GET",
+      buildYieldQuery("/api/statistics/yield/summary", params),
+    ),
+  getYieldByCrop: (params: YieldStatisticsParams) =>
+    request<YieldByCropResponse[]>(
+      "GET",
+      buildYieldQuery("/api/statistics/yield/by-crop", params),
+    ),
+  getYieldBySeason: (params: YieldStatisticsParams) =>
+    request<YieldBySeasonResponse[]>(
+      "GET",
+      buildYieldQuery("/api/statistics/yield/by-season", params),
+    ),
+  getYieldByPlot: (params: YieldStatisticsParams) =>
+    request<YieldByPlotResponse[]>(
+      "GET",
+      buildYieldQuery("/api/statistics/yield/by-plot", params),
     ),
 
   // Maps / Geocoding
