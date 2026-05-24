@@ -1612,10 +1612,10 @@ function PaymentHistoryTab() {
                 <td className="px-4 py-3 text-sm text-ink-700 whitespace-nowrap">
                   {formatMonthISO(p.month)}
                 </td>
-                <td className="px-4 py-3 text-sm font-mono text-ink-700 text-right">
+                <td className="px-4 py-3 text-sm font-mono text-ink-700">
                   {p.totalDiagnoses}
                 </td>
-                <td className="px-4 py-3 text-sm font-mono font-bold text-ink-800 text-right whitespace-nowrap">
+                <td className="px-4 py-3 text-sm font-mono font-bold text-ink-800 whitespace-nowrap">
                   {formatVND(p.amount)}
                 </td>
                 <td className="px-4 py-3 text-sm text-ink-500 whitespace-nowrap">
