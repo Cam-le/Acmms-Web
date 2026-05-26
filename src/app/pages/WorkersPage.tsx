@@ -710,7 +710,7 @@ export function WorkersPage() {
                                   ? "Chưa có vai trò đăng ký"
                                   : `Duyệt vai trò ${getRoleLabel(s.requestedRole)}`
                               }
-                              className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-fg rounded-btn text-xs font-medium hover:bg-primary-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                              className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-fg rounded-btn text-xs font-medium hover:bg-primary-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                             >
                               {approvingId === s.userId ? (
                                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -722,7 +722,7 @@ export function WorkersPage() {
                             <button
                               onClick={() => setRejectTarget(s)}
                               disabled={approvingId === s.userId}
-                              className="flex items-center gap-1.5 px-3 py-1.5 bg-surface border border-status-danger-fg/40 text-status-danger-fg rounded-btn text-xs font-medium hover:bg-status-danger-bg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                              className="flex items-center gap-1.5 px-3 py-1.5 bg-surface border border-status-danger-fg/40 text-status-danger-fg rounded-btn text-xs font-medium hover:bg-status-danger-bg transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                               Từ chối

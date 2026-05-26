@@ -620,6 +620,21 @@ export interface ContractBillResponse {
 
 // ── Payments ──────────────────────────────────────────────────────────────────
 
+export interface PendingPaymentItem {
+  specialistId: string;
+  specialistName: string;
+  month: string;
+  totalDiagnoses: number;
+  totalAmount: number;
+  isDue: boolean;
+  daysOverdue: number;
+  bankAccount: string;
+  bankName: string;
+  bankBin: string;
+  accountHolder: string;
+  qrUrl: string;
+}
+
 export interface PaymentResponse {
   id: string;
   specialistId: string;
@@ -1192,6 +1207,18 @@ export const api = {
     ),
 
   // Payments
+  // GET /api/payment/pending — list unpaid specialist payment summaries.
+  // Both filters are optional.
+  getPendingPayments: (opts?: { specialistId?: string; dueOnly?: boolean }) => {
+    const params = new URLSearchParams();
+    if (opts?.specialistId) params.set("specialistId", opts.specialistId);
+    if (opts?.dueOnly != null) params.set("dueOnly", String(opts.dueOnly));
+    const qs = params.toString();
+    return request<PendingPaymentItem[]>(
+      "GET",
+      `/api/payment/pending${qs ? `?${qs}` : ""}`,
+    );
+  },
   getPayments: () => request<PaymentResponse[]>("GET", "/api/payment/my"),
   getPayment: (id: string) =>
     request<PaymentResponse>("GET", `/api/payment/${id}`),
