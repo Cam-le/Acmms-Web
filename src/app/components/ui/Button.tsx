@@ -1,3 +1,4 @@
+import { forwardRef } from "react";
 import type { ButtonHTMLAttributes, ElementType, ReactNode } from "react";
 import { Spinner } from "./Spinner";
 
@@ -57,51 +58,57 @@ const SPINNER_SIZE: Record<ButtonSize, "xs" | "sm"> = {
   md: "sm",
 };
 
-export function Button({
-  variant = "primary",
-  size = "md",
-  type = "button",
-  loading = false,
-  leadingIcon: LeadingIcon,
-  trailingIcon: TrailingIcon,
-  fullWidth = false,
-  disabled,
-  children,
-  className = "",
-  ...rest
-}: ButtonProps) {
-  const isDisabled = disabled || loading;
+export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
+  function Button(
+    {
+      variant = "primary",
+      size = "md",
+      type = "button",
+      loading = false,
+      leadingIcon: LeadingIcon,
+      trailingIcon: TrailingIcon,
+      fullWidth = false,
+      disabled,
+      children,
+      className = "",
+      ...rest
+    },
+    ref,
+  ) {
+    const isDisabled = disabled || loading;
 
-  return (
-    <button
-      type={type}
-      disabled={isDisabled}
-      className={[
-        "inline-flex items-center justify-center font-medium rounded-btn transition-colors",
-        "disabled:cursor-not-allowed",
-        VARIANT_CLASS[variant],
-        SIZE_CLASS[size],
-        fullWidth ? "w-full" : "",
-        className,
-      ]
-        .filter(Boolean)
-        .join(" ")}
-      {...rest}
-    >
-      {loading ? (
-        <Spinner
-          size={SPINNER_SIZE[size]}
-          className={
-            variant === "primary" || variant === "danger" ? "text-white" : ""
-          }
-        />
-      ) : (
-        LeadingIcon && <LeadingIcon className={ICON_SIZE_CLASS[size]} />
-      )}
-      {children}
-      {!loading && TrailingIcon && (
-        <TrailingIcon className={ICON_SIZE_CLASS[size]} />
-      )}
-    </button>
-  );
-}
+    return (
+      <button
+        ref={ref}
+        type={type}
+        disabled={isDisabled}
+        className={[
+          "inline-flex items-center justify-center font-medium rounded-btn transition-colors",
+          "disabled:cursor-not-allowed",
+          VARIANT_CLASS[variant],
+          SIZE_CLASS[size],
+          fullWidth ? "w-full" : "",
+          className,
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        {...rest}
+      >
+        {loading ? (
+          <Spinner
+            size={SPINNER_SIZE[size]}
+            className={
+              variant === "primary" || variant === "danger" ? "text-white" : ""
+            }
+          />
+        ) : (
+          LeadingIcon && <LeadingIcon className={ICON_SIZE_CLASS[size]} />
+        )}
+        {children}
+        {!loading && TrailingIcon && (
+          <TrailingIcon className={ICON_SIZE_CLASS[size]} />
+        )}
+      </button>
+    );
+  },
+);
