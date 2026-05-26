@@ -28,6 +28,7 @@ import type {
   ContractUpdateRequest,
   ContractBillResponse,
   PaymentResponse,
+  PendingPaymentItem,
   DiagnosisResponse,
   BillItem,
   PaymentItem,
@@ -61,10 +62,11 @@ const PAGE_SIZE = 8;
 const CONTRACT_TABS = [
   { value: "active" as const, label: "Đang hiệu lực" },
   { value: "terminated" as const, label: "Đã kết thúc" },
+  { value: "payment" as const, label: "Chờ thanh toán" },
   { value: "history" as const, label: "Lịch sử thanh toán" },
 ] as const;
 
-type TabValue = "active" | "terminated" | "history";
+type TabValue = "active" | "terminated" | "payment" | "history";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -1169,11 +1171,9 @@ function EditContractModal({
 function ViewContractModal({
   contract,
   onClose,
-  onPay,
 }: {
   contract: ContractResponse;
   onClose: () => void;
-  onPay: (c: ContractResponse) => void;
 }) {
   return (
     <Modal
@@ -1183,23 +1183,9 @@ function ViewContractModal({
       description={contract.contractCode}
       size="md"
       footer={
-        <>
-          <Button variant="secondary" onClick={onClose}>
-            Đóng
-          </Button>
-          {contract.status === "active" && (
-            <Button
-              variant="primary"
-              leadingIcon={CreditCard}
-              onClick={() => {
-                onClose();
-                onPay(contract);
-              }}
-            >
-              Thanh toán
-            </Button>
-          )}
-        </>
+        <Button variant="secondary" onClick={onClose}>
+          Đóng
+        </Button>
       }
     >
       <div className="space-y-4">
@@ -1249,14 +1235,12 @@ function ContractRow({
   onView,
   onEdit,
   onTerminate,
-  onPay,
   terminatingId,
 }: {
   contract: ContractResponse;
   onView: (c: ContractResponse) => void;
   onEdit: (c: ContractResponse) => void;
   onTerminate: (c: ContractResponse) => void;
-  onPay: (c: ContractResponse) => void;
   terminatingId: string | null;
 }) {
   const isActive = contract.status === "active";
@@ -1288,9 +1272,8 @@ function ContractRow({
         {contract.endDate ? formatDate(contract.endDate) : "—"}
       </td>
 
-      {/* Fixed-width actions cell — always renders 4 slots so the column
-          never shifts. Inactive rows get transparent spacers for slots 2-4. */}
-      <td className="px-4 py-3 w-[132px]">
+      {/* Fixed-width actions cell */}
+      <td className="px-4 py-3 w-[100px]">
         <div className="flex items-center justify-end gap-0.5">
           {/* Slot 1: View (always shown) */}
           <button
@@ -1318,22 +1301,7 @@ function ContractRow({
             <span className="w-7 shrink-0" />
           )}
 
-          {/* Slot 3: Pay (active only) */}
-          {isActive ? (
-            <button
-              type="button"
-              onClick={() => onPay(contract)}
-              title="Thanh toán"
-              aria-label="Thanh toán"
-              className="p-1.5 rounded-btn text-ink-500 hover:text-primary hover:bg-primary-50 transition-colors"
-            >
-              <CreditCard className="w-4 h-4" />
-            </button>
-          ) : (
-            <span className="w-7 shrink-0" />
-          )}
-
-          {/* Slot 4: Terminate (active only) */}
+          {/* Slot 3: Terminate (active only) */}
           {isActive ? (
             <button
               type="button"
@@ -1550,6 +1518,139 @@ function PaymentDetailModal({
   );
 }
 
+// ─── PaymentPendingTab ────────────────────────────────────────────────────────
+
+function PaymentPendingTab() {
+  const { showToast } = useToast();
+  const [dueOnly, setDueOnly] = useState(false);
+  const [payItem, setPayItem] = useState<PendingPaymentItem | null>(null);
+
+  const pendingQuery = useQuery({
+    queryKey: ["payments", "pending", { dueOnly }],
+    queryFn: () => api.getPendingPayments({ dueOnly: dueOnly || undefined }),
+  });
+
+  useEffect(() => {
+    if (pendingQuery.error)
+      showToast("Không thể tải danh sách chờ thanh toán", "error");
+  }, [pendingQuery.error, showToast]);
+
+  const items: PendingPaymentItem[] = pendingQuery.data ?? [];
+
+  return (
+    <>
+      {/* Filter bar */}
+      <div className="p-4 border-b border-border flex items-center justify-between gap-3 flex-wrap">
+        <p className="text-sm font-medium text-ink-700">
+          {pendingQuery.isLoading
+            ? "Đang tải..."
+            : `${items.length} khoản chờ thanh toán`}
+        </p>
+        <label className="flex items-center gap-2 text-sm text-ink-600 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={dueOnly}
+            onChange={(e) => setDueOnly(e.target.checked)}
+            className="w-4 h-4 rounded accent-primary"
+          />
+          Chỉ hiện quá hạn
+        </label>
+      </div>
+
+      {pendingQuery.isLoading ? (
+        <LoadingState />
+      ) : items.length === 0 ? (
+        <EmptyState
+          icon={CheckCircle}
+          title="Không có khoản chờ thanh toán"
+          message={
+            dueOnly
+              ? "Không có khoản nào quá hạn."
+              : "Tất cả các chuyên gia đã được thanh toán."
+          }
+        />
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px] text-sm">
+            <thead className="bg-surface-alt border-b border-border">
+              <tr>
+                {[
+                  "Chuyên gia",
+                  "Tháng",
+                  "Chẩn đoán",
+                  "Số tiền",
+                  "Trạng thái",
+                  "Thao tác",
+                ].map((h) => (
+                  <th
+                    key={h}
+                    className="px-4 py-3 text-left text-xs font-semibold text-ink-500 uppercase tracking-wide whitespace-nowrap"
+                  >
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {items.map((item) => (
+                <tr
+                  key={`${item.specialistId}-${item.month}`}
+                  className="hover:bg-surface-alt transition-colors"
+                >
+                  <td className="px-4 py-3 text-sm font-medium text-ink-800">
+                    {item.specialistName}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-ink-700 whitespace-nowrap">
+                    {formatMonthISO(item.month)}
+                  </td>
+                  <td className="px-4 py-3 text-sm font-mono text-ink-700">
+                    {item.totalDiagnoses}
+                  </td>
+                  <td className="px-4 py-3 text-sm font-mono font-bold text-ink-800 whitespace-nowrap">
+                    {formatVND(item.totalAmount)}
+                  </td>
+                  <td className="px-4 py-3">
+                    {item.isDue ? (
+                      <StatusBadge
+                        tone="danger"
+                        label={`Quá hạn ${item.daysOverdue} ngày`}
+                        icon={AlertTriangle}
+                      />
+                    ) : (
+                      <StatusBadge tone="warning" label="Chờ thanh toán" />
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      leadingIcon={CreditCard}
+                      onClick={() => setPayItem(item)}
+                    >
+                      Thanh toán
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* BillPreviewPanel reused — opened when user clicks Thanh toán */}
+      {payItem && (
+        <BillPreviewPanel
+          specialistId={payItem.specialistId}
+          expertName={payItem.specialistName}
+          startDate={null}
+          endDate={null}
+          onClose={() => setPayItem(null)}
+        />
+      )}
+    </>
+  );
+}
+
 // ─── PaymentHistoryTab ────────────────────────────────────────────────────────
 
 function PaymentHistoryTab() {
@@ -1557,6 +1658,9 @@ function PaymentHistoryTab() {
   const [detailPayment, setDetailPayment] = useState<PaymentResponse | null>(
     null,
   );
+  const [historySearch, setHistorySearch] = useState("");
+  const [filterYear, setFilterYear] = useState<string>("");
+  const [filterMonth, setFilterMonth] = useState<string>("");
 
   const paymentsQuery = useQuery({
     queryKey: qk.payments.list(),
@@ -1568,73 +1672,152 @@ function PaymentHistoryTab() {
       showToast("Không thể tải lịch sử thanh toán", "error");
   }, [paymentsQuery.error, showToast]);
 
-  const payments = paymentsQuery.data ?? [];
+  const allPayments = paymentsQuery.data ?? [];
 
-  if (paymentsQuery.isLoading) return <LoadingState />;
-  if (payments.length === 0)
-    return (
-      <EmptyState
-        icon={History}
-        title="Chưa có lịch sử thanh toán"
-        message="Các hóa đơn đã xác nhận sẽ xuất hiện ở đây."
-      />
-    );
+  // Build year options from actual data
+  const availableYears = Array.from(
+    new Set(
+      allPayments
+        .map((p) => {
+          try {
+            return new Date(p.month).getFullYear();
+          } catch {
+            return null;
+          }
+        })
+        .filter((y): y is number => y !== null),
+    ),
+  ).sort((a, b) => b - a);
+
+  const payments = allPayments.filter((p) => {
+    const q = historySearch.toLowerCase();
+    const matchSearch =
+      !q || (p.specialistName ?? "").toLowerCase().includes(q);
+    if (!matchSearch) return false;
+    if (filterYear || filterMonth) {
+      try {
+        const d = new Date(p.month);
+        if (filterYear && d.getFullYear() !== parseInt(filterYear))
+          return false;
+        if (filterMonth && d.getMonth() + 1 !== parseInt(filterMonth))
+          return false;
+      } catch {
+        return false;
+      }
+    }
+    return true;
+  });
 
   return (
     <>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[560px] text-sm">
-          <thead className="bg-surface-alt border-b border-border">
-            <tr>
-              {[
-                "Chuyên gia",
-                "Tháng",
-                "Chẩn đoán",
-                "Số tiền",
-                "Ngày tạo",
-                "Chi tiết",
-              ].map((h) => (
-                <th
-                  key={h}
-                  className="px-4 py-3 text-left text-xs font-semibold text-ink-500 uppercase tracking-wide whitespace-nowrap"
-                >
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {payments.map((p) => (
-              <tr key={p.id} className="hover:bg-surface-alt transition-colors">
-                <td className="px-4 py-3 text-sm font-medium text-ink-800">
-                  {p.specialistName}
-                </td>
-                <td className="px-4 py-3 text-sm text-ink-700 whitespace-nowrap">
-                  {formatMonthISO(p.month)}
-                </td>
-                <td className="px-4 py-3 text-sm font-mono text-ink-700">
-                  {p.totalDiagnoses}
-                </td>
-                <td className="px-4 py-3 text-sm font-mono font-bold text-ink-800 whitespace-nowrap">
-                  {formatVND(p.amount)}
-                </td>
-                <td className="px-4 py-3 text-sm text-ink-500 whitespace-nowrap">
-                  {formatDate(p.createdAt)}
-                </td>
-                <td className="px-4 py-3">
-                  <button
-                    onClick={() => setDetailPayment(p)}
-                    className="flex items-center gap-1 text-xs text-primary hover:underline whitespace-nowrap"
-                  >
-                    <Eye className="w-3.5 h-3.5" />
-                    Xem
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      {/* Filter bar */}
+      <div className="p-4 border-b border-border flex flex-wrap gap-2 items-center">
+        <SearchInput
+          value={historySearch}
+          onChange={setHistorySearch}
+          placeholder="Tìm theo tên chuyên gia..."
+          className="flex-1 min-w-[180px]"
+        />
+        <select
+          value={filterMonth}
+          onChange={(e) => setFilterMonth(e.target.value)}
+          className="h-10 px-3 border border-border-strong rounded-btn text-sm text-ink-700 bg-surface focus:outline-none focus:ring-2 focus:ring-primary appearance-none cursor-pointer"
+        >
+          <option value="">Tất cả tháng</option>
+          {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+            <option key={m} value={m}>
+              Tháng {m}
+            </option>
+          ))}
+        </select>
+        <select
+          value={filterYear}
+          onChange={(e) => setFilterYear(e.target.value)}
+          className="h-10 px-3 border border-border-strong rounded-btn text-sm text-ink-700 bg-surface focus:outline-none focus:ring-2 focus:ring-primary appearance-none cursor-pointer"
+        >
+          <option value="">Tất cả năm</option>
+          {availableYears.map((y) => (
+            <option key={y} value={y}>
+              {y}
+            </option>
+          ))}
+        </select>
       </div>
+
+      {paymentsQuery.isLoading ? (
+        <LoadingState />
+      ) : payments.length === 0 ? (
+        <EmptyState
+          icon={History}
+          title={
+            historySearch || filterYear || filterMonth
+              ? "Không tìm thấy kết quả"
+              : "Chưa có lịch sử thanh toán"
+          }
+          message={
+            historySearch || filterYear || filterMonth
+              ? "Thử thay đổi bộ lọc."
+              : "Các hóa đơn đã xác nhận sẽ xuất hiện ở đây."
+          }
+        />
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[560px] text-sm">
+            <thead className="bg-surface-alt border-b border-border">
+              <tr>
+                {[
+                  "Chuyên gia",
+                  "Tháng",
+                  "Chẩn đoán",
+                  "Số tiền",
+                  "Ngày tạo",
+                  "Chi tiết",
+                ].map((h) => (
+                  <th
+                    key={h}
+                    className="px-4 py-3 text-left text-xs font-semibold text-ink-500 uppercase tracking-wide whitespace-nowrap"
+                  >
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {payments.map((p) => (
+                <tr
+                  key={p.id}
+                  className="hover:bg-surface-alt transition-colors"
+                >
+                  <td className="px-4 py-3 text-sm font-medium text-ink-800">
+                    {p.specialistName}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-ink-700 whitespace-nowrap">
+                    {formatMonthISO(p.month)}
+                  </td>
+                  <td className="px-4 py-3 text-sm font-mono text-ink-700">
+                    {p.totalDiagnoses}
+                  </td>
+                  <td className="px-4 py-3 text-sm font-mono font-bold text-ink-800 whitespace-nowrap">
+                    {formatVND(p.amount)}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-ink-500 whitespace-nowrap">
+                    {formatDate(p.createdAt)}
+                  </td>
+                  <td className="px-4 py-3">
+                    <button
+                      onClick={() => setDetailPayment(p)}
+                      className="flex items-center gap-1 text-xs text-primary hover:underline whitespace-nowrap"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                      Xem
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {detailPayment && (
         <PaymentDetailModal
@@ -1656,7 +1839,6 @@ export function BillingPage() {
   const [search, setSearch] = useState("");
 
   const modals = useCrudModals<ContractResponse>();
-  const [payContract, setPayContract] = useState<ContractResponse | null>(null);
   const [terminatingId, setTerminatingId] = useState<string | null>(null);
   const [confirmTerminate, setConfirmTerminate] =
     useState<ContractResponse | null>(null);
@@ -1705,7 +1887,7 @@ export function BillingPage() {
     ? []
     : contracts
         .filter((c) => {
-          if (activeTab === "history") return true; // handled by PaymentHistoryTab
+          if (activeTab === "history" || activeTab === "payment") return true; // handled by sub-tabs
           const q = search.toLowerCase();
           const matchSearch =
             (c.expertName ?? "").toLowerCase().includes(q) ||
@@ -1808,7 +1990,7 @@ export function BillingPage() {
                           </th>
                         ))}
                         {/* Fixed-width header for the actions column */}
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-ink-500 uppercase tracking-wide whitespace-nowrap w-[132px]">
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-ink-500 uppercase tracking-wide whitespace-nowrap w-[100px]">
                           Thao tác
                         </th>
                       </tr>
@@ -1821,7 +2003,6 @@ export function BillingPage() {
                           onView={modals.openView}
                           onEdit={modals.openEdit}
                           onTerminate={setConfirmTerminate}
-                          onPay={setPayContract}
                           terminatingId={terminatingId}
                         />
                       ))}
@@ -1879,6 +2060,13 @@ export function BillingPage() {
         </div>
       )}
 
+      {/* Payment (pending) tab */}
+      {activeTab === "payment" && (
+        <div className="bg-surface rounded-xl border border-border shadow-card overflow-hidden">
+          <PaymentPendingTab />
+        </div>
+      )}
+
       {/* Modals */}
       {modals.createOpen && (
         <CreateContractModal onClose={modals.closeCreate} />
@@ -1887,25 +2075,12 @@ export function BillingPage() {
         <ViewContractModal
           contract={modals.viewItem}
           onClose={modals.closeView}
-          onPay={(c) => {
-            modals.closeView();
-            setPayContract(c);
-          }}
         />
       )}
       {modals.editItem && (
         <EditContractModal
           contract={modals.editItem}
           onClose={modals.closeEdit}
-        />
-      )}
-      {payContract && (
-        <BillPreviewPanel
-          specialistId={payContract.expertId}
-          expertName={payContract.expertName}
-          startDate={payContract.startDate}
-          endDate={payContract.endDate}
-          onClose={() => setPayContract(null)}
         />
       )}
       <ConfirmDialog
