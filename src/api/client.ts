@@ -1054,8 +1054,12 @@ export const api = {
     request<UnassignedStaff[]>("GET", "/api/Staffs/unassigned-role"),
   getStaffs: () => request<UserResponse[]>("GET", "/api/Staffs"),
   getStaff: (id: string) => request<UserResponse>("GET", `/api/Staffs/${id}`),
-  createStaff: (body: WorkerRequest) =>
-    request<UserResponse>("POST", "/api/Staffs", body),
+  createStaff: (body: WorkerRequest, roleName: string) =>
+    request<UserResponse>(
+      "POST",
+      `/api/Staffs?role=${encodeURIComponent(roleName)}`,
+      body,
+    ),
   updateStaff: (id: string, body: Omit<WorkerRequest, "roleId">) =>
     request<UserResponse>("PUT", `/api/Staffs/${id}`, body),
   assignStaffRole: (id: string, roleName: string) =>
