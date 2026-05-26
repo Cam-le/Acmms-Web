@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { qk } from "../../api/queryKeys";
 import {
@@ -41,6 +41,7 @@ import { Pagination } from "../components/ui/Pagination";
 import { RowActions } from "../components/ui/RowActions";
 import { LoadingState } from "../components/ui/LoadingState";
 import { EmptyState } from "../components/ui/EmptyState";
+import { QueryState } from "../components/ui/QueryState";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -66,12 +67,13 @@ const ROLE_LABEL: Record<string, string> = {
 const getRoleLabel = (role: string) => ROLE_LABEL[role] ?? role;
 
 function mapUser(u: UserResponse): WorkerRow {
-  const s =
-    u.status?.charAt(0).toUpperCase() +
-    (u.status?.slice(1).toLowerCase() ?? "");
+  const rawStatus = u.status ?? "";
+  const s = rawStatus
+    ? rawStatus.charAt(0).toUpperCase() + rawStatus.slice(1).toLowerCase()
+    : "";
   return {
     id: u.userId,
-    name: u.fullname ?? u.email,
+    name: u.fullname || u.email || "—",
     email: u.email,
     phone: u.phoneNumber ?? "",
     role: u.roleName ?? "Worker",
@@ -180,18 +182,6 @@ export function WorkersPage() {
   });
 
   const workers: WorkerRow[] = staffsQuery.data ?? [];
-  const loading = staffsQuery.isLoading;
-
-  useEffect(() => {
-    if (staffsQuery.error) {
-      showToast(
-        staffsQuery.error instanceof Error
-          ? staffsQuery.error.message
-          : "Không thể tải danh sách nhân viên",
-        "error",
-      );
-    }
-  }, [staffsQuery.error, showToast]);
 
   // ── Read: pending (unassigned) ─────────────────────────────────────────────
   const pendingQuery = useQuery({
@@ -203,7 +193,6 @@ export function WorkersPage() {
   });
 
   const pending: UnassignedStaff[] = pendingQuery.data ?? [];
-  const pendingLoading = pendingQuery.isLoading;
 
   // ── Sort ───────────────────────────────────────────────────────────────────
   const sort = useTableSort(workers, {
@@ -256,14 +245,17 @@ export function WorkersPage() {
         throw new Error(
           "Không tìm thấy ID vai trò. Vui lòng thử tải lại trang.",
         );
-      await api.createStaff({
-        email: formData.email.trim(),
-        password: "123456",
-        fullname: formData.name.trim(),
-        phoneNumber: formData.phone.trim(),
-        status: "Active",
-        roleId,
-      });
+      await api.createStaff(
+        {
+          email: formData.email.trim(),
+          password: "123456",
+          fullname: formData.name.trim(),
+          phoneNumber: formData.phone.trim(),
+          status: "Active",
+          roleId,
+        },
+        formData.role,
+      );
     },
     onSuccess: () => {
       modals.closeCreate();
@@ -500,16 +492,147 @@ export function WorkersPage() {
 
           {/* Table */}
           <div className="bg-surface rounded-card border border-border shadow-card">
-            {loading ? (
-              <LoadingState />
-            ) : filteredWorkers.length === 0 ? (
-              <EmptyState message="Không tìm thấy nhân viên nào" />
+            <QueryState
+              query={staffsQuery}
+              errorTitle="Không thể tải danh sách nhân viên"
+            >
+              {filteredWorkers.length === 0 ? (
+                <EmptyState message="Không tìm thấy nhân viên nào" />
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[700px]">
+                    <thead className="bg-surface-alt border-b border-border">
+                      <tr>
+                        {["Nhân viên", "Email", "SĐT", "Vai trò"].map((h) => (
+                          <th
+                            key={h}
+                            className="px-6 py-4 text-left text-xs font-bold text-ink-500 uppercase tracking-wider"
+                          >
+                            {h}
+                          </th>
+                        ))}
+                        <th className="px-6 py-4 text-left text-xs font-bold text-ink-500 uppercase tracking-wider">
+                          <button
+                            onClick={() => sort.toggle("dateJoined")}
+                            className="flex items-center gap-1 hover:text-primary"
+                          >
+                            Ngày tham gia <SortIcon field="dateJoined" />
+                          </button>
+                        </th>
+                        <th className="px-6 py-4 text-left text-xs font-bold text-ink-500 uppercase tracking-wider">
+                          <button
+                            onClick={() => sort.toggle("status")}
+                            className="flex items-center gap-1 hover:text-primary"
+                          >
+                            Trạng thái <SortIcon field="status" />
+                          </button>
+                        </th>
+                        <th className="px-6 py-4 text-left text-xs font-bold text-ink-500 uppercase tracking-wider">
+                          Thao tác
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {pagination.pagedItems.map((worker) => (
+                        <tr
+                          key={worker.id}
+                          className="hover:bg-surface-alt transition-colors"
+                        >
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-3">
+                              <div className="w-9 h-9 bg-primary rounded-pill flex items-center justify-center text-primary-fg text-sm font-bold shrink-0">
+                                {worker.name.charAt(0).toUpperCase()}
+                              </div>
+                              <span className="font-medium text-ink-800 text-sm">
+                                {worker.name}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-sm text-ink-500">
+                            {worker.email}
+                          </td>
+                          <td className="px-6 py-4 text-sm text-ink-500">
+                            {worker.phone}
+                          </td>
+                          <td className="px-6 py-4 text-sm text-ink-500">
+                            {getRoleLabel(worker.role)}
+                          </td>
+                          <td className="px-6 py-4 text-sm text-ink-500">
+                            {worker.dateJoined}
+                          </td>
+                          <td className="px-6 py-4">
+                            <StatusBadge
+                              label={workerStatusLabel(worker.status)}
+                              tone={workerStatusTone(worker.status)}
+                            />
+                          </td>
+                          <td className="px-6 py-4">
+                            <RowActions
+                              onView={() => modals.openView(worker)}
+                              onEdit={() => {
+                                setFormData({
+                                  name: worker.name,
+                                  email: worker.email,
+                                  phone: worker.phone,
+                                  role: worker.role,
+                                  status: worker.status,
+                                });
+                                setFormErrors({});
+                                setApiError(null);
+                                modals.openEdit(worker);
+                              }}
+                              onDelete={() => modals.openDelete(worker)}
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </QueryState>
+            {/* Pagination — only when data is loaded and there are results */}
+            {!staffsQuery.isLoading &&
+              !staffsQuery.isError &&
+              filteredWorkers.length > 0 && (
+                <div className="border-t border-border px-5 py-2">
+                  <Pagination
+                    currentPage={pagination.page}
+                    totalPages={pagination.totalPages}
+                    onPageChange={pagination.setPage}
+                    showLabel
+                    totalItems={filteredWorkers.length}
+                    pageSize={PAGE_SIZE}
+                    itemLabel="nhân viên"
+                  />
+                </div>
+              )}
+          </div>
+        </div>
+      ) : (
+        /* ===== PENDING TAB ===== */
+        <div className="bg-surface rounded-card border border-border shadow-card">
+          <QueryState
+            query={pendingQuery}
+            errorTitle="Không thể tải danh sách chờ duyệt"
+          >
+            {pending.length === 0 ? (
+              <EmptyState
+                icon={CheckCircle}
+                message="Không có tài khoản nào đang chờ duyệt"
+              />
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[700px]">
+                <table className="w-full min-w-[760px]">
                   <thead className="bg-surface-alt border-b border-border">
                     <tr>
-                      {["Nhân viên", "Email", "SĐT", "Vai trò"].map((h) => (
+                      {[
+                        "Họ và tên",
+                        "Email",
+                        "SĐT",
+                        "Vai trò đăng ký",
+                        "Ngày đăng ký",
+                      ].map((h) => (
                         <th
                           key={h}
                           className="px-6 py-4 text-left text-xs font-bold text-ink-500 uppercase tracking-wider"
@@ -518,77 +641,93 @@ export function WorkersPage() {
                         </th>
                       ))}
                       <th className="px-6 py-4 text-left text-xs font-bold text-ink-500 uppercase tracking-wider">
-                        <button
-                          onClick={() => sort.toggle("dateJoined")}
-                          className="flex items-center gap-1 hover:text-primary"
-                        >
-                          Ngày tham gia <SortIcon field="dateJoined" />
-                        </button>
-                      </th>
-                      <th className="px-6 py-4 text-left text-xs font-bold text-ink-500 uppercase tracking-wider">
-                        <button
-                          onClick={() => sort.toggle("status")}
-                          className="flex items-center gap-1 hover:text-primary"
-                        >
-                          Trạng thái <SortIcon field="status" />
-                        </button>
-                      </th>
-                      <th className="px-6 py-4 text-left text-xs font-bold text-ink-500 uppercase tracking-wider">
                         Thao tác
                       </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
-                    {pagination.pagedItems.map((worker) => (
+                    {pending.map((s) => (
                       <tr
-                        key={worker.id}
+                        key={s.userId}
                         className="hover:bg-surface-alt transition-colors"
                       >
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-3">
                             <div className="w-9 h-9 bg-primary rounded-pill flex items-center justify-center text-primary-fg text-sm font-bold shrink-0">
-                              {worker.name.charAt(0).toUpperCase()}
+                              {(s.fullname || s.email || "?")
+                                .charAt(0)
+                                .toUpperCase()}
                             </div>
                             <span className="font-medium text-ink-800 text-sm">
-                              {worker.name}
+                              {s.fullname || "—"}
                             </span>
                           </div>
                         </td>
                         <td className="px-6 py-4 text-sm text-ink-500">
-                          {worker.email}
+                          {s.email}
                         </td>
                         <td className="px-6 py-4 text-sm text-ink-500">
-                          {worker.phone}
-                        </td>
-                        <td className="px-6 py-4 text-sm text-ink-500">
-                          {getRoleLabel(worker.role)}
-                        </td>
-                        <td className="px-6 py-4 text-sm text-ink-500">
-                          {worker.dateJoined}
+                          {s.phoneNumber || "—"}
                         </td>
                         <td className="px-6 py-4">
-                          <StatusBadge
-                            label={workerStatusLabel(worker.status)}
-                            tone={workerStatusTone(worker.status)}
-                          />
+                          {s.requestedRole ? (
+                            <StatusBadge
+                              label={getRoleLabel(s.requestedRole)}
+                              tone={
+                                s.requestedRole === "Specialist"
+                                  ? "info"
+                                  : "success"
+                              }
+                            />
+                          ) : (
+                            <StatusBadge label="Chưa xác định" tone="neutral" />
+                          )}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-ink-500">
+                          <div className="flex items-center gap-1">
+                            <Clock className="w-3.5 h-3.5 shrink-0" />
+                            {s.createdAt
+                              ? new Date(s.createdAt).toLocaleDateString(
+                                  "vi-VN",
+                                )
+                              : "—"}
+                          </div>
                         </td>
                         <td className="px-6 py-4">
-                          <RowActions
-                            onView={() => modals.openView(worker)}
-                            onEdit={() => {
-                              setFormData({
-                                name: worker.name,
-                                email: worker.email,
-                                phone: worker.phone,
-                                role: worker.role,
-                                status: worker.status,
-                              });
-                              setFormErrors({});
-                              setApiError(null);
-                              modals.openEdit(worker);
-                            }}
-                            onDelete={() => modals.openDelete(worker)}
-                          />
+                          <div className="flex items-center gap-2">
+                            {pendingRowError[s.userId] && (
+                              <span className="text-xs text-status-danger-fg max-w-[120px] leading-tight">
+                                {pendingRowError[s.userId]}
+                              </span>
+                            )}
+                            <button
+                              onClick={() => handleApprovePending(s)}
+                              disabled={
+                                approvingId === s.userId || !s.requestedRole
+                              }
+                              title={
+                                !s.requestedRole
+                                  ? "Chưa có vai trò đăng ký"
+                                  : `Duyệt vai trò ${getRoleLabel(s.requestedRole)}`
+                              }
+                              className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-fg rounded-btn text-xs font-medium hover:bg-primary-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              {approvingId === s.userId ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <CheckCircle className="w-3.5 h-3.5" />
+                              )}
+                              Duyệt
+                            </button>
+                            <button
+                              onClick={() => setRejectTarget(s)}
+                              disabled={approvingId === s.userId}
+                              className="flex items-center gap-1.5 px-3 py-1.5 bg-surface border border-status-danger-fg/40 text-status-danger-fg rounded-btn text-xs font-medium hover:bg-status-danger-bg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              Từ chối
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -596,147 +735,12 @@ export function WorkersPage() {
                 </table>
               </div>
             )}
-            {/* Pagination */}
-            {!loading && filteredWorkers.length > 0 && (
-              <div className="border-t border-border px-5 py-2">
-                <Pagination
-                  currentPage={pagination.page}
-                  totalPages={pagination.totalPages}
-                  onPageChange={pagination.setPage}
-                  showLabel
-                  totalItems={filteredWorkers.length}
-                  pageSize={PAGE_SIZE}
-                  itemLabel="nhân viên"
-                />
+            {pending.length > 0 && (
+              <div className="px-6 py-3 border-t border-border text-xs text-ink-400">
+                {pending.length} tài khoản đang chờ duyệt
               </div>
             )}
-          </div>
-        </div>
-      ) : (
-        /* ===== PENDING TAB ===== */
-        <div className="bg-surface rounded-card border border-border shadow-card">
-          {pendingLoading ? (
-            <LoadingState />
-          ) : pending.length === 0 ? (
-            <EmptyState
-              icon={CheckCircle}
-              message="Không có tài khoản nào đang chờ duyệt"
-            />
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[760px]">
-                <thead className="bg-surface-alt border-b border-border">
-                  <tr>
-                    {[
-                      "Họ và tên",
-                      "Email",
-                      "SĐT",
-                      "Vai trò đăng ký",
-                      "Ngày đăng ký",
-                    ].map((h) => (
-                      <th
-                        key={h}
-                        className="px-6 py-4 text-left text-xs font-bold text-ink-500 uppercase tracking-wider"
-                      >
-                        {h}
-                      </th>
-                    ))}
-                    <th className="px-6 py-4 text-left text-xs font-bold text-ink-500 uppercase tracking-wider">
-                      Thao tác
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {pending.map((s) => (
-                    <tr
-                      key={s.userId}
-                      className="hover:bg-surface-alt transition-colors"
-                    >
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-9 h-9 bg-primary rounded-pill flex items-center justify-center text-primary-fg text-sm font-bold shrink-0">
-                            {(s.fullname || s.email).charAt(0).toUpperCase()}
-                          </div>
-                          <span className="font-medium text-ink-800 text-sm">
-                            {s.fullname || "—"}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-ink-500">
-                        {s.email}
-                      </td>
-                      <td className="px-6 py-4 text-sm text-ink-500">
-                        {s.phoneNumber || "—"}
-                      </td>
-                      <td className="px-6 py-4">
-                        {s.requestedRole ? (
-                          <StatusBadge
-                            label={getRoleLabel(s.requestedRole)}
-                            tone={
-                              s.requestedRole === "Specialist"
-                                ? "info"
-                                : "success"
-                            }
-                          />
-                        ) : (
-                          <StatusBadge label="Chưa xác định" tone="neutral" />
-                        )}
-                      </td>
-                      <td className="px-6 py-4 text-sm text-ink-500">
-                        <div className="flex items-center gap-1">
-                          <Clock className="w-3.5 h-3.5 shrink-0" />
-                          {s.createdAt
-                            ? new Date(s.createdAt).toLocaleDateString("vi-VN")
-                            : "—"}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-2">
-                          {pendingRowError[s.userId] && (
-                            <span className="text-xs text-status-danger-fg max-w-[120px] leading-tight">
-                              {pendingRowError[s.userId]}
-                            </span>
-                          )}
-                          <button
-                            onClick={() => handleApprovePending(s)}
-                            disabled={
-                              approvingId === s.userId || !s.requestedRole
-                            }
-                            title={
-                              !s.requestedRole
-                                ? "Chưa có vai trò đăng ký"
-                                : `Duyệt vai trò ${getRoleLabel(s.requestedRole)}`
-                            }
-                            className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-fg rounded-btn text-xs font-medium hover:bg-primary-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            {approvingId === s.userId ? (
-                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            ) : (
-                              <CheckCircle className="w-3.5 h-3.5" />
-                            )}
-                            Duyệt
-                          </button>
-                          <button
-                            onClick={() => setRejectTarget(s)}
-                            disabled={approvingId === s.userId}
-                            className="flex items-center gap-1.5 px-3 py-1.5 bg-surface border border-status-danger-fg/40 text-status-danger-fg rounded-btn text-xs font-medium hover:bg-status-danger-bg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                            Từ chối
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-          {!pendingLoading && pending.length > 0 && (
-            <div className="px-6 py-3 border-t border-border text-xs text-ink-400">
-              {pending.length} tài khoản đang chờ duyệt
-            </div>
-          )}
+          </QueryState>
         </div>
       )}
 
@@ -751,7 +755,7 @@ export function WorkersPage() {
           <div className="space-y-4">
             <div className="flex items-center gap-4">
               <div className="w-14 h-14 bg-primary rounded-pill flex items-center justify-center text-primary-fg text-xl font-bold">
-                {modals.viewItem.name.charAt(0).toUpperCase()}
+                {(modals.viewItem.name || "?").charAt(0).toUpperCase()}
               </div>
               <div>
                 <div className="font-bold text-ink-800 text-lg">

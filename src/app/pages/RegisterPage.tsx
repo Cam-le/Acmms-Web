@@ -1,10 +1,12 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router";
-import { Eye, EyeOff, Wifi } from "lucide-react";
+import { Eye, EyeOff } from "lucide-react";
 import { apiRegister } from "../../api/auth";
 import { Button } from "../components/ui/Button";
 import { FormField } from "../components/ui/FormField";
 import { FormSelect } from "../components/ui/FormSelect";
+import { useToast } from "../components/ui/useToast";
+import { ToastContainer } from "../components/ui/ToastContainer";
 
 export function RegisterPage() {
   const navigate = useNavigate();
@@ -19,8 +21,7 @@ export function RegisterPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState(false);
+  const { toasts, showToast, dismissToast } = useToast();
 
   const setField = (field: keyof typeof form) => (value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -36,18 +37,18 @@ export function RegisterPage() {
       return "Vui lòng điền đầy đủ thông tin";
     if (form.password !== form.confirmPassword)
       return "Mật khẩu xác nhận không khớp";
-    if (form.password.length < 6) return "Mật khẩu phải có ít nhất 6 ký tự";
+    if (form.password.length < 8 || form.password.length > 100)
+      return "Mật khẩu phải từ 8 đến 100 ký tự";
+    if (!/[a-zA-Z]/.test(form.password) || !/[0-9]/.test(form.password))
+      return "Mật khẩu phải chứa cả chữ và số";
     return "";
   };
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError("");
-    setSuccess(false);
-
     const err = validate();
     if (err) {
-      setError(err);
+      showToast(err, "error");
       return;
     }
 
@@ -63,14 +64,18 @@ export function RegisterPage() {
       });
 
       if (res.success) {
-        setSuccess(true);
-        setTimeout(() => navigate("/login"), 1200);
+        showToast("Đăng ký thành công! Đang chuyển hướng...", "success");
+        setTimeout(() => navigate("/login"), 1500);
       } else {
-        setError(res.message || "Đăng ký thất bại. Vui lòng thử lại.");
+        showToast(
+          res.message || "Đăng ký thất bại. Vui lòng thử lại.",
+          "error",
+        );
       }
     } catch {
-      setError(
+      showToast(
         "Không thể kết nối máy chủ. Vui lòng kiểm tra kết nối và thử lại.",
+        "error",
       );
     } finally {
       setLoading(false);
@@ -125,7 +130,7 @@ export function RegisterPage() {
             type="tel"
             value={form.phoneNumber}
             onChange={setField("phoneNumber")}
-            placeholder="0909998877"
+            placeholder="0961234567"
             disabled={loading}
           />
 
@@ -135,7 +140,7 @@ export function RegisterPage() {
             onChange={setField("targetRole")}
             disabled={loading}
             options={[
-              { value: "Worker", label: "Nhân viên" },
+              { value: "Worker", label: "Công Nhân" },
               { value: "Specialist", label: "Chuyên gia nông nghiệp" },
             ]}
           />
@@ -178,18 +183,6 @@ export function RegisterPage() {
             }
           />
 
-          {error && (
-            <div className="p-3 bg-status-danger-bg text-status-danger-fg text-sm rounded-btn">
-              {error}
-            </div>
-          )}
-
-          {success && (
-            <div className="p-3 bg-status-success-bg text-status-success-fg text-sm rounded-btn flex items-center gap-2">
-              <Wifi size={16} /> Đăng ký thành công! Đang chuyển hướng...
-            </div>
-          )}
-
           <Button type="submit" fullWidth loading={loading}>
             Đăng ký
           </Button>
@@ -205,6 +198,7 @@ export function RegisterPage() {
           </Link>
         </p>
       </div>
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 }
