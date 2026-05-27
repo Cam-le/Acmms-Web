@@ -34,6 +34,22 @@ import { formatDate } from "../utils/format";
 
 const PAGE_SIZE = 10;
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * Sort bed/harvest-detail items by name.
+ * Extracts the first numeric token for numeric ordering, falls back to vi
+ * locale compare. Handles both "Luống 7" and "Luống 04_Vuông 01_Tây Nam".
+ */
+function sortByBedName<T extends { bedName: string }>(items: T[]): T[] {
+  return [...items].sort((a, b) => {
+    const numA = parseInt(a.bedName.match(/\d+/)?.[0] ?? "0", 10);
+    const numB = parseInt(b.bedName.match(/\d+/)?.[0] ?? "0", 10);
+    if (numA !== numB) return numA - numB;
+    return a.bedName.localeCompare(b.bedName, "vi");
+  });
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export function IoTPage() {
@@ -435,14 +451,14 @@ function IotFormModal({
   onSubmit: () => void;
   onClose: () => void;
 }) {
-  // ── Harvest selection (add mode only) ────────────────────────────────
+  // ── Cascade state: season → harvest → bed ───────────────────────────
   const [selectedHarvestId, setSelectedHarvestId] = useState<string>("");
 
   // Step 2: harvests for selected season
   const harvestsQuery = useQuery({
     queryKey: qk.seasons.harvests(selectedSeasonId),
     queryFn: () => api.getHarvestsBySeason(selectedSeasonId),
-    enabled: open && mode === "add" && !!selectedSeasonId,
+    enabled: open && !!selectedSeasonId,
   });
 
   const harvests: HarvestResponse[] = harvestsQuery.data ?? [];
@@ -454,35 +470,44 @@ function IotFormModal({
     }
   }, [harvests, selectedHarvestId]);
 
-  // Reset harvest selection when season changes
+  // Reset harvest + bed when season changes
   useEffect(() => {
     setSelectedHarvestId("");
+    // Don't clear formData.bedId here — on edit open the bedId is pre-set
+    // and season change is intentional, so we let bed reset via harvest change.
   }, [selectedSeasonId]);
 
   // Step 3: harvest-details (beds) for selected harvest
   const harvestDetailsQuery = useQuery({
     queryKey: qk.seasons.harvestDetails(selectedHarvestId),
     queryFn: () => api.getHarvestDetailsByHarvest(selectedHarvestId),
-    enabled: open && mode === "add" && !!selectedHarvestId,
+    enabled: open && !!selectedHarvestId,
   });
 
-  const harvestDetails: HarvestDetailResponse[] =
-    harvestDetailsQuery.data ?? [];
+  const harvestDetails: HarvestDetailResponse[] = sortByBedName(
+    harvestDetailsQuery.data ?? [],
+  );
 
-  // Auto-select first bed when details load / harvest changes
+  // In add mode: auto-select first bed when details load
   useEffect(() => {
-    if (harvestDetails.length > 0) {
+    if (mode === "add" && harvestDetails.length > 0 && !formData.bedId) {
       setFormData({ ...formData, bedId: harvestDetails[0].bedId });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [harvestDetails]);
+  }, [harvestDetails, mode]);
 
-  // Reset bed + harvest selection when modal closes
+  // Reset cascade state when modal closes
   useEffect(() => {
     if (!open) {
       setSelectedHarvestId("");
     }
   }, [open]);
+
+  // When harvest changes, clear bed selection so user must pick explicitly
+  const handleHarvestChange = (harvestId: string) => {
+    setSelectedHarvestId(harvestId);
+    setFormData({ ...formData, bedId: "" });
+  };
 
   const canSubmit =
     formData.bedId.trim() !== "" &&
@@ -507,80 +532,75 @@ function IotFormModal({
       }
     >
       <div className="space-y-4">
-        {/* Bed selection — only when adding */}
-        {mode === "add" && (
-          <div className="space-y-3 p-4 bg-primary-50 rounded-btn border border-primary-200">
-            <p className="text-xs font-semibold text-primary-700 uppercase tracking-wide">
-              Chọn luống lắp đặt
-            </p>
+        {/* Bed selection — shown for both add and edit */}
+        <div className="space-y-3 p-4 bg-primary-50 rounded-btn border border-primary-200">
+          <p className="text-xs font-semibold text-primary-700 uppercase tracking-wide">
+            Chọn luống lắp đặt
+          </p>
 
-            {/* Season */}
-            <FormSelect
-              label="Mùa vụ"
-              value={selectedSeasonId}
-              onChange={setSelectedSeasonId}
-              options={
-                seasons.length === 0
-                  ? [{ value: "", label: "Không có mùa vụ" }]
-                  : seasons.map((s) => ({
-                      value: s.seasonId,
-                      label: s.seasonName,
-                    }))
-              }
+          {/* Season */}
+          <FormSelect
+            label="Mùa vụ"
+            value={selectedSeasonId}
+            onChange={setSelectedSeasonId}
+            options={
+              seasons.length === 0
+                ? [{ value: "", label: "Không có mùa vụ" }]
+                : seasons.map((s) => ({
+                    value: s.seasonId,
+                    label: s.seasonName,
+                  }))
+            }
+          />
+
+          {/* Harvest (plot) */}
+          {harvestsQuery.isLoading ? (
+            <LoadingState
+              variant="inline"
+              message="Đang tải danh sách vuông..."
             />
+          ) : harvestsQuery.isError ? (
+            <p className="text-xs text-status-danger-fg">
+              Không thể tải danh sách vuông. Vui lòng thử lại.
+            </p>
+          ) : (
+            <FormSelect
+              label="Vuông"
+              value={selectedHarvestId}
+              onChange={handleHarvestChange}
+              placeholder="— Chọn vuông —"
+              options={harvests.map((h) => ({
+                value: h.harvestId,
+                label: h.plotName,
+              }))}
+            />
+          )}
 
-            {/* Harvest (plot) */}
-            {harvestsQuery.isLoading ? (
+          {/* Bed */}
+          {!!selectedHarvestId &&
+            (harvestDetailsQuery.isLoading ? (
               <LoadingState
                 variant="inline"
-                message="Đang tải danh sách vuông..."
+                message="Đang tải danh sách luống..."
               />
-            ) : harvestsQuery.isError ? (
+            ) : harvestDetailsQuery.isError ? (
               <p className="text-xs text-status-danger-fg">
-                Không thể tải danh sách vuông. Vui lòng thử lại.
+                Không thể tải danh sách luống. Vui lòng thử lại.
               </p>
             ) : (
               <FormSelect
-                label="Vuông"
-                value={selectedHarvestId}
-                onChange={(v) => {
-                  setSelectedHarvestId(v);
-                  setFormData({ ...formData, bedId: "" });
-                }}
-                placeholder="— Chọn vuông —"
-                options={harvests.map((h) => ({
-                  value: h.harvestId,
-                  label: h.plotName,
+                label="Luống"
+                required
+                value={formData.bedId}
+                onChange={(v) => setFormData({ ...formData, bedId: v })}
+                placeholder="— Chọn luống —"
+                options={harvestDetails.map((d) => ({
+                  value: d.bedId,
+                  label: d.bedName,
                 }))}
               />
-            )}
-
-            {/* Bed */}
-            {!!selectedHarvestId &&
-              (harvestDetailsQuery.isLoading ? (
-                <LoadingState
-                  variant="inline"
-                  message="Đang tải danh sách luống..."
-                />
-              ) : harvestDetailsQuery.isError ? (
-                <p className="text-xs text-status-danger-fg">
-                  Không thể tải danh sách luống. Vui lòng thử lại.
-                </p>
-              ) : (
-                <FormSelect
-                  label="Luống"
-                  required
-                  value={formData.bedId}
-                  onChange={(v) => setFormData({ ...formData, bedId: v })}
-                  placeholder="— Chọn luống —"
-                  options={harvestDetails.map((d) => ({
-                    value: d.bedId,
-                    label: d.bedName,
-                  }))}
-                />
-              ))}
-          </div>
-        )}
+            ))}
+        </div>
 
         {/* Device Code + Name */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
