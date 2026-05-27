@@ -425,7 +425,8 @@ export interface CropGrowthTaskResponse {
   growthTaskId: string;
   stageId: string;
   stageName: string;
-  taskName: string;
+  /** Present on records created after the taskId migration; absent on legacy records. */
+  taskId?: string;
   taskDescription: string;
   frequency: string;
   durationMinutes: number;
@@ -441,7 +442,8 @@ export interface CropGrowthTaskResponse {
 
 export interface CropGrowthTaskRequest {
   stageId: string;
-  taskName: string;
+  /** Required for new records — references an existing Task. */
+  taskId: string;
   taskDescription?: string;
   frequency?: string;
   durationMinutes?: number;
@@ -469,6 +471,7 @@ export interface TaskRequest {
   taskTitle: string;
   taskStatus: string;
   taskNotes?: string;
+  taskType?: string;
 }
 
 // ── Task Details ─────────────────────────────────────────────────────────────

@@ -36,6 +36,7 @@ import {
   CompatibleSoil,
   CropGrowthStageResponse,
   CropGrowthTaskResponse,
+  TaskResponse,
 } from "../../api/client";
 import { qk } from "../../api/queryKeys";
 import { Button } from "../components/ui/Button";
@@ -753,7 +754,7 @@ function GrowthStagesTab({
     mutationFn: ({ stageId, data }: { stageId: string; data: TaskFormData }) =>
       api.createCropGrowthTask({
         stageId,
-        taskName: data.taskName,
+        taskId: data.taskId,
         taskDescription: data.taskDescription || undefined,
         frequency: data.frequency || undefined,
         durationMinutes: data.durationMinutes,
@@ -784,7 +785,7 @@ function GrowthStagesTab({
     mutationFn: (data: TaskFormData) =>
       api.updateCropGrowthTask(selectedTask!.growthTaskId, {
         stageId: selectedTask!.stageId,
-        taskName: data.taskName,
+        taskId: data.taskId,
         taskDescription: data.taskDescription || undefined,
         frequency: data.frequency || undefined,
         durationMinutes: data.durationMinutes,
@@ -1088,7 +1089,8 @@ function GrowthStagesTab({
               Xóa nhiệm vụ
             </AlertDialog.Title>
             <AlertDialog.Description className="text-sm text-[#62748e] mb-6">
-              Xóa nhiệm vụ <strong>{selectedTask?.taskName}</strong>?
+              Xóa nhiệm vụ{" "}
+              <strong>{selectedTask?.taskDescription || "này"}</strong>?
             </AlertDialog.Description>
             <div className="flex justify-end gap-3">
               <AlertDialog.Cancel className="px-4 py-2 text-sm text-[#62748e] hover:text-[#334155]">
@@ -1283,7 +1285,7 @@ function StageCard({
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
                         <p className="text-xs font-semibold text-[#115e59]">
-                          {task.taskName}
+                          {task.taskDescription || "—"}
                         </p>
                         {task.isMandatory && (
                           <span className="px-1.5 py-0.5 bg-[#fee2e2] text-[#b91c1c] text-[9px] font-medium rounded-full shrink-0">
@@ -1316,9 +1318,6 @@ function StageCard({
                           </span>
                         )}
                       </div>
-                      <p className="text-[11px] text-[#62748e] mb-2">
-                        {task.taskDescription}
-                      </p>
                       <div className="flex flex-wrap gap-3 text-[10px] text-[#94a3b8]">
                         <span>
                           <span className="font-medium text-[#334155]">
@@ -1583,7 +1582,7 @@ function StageFormModal({
 
 // ---- TaskFormData ----
 interface TaskFormData {
-  taskName: string;
+  taskId: string;
   taskDescription: string;
   frequency: string;
   durationMinutes: number;
@@ -1614,8 +1613,13 @@ function TaskFormModal({
   onSubmit: (data: TaskFormData) => void;
   submitting: boolean;
 }) {
+  void stageId;
+
+  const { showToast } = useToast();
+  const queryClient = useQueryClient();
+
   const defaultForm: TaskFormData = {
-    taskName: "",
+    taskId: "",
     taskDescription: "",
     frequency: "Hàng ngày",
     durationMinutes: 30,
@@ -1631,51 +1635,102 @@ function TaskFormModal({
   const [form, setForm] = useState<TaskFormData>(
     initial
       ? {
-          taskName: initial.taskName,
-          taskDescription: initial.taskDescription,
-          frequency: initial.frequency,
-          durationMinutes: initial.durationMinutes,
-          requiredTools: initial.requiredTools,
-          requiredMaterials: initial.requiredMaterials,
-          quantityPerUnit: initial.quantityPerUnit,
-          quantityUnit: initial.quantityUnit,
-          priority: initial.priority,
-          isMandatory: initial.isMandatory,
-          notes: initial.notes,
+          taskId: initial.taskId ?? "",
+          taskDescription: initial.taskDescription ?? "",
+          frequency: initial.frequency ?? "Hàng ngày",
+          durationMinutes: initial.durationMinutes ?? 30,
+          requiredTools: initial.requiredTools ?? "",
+          requiredMaterials: initial.requiredMaterials ?? "",
+          quantityPerUnit: initial.quantityPerUnit ?? 0,
+          quantityUnit: initial.quantityUnit ?? "",
+          priority: initial.priority ?? 3,
+          isMandatory: initial.isMandatory ?? false,
+          notes: initial.notes ?? "",
         }
       : defaultForm,
   );
+
+  // Inline new-task creation state
+  const [showNewTask, setShowNewTask] = useState(false);
+  const [newTaskTitle, setNewTaskTitle] = useState("");
+  const [newTaskNotes, setNewTaskNotes] = useState("");
+  const [creatingTask, setCreatingTask] = useState(false);
 
   useEffect(() => {
     setForm(
       initial
         ? {
-            taskName: initial.taskName,
-            taskDescription: initial.taskDescription,
-            frequency: initial.frequency,
-            durationMinutes: initial.durationMinutes,
-            requiredTools: initial.requiredTools,
-            requiredMaterials: initial.requiredMaterials,
-            quantityPerUnit: initial.quantityPerUnit,
-            quantityUnit: initial.quantityUnit,
-            priority: initial.priority,
-            isMandatory: initial.isMandatory,
-            notes: initial.notes,
+            taskId: initial.taskId ?? "",
+            taskDescription: initial.taskDescription ?? "",
+            frequency: initial.frequency ?? "Hàng ngày",
+            durationMinutes: initial.durationMinutes ?? 30,
+            requiredTools: initial.requiredTools ?? "",
+            requiredMaterials: initial.requiredMaterials ?? "",
+            quantityPerUnit: initial.quantityPerUnit ?? 0,
+            quantityUnit: initial.quantityUnit ?? "",
+            priority: initial.priority ?? 3,
+            isMandatory: initial.isMandatory ?? false,
+            notes: initial.notes ?? "",
           }
         : defaultForm,
     );
+    setShowNewTask(false);
+    setNewTaskTitle("");
+    setNewTaskNotes("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  // Fetch available tasks
+  const tasksQuery = useQuery({
+    queryKey: qk.tasks.list(),
+    queryFn: () => api.getTasks(),
+    enabled: open,
+  });
+  const availableTasks = tasksQuery.data ?? [];
 
   const f = (key: keyof TaskFormData, val: string | number | boolean) =>
     setForm((p) => ({ ...p, [key]: val }));
 
+  const handleCreateTask = async () => {
+    if (!newTaskTitle.trim()) return;
+    setCreatingTask(true);
+    try {
+      const created = await api.createTask({
+        taskTitle: newTaskTitle.trim(),
+        taskStatus: "Active",
+        taskNotes: newTaskNotes.trim() || undefined,
+      });
+      // The POST /api/Tasks returns the created task object
+      const newId = (created as TaskResponse | null)?.taskId ?? "";
+      await queryClient.invalidateQueries({ queryKey: qk.tasks.list() });
+      if (newId) {
+        setForm((p) => ({ ...p, taskId: newId }));
+        showToast("Tạo nhiệm vụ mới thành công", "success");
+      }
+      setShowNewTask(false);
+      setNewTaskTitle("");
+      setNewTaskNotes("");
+    } catch (err) {
+      showToast(
+        err instanceof Error ? err.message : "Không thể tạo nhiệm vụ",
+        "error",
+      );
+    } finally {
+      setCreatingTask(false);
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!form.taskId) {
+      showToast("Vui lòng chọn nhiệm vụ", "error");
+      return;
+    }
     onSubmit(form);
   };
 
-  void stageId;
+  const selectedTaskTitle =
+    availableTasks.find((t) => t.taskId === form.taskId)?.taskTitle ?? "";
 
   return (
     <Dialog.Root open={open} onOpenChange={onClose}>
@@ -1698,18 +1753,105 @@ function TaskFormModal({
               Form nhiệm vụ giai đoạn
             </Dialog.Description>
 
+            {/* Task selector */}
             <div>
-              <label className="block text-xs font-medium text-[#45556c] mb-1">
-                Tên nhiệm vụ <span className="text-red-500">*</span>
-              </label>
-              <input
-                required
-                value={form.taskName}
-                onChange={(e) => f("taskName", e.target.value)}
-                className="w-full px-3 py-2 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155]"
-                placeholder="Tưới nước"
-              />
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-medium text-[#45556c]">
+                  Nhiệm vụ <span className="text-red-500">*</span>
+                </label>
+                {!showNewTask && (
+                  <button
+                    type="button"
+                    onClick={() => setShowNewTask(true)}
+                    className="flex items-center gap-1 text-[10px] text-[#009689] hover:underline"
+                  >
+                    <Plus className="w-3 h-3" /> Tạo nhiệm vụ mới
+                  </button>
+                )}
+              </div>
+
+              {showNewTask ? (
+                <div className="border border-[#009689]/30 bg-[#f0fdf9] rounded-lg p-3 space-y-2">
+                  <p className="text-[11px] font-semibold text-[#009689]">
+                    Tạo nhiệm vụ mới
+                  </p>
+                  <input
+                    value={newTaskTitle}
+                    onChange={(e) => setNewTaskTitle(e.target.value)}
+                    className="w-full px-3 py-2 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155]"
+                    placeholder="Tên nhiệm vụ..."
+                  />
+                  <textarea
+                    value={newTaskNotes}
+                    onChange={(e) => setNewTaskNotes(e.target.value)}
+                    rows={2}
+                    className="w-full px-3 py-2 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] text-[#334155] resize-none"
+                    placeholder="Ghi chú (không bắt buộc)..."
+                  />
+                  <div className="flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowNewTask(false);
+                        setNewTaskTitle("");
+                        setNewTaskNotes("");
+                      }}
+                      className="px-3 py-1.5 text-xs text-[#62748e] hover:text-[#334155]"
+                    >
+                      Hủy
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCreateTask}
+                      disabled={!newTaskTitle.trim() || creatingTask}
+                      className="flex items-center gap-1 px-3 py-1.5 bg-[#009689] text-white text-xs rounded-lg hover:bg-[#007f75] disabled:opacity-50"
+                    >
+                      {creatingTask && (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      )}
+                      Tạo & chọn
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="relative">
+                  {tasksQuery.isLoading ? (
+                    <div className="w-full px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm text-[#94a3b8] bg-[#f8fafc] flex items-center gap-2">
+                      <Loader2 className="w-4 h-4 animate-spin text-[#009689]" />
+                      Đang tải...
+                    </div>
+                  ) : tasksQuery.isError ? (
+                    <div className="w-full px-3 py-2.5 border border-red-200 rounded-lg text-sm text-red-500 bg-red-50">
+                      Không thể tải danh sách nhiệm vụ
+                    </div>
+                  ) : (
+                    <select
+                      value={form.taskId}
+                      onChange={(e) => f("taskId", e.target.value)}
+                      className="w-full px-3 py-2.5 border border-[#e2e8f0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] bg-white text-[#334155] appearance-none"
+                    >
+                      <option value="">— Chọn nhiệm vụ —</option>
+                      {availableTasks.map((t) => (
+                        <option key={t.taskId} value={t.taskId}>
+                          {t.taskTitle}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              )}
+
+              {/* Show selected task label when editing */}
+              {mode === "edit" && form.taskId && selectedTaskTitle && (
+                <p className="mt-1 text-[11px] text-[#62748e]">
+                  Nhiệm vụ đã chọn:{" "}
+                  <span className="font-medium text-[#115e59]">
+                    {selectedTaskTitle}
+                  </span>
+                </p>
+              )}
             </div>
+
             <div>
               <label className="block text-xs font-medium text-[#45556c] mb-1">
                 Mô tả
@@ -1856,7 +1998,7 @@ function TaskFormModal({
               </Dialog.Close>
               <button
                 type="submit"
-                disabled={submitting}
+                disabled={submitting || !form.taskId}
                 className="px-4 py-2 bg-[#009689] text-white text-sm rounded-lg hover:bg-[#007f75] flex items-center gap-2 disabled:opacity-50"
               >
                 {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
