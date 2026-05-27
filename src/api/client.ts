@@ -534,6 +534,19 @@ export interface DiagnosisRequest {
   severityLevel: string; // "LOW" | "MEDIUM" | "HIGH" | "CRITICAL"
 }
 
+export interface RecommendationResponse {
+  recommendationId: string;
+  seasonId: string;
+  diagnosisId: string;
+  title: string;
+  content: string;
+  createdAt: string;
+  /** Denormalized disease name from the parent diagnosis */
+  diagnosisDiseaseName: string;
+  /** Severity from the parent diagnosis — "LOW" | "MEDIUM" | "HIGH" | "CRITICAL" */
+  diagnosisSeverity: string;
+}
+
 // Parsed shape of ReportResponse.aiResultsJson
 export interface AiResultParsed {
   diseaseName?: string;
@@ -1177,6 +1190,11 @@ export const api = {
     request<DiagnosisResponse[]>("GET", "/api/Reports/diagnosis"),
   getDiagnosisById: (diagnosisId: string) =>
     request<DiagnosisResponse>("GET", `/api/Reports/diagnosis/${diagnosisId}`),
+  getRecommendationsByDiagnosis: (diagnosisId: string) =>
+    request<RecommendationResponse[]>(
+      "GET",
+      `/api/Recommendations/diagnosis/${diagnosisId}`,
+    ),
   createDiagnosis: (reportId: string, body: DiagnosisRequest) =>
     request<DiagnosisResponse>(
       "POST",

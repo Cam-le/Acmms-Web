@@ -26,7 +26,10 @@ import {
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { qk } from "../../api/queryKeys";
 import { api } from "../../api/client";
-import type { ReportAttachment } from "../../api/client";
+import type {
+  ReportAttachment,
+  RecommendationResponse,
+} from "../../api/client";
 import { useToast } from "../components/ui/useToast";
 import { ToastContainer } from "../components/ui/ToastContainer";
 import { SearchInput } from "../components/ui/SearchInput";
@@ -223,6 +226,71 @@ function ReportTypeBadge({ type }: { type: string }) {
       <Icon className="w-3 h-3 shrink-0" />
       {label}
     </span>
+  );
+}
+
+// ===================== DIAGNOSIS RECOMMENDATIONS =====================
+
+/**
+ * Fetches and renders specialist recommendations for a single diagnosis.
+ * Only mounted when the report is DIAGNOSED, so `diagnosisId` is always valid.
+ */
+function DiagnosisRecommendations({ diagnosisId }: { diagnosisId: string }) {
+  const recQuery = useQuery({
+    queryKey: qk.reports.recommendations(diagnosisId),
+    queryFn: () => api.getRecommendationsByDiagnosis(diagnosisId),
+    enabled: !!diagnosisId,
+  });
+
+  const recommendations: RecommendationResponse[] = recQuery.data ?? [];
+
+  if (recQuery.isLoading) {
+    return (
+      <LoadingState
+        message="Đang tải khuyến nghị chuyên gia..."
+        variant="inline"
+      />
+    );
+  }
+
+  if (recQuery.isError) {
+    return (
+      <p className="text-xs text-status-danger-fg">
+        Không thể tải khuyến nghị.{" "}
+        <button
+          type="button"
+          className="underline hover:no-underline"
+          onClick={() => recQuery.refetch()}
+        >
+          Thử lại
+        </button>
+      </p>
+    );
+  }
+
+  if (recommendations.length === 0) return null;
+
+  return (
+    <div className="space-y-2">
+      <div className="text-xs text-ink-500 flex items-center gap-1 font-medium">
+        <BadgeCheck className="w-3.5 h-3.5 text-primary shrink-0" />
+        Khuyến nghị từ chuyên gia
+      </div>
+      {recommendations.map((rec) => (
+        <div
+          key={rec.recommendationId}
+          className="bg-primary-50 border border-primary/20 rounded-btn p-3"
+        >
+          <div className="text-xs font-semibold text-ink-700 mb-1">
+            {rec.title}
+          </div>
+          <p className="text-sm text-ink-800 leading-relaxed">{rec.content}</p>
+          <div className="mt-2 text-[10px] text-ink-400">
+            {formatDateTime(rec.createdAt)}
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -784,6 +852,7 @@ function DetailView({ reportId }: { reportId: string }) {
                               {dx.recommendedAction}
                             </p>
                           </div>
+                          <DiagnosisRecommendations diagnosisId={dx.id} />
                         </div>
                       </div>
                     );
