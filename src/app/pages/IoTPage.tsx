@@ -8,6 +8,8 @@ import {
   IotDeviceResponse,
   IotDeviceRequest,
   SeasonResponse,
+  HarvestResponse,
+  HarvestDetailResponse,
 } from "../../api/client";
 import { useToast } from "../components/ui/useToast";
 import { ToastContainer } from "../components/ui/ToastContainer";
@@ -21,6 +23,7 @@ import { SearchInput } from "../components/ui/SearchInput";
 import { Pagination } from "../components/ui/Pagination";
 import { LoadingState } from "../components/ui/LoadingState";
 import { EmptyState } from "../components/ui/EmptyState";
+import { QueryState } from "../components/ui/QueryState";
 import { RowActions } from "../components/ui/RowActions";
 import { StatusBadge } from "../components/ui/StatusBadge";
 import { usePagination } from "../hooks/usePagination";
@@ -77,16 +80,6 @@ export function IoTPage() {
   const devices: IotDeviceResponse[] = devicesQuery.data ?? [];
   const seasons: SeasonResponse[] = seasonsQuery.data ?? [];
 
-  const loading =
-    devicesQuery.isLoading ||
-    seasonsQuery.isLoading ||
-    (devicesQuery.isFetching && devicesQuery.data === undefined);
-
-  const fetchError =
-    devicesQuery.isError && devicesQuery.data === undefined
-      ? devicesQuery.error
-      : null;
-
   // Default-select first season once loaded
   useEffect(() => {
     if (seasons.length > 0 && !selectedSeasonId) {
@@ -142,15 +135,8 @@ export function IoTPage() {
     PAGE_SIZE,
   );
 
-  // ── Derived: beds for selected season ─────────────────────────────────
-  const activeSeason = seasons.find((s) => s.seasonId === selectedSeasonId);
-  const bedsForSeason = activeSeason?.seasonsDetails ?? [];
-
   const openAdd = () => {
-    setFormData({
-      ...emptyForm,
-      bedId: bedsForSeason[0]?.bedId ?? "",
-    });
+    setFormData(emptyForm);
     setAddOpen(true);
   };
 
@@ -223,35 +209,6 @@ export function IoTPage() {
 
   // ── Render ────────────────────────────────────────────────────────────
 
-  if (loading) {
-    return (
-      <div className="p-6">
-        <LoadingState />
-      </div>
-    );
-  }
-
-  if (fetchError) {
-    return (
-      <div className="p-6">
-        <EmptyState
-          icon={Cpu}
-          title="Không thể tải danh sách thiết bị"
-          message={
-            fetchError instanceof Error
-              ? fetchError.message
-              : "Đã xảy ra lỗi. Vui lòng thử lại."
-          }
-          action={
-            <Button variant="secondary" onClick={() => devicesQuery.refetch()}>
-              Thử lại
-            </Button>
-          }
-        />
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6">
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
@@ -288,96 +245,101 @@ export function IoTPage() {
           </select>
         </div>
 
-        {filtered.length === 0 ? (
-          <EmptyState
-            icon={Cpu}
-            title="Chưa có thiết bị nào"
-            message='Nhấn "Thêm Thiết Bị" để đăng ký thiết bị mới'
-          />
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[700px]">
-              <thead className="bg-surface-alt border-b border-border">
-                <tr>
-                  {[
-                    "Thiết bị",
-                    "Loại",
-                    "Luống",
-                    "Tọa độ",
-                    "Lắp đặt",
-                    "Trạng thái",
-                    "Thao tác",
-                  ].map((h) => (
-                    <th
-                      key={h}
-                      className="px-5 py-3 text-left text-xs font-medium text-ink-500 uppercase tracking-wider"
-                    >
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {pagedItems.map((device) => (
-                  <tr
-                    key={device.deviceId}
-                    className="hover:bg-surface-alt transition-colors"
-                  >
-                    <td className="px-5 py-3">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 bg-primary-50 rounded-btn flex items-center justify-center shrink-0">
-                          <Radio className="w-4 h-4 text-primary" />
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium text-primary-700">
-                            {device.name}
-                          </p>
-                          <p className="text-xs text-ink-500 font-mono">
-                            {device.deviceCode}
-                          </p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-5 py-3 text-sm text-ink-700">
-                      {device.type}
-                    </td>
-                    <td className="px-5 py-3 text-sm text-ink-700">
-                      {bedNameCache[device.bedId] ??
-                        device.bedId.slice(0, 8) + "…"}
-                    </td>
-                    <td className="px-5 py-3 text-xs text-ink-500">
-                      {device.latitude !== 0 || device.longitude !== 0 ? (
-                        <span className="flex items-center gap-1">
-                          <MapPin className="w-3 h-3" />
-                          {device.latitude}, {device.longitude}
-                        </span>
-                      ) : (
-                        "—"
-                      )}
-                    </td>
-                    <td className="px-5 py-3 text-sm text-ink-500">
-                      {formatDate(device.installationDate)}
-                    </td>
-                    <td className="px-5 py-3">
-                      <StatusBadge
-                        label={iotStatusLabel(device.status)}
-                        tone={iotStatusTone(device.status)}
-                      />
-                    </td>
-                    <td className="px-5 py-3">
-                      <RowActions
-                        align="center"
-                        onView={() => setViewTarget(device)}
-                        onEdit={() => openEdit(device)}
-                        onDelete={() => setDeleteTarget(device)}
-                      />
-                    </td>
+        <QueryState
+          query={devicesQuery}
+          errorTitle="Không thể tải danh sách thiết bị"
+        >
+          {filtered.length === 0 ? (
+            <EmptyState
+              icon={Cpu}
+              title="Chưa có thiết bị nào"
+              message='Nhấn "Thêm Thiết Bị" để đăng ký thiết bị mới'
+            />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[700px]">
+                <thead className="bg-surface-alt border-b border-border">
+                  <tr>
+                    {[
+                      "Thiết bị",
+                      "Loại",
+                      "Luống",
+                      "Tọa độ",
+                      "Lắp đặt",
+                      "Trạng thái",
+                      "Thao tác",
+                    ].map((h) => (
+                      <th
+                        key={h}
+                        className="px-5 py-3 text-left text-xs font-medium text-ink-500 uppercase tracking-wider"
+                      >
+                        {h}
+                      </th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {pagedItems.map((device) => (
+                    <tr
+                      key={device.deviceId}
+                      className="hover:bg-surface-alt transition-colors"
+                    >
+                      <td className="px-5 py-3">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 bg-primary-50 rounded-btn flex items-center justify-center shrink-0">
+                            <Radio className="w-4 h-4 text-primary" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium text-primary-700">
+                              {device.name}
+                            </p>
+                            <p className="text-xs text-ink-500 font-mono">
+                              {device.deviceCode}
+                            </p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-5 py-3 text-sm text-ink-700">
+                        {device.type}
+                      </td>
+                      <td className="px-5 py-3 text-sm text-ink-700">
+                        {bedNameCache[device.bedId] ??
+                          device.bedId.slice(0, 8) + "…"}
+                      </td>
+                      <td className="px-5 py-3 text-xs text-ink-500">
+                        {device.latitude !== 0 || device.longitude !== 0 ? (
+                          <span className="flex items-center gap-1">
+                            <MapPin className="w-3 h-3" />
+                            {device.latitude}, {device.longitude}
+                          </span>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                      <td className="px-5 py-3 text-sm text-ink-500">
+                        {formatDate(device.installationDate)}
+                      </td>
+                      <td className="px-5 py-3">
+                        <StatusBadge
+                          label={iotStatusLabel(device.status)}
+                          tone={iotStatusTone(device.status)}
+                        />
+                      </td>
+                      <td className="px-5 py-3">
+                        <RowActions
+                          align="center"
+                          onView={() => setViewTarget(device)}
+                          onEdit={() => openEdit(device)}
+                          onDelete={() => setDeleteTarget(device)}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </QueryState>
 
         {filtered.length > 0 && (
           <div className="border-t border-border px-4">
@@ -473,27 +435,54 @@ function IotFormModal({
   onSubmit: () => void;
   onClose: () => void;
 }) {
-  const activeSeason = seasons.find((s) => s.seasonId === selectedSeasonId);
-  const bedsForSeason = activeSeason?.seasonsDetails ?? [];
-  const [bedNames, setBedNames] = useState<Record<string, string>>({});
+  // ── Harvest selection (add mode only) ────────────────────────────────
+  const [selectedHarvestId, setSelectedHarvestId] = useState<string>("");
 
+  // Step 2: harvests for selected season
+  const harvestsQuery = useQuery({
+    queryKey: qk.seasons.harvests(selectedSeasonId),
+    queryFn: () => api.getHarvestsBySeason(selectedSeasonId),
+    enabled: open && mode === "add" && !!selectedSeasonId,
+  });
+
+  const harvests: HarvestResponse[] = harvestsQuery.data ?? [];
+
+  // Auto-select first harvest when list loads / season changes
   useEffect(() => {
-    if (bedsForSeason.length === 0) return;
-    Promise.all(
-      bedsForSeason.map(async (detail) => {
-        try {
-          const bed = await api.getBed(detail.bedId);
-          return [detail.bedId, bed.bedName] as [string, string];
-        } catch {
-          return [detail.bedId, detail.bedId.slice(0, 8) + "…"] as [
-            string,
-            string,
-          ];
-        }
-      }),
-    ).then((entries) => setBedNames(Object.fromEntries(entries)));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (harvests.length > 0 && !selectedHarvestId) {
+      setSelectedHarvestId(harvests[0].harvestId);
+    }
+  }, [harvests, selectedHarvestId]);
+
+  // Reset harvest selection when season changes
+  useEffect(() => {
+    setSelectedHarvestId("");
   }, [selectedSeasonId]);
+
+  // Step 3: harvest-details (beds) for selected harvest
+  const harvestDetailsQuery = useQuery({
+    queryKey: qk.seasons.harvestDetails(selectedHarvestId),
+    queryFn: () => api.getHarvestDetailsByHarvest(selectedHarvestId),
+    enabled: open && mode === "add" && !!selectedHarvestId,
+  });
+
+  const harvestDetails: HarvestDetailResponse[] =
+    harvestDetailsQuery.data ?? [];
+
+  // Auto-select first bed when details load / harvest changes
+  useEffect(() => {
+    if (harvestDetails.length > 0) {
+      setFormData({ ...formData, bedId: harvestDetails[0].bedId });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [harvestDetails]);
+
+  // Reset bed + harvest selection when modal closes
+  useEffect(() => {
+    if (!open) {
+      setSelectedHarvestId("");
+    }
+  }, [open]);
 
   const canSubmit =
     formData.bedId.trim() !== "" &&
@@ -524,6 +513,8 @@ function IotFormModal({
             <p className="text-xs font-semibold text-primary-700 uppercase tracking-wide">
               Chọn luống lắp đặt
             </p>
+
+            {/* Season */}
             <FormSelect
               label="Mùa vụ"
               value={selectedSeasonId}
@@ -537,17 +528,57 @@ function IotFormModal({
                     }))
               }
             />
-            <FormSelect
-              label="Luống"
-              required
-              value={formData.bedId}
-              onChange={(v) => setFormData({ ...formData, bedId: v })}
-              placeholder="— Chọn luống —"
-              options={bedsForSeason.map((detail) => ({
-                value: detail.bedId,
-                label: bedNames[detail.bedId] ?? detail.bedId.slice(0, 8) + "…",
-              }))}
-            />
+
+            {/* Harvest (plot) */}
+            {harvestsQuery.isLoading ? (
+              <LoadingState
+                variant="inline"
+                message="Đang tải danh sách vuông..."
+              />
+            ) : harvestsQuery.isError ? (
+              <p className="text-xs text-status-danger-fg">
+                Không thể tải danh sách vuông. Vui lòng thử lại.
+              </p>
+            ) : (
+              <FormSelect
+                label="Vuông"
+                value={selectedHarvestId}
+                onChange={(v) => {
+                  setSelectedHarvestId(v);
+                  setFormData({ ...formData, bedId: "" });
+                }}
+                placeholder="— Chọn vuông —"
+                options={harvests.map((h) => ({
+                  value: h.harvestId,
+                  label: h.plotName,
+                }))}
+              />
+            )}
+
+            {/* Bed */}
+            {!!selectedHarvestId &&
+              (harvestDetailsQuery.isLoading ? (
+                <LoadingState
+                  variant="inline"
+                  message="Đang tải danh sách luống..."
+                />
+              ) : harvestDetailsQuery.isError ? (
+                <p className="text-xs text-status-danger-fg">
+                  Không thể tải danh sách luống. Vui lòng thử lại.
+                </p>
+              ) : (
+                <FormSelect
+                  label="Luống"
+                  required
+                  value={formData.bedId}
+                  onChange={(v) => setFormData({ ...formData, bedId: v })}
+                  placeholder="— Chọn luống —"
+                  options={harvestDetails.map((d) => ({
+                    value: d.bedId,
+                    label: d.bedName,
+                  }))}
+                />
+              ))}
           </div>
         )}
 
