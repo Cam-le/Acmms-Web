@@ -3331,15 +3331,6 @@ export function TasksPage() {
               selectedDetail &&
               (() => {
                 const isCompleted = selectedDetail.status === "Completed";
-                const assignmentStart = selectedDetail.startDate
-                  ? new Date(
-                      `${selectedDetail.startDate.slice(0, 10)}T${selectedDetail.startDate.slice(11, 16)}:00`,
-                    ).getTime()
-                  : null;
-                const isPastPending =
-                  selectedDetail.status === "Pending" &&
-                  assignmentStart !== null &&
-                  assignmentStart < Date.now();
 
                 const editSeason = seasons.find(
                   (s) => s.seasonId === editDetail.seasonId,
@@ -3471,7 +3462,7 @@ export function TasksPage() {
                           <input
                             type="date"
                             value={editDetail.date}
-                            disabled={isCompleted || isPastPending}
+                            disabled={isCompleted}
                             onChange={(e) =>
                               setEditDetail((p) =>
                                 p ? { ...p, date: e.target.value } : p,
@@ -3479,18 +3470,12 @@ export function TasksPage() {
                             }
                             className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] disabled:bg-[#f8fafc] disabled:text-[#94a3b8] disabled:cursor-not-allowed"
                           />
-                          {isPastPending && (
-                            <p className="mt-1 text-[11px] text-amber-600">
-                              Thời gian đã qua — không thể thay đổi ngày/giờ bắt
-                              đầu.
-                            </p>
-                          )}
                         </div>
                         <div>
                           <label className="block text-xs font-medium text-slate-500 mb-1.5">
                             Khung giờ
                           </label>
-                          {isPastPending || isCompleted ? (
+                          {isCompleted ? (
                             <div className="flex items-center gap-2 px-3 py-2 bg-[#f8fafc] border border-[#e2e8f0] rounded-lg text-sm text-[#64748b]">
                               <Clock className="w-4 h-4 text-[#94a3b8] shrink-0" />
                               <span>
