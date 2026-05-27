@@ -559,23 +559,19 @@ export function PlotsPage() {
                         </div>
                       ) : (
                         <div className="mt-4 overflow-x-auto">
-                          <table className="w-full min-w-[700px]">
+                          <table className="w-full min-w-[500px]">
                             <thead className="bg-surface-alt">
                               <tr>
                                 {[
                                   "Tên luống",
-                                  "Cây trồng",
                                   "Diện tích",
-                                  "Dài (m)",
-                                  "Rộng (m)",
                                   "Số hàng",
-                                  "Số cây",
                                   "Trạng thái",
                                   "Thao tác",
                                 ].map((h, i) => (
                                   <th
                                     key={h}
-                                    className={`px-4 py-3 text-xs font-medium text-ink-500 uppercase whitespace-nowrap ${i === 8 ? "text-center" : "text-left"}`}
+                                    className={`px-4 py-3 text-xs font-medium text-ink-500 uppercase whitespace-nowrap ${i === 4 ? "text-center" : "text-left"}`}
                                   >
                                     {h}
                                   </th>
@@ -591,27 +587,11 @@ export function PlotsPage() {
                                   <td className="px-4 py-3 text-sm text-ink-800 font-medium whitespace-nowrap">
                                     {bed.bedName}
                                   </td>
-                                  <td className="px-4 py-3 text-sm text-ink-500">
-                                    {bed.cropName ?? "-"}
-                                  </td>
                                   <td className="px-4 py-3 text-sm text-ink-500 whitespace-nowrap">
                                     {bed.bedArea} m²
                                   </td>
                                   <td className="px-4 py-3 text-sm text-ink-500">
-                                    {bed.bedLength != null
-                                      ? bed.bedLength
-                                      : "-"}
-                                  </td>
-                                  <td className="px-4 py-3 text-sm text-ink-500">
-                                    {bed.bedWidth != null ? bed.bedWidth : "-"}
-                                  </td>
-                                  <td className="px-4 py-3 text-sm text-ink-500">
                                     {bed.rowCount != null ? bed.rowCount : "-"}
-                                  </td>
-                                  <td className="px-4 py-3 text-sm text-ink-500">
-                                    {bed.plantCount != null
-                                      ? bed.plantCount
-                                      : "-"}
                                   </td>
                                   <td className="px-4 py-3">
                                     <StatusBadge
@@ -1624,7 +1604,6 @@ function ViewBedModal({
         <div className="pt-4 border-t border-border space-y-2">
           {[
             { label: "Tên luống", value: bed.bedName },
-            bed.cropName ? { label: "Cây trồng", value: bed.cropName } : null,
             { label: "Diện tích", value: `${bed.bedArea} m²` },
             bed.bedLength != null
               ? { label: "Chiều dài", value: `${bed.bedLength} m` }
@@ -1641,10 +1620,6 @@ function ViewBedModal({
             bed.plantCount != null
               ? { label: "Số cây", value: String(bed.plantCount) }
               : null,
-            {
-              label: "Mùa vụ liên kết",
-              value: `${bed.seasonsDetailsCount} mùa`,
-            },
             { label: "Ngày tạo", value: formatDate(bed.bedCreatedAt) },
           ]
             .filter(Boolean)
@@ -1932,6 +1907,11 @@ function AutoBedModal({
       setPathWidth(0.5);
       setRowsPerBed(2);
       setBedNamePrefix("Luống");
+      // Reset loading flags — if the previous modal was closed while a
+      // request was in-flight, these may still be true on the next open.
+      setLoadingPreview(false);
+      setConfirming(false);
+      setLoadingCrop(false);
     }
   }, [open]);
 
@@ -1982,15 +1962,20 @@ function AutoBedModal({
     }
     setError(null);
     setLoadingPreview(true);
+    // Capture the plotId at call time — if the modal closes and reopens
+    // for a different plot before this resolves, we discard the stale result.
+    const requestedPlotId = plot.plotId;
     try {
       const result = await api.autoAllocatePreview({
-        plotId: plot.plotId,
+        plotId: requestedPlotId,
         cropId,
         bedWidth,
         pathWidth,
         rowsPerBed,
         bedNamePrefix,
       });
+      // Discard if the plot changed since this request was sent
+      if (result.plotId !== requestedPlotId) return;
       setPreview(result);
       setStep("preview");
     } catch (err) {
