@@ -39,7 +39,6 @@ import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { StatusBadge } from "../components/ui/StatusBadge";
 import { Pagination } from "../components/ui/Pagination";
 import { RowActions } from "../components/ui/RowActions";
-import { LoadingState } from "../components/ui/LoadingState";
 import { EmptyState } from "../components/ui/EmptyState";
 import { QueryState } from "../components/ui/QueryState";
 
@@ -223,6 +222,7 @@ export function WorkersPage() {
   });
 
   const pagination = usePagination(filteredWorkers, PAGE_SIZE);
+  const pendingPagination = usePagination(pending, PAGE_SIZE);
 
   // ── Form helpers ───────────────────────────────────────────────────────────
   const resetForm = useCallback(() => {
@@ -646,7 +646,7 @@ export function WorkersPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
-                    {pending.map((s) => (
+                    {pendingPagination.pagedItems.map((s) => (
                       <tr
                         key={s.userId}
                         className="hover:bg-surface-alt transition-colors"
@@ -736,8 +736,16 @@ export function WorkersPage() {
               </div>
             )}
             {pending.length > 0 && (
-              <div className="px-6 py-3 border-t border-border text-xs text-ink-400">
-                {pending.length} tài khoản đang chờ duyệt
+              <div className="border-t border-border px-5 py-2">
+                <Pagination
+                  currentPage={pendingPagination.page}
+                  totalPages={pendingPagination.totalPages}
+                  onPageChange={pendingPagination.setPage}
+                  showLabel
+                  totalItems={pending.length}
+                  pageSize={PAGE_SIZE}
+                  itemLabel="tài khoản"
+                />
               </div>
             )}
           </QueryState>
