@@ -318,11 +318,11 @@ function GrowthTrackingModal({
                       onClick={() => setSelectedTracking(t)}
                     >
                       <td className="px-3 py-2.5 font-medium text-ink-800 whitespace-nowrap">
-                        {t.stageName}
+                        {t.stageName ?? "—"}
                       </td>
                       <td className="px-3 py-2.5 whitespace-nowrap">
                         <StatusBadge
-                          label={t.trackingStatus}
+                          label={trackingStatusLabel(t.trackingStatus)}
                           tone={trackingStatusTone(t.trackingStatus)}
                           size="sm"
                         />
@@ -639,6 +639,39 @@ export function SeasonsPage() {
     }
   }, [farmsQuery.error, showToast]);
 
+  useEffect(() => {
+    if (bedsQuery.error) {
+      showToast(
+        bedsQuery.error instanceof Error
+          ? bedsQuery.error.message
+          : "Không thể tải danh sách luống",
+        "error",
+      );
+    }
+  }, [bedsQuery.error, showToast]);
+
+  useEffect(() => {
+    if (cropsQuery.error) {
+      showToast(
+        cropsQuery.error instanceof Error
+          ? cropsQuery.error.message
+          : "Không thể tải danh sách cây trồng",
+        "error",
+      );
+    }
+  }, [cropsQuery.error, showToast]);
+
+  useEffect(() => {
+    if (plotsQuery.error) {
+      showToast(
+        plotsQuery.error instanceof Error
+          ? plotsQuery.error.message
+          : "Không thể tải danh sách vuông đất",
+        "error",
+      );
+    }
+  }, [plotsQuery.error, showToast]);
+
   // ── Single-season query (for detail/edit sub-views) ───────────────────────
   // enabled when navigating to detail or edit views with an id.
   const isSubView = !!seasonId && view !== "list" && view !== "create";
@@ -647,6 +680,7 @@ export function SeasonsPage() {
     queryKey: qk.seasons.detail(seasonId ?? ""),
     queryFn: () => api.getSeason(seasonId!),
     enabled: isSubView,
+    retry: 2,
     // Seed cache from list if available — avoids flash when navigating from list
     placeholderData: () => {
       if (!seasonId) return undefined;
@@ -739,6 +773,46 @@ export function SeasonsPage() {
       <div className="flex flex-col gap-6 p-6">
         <LoadingState message="Đang tải mùa vụ..." />
         <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+      </div>
+    );
+
+  // selectedSeasonQuery failed after retries and we have no cached data
+  if (
+    (view === "detail" || view === "edit") &&
+    isSubView &&
+    !selectedSeason &&
+    selectedSeasonQuery.isError
+  )
+    return (
+      <div className="flex flex-col gap-6 p-6">
+        <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+        <div className="flex items-center gap-3">
+          <Link
+            to="/seasons"
+            className="p-2 rounded-btn text-ink-500 hover:text-ink-700 hover:bg-surface-alt transition-colors"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </Link>
+          <h1 className="text-xl font-bold text-ink-800">Chi tiết mùa vụ</h1>
+        </div>
+        <EmptyState
+          icon={Calendar}
+          title="Không thể tải mùa vụ"
+          message={
+            selectedSeasonQuery.error instanceof Error
+              ? selectedSeasonQuery.error.message
+              : "Đã xảy ra lỗi khi tải mùa vụ. Vui lòng thử lại."
+          }
+          action={
+            <Button
+              variant="secondary"
+              loading={selectedSeasonQuery.isFetching}
+              onClick={() => selectedSeasonQuery.refetch()}
+            >
+              Thử lại
+            </Button>
+          }
+        />
       </div>
     );
 
@@ -1027,26 +1101,32 @@ function DetailSeasonView({
       const data = await api.getHarvestsBySeason(season.id);
       return (Array.isArray(data) ? data : []).map(
         (h: HarvestResponse): HarvestItem => ({
-          harvestId: h.harvestId,
-          plotId: h.plotId,
-          plotName: h.plotName,
-          cropId: h.cropId,
-          cropName: h.cropName,
-          expectedDate: h.expectedDate,
-          expectedQuantity: h.expectedQuantity,
+          harvestId: h.harvestId ?? "",
+          plotId: h.plotId ?? "",
+          plotName: h.plotName ?? "—",
+          cropId: h.cropId ?? "",
+          cropName: h.cropName ?? "—",
+          expectedDate: h.expectedDate ?? "",
+          expectedQuantity: h.expectedQuantity ?? 0,
           unit: h.unit ?? "kg",
-          status: h.status,
-          detailsCount: h.detailsCount,
+          status: h.status ?? "planned",
+          detailsCount: h.detailsCount ?? 0,
           harvestedBedsCount: h.harvestedBedsCount ?? 0,
         }),
       );
     },
+    retry: 2,
+    staleTime: 30_000,
   });
 
   const harvests: HarvestItem[] = harvestsQuery.data ?? [];
   const harvestsLoading =
     harvestsQuery.isLoading ||
     (harvestsQuery.isFetching && harvestsQuery.data === undefined);
+  const harvestsError =
+    harvestsQuery.isError && harvestsQuery.data === undefined
+      ? harvestsQuery.error
+      : null;
 
   useEffect(() => {
     if (harvestsQuery.error) {
@@ -1071,6 +1151,8 @@ function DetailSeasonView({
       return Array.isArray(data) ? data : ([] as HarvestDetailResponse[]);
     },
     enabled: !!expandedHarvest,
+    retry: 2,
+    staleTime: 30_000,
   });
 
   // Map of harvestId → details (drawn from per-harvest caches)
@@ -1260,6 +1342,8 @@ function DetailSeasonView({
   // Real-time updates: useIotHub wired to season.farmId overlays live data.
   const [iotRows, setIotRows] = useState<IotRow[]>([]);
   const [iotLoading, setIotLoading] = useState(true);
+  const [iotError, setIotError] = useState<string | null>(null);
+  const [iotRetryCount, setIotRetryCount] = useState(0);
 
   // Stable set of deviceIds for this season (derived from iotRows after load)
   const iotDeviceIds = iotRows.map((r) => r.deviceId);
@@ -1286,6 +1370,7 @@ function DetailSeasonView({
     let cancelled = false;
     async function loadIot() {
       setIotLoading(true);
+      setIotError(null);
       try {
         const allDevices = await api.getIotDevices();
         const devices = Array.isArray(allDevices) ? allDevices : [];
@@ -1325,9 +1410,12 @@ function DetailSeasonView({
             liveUpdated: false,
           });
         }
-        setIotRows(rows);
-      } catch {
-        // IoT is non-critical — silent fail; empty state shown
+        if (!cancelled) setIotRows(rows);
+      } catch (err) {
+        if (!cancelled)
+          setIotError(
+            err instanceof Error ? err.message : "Không thể tải dữ liệu cảm biến",
+          );
       } finally {
         if (!cancelled) setIotLoading(false);
       }
@@ -1336,7 +1424,7 @@ function DetailSeasonView({
     return () => {
       cancelled = true;
     };
-  }, [season.id, season.farmId, bedPlotMap, plotFarmMap]);
+  }, [season.id, season.farmId, bedPlotMap, plotFarmMap, iotRetryCount]);
 
   // SignalR real-time overlay: update existing rows when live data arrives.
   // Only updates rows that already exist (matched by deviceId) — we don't
@@ -1487,6 +1575,26 @@ function DetailSeasonView({
 
         {harvestsLoading ? (
           <LoadingState message="Đang tải thu hoạch..." />
+        ) : harvestsError ? (
+          <EmptyState
+            icon={Wheat}
+            title="Không thể tải danh sách thu hoạch"
+            message={
+              harvestsError instanceof Error
+                ? harvestsError.message
+                : "Đã xảy ra lỗi. Vui lòng thử lại."
+            }
+            action={
+              <Button
+                variant="secondary"
+                size="sm"
+                loading={harvestsQuery.isFetching}
+                onClick={() => harvestsQuery.refetch()}
+              >
+                Thử lại
+              </Button>
+            }
+          />
         ) : harvests.length === 0 ? (
           <EmptyState
             icon={Wheat}
@@ -1546,7 +1654,7 @@ function DetailSeasonView({
                           </span>
                           <span className="flex items-center gap-1">
                             <Package className="w-3 h-3" />
-                            {h.expectedQuantity.toLocaleString("vi-VN")}{" "}
+                            {(h.expectedQuantity ?? 0).toLocaleString("vi-VN")}{" "}
                             {h.unit || "kg"}
                           </span>
                           {h.detailsCount > 0 && (
@@ -1578,6 +1686,24 @@ function DetailSeasonView({
                           variant="inline"
                           message="Đang tải chi tiết luống..."
                         />
+                      ) : harvestDetailQuery.isError &&
+                        expandedHarvest === h.harvestId &&
+                        !details ? (
+                        <div className="flex items-center gap-3 py-2">
+                          <span className="text-sm text-status-danger-fg">
+                            {harvestDetailQuery.error instanceof Error
+                              ? harvestDetailQuery.error.message
+                              : "Không thể tải chi tiết luống."}
+                          </span>
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            loading={harvestDetailQuery.isFetching}
+                            onClick={() => harvestDetailQuery.refetch()}
+                          >
+                            Thử lại
+                          </Button>
+                        </div>
                       ) : !details || details.length === 0 ? (
                         <p className="text-sm text-ink-400">
                           Chưa có luống nào trong vụ thu hoạch này.
@@ -1614,8 +1740,8 @@ function DetailSeasonView({
                                 .slice()
                                 .sort((a, b) =>
                                   compareTokenArrays(
-                                    bedSortKey(a.bedName),
-                                    bedSortKey(b.bedName),
+                                    bedSortKey(a.bedName ?? ""),
+                                    bedSortKey(b.bedName ?? ""),
                                   ),
                                 )
                                 .map((d) => (
@@ -1624,10 +1750,10 @@ function DetailSeasonView({
                                     className="hover:bg-surface-alt transition-colors"
                                   >
                                     <td className="px-4 py-2.5 font-mono text-xs font-semibold text-ink-800 whitespace-nowrap">
-                                      {d.bedName}
+                                      {d.bedName ?? "—"}
                                     </td>
                                     <td className="px-4 py-2.5 text-center text-ink-700 whitespace-nowrap">
-                                      {d.cropQuantity.toLocaleString("vi-VN")}
+                                      {(d.cropQuantity ?? 0).toLocaleString("vi-VN")}
                                     </td>
                                     <td className="px-4 py-2.5 text-center text-ink-500 whitespace-nowrap">
                                       {formatDate(d.startDate)}
@@ -1670,7 +1796,7 @@ function DetailSeasonView({
                                           onClick={() =>
                                             setGrowthTrackingTarget({
                                               id: d.harvestDetailId,
-                                              bedName: d.bedName,
+                                              bedName: d.bedName ?? "—",
                                             })
                                           }
                                           className={[
@@ -1748,6 +1874,22 @@ function DetailSeasonView({
 
         {iotLoading ? (
           <LoadingState message="Đang tải dữ liệu cảm biến..." />
+        ) : iotError ? (
+          <EmptyState
+            size="sm"
+            icon={Cpu}
+            title="Không thể tải dữ liệu cảm biến"
+            message={iotError}
+            action={
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setIotRetryCount((c) => c + 1)}
+              >
+                Thử lại
+              </Button>
+            }
+          />
         ) : iotRows.length === 0 ? (
           <EmptyState size="sm" message="Chưa có dữ liệu cảm biến" />
         ) : (

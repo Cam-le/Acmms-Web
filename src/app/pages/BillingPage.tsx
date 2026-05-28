@@ -641,17 +641,17 @@ function BillPreviewPanel({
                     Đã thanh toán
                   </p>
                   <p className="text-xs text-status-success-fg/70">
-                    {formatMonthISO(bill.month)} · {bill.specialistName}
+                    {formatMonthISO(bill.month)} · {bill.specialistName ?? "—"}
                   </p>
                 </div>
                 <span className="ml-auto text-base font-bold text-status-success-fg shrink-0">
-                  {formatVND(matchedPayment?.amount ?? bill.totalAmount)}
+                  {formatVND(matchedPayment?.amount ?? bill.totalAmount ?? 0)}
                 </span>
               </div>
               <div className="px-4 py-3 space-y-2">
                 <InfoRow
                   label="Số chẩn đoán"
-                  value={`${matchedPayment?.totalDiagnoses ?? bill.totalDiagnoses} lượt`}
+                  value={`${matchedPayment?.totalDiagnoses ?? bill.totalDiagnoses ?? 0} lượt`}
                 />
                 {matchedPayment?.paidAt && (
                   <InfoRow
@@ -659,17 +659,24 @@ function BillPreviewPanel({
                     value={formatDateTime(matchedPayment.paidAt)}
                   />
                 )}
-                <InfoRow label="Ngân hàng" value={bill.bankName} />
-                <InfoRow label="Số tài khoản" value={bill.bankAccount} mono />
-                <InfoRow label="Chủ tài khoản" value={bill.accountHolder} />
+                <InfoRow label="Ngân hàng" value={bill.bankName ?? "—"} />
+                <InfoRow
+                  label="Số tài khoản"
+                  value={bill.bankAccount ?? "—"}
+                  mono
+                />
+                <InfoRow
+                  label="Chủ tài khoản"
+                  value={bill.accountHolder ?? "—"}
+                />
               </div>
-              {bill.items.length > 0 && (
+              {(bill.items ?? []).length > 0 && (
                 <div className="px-4 pb-3 pt-0 border-t border-status-success-fg/15 mt-0">
                   <p className="text-xs font-semibold text-ink-500 uppercase tracking-wide mb-2 pt-3">
-                    Chẩn đoán ({bill.items.length} lượt)
+                    Chẩn đoán ({(bill.items ?? []).length} lượt)
                   </p>
                   <div className="space-y-1 max-h-44 overflow-y-auto pr-1">
-                    {bill.items.map((item, idx) => {
+                    {(bill.items ?? []).map((item, idx) => {
                       const isActive =
                         selectedDiagnosis?.diagnosisResultId ===
                         item.diagnosisResultId;
@@ -721,38 +728,45 @@ function BillPreviewPanel({
                   Thông tin hóa đơn
                 </h4>
               </div>
-              <InfoRow label="Chuyên gia" value={bill.specialistName} />
+              <InfoRow label="Chuyên gia" value={bill.specialistName ?? "—"} />
               <InfoRow
                 label="Kỳ thanh toán"
                 value={formatMonthISO(bill.month)}
               />
               <InfoRow
                 label="Số chẩn đoán"
-                value={`${bill.totalDiagnoses} lượt`}
+                value={`${bill.totalDiagnoses ?? 0} lượt`}
               />
               <div className="border-t border-primary/20 pt-2 flex justify-between items-center">
                 <span className="text-sm font-semibold text-ink-800">
                   Tổng cộng
                 </span>
                 <span className="text-base font-bold text-primary">
-                  {formatVND(bill.totalAmount)}
+                  {formatVND(bill.totalAmount ?? 0)}
                 </span>
               </div>
               <div className="pt-2 border-t border-primary/20 space-y-1.5">
                 <p className="text-xs font-semibold text-ink-500 uppercase tracking-wide">
                   Thông tin chuyển khoản
                 </p>
-                <InfoRow label="Ngân hàng" value={bill.bankName} />
-                <InfoRow label="Số tài khoản" value={bill.bankAccount} mono />
-                <InfoRow label="Chủ tài khoản" value={bill.accountHolder} />
+                <InfoRow label="Ngân hàng" value={bill.bankName ?? "—"} />
+                <InfoRow
+                  label="Số tài khoản"
+                  value={bill.bankAccount ?? "—"}
+                  mono
+                />
+                <InfoRow
+                  label="Chủ tài khoản"
+                  value={bill.accountHolder ?? "—"}
+                />
               </div>
-              {bill.items.length > 0 && (
+              {(bill.items ?? []).length > 0 && (
                 <div className="pt-2 border-t border-primary/20">
                   <p className="text-xs font-semibold text-ink-500 uppercase tracking-wide mb-2">
-                    Chẩn đoán ({bill.items.length} lượt)
+                    Chẩn đoán ({(bill.items ?? []).length} lượt)
                   </p>
                   <div className="space-y-1 max-h-44 overflow-y-auto pr-1">
-                    {bill.items.map((item, idx) => {
+                    {(bill.items ?? []).map((item, idx) => {
                       const isActive =
                         selectedDiagnosis?.diagnosisResultId ===
                         item.diagnosisResultId;
@@ -1232,11 +1246,15 @@ function ViewContractModal({
           />
         </div>
         <div className="bg-surface-alt rounded-xl border border-border p-4 space-y-2.5">
-          <InfoRow label="Mã hợp đồng" value={contract.contractCode} mono />
-          <InfoRow label="Chuyên gia" value={contract.expertName} />
+          <InfoRow
+            label="Mã hợp đồng"
+            value={contract.contractCode ?? "—"}
+            mono
+          />
+          <InfoRow label="Chuyên gia" value={contract.expertName ?? "—"} />
           <InfoRow
             label="Đơn giá / chẩn đoán"
-            value={formatVND(contract.pricePerDiagnosis)}
+            value={formatVND(contract.pricePerDiagnosis ?? 0)}
           />
           <InfoRow
             label="Ngày bắt đầu"
@@ -1254,9 +1272,16 @@ function ViewContractModal({
           <p className="text-xs font-semibold text-ink-500 uppercase tracking-wide mb-1">
             Thông tin ngân hàng
           </p>
-          <InfoRow label="Ngân hàng" value={contract.bankName} />
-          <InfoRow label="Số tài khoản" value={contract.bankAccount} mono />
-          <InfoRow label="Chủ tài khoản" value={contract.accountHolder} />
+          <InfoRow label="Ngân hàng" value={contract.bankName ?? "—"} />
+          <InfoRow
+            label="Số tài khoản"
+            value={contract.bankAccount ?? "—"}
+            mono
+          />
+          <InfoRow
+            label="Chủ tài khoản"
+            value={contract.accountHolder ?? "—"}
+          />
         </div>
       </div>
     </Modal>
@@ -1298,7 +1323,7 @@ function ContractRow({
         {contract.bankName}
       </td>
       <td className="px-4 py-3 text-sm font-mono text-ink-700 whitespace-nowrap">
-        {formatVND(contract.pricePerDiagnosis)}
+        {formatVND(contract.pricePerDiagnosis ?? 0)}
       </td>
       <td className="px-4 py-3 text-sm text-ink-700 whitespace-nowrap">
         {formatDate(contract.startDate)}
@@ -1417,19 +1442,22 @@ function PaymentDetailModal({
           >
             {/* Summary */}
             <div className="bg-surface-alt rounded-xl border border-border p-4 space-y-2.5">
-              <InfoRow label="Chuyên gia" value={payment.specialistName} />
+              <InfoRow
+                label="Chuyên gia"
+                value={payment.specialistName ?? "—"}
+              />
               <InfoRow
                 label="Kỳ thanh toán"
                 value={formatMonthISO(payment.month)}
               />
               <InfoRow
                 label="Số chẩn đoán"
-                value={`${payment.totalDiagnoses} lượt`}
+                value={`${payment.totalDiagnoses ?? 0} lượt`}
               />
               <div className="border-t border-border pt-2 flex justify-between items-center">
                 <span className="text-sm text-ink-500 shrink-0">Tổng tiền</span>
                 <span className="text-base font-bold text-primary">
-                  {formatVND(payment.amount)}
+                  {formatVND(payment.amount ?? 0)}
                 </span>
               </div>
             </div>
@@ -1459,19 +1487,19 @@ function PaymentDetailModal({
             {/* Diagnosis items */}
             <div>
               <p className="text-xs font-semibold text-ink-500 uppercase tracking-wide mb-2">
-                Chẩn đoán ({payment.items.length} lượt)
+                Chẩn đoán ({(payment.items ?? []).length} lượt)
               </p>
-              {payment.items.length === 0 ? (
+              {(payment.items ?? []).length === 0 ? (
                 <EmptyState message="Không có dữ liệu chi tiết." size="sm" />
               ) : (
                 <div className="rounded-lg border border-border overflow-hidden">
-                  {payment.items.map((item, idx) => {
+                  {(payment.items ?? []).map((item, idx) => {
                     const isActive =
                       selectedDiagnosis?.diagnosisResultId ===
                       item.diagnosisResultId;
                     return (
                       <button
-                        key={item.id ?? item.diagnosisResultId}
+                        key={item.id ?? item.diagnosisResultId ?? idx}
                         type="button"
                         onClick={() =>
                           isActive

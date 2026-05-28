@@ -533,7 +533,8 @@ function WorkerSchedulePreview({
   })();
 
   const busyDays = days.filter((d) => (byDate[d]?.length ?? 0) > 0).length;
-  const fmtTime = (iso: string) => `${iso.slice(11, 13)}:${iso.slice(14, 16)}`;
+  const fmtTime = (iso: string | null | undefined) =>
+    iso ? `${iso.slice(11, 13)}:${iso.slice(14, 16)}` : "--:--";
 
   return (
     <div className="rounded-lg border border-[#e2e8f0] overflow-hidden bg-white">
@@ -629,7 +630,7 @@ const TASK_STATUS_MAP: Record<
   string,
   { label: string; tone: "warning-2" | "success" | "neutral" }
 > = {
-  Pending: { label: "Đang làm", tone: "warning-2" },
+  Pending: { label: "Chưa hoàn thành", tone: "warning-2" },
   Completed: { label: "Đã hoàn thành", tone: "success" },
 };
 
@@ -681,8 +682,8 @@ export function TasksPage() {
     .slice()
     .sort(
       (a, b) =>
-        new Date(a.taskCreatedAt).getTime() -
-        new Date(b.taskCreatedAt).getTime(),
+        new Date(a.taskCreatedAt ?? 0).getTime() -
+        new Date(b.taskCreatedAt ?? 0).getTime(),
     );
   const seasons: SeasonResponse[] = seasonsQuery.data ?? [];
   const allBeds: BedResponse[] = bedsQuery.data ?? [];
@@ -706,11 +707,20 @@ export function TasksPage() {
       );
       const all = detailArrays.flat();
       const seen = new Set<string>();
-      return all.filter((d) => {
-        if (seen.has(d.taskDetailId)) return false;
-        seen.add(d.taskDetailId);
-        return true;
-      });
+      return all
+        .filter((d) => {
+          if (seen.has(d.taskDetailId)) return false;
+          seen.add(d.taskDetailId);
+          return true;
+        })
+        .map((d) => ({
+          ...d,
+          // API may return null for array fields — normalise to [] so all
+          // downstream .includes() / .length accesses are safe.
+          bedIds: d.bedIds ?? [],
+          plotIds: d.plotIds ?? [],
+          assignedToWorkerIds: d.assignedToWorkerIds ?? [],
+        }));
     },
     // Don't fire until seasons are loaded; having 0 seasons means no details.
     enabled: allSeasonIds.length > 0,
@@ -766,6 +776,32 @@ export function TasksPage() {
         "error",
       );
   }, [taskDetailsQuery.error, showToast]);
+
+  // Persistent error state for critical queries — toast alone is not enough
+  // because it auto-dismisses. If tasks/seasons/staff fail the whole page is
+  // broken; surface a retryable banner so the user isn't stuck staring at an
+  // empty page.
+  const criticalQueryError =
+    tasksQuery.isError ||
+    seasonsQuery.isError ||
+    staffQuery.isError ||
+    bedsQuery.isError ||
+    plotsQuery.isError;
+
+  const retryCriticalQueries = () => {
+    if (tasksQuery.isError) tasksQuery.refetch();
+    if (seasonsQuery.isError) seasonsQuery.refetch();
+    if (staffQuery.isError) staffQuery.refetch();
+    if (bedsQuery.isError) bedsQuery.refetch();
+    if (plotsQuery.isError) plotsQuery.refetch();
+  };
+
+  const isRetrying =
+    (tasksQuery.isError && tasksQuery.isFetching) ||
+    (seasonsQuery.isError && seasonsQuery.isFetching) ||
+    (staffQuery.isError && staffQuery.isFetching) ||
+    (bedsQuery.isError && bedsQuery.isFetching) ||
+    (plotsQuery.isError && plotsQuery.isFetching);
 
   const [isCalendarEditMode, setIsCalendarEditMode] = useState(false);
   const [calWorkerFilter, setCalWorkerFilter] = useState("");
@@ -1510,11 +1546,13 @@ export function TasksPage() {
   };
 
   const openEditDetail = (detail: TaskDetailResponse) => {
-    const dateStr = detail.startDate.slice(0, 10);
-    const startH = detail.startDate.slice(11, 13);
-    const startM = detail.startDate.slice(14, 16);
-    const endH = detail.endDate.slice(11, 13);
-    const endM = detail.endDate.slice(14, 16);
+    const safeStart = detail.startDate ?? "";
+    const safeEnd = detail.endDate ?? safeStart;
+    const dateStr = safeStart.slice(0, 10);
+    const startH = safeStart.slice(11, 13) || "07";
+    const startM = safeStart.slice(14, 16) || "00";
+    const endH = safeEnd.slice(11, 13) || "09";
+    const endM = safeEnd.slice(14, 16) || "00";
     const plotIdsFromBeds = Array.from(
       new Set(
         detail.bedIds
@@ -1555,7 +1593,7 @@ export function TasksPage() {
           !(d.taskTitle ?? "").toLowerCase().includes(q) &&
           !staffList
             .find((s) => s.userId === d.assignedToWorkerIds[0])
-            ?.fullname.toLowerCase()
+            ?.fullname?.toLowerCase()
             .includes(q)
         )
           return false;
@@ -1595,6 +1633,24 @@ export function TasksPage() {
   return (
     <div className="space-y-6">
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+
+      {/* Persistent error banner — shown when any critical query fails.
+          Toasts auto-dismiss; this stays visible so the user can retry. */}
+      {criticalQueryError && (
+        <div className="flex items-center justify-between gap-3 px-4 py-3 bg-status-danger-bg border border-status-danger-fg/30 rounded-lg text-sm text-status-danger-fg flex-wrap">
+          <span>
+            Không thể tải dữ liệu. Vui lòng kiểm tra kết nối và thử lại.
+          </span>
+          <Button
+            variant="secondary"
+            size="sm"
+            loading={isRetrying}
+            onClick={retryCriticalQueries}
+          >
+            Thử lại
+          </Button>
+        </div>
+      )}
 
       {/* Header */}
       <PageHeader
@@ -1876,7 +1932,7 @@ export function TasksPage() {
               className="px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#009689] w-48"
             >
               <option value="">Tất cả trạng thái</option>
-              <option value="Pending">Đang làm</option>
+              <option value="Pending">Chưa hoàn thành</option>
               <option value="Completed">Đã hoàn thành</option>
             </select>
           </div>
@@ -1958,7 +2014,9 @@ export function TasksPage() {
                             {worker ? (
                               <div className="flex items-center gap-2">
                                 <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center text-primary-fg text-[11px] font-bold shrink-0">
-                                  {worker.fullname.charAt(0).toUpperCase()}
+                                  {(worker.fullname ?? "?")
+                                    .charAt(0)
+                                    .toUpperCase()}
                                 </div>
                                 <span className="text-sm text-ink-900">
                                   {worker.fullname}
@@ -3279,7 +3337,7 @@ export function TasksPage() {
                   {worker ? (
                     <div className="flex items-center gap-2">
                       <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-primary-fg text-xs font-bold shrink-0">
-                        {worker.fullname.charAt(0).toUpperCase()}
+                        {(worker.fullname ?? "?").charAt(0).toUpperCase()}
                       </div>
                       <span className="text-sm font-semibold text-ink-900">
                         {worker.fullname}
@@ -3794,7 +3852,9 @@ export function TasksPage() {
                                         color: "#fff",
                                       }}
                                     >
-                                      {s.fullname.charAt(0).toUpperCase()}
+                                      {(s.fullname ?? "?")
+                                        .charAt(0)
+                                        .toUpperCase()}
                                     </span>
                                     {s.fullname}
                                     {sel && (
