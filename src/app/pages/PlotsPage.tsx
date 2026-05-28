@@ -40,21 +40,15 @@ import { EmptyState } from "../components/ui/EmptyState";
 import { Spinner } from "../components/ui/Spinner";
 import { useToast } from "../components/ui/useToast";
 import { ToastContainer } from "../components/ui/ToastContainer";
-import { plotStatusTone } from "../utils/status";
+import {
+  plotStatusTone,
+  plotStatusLabel,
+  bedStatusTone,
+  bedStatusLabel,
+} from "../utils/status";
 import { formatDate } from "../utils/format";
-
-// ==================== Helpers ====================
-
-const plotStatusLabel = (s: string) =>
-  s === "Active" ? "Hoạt động" : "Không hoạt động";
-
-function bedStatusLabel(status: string): string {
-  return status.toLowerCase() === "active" ? "Hoạt động" : "Không hoạt động";
-}
-
-function bedStatusToneInline(status: string): "success" | "danger" {
-  return status.toLowerCase() === "active" ? "success" : "danger";
-}
+import { compareBedNames } from "../utils/sort";
+import { QueryState } from "../components/ui/QueryState";
 
 // ==================== Validation ====================
 
@@ -141,26 +135,31 @@ export function PlotsPage() {
   const plotsQuery = useQuery({
     queryKey: qk.plots.list(),
     queryFn: () => api.getPlots(),
+    retry: 2,
   });
 
   const bedsQuery = useQuery({
     queryKey: qk.beds.list(),
     queryFn: () => api.getBeds(),
+    retry: 2,
   });
 
   const farmsQuery = useQuery({
     queryKey: qk.farms.list(),
     queryFn: () => api.getFarms(),
+    retry: 2,
   });
 
   const soilsQuery = useQuery({
     queryKey: qk.soils.list(),
     queryFn: () => api.getSoils(),
+    retry: 2,
   });
 
   const cropsQuery = useQuery({
     queryKey: qk.crops.list(),
     queryFn: () => api.getCrops(),
+    retry: 2,
   });
 
   // Surface fetch errors as toasts (TanStack Query v5: no onError on useQuery)
@@ -343,11 +342,11 @@ export function PlotsPage() {
   const filteredPlots = plots
     .filter((p) => p.farmId === selectedFarmId)
     .filter((p): p is PlotResponse => !!p?.plotId)
-    .sort(
-      (a, b) =>
-        new Date(a.plotCreatedAt).getTime() -
-        new Date(b.plotCreatedAt).getTime(),
-    );
+    .sort((a, b) => {
+      const tA = a.plotCreatedAt ? new Date(a.plotCreatedAt).getTime() : 0;
+      const tB = b.plotCreatedAt ? new Date(b.plotCreatedAt).getTime() : 0;
+      return tA - tB;
+    });
 
   // ── Handler adapters (keep modal prop signatures unchanged) ──
 
@@ -393,10 +392,14 @@ export function PlotsPage() {
     return <LoadingState message="Đang tải dữ liệu..." />;
   }
 
+  // Critical-query error states: show inline retry panels instead of
+  // rendering the page with empty data and silent failures.
+  const criticalError =
+    farmsQuery.isError || plotsQuery.isError || bedsQuery.isError;
+
   return (
     <div className="flex flex-col gap-6">
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
-
       {/* Header */}
       <PageHeader
         icon={Grid3x3}
@@ -408,260 +411,297 @@ export function PlotsPage() {
           </Button>
         }
       />
-
-      {/* Farm Selector */}
-      <div className="bg-white rounded-lg border border-border shadow-card p-4">
-        <label className="block text-sm text-ink-500 mb-2">
-          Chọn Trang Trại:
-        </label>
-        <select
-          value={selectedFarmId}
-          onChange={(e) => setSelectedFarmId(e.target.value)}
-          className="w-full max-w-md px-4 py-2 border border-border-strong rounded-btn focus:outline-none focus:ring-2 focus:ring-primary text-sm text-ink-700"
+      {/* Farms query error */}
+      {farmsQuery.isError && (
+        <QueryState
+          query={farmsQuery}
+          errorTitle="Không thể tải danh sách trang trại"
         >
-          {farms.map((f) => (
-            <option key={f.farmId} value={f.farmId}>
-              {f.farmName}
-            </option>
-          ))}
-        </select>
-      </div>
+          {null}
+        </QueryState>
+      )}
+      {/* Farm Selector — only render when farms loaded successfully */}
+      {!farmsQuery.isError && (
+        <div className="bg-white rounded-lg border border-border shadow-card p-4">
+          <label className="block text-sm text-ink-500 mb-2">
+            Chọn Trang Trại:
+          </label>
+          {farms.length === 0 ? (
+            <p className="text-sm text-ink-400 italic">
+              Chưa có trang trại nào
+            </p>
+          ) : (
+            <select
+              value={selectedFarmId}
+              onChange={(e) => setSelectedFarmId(e.target.value)}
+              className="w-full max-w-md px-4 py-2 border border-border-strong rounded-btn focus:outline-none focus:ring-2 focus:ring-primary text-sm text-ink-700"
+            >
+              {farms.map((f) => (
+                <option key={f.farmId} value={f.farmId}>
+                  {f.farmName}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+      )}
+      {/* Plots/Beds error states */}
+      {(plotsQuery.isError || bedsQuery.isError) && (
+        <div className="space-y-3">
+          {plotsQuery.isError && (
+            <QueryState
+              query={plotsQuery}
+              errorTitle="Không thể tải danh sách vuông đất"
+            >
+              {null}
+            </QueryState>
+          )}
+          {bedsQuery.isError && (
+            <QueryState
+              query={bedsQuery}
+              errorTitle="Không thể tải danh sách luống"
+            >
+              {null}
+            </QueryState>
+          )}
+        </div>
+      )}
+      {/* Plot List — suppress when a critical query has errored */}
+      {!criticalError && (
+        <div className="space-y-6">
+          {filteredPlots.length === 0 ? (
+            <div className="bg-white rounded-lg border border-border shadow-card p-12">
+              <EmptyState
+                icon={Grid3x3}
+                message="Chưa có vuông đất nào trong trang trại này"
+              />
+            </div>
+          ) : (
+            filteredPlots.map((plot) => {
+              const isOpen = openPlotIds.includes(plot.plotId);
+              const plotBeds = bedsForPlot(plot.plotId).sort((a, b) =>
+                compareBedNames(a.bedName ?? "", b.bedName ?? ""),
+              );
+              const activeBeds = plotBeds.filter(
+                (b) => (b.bedStatus ?? "").toLowerCase() === "active",
+              ).length;
 
-      {/* Plot List */}
-      <div className="space-y-6">
-        {filteredPlots.length === 0 ? (
-          <div className="bg-white rounded-lg border border-border shadow-card p-12">
-            <EmptyState
-              icon={Grid3x3}
-              message="Chưa có vuông đất nào trong trang trại này"
-            />
-          </div>
-        ) : (
-          filteredPlots.map((plot) => {
-            const isOpen = openPlotIds.includes(plot.plotId);
-            const plotBeds = bedsForPlot(plot.plotId).sort((a, b) => {
-              const numA = parseInt(a.bedName.match(/\d+/)?.[0] ?? "0", 10);
-              const numB = parseInt(b.bedName.match(/\d+/)?.[0] ?? "0", 10);
-              if (numA !== numB) return numA - numB;
-              return a.bedName.localeCompare(b.bedName, "vi");
-            });
-            const activeBeds = plotBeds.filter(
-              (b) => b.bedStatus.toLowerCase() === "active",
-            ).length;
-
-            return (
-              <div
-                key={plot.plotId}
-                className="bg-white rounded-lg border border-border shadow-card overflow-hidden"
-              >
-                <div className="p-6">
-                  <div className="flex items-start justify-between mb-4 gap-3 flex-wrap">
-                    <div className="flex items-start gap-4 min-w-0">
-                      <div className="w-12 h-12 bg-primary-50 rounded-card flex items-center justify-center shrink-0">
-                        <Grid3x3 className="w-6 h-6 text-primary" />
-                      </div>
-                      <div className="min-w-0">
-                        <h3 className="text-lg font-semibold text-ink-800 mb-1 truncate">
-                          {plot.plotName}
-                        </h3>
-                        <p className="text-sm text-ink-500 mb-2">
-                          {plot.plotArea} m² · {plot.farmName}
-                        </p>
-                        <div className="flex items-center gap-3 flex-wrap">
-                          <span className="px-2.5 py-1 bg-primary-50 text-primary rounded-btn text-xs font-medium">
-                            {plot.soilName}
-                          </span>
-                          <span className="text-xs text-ink-500">
-                            {activeBeds}/{plotBeds.length} luống
-                          </span>
+              return (
+                <div
+                  key={plot.plotId}
+                  className="bg-white rounded-lg border border-border shadow-card overflow-hidden"
+                >
+                  <div className="p-6">
+                    <div className="flex items-start justify-between mb-4 gap-3 flex-wrap">
+                      <div className="flex items-start gap-4 min-w-0">
+                        <div className="w-12 h-12 bg-primary-50 rounded-card flex items-center justify-center shrink-0">
+                          <Grid3x3 className="w-6 h-6 text-primary" />
+                        </div>
+                        <div className="min-w-0">
+                          <h3 className="text-lg font-semibold text-ink-800 mb-1 truncate">
+                            {plot.plotName}
+                          </h3>
+                          <p className="text-sm text-ink-500 mb-2">
+                            {plot.plotArea} m² · {plot.farmName}
+                          </p>
+                          <div className="flex items-center gap-3 flex-wrap">
+                            <span className="px-2.5 py-1 bg-primary-50 text-primary rounded-btn text-xs font-medium">
+                              {plot.soilName}
+                            </span>
+                            <span className="text-xs text-ink-500">
+                              {activeBeds}/{plotBeds.length} luống
+                            </span>
+                          </div>
                         </div>
                       </div>
+
+                      <div className="flex items-center gap-2 flex-wrap justify-end">
+                        <StatusBadge
+                          label={plotStatusLabel(plot.plotStatus)}
+                          tone={plotStatusTone(plot.plotStatus)}
+                        />
+                        <button
+                          onClick={() => {
+                            setSelectedPlot(plot);
+                            setViewPlotOpen(true);
+                          }}
+                          className="p-2 text-primary hover:bg-primary-50 rounded-btn transition-colors"
+                          title="Xem"
+                          aria-label="Xem chi tiết vuông đất"
+                        >
+                          <Eye className="w-5 h-5" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            setSelectedPlot(plot);
+                            setEditPlotOpen(true);
+                          }}
+                          className="p-2 text-primary hover:bg-primary-50 rounded-btn transition-colors"
+                          title="Chỉnh sửa"
+                          aria-label="Chỉnh sửa vuông đất"
+                        >
+                          <Pencil className="w-5 h-5" />
+                        </button>
+                        <button
+                          onClick={() => handleDeletePlot(plot.plotId)}
+                          className="p-2 text-status-danger-fg hover:bg-status-danger-bg rounded-btn transition-colors"
+                          title="Xóa"
+                          aria-label="Xóa vuông đất"
+                        >
+                          <Trash2 className="w-5 h-5" />
+                        </button>
+                        <Button
+                          leadingIcon={Layers}
+                          onClick={() => {
+                            setSelectedPlot(plot);
+                            setAutoPlotOpen(true);
+                          }}
+                        >
+                          Thêm Luống Tự Động
+                        </Button>
+                      </div>
                     </div>
 
-                    <div className="flex items-center gap-2 flex-wrap justify-end">
-                      <StatusBadge
-                        label={plotStatusLabel(plot.plotStatus)}
-                        tone={plotStatusTone(plot.plotStatus)}
-                      />
-                      <button
-                        onClick={() => {
-                          setSelectedPlot(plot);
-                          setViewPlotOpen(true);
-                        }}
-                        className="p-2 text-primary hover:bg-primary-50 rounded-btn transition-colors"
-                        title="Xem"
-                        aria-label="Xem chi tiết vuông đất"
-                      >
-                        <Eye className="w-5 h-5" />
-                      </button>
-                      <button
-                        onClick={() => {
-                          setSelectedPlot(plot);
-                          setEditPlotOpen(true);
-                        }}
-                        className="p-2 text-primary hover:bg-primary-50 rounded-btn transition-colors"
-                        title="Chỉnh sửa"
-                        aria-label="Chỉnh sửa vuông đất"
-                      >
-                        <Pencil className="w-5 h-5" />
-                      </button>
-                      <button
-                        onClick={() => handleDeletePlot(plot.plotId)}
-                        className="p-2 text-status-danger-fg hover:bg-status-danger-bg rounded-btn transition-colors"
-                        title="Xóa"
-                        aria-label="Xóa vuông đất"
-                      >
-                        <Trash2 className="w-5 h-5" />
-                      </button>
-                      <Button
-                        leadingIcon={Layers}
-                        onClick={() => {
-                          setSelectedPlot(plot);
-                          setAutoPlotOpen(true);
-                        }}
-                      >
-                        Thêm Luống Tự Động
-                      </Button>
-                    </div>
-                  </div>
+                    <Collapsible.Root
+                      open={isOpen}
+                      onOpenChange={() => togglePlot(plot.plotId)}
+                    >
+                      <div className="flex items-center justify-between py-3 border-t border-border">
+                        <Collapsible.Trigger className="flex items-center gap-2 text-ink-800 font-medium">
+                          {isOpen ? (
+                            <ChevronUp className="w-5 h-5" />
+                          ) : (
+                            <ChevronDown className="w-5 h-5" />
+                          )}
+                          <span>
+                            Luống ({activeBeds}/{plotBeds.length})
+                          </span>
+                        </Collapsible.Trigger>
+                        <Button
+                          variant="secondary"
+                          leadingIcon={Plus}
+                          onClick={() => {
+                            setSelectedPlot(plot);
+                            setCreateBedOpen(true);
+                          }}
+                        >
+                          Thêm Luống
+                        </Button>
+                      </div>
 
-                  <Collapsible.Root
-                    open={isOpen}
-                    onOpenChange={() => togglePlot(plot.plotId)}
-                  >
-                    <div className="flex items-center justify-between py-3 border-t border-border">
-                      <Collapsible.Trigger className="flex items-center gap-2 text-ink-800 font-medium">
-                        {isOpen ? (
-                          <ChevronUp className="w-5 h-5" />
+                      <Collapsible.Content>
+                        {plotBeds.length === 0 ? (
+                          <div className="py-8">
+                            <EmptyState size="sm" message="Chưa có luống nào" />
+                          </div>
                         ) : (
-                          <ChevronDown className="w-5 h-5" />
-                        )}
-                        <span>
-                          Luống ({activeBeds}/{plotBeds.length})
-                        </span>
-                      </Collapsible.Trigger>
-                      <Button
-                        variant="secondary"
-                        leadingIcon={Plus}
-                        onClick={() => {
-                          setSelectedPlot(plot);
-                          setCreateBedOpen(true);
-                        }}
-                      >
-                        Thêm Luống
-                      </Button>
-                    </div>
-
-                    <Collapsible.Content>
-                      {plotBeds.length === 0 ? (
-                        <div className="py-8">
-                          <EmptyState size="sm" message="Chưa có luống nào" />
-                        </div>
-                      ) : (
-                        <div className="mt-4 overflow-x-auto">
-                          <table className="w-full min-w-[500px]">
-                            <thead className="bg-surface-alt">
-                              <tr>
-                                {[
-                                  "Tên luống",
-                                  "Diện tích",
-                                  "Số hàng",
-                                  "Trạng thái",
-                                  "Thao tác",
-                                ].map((h, i) => (
-                                  <th
-                                    key={h}
-                                    className={`px-4 py-3 text-xs font-medium text-ink-500 uppercase whitespace-nowrap ${i === 4 ? "text-center" : "text-left"}`}
-                                  >
-                                    {h}
-                                  </th>
-                                ))}
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-border">
-                              {plotBeds.map((bed) => (
-                                <tr
-                                  key={bed.bedId}
-                                  className="hover:bg-surface-alt transition-colors"
-                                >
-                                  <td className="px-4 py-3 text-sm text-ink-800 font-medium whitespace-nowrap">
-                                    {bed.bedName}
-                                  </td>
-                                  <td className="px-4 py-3 text-sm text-ink-500 whitespace-nowrap">
-                                    {bed.bedArea} m²
-                                  </td>
-                                  <td className="px-4 py-3 text-sm text-ink-500">
-                                    {bed.rowCount != null ? bed.rowCount : "-"}
-                                  </td>
-                                  <td className="px-4 py-3">
-                                    <StatusBadge
-                                      label={bedStatusLabel(bed.bedStatus)}
-                                      tone={bedStatusToneInline(bed.bedStatus)}
-                                    />
-                                  </td>
-                                  <td className="px-4 py-3">
-                                    <div className="flex items-center justify-center gap-1">
-                                      <button
-                                        onClick={() => {
-                                          setSelectedBed(bed);
-                                          setSelectedPlot(plot);
-                                          setViewBedOpen(true);
-                                        }}
-                                        className="p-1.5 rounded-btn transition-colors text-ink-500 hover:text-primary hover:bg-primary-50"
-                                        title="Xem"
-                                        aria-label="Xem chi tiết luống"
-                                      >
-                                        <Eye className="w-4 h-4" />
-                                      </button>
-                                      <button
-                                        onClick={() => {
-                                          setSelectedBed(bed);
-                                          setSelectedPlot(plot);
-                                          setEditBedOpen(true);
-                                        }}
-                                        className="p-1.5 rounded-btn transition-colors text-ink-500 hover:text-primary hover:bg-primary-50"
-                                        title="Chỉnh sửa"
-                                        aria-label="Chỉnh sửa luống"
-                                      >
-                                        <Pencil className="w-4 h-4" />
-                                      </button>
-                                      <button
-                                        onClick={() =>
-                                          handleDeleteBed(bed.bedId)
-                                        }
-                                        className="p-1.5 rounded-btn transition-colors text-ink-500 hover:text-status-danger-fg hover:bg-status-danger-bg"
-                                        title="Xóa"
-                                        aria-label="Xóa luống"
-                                      >
-                                        <Trash2 className="w-4 h-4" />
-                                      </button>
-                                      <button
-                                        onClick={() =>
-                                          setIotBedTarget(bed.bedId)
-                                        }
-                                        className="p-1.5 rounded-btn transition-colors text-ink-500 hover:text-primary hover:bg-primary-50"
-                                        title="Thêm thiết bị IoT"
-                                        aria-label="Thêm thiết bị IoT"
-                                      >
-                                        <Cpu className="w-4 h-4" />
-                                      </button>
-                                    </div>
-                                  </td>
+                          <div className="mt-4 overflow-x-auto">
+                            <table className="w-full min-w-[500px]">
+                              <thead className="bg-surface-alt">
+                                <tr>
+                                  {[
+                                    "Tên luống",
+                                    "Diện tích",
+                                    "Số hàng",
+                                    "Trạng thái",
+                                    "Thao tác",
+                                  ].map((h, i) => (
+                                    <th
+                                      key={h}
+                                      className={`px-4 py-3 text-xs font-medium text-ink-500 uppercase whitespace-nowrap ${i === 4 ? "text-center" : "text-left"}`}
+                                    >
+                                      {h}
+                                    </th>
+                                  ))}
                                 </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      )}
-                    </Collapsible.Content>
-                  </Collapsible.Root>
+                              </thead>
+                              <tbody className="divide-y divide-border">
+                                {plotBeds.map((bed) => (
+                                  <tr
+                                    key={bed.bedId}
+                                    className="hover:bg-surface-alt transition-colors"
+                                  >
+                                    <td className="px-4 py-3 text-sm text-ink-800 font-medium whitespace-nowrap">
+                                      {bed.bedName}
+                                    </td>
+                                    <td className="px-4 py-3 text-sm text-ink-500 whitespace-nowrap">
+                                      {bed.bedArea} m²
+                                    </td>
+                                    <td className="px-4 py-3 text-sm text-ink-500">
+                                      {bed.rowCount != null
+                                        ? bed.rowCount
+                                        : "-"}
+                                    </td>
+                                    <td className="px-4 py-3">
+                                      <StatusBadge
+                                        label={bedStatusLabel(bed.bedStatus)}
+                                        tone={bedStatusTone(bed.bedStatus)}
+                                      />
+                                    </td>
+                                    <td className="px-4 py-3">
+                                      <div className="flex items-center justify-center gap-1">
+                                        <button
+                                          onClick={() => {
+                                            setSelectedBed(bed);
+                                            setSelectedPlot(plot);
+                                            setViewBedOpen(true);
+                                          }}
+                                          className="p-1.5 rounded-btn transition-colors text-ink-500 hover:text-primary hover:bg-primary-50"
+                                          title="Xem"
+                                          aria-label="Xem chi tiết luống"
+                                        >
+                                          <Eye className="w-4 h-4" />
+                                        </button>
+                                        <button
+                                          onClick={() => {
+                                            setSelectedBed(bed);
+                                            setSelectedPlot(plot);
+                                            setEditBedOpen(true);
+                                          }}
+                                          className="p-1.5 rounded-btn transition-colors text-ink-500 hover:text-primary hover:bg-primary-50"
+                                          title="Chỉnh sửa"
+                                          aria-label="Chỉnh sửa luống"
+                                        >
+                                          <Pencil className="w-4 h-4" />
+                                        </button>
+                                        <button
+                                          onClick={() =>
+                                            handleDeleteBed(bed.bedId)
+                                          }
+                                          className="p-1.5 rounded-btn transition-colors text-ink-500 hover:text-status-danger-fg hover:bg-status-danger-bg"
+                                          title="Xóa"
+                                          aria-label="Xóa luống"
+                                        >
+                                          <Trash2 className="w-4 h-4" />
+                                        </button>
+                                        <button
+                                          onClick={() =>
+                                            setIotBedTarget(bed.bedId)
+                                          }
+                                          className="p-1.5 rounded-btn transition-colors text-ink-500 hover:text-primary hover:bg-primary-50"
+                                          title="Thêm thiết bị IoT"
+                                          aria-label="Thêm thiết bị IoT"
+                                        >
+                                          <Cpu className="w-4 h-4" />
+                                        </button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </Collapsible.Content>
+                    </Collapsible.Root>
+                  </div>
                 </div>
-              </div>
-            );
-          })
-        )}
-      </div>
-
+              );
+            })
+          )}
+        </div>
+      )}{" "}
+      {/* end !criticalError */}
       {/* ── Plot Modals ── */}
       <CreatePlotModal
         open={createPlotOpen}
@@ -671,7 +711,6 @@ export function PlotsPage() {
         onCreate={handleCreatePlot}
         submitting={createPlotMutation.isPending}
       />
-
       {selectedPlot && (
         <>
           <ViewPlotModal
@@ -705,7 +744,6 @@ export function PlotsPage() {
           />
         </>
       )}
-
       {selectedBed && selectedPlot && (
         <>
           <ViewBedModal
@@ -724,7 +762,6 @@ export function PlotsPage() {
           />
         </>
       )}
-
       {/* ── Delete Dialogs ── */}
       <ConfirmDialog
         open={deletePlotDialogOpen}
@@ -745,7 +782,6 @@ export function PlotsPage() {
         loading={deletePlotMutation.isPending}
         onConfirm={confirmDeletePlot}
       />
-
       <ConfirmDialog
         open={deleteBedDialogOpen}
         onOpenChange={(o) => {
@@ -760,7 +796,6 @@ export function PlotsPage() {
         loading={deleteBedMutation.isPending}
         onConfirm={confirmDeleteBed}
       />
-
       {/* IoT Quick-Add Modal */}
       {iotBedTarget && (
         <IotQuickAddModal
@@ -989,7 +1024,7 @@ function ViewPlotModal({
             <div className="flex items-center gap-2">
               <Layers className="w-5 h-5 text-primary" />
               <span className="text-lg font-semibold text-ink-800">
-                {plot.plotArea.toLocaleString()} m²
+                {(plot.plotArea ?? 0).toLocaleString()} m²
               </span>
             </div>
           </div>
@@ -1637,7 +1672,7 @@ function ViewBedModal({
             <span className="text-sm text-ink-500">Trạng thái:</span>
             <StatusBadge
               label={bedStatusLabel(bed.bedStatus)}
-              tone={bedStatusToneInline(bed.bedStatus)}
+              tone={bedStatusTone(bed.bedStatus)}
             />
           </div>
         </div>
