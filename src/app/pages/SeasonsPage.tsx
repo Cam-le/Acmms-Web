@@ -14,10 +14,8 @@ import {
   Check,
   Thermometer,
   Droplets,
-  Sun,
   CloudRain,
   Cpu,
-  MapPin,
   Eye,
   Pencil,
   Sprout,
@@ -29,6 +27,8 @@ import {
   User,
   ChevronRight,
   NotebookPen,
+  Wifi,
+  WifiOff,
 } from "lucide-react";
 import * as Collapsible from "@radix-ui/react-collapsible";
 import {
@@ -70,6 +70,7 @@ import {
 } from "../utils/status";
 import { bedSortTokens, compareTokenArrays } from "../utils/sort";
 import type { BadgeTone } from "../components/ui/StatusBadge";
+import { useIotHub, iotConnectionLabel } from "../hooks/useIotHub";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -144,20 +145,20 @@ function sortBeds<T extends { name: string; area: string }>(beds: T[]): T[] {
 
 // ─── Growth Tracking helpers ──────────────────────────────────────────────────
 
-function trackingStatusTone(s: string): BadgeTone {
-  const n = s.toLowerCase();
+function trackingStatusTone(s: string | null | undefined): BadgeTone {
+  const n = (s ?? "").toLowerCase();
   if (n === "completed") return "success";
   if (n === "in-progress" || n === "in_progress") return "info";
   if (n === "cancelled" || n === "canceled") return "danger";
   return "neutral";
 }
 
-function trackingStatusLabel(s: string): string {
-  const n = s.toLowerCase();
+function trackingStatusLabel(s: string | null | undefined): string {
+  const n = (s ?? "").toLowerCase();
   if (n === "completed") return "Đã hoàn thành";
   if (n === "in-progress" || n === "in_progress") return "Đang thực hiện";
   if (n === "cancelled" || n === "canceled") return "Đã hủy";
-  return s;
+  return s ?? "—";
 }
 
 function healthStatusTone(s: string | undefined): BadgeTone {
@@ -509,12 +510,13 @@ interface IotRow {
   bedId: string;
   bedName: string | null;
   recordedAt: string;
-  temperature: number;
-  humidity: number;
-  soilMoisture: number;
-  light?: number;
+  temperature: number | null;
+  humidity: number | null;
+  soilMoisture: number | null;
   isRaining: boolean;
   isAlert: boolean;
+  /** True when this row was last updated via SignalR (not initial REST fetch) */
+  liveUpdated?: boolean;
 }
 
 // ─── Season List Page ──────────────────────────────────────────────────────────
@@ -1252,10 +1254,34 @@ function DetailSeasonView({
     }
   };
 
-  // ── IoT sensor data (non-critical, keep as useEffect) ─────────────────────
+  // ── IoT sensor data ────────────────────────────────────────────────────────
+  // Initial load: fetch all devices + their latest readings, filter to this
+  // season's farm via bed → plot → farm chain.
+  // Real-time updates: useIotHub wired to season.farmId overlays live data.
   const [iotRows, setIotRows] = useState<IotRow[]>([]);
   const [iotLoading, setIotLoading] = useState(true);
 
+  // Stable set of deviceIds for this season (derived from iotRows after load)
+  const iotDeviceIds = iotRows.map((r) => r.deviceId);
+
+  // Bed → plot → farm lookup helpers (beds prop already available)
+  const bedPlotMap = React.useMemo(() => {
+    const map: Record<string, string> = {};
+    beds.forEach((b) => {
+      if (b.bedId && b.plotId) map[b.bedId] = b.plotId;
+    });
+    return map;
+  }, [beds]);
+
+  const plotFarmMap = React.useMemo(() => {
+    const map: Record<string, string> = {};
+    plots.forEach((p) => {
+      if (p.plotId && p.farmId) map[p.plotId] = p.farmId;
+    });
+    return map;
+  }, [plots]);
+
+  // Initial REST fetch
   useEffect(() => {
     let cancelled = false;
     async function loadIot() {
@@ -1263,35 +1289,45 @@ function DetailSeasonView({
       try {
         const allDevices = await api.getIotDevices();
         const devices = Array.isArray(allDevices) ? allDevices : [];
+
+        // Filter to devices whose bed belongs to this season's farm
+        const farmDevices = devices.filter((d) => {
+          if (!d.bedId) return false;
+          const plotId = bedPlotMap[d.bedId];
+          if (!plotId) return false;
+          return plotFarmMap[plotId] === season.farmId;
+        });
+
         const readingResults = await Promise.allSettled(
-          devices.map((d) => api.getLatestSensorByDevice(d.deviceCode)),
+          farmDevices.map((d) => api.getLatestSensorByDevice(d.deviceCode)),
         );
         if (cancelled) return;
+
         const rows: IotRow[] = [];
-        for (let i = 0; i < devices.length; i++) {
-          const device = devices[i];
+        for (let i = 0; i < farmDevices.length; i++) {
+          const device = farmDevices[i];
           const result = readingResults[i];
           if (result.status !== "fulfilled" || !result.value) continue;
           const reading = result.value;
           rows.push({
-            sensorDataId: reading.sensorDataId,
-            deviceId: device.deviceId,
-            deviceCode: device.deviceCode,
-            deviceName: device.name,
-            bedId: device.bedId,
-            bedName: device.name,
-            recordedAt: reading.recordedAt,
-            temperature: reading.temperature,
-            humidity: reading.humidity,
-            soilMoisture: reading.soilMoisture,
-            light: reading.light,
-            isRaining: reading.isRaining,
-            isAlert: reading.isAlert,
+            sensorDataId: reading.sensorDataId ?? device.deviceId,
+            deviceId: device.deviceId ?? "",
+            deviceCode: device.deviceCode ?? "",
+            deviceName: device.name ?? device.deviceCode ?? "",
+            bedId: device.bedId ?? "",
+            bedName: device.name ?? null,
+            recordedAt: reading.recordedAt ?? "",
+            temperature: reading.temperature ?? null,
+            humidity: reading.humidity ?? null,
+            soilMoisture: reading.soilMoisture ?? null,
+            isRaining: reading.isRaining ?? false,
+            isAlert: reading.isAlert ?? false,
+            liveUpdated: false,
           });
         }
         setIotRows(rows);
       } catch {
-        // IoT is non-critical — silent fail
+        // IoT is non-critical — silent fail; empty state shown
       } finally {
         if (!cancelled) setIotLoading(false);
       }
@@ -1300,7 +1336,35 @@ function DetailSeasonView({
     return () => {
       cancelled = true;
     };
-  }, [season.id]);
+  }, [season.id, season.farmId, bedPlotMap, plotFarmMap]);
+
+  // SignalR real-time overlay: update existing rows when live data arrives.
+  // Only updates rows that already exist (matched by deviceId) — we don't
+  // add new rows from SignalR since we don't have device metadata there.
+  const { connectionState: iotConnectionState } = useIotHub({
+    farmId: season.farmId || null,
+    deviceIds: iotDeviceIds,
+    enabled: !iotLoading && season.farmId !== "",
+    onSensorData: (payload) => {
+      if (!payload?.deviceId) return;
+      setIotRows((prev) =>
+        prev.map((row) =>
+          row.deviceId === payload.deviceId
+            ? {
+                ...row,
+                recordedAt: payload.recordedAt ?? row.recordedAt,
+                temperature: payload.temperature ?? row.temperature,
+                humidity: payload.humidity ?? row.humidity,
+                soilMoisture: payload.soilMoisture ?? row.soilMoisture,
+                isRaining: payload.isRaining ?? row.isRaining,
+                isAlert: payload.isAlert ?? row.isAlert,
+                liveUpdated: true,
+              }
+            : row,
+        ),
+      );
+    },
+  });
 
   // ── Growth tracking indicator ──────────────────────────────────────────────
   const [trackingKnown, setTrackingKnown] = useState<Record<string, boolean>>(
@@ -1312,8 +1376,10 @@ function DetailSeasonView({
   } | null>(null);
 
   // ── Derived ────────────────────────────────────────────────────────────────
-  const farmPlots = plots.filter((p) => p.farmId === season.farmId);
-  const activeCrops = crops;
+  const farmPlots = (Array.isArray(plots) ? plots : []).filter(
+    (p) => p.farmId === season.farmId,
+  );
+  const activeCrops = Array.isArray(crops) ? crops : [];
 
   const HARVEST_STATUS_OPTIONS = [
     { value: "planned", label: "Lên kế hoạch" },
@@ -1640,7 +1706,7 @@ function DetailSeasonView({
 
       {/* IoT Sensor Data */}
       <div className="bg-surface rounded-card border border-border shadow-card overflow-hidden">
-        <div className="px-6 py-4 border-b border-border flex items-center justify-between">
+        <div className="px-6 py-4 border-b border-border flex items-center justify-between flex-wrap gap-2">
           <h3 className="text-sm font-bold text-ink-500 uppercase flex items-center gap-2">
             <Cpu className="w-4 h-4" /> Dữ liệu cảm biến IoT
             {iotRows.length > 0 && (
@@ -1649,13 +1715,35 @@ function DetailSeasonView({
               </span>
             )}
           </h3>
-          {iotRows.some((r) => r.isAlert) && (
-            <StatusBadge
-              label="Có cảnh báo"
-              tone="danger"
-              icon={AlertTriangle}
-            />
-          )}
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* SignalR connection indicator — only shown after initial load */}
+            {!iotLoading && (
+              <span
+                className={`inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-pill ${
+                  iotConnectionState === "connected"
+                    ? "bg-status-success-bg text-status-success-fg"
+                    : iotConnectionState === "connecting" ||
+                        iotConnectionState === "reconnecting"
+                      ? "bg-status-warning-bg text-status-warning-fg"
+                      : "bg-status-neutral-bg text-status-neutral-fg"
+                }`}
+              >
+                {iotConnectionState === "connected" ? (
+                  <Wifi className="w-3 h-3" />
+                ) : (
+                  <WifiOff className="w-3 h-3" />
+                )}
+                {iotConnectionLabel(iotConnectionState)}
+              </span>
+            )}
+            {iotRows.some((r) => r.isAlert) && (
+              <StatusBadge
+                label="Có cảnh báo"
+                tone="danger"
+                icon={AlertTriangle}
+              />
+            )}
+          </div>
         </div>
 
         {iotLoading ? (
@@ -1664,7 +1752,7 @@ function DetailSeasonView({
           <EmptyState size="sm" message="Chưa có dữ liệu cảm biến" />
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[640px]">
+            <table className="w-full text-sm min-w-[560px]">
               <thead className="bg-surface-alt border-b border-border">
                 <tr>
                   {[
@@ -1673,7 +1761,6 @@ function DetailSeasonView({
                     "Nhiệt độ (°C)",
                     "Độ ẩm KK (%)",
                     "Độ ẩm đất (%)",
-                    "Ánh sáng",
                     "Trạng thái",
                   ].map((h) => (
                     <th
@@ -1692,23 +1779,33 @@ function DetailSeasonView({
                     className={`hover:bg-surface-alt transition-colors ${row.isAlert ? "bg-status-danger-bg/20" : ""}`}
                   >
                     <td className="px-4 py-3 whitespace-nowrap">
-                      <div className="font-mono text-xs font-semibold text-ink-800">
-                        {row.deviceCode}
+                      <div className="flex items-center gap-1.5">
+                        <div className="font-mono text-xs font-semibold text-ink-800">
+                          {row.deviceCode}
+                        </div>
+                        {row.liveUpdated && (
+                          <span
+                            title="Dữ liệu trực tiếp"
+                            className="w-1.5 h-1.5 rounded-full bg-status-success-fg shrink-0"
+                          />
+                        )}
                       </div>
-                      {row.deviceName !== row.deviceCode && (
-                        <div className="text-xs text-ink-400">
+                      {row.deviceName && row.deviceName !== row.deviceCode && (
+                        <div className="text-xs text-ink-400 mt-0.5">
                           {row.deviceName}
                         </div>
                       )}
                     </td>
                     <td className="px-4 py-3 text-ink-500 whitespace-nowrap text-xs">
-                      {new Date(row.recordedAt).toLocaleString("vi-VN", {
-                        day: "2-digit",
-                        month: "2-digit",
-                        year: "numeric",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
+                      {row.recordedAt
+                        ? new Date(row.recordedAt).toLocaleString("vi-VN", {
+                            day: "2-digit",
+                            month: "2-digit",
+                            year: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })
+                        : "—"}
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
                       <span className="inline-flex items-center gap-1.5 font-medium text-orange-600">
@@ -1721,19 +1818,13 @@ function DetailSeasonView({
                     <td className="px-4 py-3 whitespace-nowrap">
                       <span className="inline-flex items-center gap-1.5 font-medium text-blue-600">
                         <Droplets className="w-3.5 h-3.5" />
-                        {row.humidity ?? "—"}
+                        {row.humidity != null ? row.humidity : "—"}
                       </span>
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
                       <span className="inline-flex items-center gap-1.5 font-medium text-status-success-fg">
                         <Droplets className="w-3.5 h-3.5 opacity-60" />
-                        {row.soilMoisture ?? "—"}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <span className="inline-flex items-center gap-1.5 text-ink-500">
-                        <Sun className="w-3.5 h-3.5 text-yellow-500" />
-                        {row.light ?? "—"}
+                        {row.soilMoisture != null ? row.soilMoisture : "—"}
                       </span>
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
