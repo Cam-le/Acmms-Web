@@ -129,8 +129,8 @@ function mapSeasonResponse(s: SeasonResponse, farms: FarmResponse[]): Season {
   };
 }
 
-function bedSortKey(name: string): number[] {
-  const tokens = bedSortTokens(name);
+function bedSortKey(name: string | null | undefined): number[] {
+  const tokens = bedSortTokens(name ?? "");
   return tokens.length > 0 ? tokens : [Infinity];
 }
 
@@ -1971,7 +1971,7 @@ function CreateSeasonView({
   const availableBeds = sortBeds(
     bedsForFarm.map((b) => ({
       id: b.bedId,
-      name: b.bedName,
+      name: b.bedName ?? "",
       area: b.plotName ?? "Không rõ khu",
       size: b.bedArea ? `${b.bedArea} m²` : "—",
     })),

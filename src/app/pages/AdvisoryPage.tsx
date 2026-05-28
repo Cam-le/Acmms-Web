@@ -26,7 +26,10 @@ import {
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { qk } from "../../api/queryKeys";
 import { api } from "../../api/client";
-import type { ReportAttachment } from "../../api/client";
+import type {
+  ReportAttachment,
+  RecommendationResponse,
+} from "../../api/client";
 import { useToast } from "../components/ui/useToast";
 import { ToastContainer } from "../components/ui/ToastContainer";
 import { SearchInput } from "../components/ui/SearchInput";
@@ -223,6 +226,62 @@ function ReportTypeBadge({ type }: { type: string }) {
       <Icon className="w-3 h-3 shrink-0" />
       {label}
     </span>
+  );
+}
+
+// ===================== DIAGNOSIS RECOMMENDATIONS =====================
+
+function DiagnosisRecommendations({ diagnosisId }: { diagnosisId: string }) {
+  const recQuery = useQuery({
+    queryKey: qk.reports.recommendations(diagnosisId),
+    queryFn: () => api.getRecommendationsByDiagnosis(diagnosisId),
+    enabled: !!diagnosisId,
+  });
+
+  const recommendations: RecommendationResponse[] = recQuery.data ?? [];
+
+  if (recQuery.isLoading) {
+    return <LoadingState message="Đang tải khuyến nghị..." variant="inline" />;
+  }
+
+  if (recQuery.isError) {
+    return (
+      <p className="text-xs text-status-danger-fg">
+        Không thể tải khuyến nghị.{" "}
+        <button
+          type="button"
+          className="underline hover:no-underline"
+          onClick={() => recQuery.refetch()}
+        >
+          Thử lại
+        </button>
+      </p>
+    );
+  }
+
+  if (recommendations.length === 0) return null;
+
+  return (
+    <div className="space-y-2">
+      <div className="text-xs text-ink-500 flex items-center gap-1 font-medium">
+        <BadgeCheck className="w-3.5 h-3.5 text-primary shrink-0" />
+        Khuyến nghị từ chuyên gia
+      </div>
+      {recommendations.map((rec) => (
+        <div
+          key={rec.recommendationId}
+          className="bg-primary-50 border border-primary/20 rounded-btn p-3"
+        >
+          <div className="text-xs font-semibold text-ink-700 mb-1">
+            {rec.title}
+          </div>
+          <p className="text-sm text-ink-800 leading-relaxed">{rec.content}</p>
+          <div className="mt-2 text-[10px] text-ink-400">
+            {formatDateTime(rec.createdAt)}
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -712,103 +771,6 @@ function DetailView({ reportId }: { reportId: string }) {
               </p>
             </div>
           )}
-
-          {/* Diagnoses */}
-          {report.status === "DIAGNOSED" && (
-            <>
-              <h2 className="text-sm font-semibold text-ink-700 flex items-center gap-2">
-                <BadgeCheck className="w-4 h-4 text-primary" /> Kết quả chẩn
-                đoán chuyên gia
-              </h2>
-              <div className="space-y-3">
-                {diagnosesQuery.isLoading ? (
-                  <LoadingState message="Đang tải kết quả..." />
-                ) : diagnoses.length === 0 ? (
-                  <EmptyState message="Chưa có kết quả chẩn đoán." size="sm" />
-                ) : (
-                  diagnoses.map((dx, idx) => {
-                    const sev = getSeverityConfig(dx.severityLevel);
-                    return (
-                      <div
-                        key={dx.id}
-                        className="bg-surface rounded-card border border-border shadow-card overflow-hidden"
-                      >
-                        <div className="flex items-center justify-between px-4 py-3 bg-surface-alt border-b border-border flex-wrap gap-2">
-                          <div className="flex items-center gap-2">
-                            <div className="w-6 h-6 rounded-full bg-primary-50 border border-primary-200 flex items-center justify-center text-ink-800 text-xs font-bold">
-                              {idx + 1}
-                            </div>
-                            <span className="text-xs font-semibold text-ink-700">
-                              {dx.diagnoserName}
-                            </span>
-                            {diagnoses.length > 1 && (
-                              <span className="text-xs text-ink-400">
-                                · Chẩn đoán {idx + 1}
-                              </span>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span
-                              className={`px-2 py-0.5 rounded text-xs font-medium ${sev.color}`}
-                            >
-                              {sev.label}
-                            </span>
-                            <span className="text-xs text-ink-400 whitespace-nowrap">
-                              {formatDateTime(dx.createdAt)}
-                            </span>
-                          </div>
-                        </div>
-                        <div className="p-4 space-y-3">
-                          <div>
-                            <div className="text-xs text-ink-500 mb-0.5">
-                              Tên bệnh
-                            </div>
-                            <div className="text-sm font-semibold text-ink-800">
-                              {dx.diseaseName}
-                            </div>
-                          </div>
-                          <div>
-                            <div className="text-xs text-ink-500 mb-0.5">
-                              Kết luận
-                            </div>
-                            <p className="text-sm text-ink-700 leading-relaxed">
-                              {dx.conclusion}
-                            </p>
-                          </div>
-                          <div className="bg-primary-50 border border-primary/20 rounded-btn p-3">
-                            <div className="text-xs text-ink-500 mb-1 flex items-center gap-1">
-                              <FlaskConical className="w-3 h-3" /> Khuyến nghị
-                              xử lý
-                            </div>
-                            <p className="text-sm text-ink-800 leading-relaxed">
-                              {dx.recommendedAction}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-
-              {!diagnosesQuery.isLoading && diagnoses.length > 0 && (
-                <Button
-                  fullWidth
-                  leadingIcon={PlusCircle}
-                  className="bg-primary-700 hover:bg-primary-800"
-                  onClick={() => {
-                    const description = diagnoses[0]?.recommendedAction ?? "";
-                    showToast("Đang chuyển đến trang tạo công việc...", "info");
-                    navigate(
-                      `/tasks?openCreateTask=true&description=${encodeURIComponent(description)}`,
-                    );
-                  }}
-                >
-                  Tạo công việc từ báo cáo
-                </Button>
-              )}
-            </>
-          )}
         </div>
 
         {/* Right column — image + AI */}
@@ -940,6 +902,104 @@ function DetailView({ reportId }: { reportId: string }) {
                 đính kèm.
               </p>
             </div>
+          )}
+
+          {/* Diagnoses */}
+          {report.status === "DIAGNOSED" && (
+            <>
+              <h2 className="text-sm font-semibold text-ink-700 flex items-center gap-2">
+                <BadgeCheck className="w-4 h-4 text-primary" /> Kết quả chẩn
+                đoán chuyên gia
+              </h2>
+              <div className="space-y-3">
+                {diagnosesQuery.isLoading ? (
+                  <LoadingState message="Đang tải kết quả..." />
+                ) : diagnoses.length === 0 ? (
+                  <EmptyState message="Chưa có kết quả chẩn đoán." size="sm" />
+                ) : (
+                  diagnoses.map((dx, idx) => {
+                    const sev = getSeverityConfig(dx.severityLevel);
+                    return (
+                      <div
+                        key={dx.id}
+                        className="bg-surface rounded-card border border-border shadow-card overflow-hidden"
+                      >
+                        <div className="flex items-center justify-between px-4 py-3 bg-surface-alt border-b border-border flex-wrap gap-2">
+                          <div className="flex items-center gap-2">
+                            <div className="w-6 h-6 rounded-full bg-primary-50 border border-primary-200 flex items-center justify-center text-ink-800 text-xs font-bold">
+                              {idx + 1}
+                            </div>
+                            <span className="text-xs font-semibold text-ink-700">
+                              {dx.diagnoserName}
+                            </span>
+                            {diagnoses.length > 1 && (
+                              <span className="text-xs text-ink-400">
+                                · Chẩn đoán {idx + 1}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`px-2 py-0.5 rounded text-xs font-medium ${sev.color}`}
+                            >
+                              {sev.label}
+                            </span>
+                            <span className="text-xs text-ink-400 whitespace-nowrap">
+                              {formatDateTime(dx.createdAt)}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="p-4 space-y-3">
+                          <div>
+                            <div className="text-xs text-ink-500 mb-0.5">
+                              Tên bệnh
+                            </div>
+                            <div className="text-sm font-semibold text-ink-800">
+                              {dx.diseaseName}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-xs text-ink-500 mb-0.5">
+                              Kết luận
+                            </div>
+                            <p className="text-sm text-ink-700 leading-relaxed">
+                              {dx.conclusion}
+                            </p>
+                          </div>
+                          <div className="bg-primary-50 border border-primary/20 rounded-btn p-3">
+                            <div className="text-xs text-ink-500 mb-1 flex items-center gap-1">
+                              <FlaskConical className="w-3 h-3" /> Khuyến nghị
+                              xử lý
+                            </div>
+                            <p className="text-sm text-ink-800 leading-relaxed">
+                              {dx.recommendedAction}
+                            </p>
+                          </div>
+                          <DiagnosisRecommendations diagnosisId={dx.id} />
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {!diagnosesQuery.isLoading && diagnoses.length > 0 && (
+                <Button
+                  fullWidth
+                  leadingIcon={PlusCircle}
+                  className="bg-primary-700 hover:bg-primary-800"
+                  onClick={() => {
+                    const description = diagnoses[0]?.recommendedAction ?? "";
+                    showToast("Đang chuyển đến trang tạo công việc...", "info");
+                    navigate(
+                      `/tasks?openCreateTask=true&description=${encodeURIComponent(description)}`,
+                    );
+                  }}
+                >
+                  Tạo công việc từ báo cáo
+                </Button>
+              )}
+            </>
           )}
         </div>
       </div>

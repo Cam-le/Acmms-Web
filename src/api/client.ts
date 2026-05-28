@@ -425,7 +425,8 @@ export interface CropGrowthTaskResponse {
   growthTaskId: string;
   stageId: string;
   stageName: string;
-  taskName: string;
+  /** Present on records created after the taskId migration; absent on legacy records. */
+  taskId?: string;
   taskDescription: string;
   frequency: string;
   durationMinutes: number;
@@ -441,7 +442,8 @@ export interface CropGrowthTaskResponse {
 
 export interface CropGrowthTaskRequest {
   stageId: string;
-  taskName: string;
+  /** Required for new records — references an existing Task. */
+  taskId: string;
   taskDescription?: string;
   frequency?: string;
   durationMinutes?: number;
@@ -469,6 +471,7 @@ export interface TaskRequest {
   taskTitle: string;
   taskStatus: string;
   taskNotes?: string;
+  taskType?: string;
 }
 
 // ── Task Details ─────────────────────────────────────────────────────────────
@@ -529,6 +532,19 @@ export interface DiagnosisRequest {
   conclusion: string;
   recommendedAction: string;
   severityLevel: string; // "LOW" | "MEDIUM" | "HIGH" | "CRITICAL"
+}
+
+export interface RecommendationResponse {
+  recommendationId: string;
+  seasonId: string;
+  diagnosisId: string;
+  title: string;
+  content: string;
+  createdAt: string;
+  /** Denormalized disease name from the parent diagnosis */
+  diagnosisDiseaseName: string;
+  /** Severity from the parent diagnosis — "LOW" | "MEDIUM" | "HIGH" | "CRITICAL" */
+  diagnosisSeverity: string;
 }
 
 // Parsed shape of ReportResponse.aiResultsJson
@@ -1174,6 +1190,11 @@ export const api = {
     request<DiagnosisResponse[]>("GET", "/api/Reports/diagnosis"),
   getDiagnosisById: (diagnosisId: string) =>
     request<DiagnosisResponse>("GET", `/api/Reports/diagnosis/${diagnosisId}`),
+  getRecommendationsByDiagnosis: (diagnosisId: string) =>
+    request<RecommendationResponse[]>(
+      "GET",
+      `/api/Recommendations/diagnosis/${diagnosisId}`,
+    ),
   createDiagnosis: (reportId: string, body: DiagnosisRequest) =>
     request<DiagnosisResponse>(
       "POST",

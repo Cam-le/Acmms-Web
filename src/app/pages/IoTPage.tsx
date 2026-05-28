@@ -8,6 +8,8 @@ import {
   IotDeviceResponse,
   IotDeviceRequest,
   SeasonResponse,
+  HarvestResponse,
+  HarvestDetailResponse,
 } from "../../api/client";
 import { useToast } from "../components/ui/useToast";
 import { ToastContainer } from "../components/ui/ToastContainer";
@@ -21,6 +23,7 @@ import { SearchInput } from "../components/ui/SearchInput";
 import { Pagination } from "../components/ui/Pagination";
 import { LoadingState } from "../components/ui/LoadingState";
 import { EmptyState } from "../components/ui/EmptyState";
+import { QueryState } from "../components/ui/QueryState";
 import { RowActions } from "../components/ui/RowActions";
 import { StatusBadge } from "../components/ui/StatusBadge";
 import { usePagination } from "../hooks/usePagination";
@@ -30,6 +33,22 @@ import { formatDate } from "../utils/format";
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const PAGE_SIZE = 10;
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * Sort bed/harvest-detail items by name.
+ * Extracts the first numeric token for numeric ordering, falls back to vi
+ * locale compare. Handles both "Luống 7" and "Luống 04_Vuông 01_Tây Nam".
+ */
+function sortByBedName<T extends { bedName: string }>(items: T[]): T[] {
+  return [...items].sort((a, b) => {
+    const numA = parseInt(a.bedName.match(/\d+/)?.[0] ?? "0", 10);
+    const numB = parseInt(b.bedName.match(/\d+/)?.[0] ?? "0", 10);
+    if (numA !== numB) return numA - numB;
+    return a.bedName.localeCompare(b.bedName, "vi");
+  });
+}
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
@@ -76,16 +95,6 @@ export function IoTPage() {
 
   const devices: IotDeviceResponse[] = devicesQuery.data ?? [];
   const seasons: SeasonResponse[] = seasonsQuery.data ?? [];
-
-  const loading =
-    devicesQuery.isLoading ||
-    seasonsQuery.isLoading ||
-    (devicesQuery.isFetching && devicesQuery.data === undefined);
-
-  const fetchError =
-    devicesQuery.isError && devicesQuery.data === undefined
-      ? devicesQuery.error
-      : null;
 
   // Default-select first season once loaded
   useEffect(() => {
@@ -142,15 +151,8 @@ export function IoTPage() {
     PAGE_SIZE,
   );
 
-  // ── Derived: beds for selected season ─────────────────────────────────
-  const activeSeason = seasons.find((s) => s.seasonId === selectedSeasonId);
-  const bedsForSeason = activeSeason?.seasonsDetails ?? [];
-
   const openAdd = () => {
-    setFormData({
-      ...emptyForm,
-      bedId: bedsForSeason[0]?.bedId ?? "",
-    });
+    setFormData(emptyForm);
     setAddOpen(true);
   };
 
@@ -223,35 +225,6 @@ export function IoTPage() {
 
   // ── Render ────────────────────────────────────────────────────────────
 
-  if (loading) {
-    return (
-      <div className="p-6">
-        <LoadingState />
-      </div>
-    );
-  }
-
-  if (fetchError) {
-    return (
-      <div className="p-6">
-        <EmptyState
-          icon={Cpu}
-          title="Không thể tải danh sách thiết bị"
-          message={
-            fetchError instanceof Error
-              ? fetchError.message
-              : "Đã xảy ra lỗi. Vui lòng thử lại."
-          }
-          action={
-            <Button variant="secondary" onClick={() => devicesQuery.refetch()}>
-              Thử lại
-            </Button>
-          }
-        />
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6">
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
@@ -288,96 +261,101 @@ export function IoTPage() {
           </select>
         </div>
 
-        {filtered.length === 0 ? (
-          <EmptyState
-            icon={Cpu}
-            title="Chưa có thiết bị nào"
-            message='Nhấn "Thêm Thiết Bị" để đăng ký thiết bị mới'
-          />
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[700px]">
-              <thead className="bg-surface-alt border-b border-border">
-                <tr>
-                  {[
-                    "Thiết bị",
-                    "Loại",
-                    "Luống",
-                    "Tọa độ",
-                    "Lắp đặt",
-                    "Trạng thái",
-                    "Thao tác",
-                  ].map((h) => (
-                    <th
-                      key={h}
-                      className="px-5 py-3 text-left text-xs font-medium text-ink-500 uppercase tracking-wider"
-                    >
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {pagedItems.map((device) => (
-                  <tr
-                    key={device.deviceId}
-                    className="hover:bg-surface-alt transition-colors"
-                  >
-                    <td className="px-5 py-3">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 bg-primary-50 rounded-btn flex items-center justify-center shrink-0">
-                          <Radio className="w-4 h-4 text-primary" />
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium text-primary-700">
-                            {device.name}
-                          </p>
-                          <p className="text-xs text-ink-500 font-mono">
-                            {device.deviceCode}
-                          </p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-5 py-3 text-sm text-ink-700">
-                      {device.type}
-                    </td>
-                    <td className="px-5 py-3 text-sm text-ink-700">
-                      {bedNameCache[device.bedId] ??
-                        device.bedId.slice(0, 8) + "…"}
-                    </td>
-                    <td className="px-5 py-3 text-xs text-ink-500">
-                      {device.latitude !== 0 || device.longitude !== 0 ? (
-                        <span className="flex items-center gap-1">
-                          <MapPin className="w-3 h-3" />
-                          {device.latitude}, {device.longitude}
-                        </span>
-                      ) : (
-                        "—"
-                      )}
-                    </td>
-                    <td className="px-5 py-3 text-sm text-ink-500">
-                      {formatDate(device.installationDate)}
-                    </td>
-                    <td className="px-5 py-3">
-                      <StatusBadge
-                        label={iotStatusLabel(device.status)}
-                        tone={iotStatusTone(device.status)}
-                      />
-                    </td>
-                    <td className="px-5 py-3">
-                      <RowActions
-                        align="center"
-                        onView={() => setViewTarget(device)}
-                        onEdit={() => openEdit(device)}
-                        onDelete={() => setDeleteTarget(device)}
-                      />
-                    </td>
+        <QueryState
+          query={devicesQuery}
+          errorTitle="Không thể tải danh sách thiết bị"
+        >
+          {filtered.length === 0 ? (
+            <EmptyState
+              icon={Cpu}
+              title="Chưa có thiết bị nào"
+              message='Nhấn "Thêm Thiết Bị" để đăng ký thiết bị mới'
+            />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[700px]">
+                <thead className="bg-surface-alt border-b border-border">
+                  <tr>
+                    {[
+                      "Thiết bị",
+                      "Loại",
+                      "Luống",
+                      "Tọa độ",
+                      "Lắp đặt",
+                      "Trạng thái",
+                      "Thao tác",
+                    ].map((h) => (
+                      <th
+                        key={h}
+                        className="px-5 py-3 text-left text-xs font-medium text-ink-500 uppercase tracking-wider"
+                      >
+                        {h}
+                      </th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {pagedItems.map((device) => (
+                    <tr
+                      key={device.deviceId}
+                      className="hover:bg-surface-alt transition-colors"
+                    >
+                      <td className="px-5 py-3">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 bg-primary-50 rounded-btn flex items-center justify-center shrink-0">
+                            <Radio className="w-4 h-4 text-primary" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium text-primary-700">
+                              {device.name}
+                            </p>
+                            <p className="text-xs text-ink-500 font-mono">
+                              {device.deviceCode}
+                            </p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-5 py-3 text-sm text-ink-700">
+                        {device.type}
+                      </td>
+                      <td className="px-5 py-3 text-sm text-ink-700">
+                        {bedNameCache[device.bedId] ??
+                          device.bedId.slice(0, 8) + "…"}
+                      </td>
+                      <td className="px-5 py-3 text-xs text-ink-500">
+                        {device.latitude !== 0 || device.longitude !== 0 ? (
+                          <span className="flex items-center gap-1">
+                            <MapPin className="w-3 h-3" />
+                            {device.latitude}, {device.longitude}
+                          </span>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                      <td className="px-5 py-3 text-sm text-ink-500">
+                        {formatDate(device.installationDate)}
+                      </td>
+                      <td className="px-5 py-3">
+                        <StatusBadge
+                          label={iotStatusLabel(device.status)}
+                          tone={iotStatusTone(device.status)}
+                        />
+                      </td>
+                      <td className="px-5 py-3">
+                        <RowActions
+                          align="center"
+                          onView={() => setViewTarget(device)}
+                          onEdit={() => openEdit(device)}
+                          onDelete={() => setDeleteTarget(device)}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </QueryState>
 
         {filtered.length > 0 && (
           <div className="border-t border-border px-4">
@@ -473,27 +451,63 @@ function IotFormModal({
   onSubmit: () => void;
   onClose: () => void;
 }) {
-  const activeSeason = seasons.find((s) => s.seasonId === selectedSeasonId);
-  const bedsForSeason = activeSeason?.seasonsDetails ?? [];
-  const [bedNames, setBedNames] = useState<Record<string, string>>({});
+  // ── Cascade state: season → harvest → bed ───────────────────────────
+  const [selectedHarvestId, setSelectedHarvestId] = useState<string>("");
 
+  // Step 2: harvests for selected season
+  const harvestsQuery = useQuery({
+    queryKey: qk.seasons.harvests(selectedSeasonId),
+    queryFn: () => api.getHarvestsBySeason(selectedSeasonId),
+    enabled: open && !!selectedSeasonId,
+  });
+
+  const harvests: HarvestResponse[] = harvestsQuery.data ?? [];
+
+  // Auto-select first harvest when list loads / season changes
   useEffect(() => {
-    if (bedsForSeason.length === 0) return;
-    Promise.all(
-      bedsForSeason.map(async (detail) => {
-        try {
-          const bed = await api.getBed(detail.bedId);
-          return [detail.bedId, bed.bedName] as [string, string];
-        } catch {
-          return [detail.bedId, detail.bedId.slice(0, 8) + "…"] as [
-            string,
-            string,
-          ];
-        }
-      }),
-    ).then((entries) => setBedNames(Object.fromEntries(entries)));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (harvests.length > 0 && !selectedHarvestId) {
+      setSelectedHarvestId(harvests[0].harvestId);
+    }
+  }, [harvests, selectedHarvestId]);
+
+  // Reset harvest + bed when season changes
+  useEffect(() => {
+    setSelectedHarvestId("");
+    // Don't clear formData.bedId here — on edit open the bedId is pre-set
+    // and season change is intentional, so we let bed reset via harvest change.
   }, [selectedSeasonId]);
+
+  // Step 3: harvest-details (beds) for selected harvest
+  const harvestDetailsQuery = useQuery({
+    queryKey: qk.seasons.harvestDetails(selectedHarvestId),
+    queryFn: () => api.getHarvestDetailsByHarvest(selectedHarvestId),
+    enabled: open && !!selectedHarvestId,
+  });
+
+  const harvestDetails: HarvestDetailResponse[] = sortByBedName(
+    harvestDetailsQuery.data ?? [],
+  );
+
+  // In add mode: auto-select first bed when details load
+  useEffect(() => {
+    if (mode === "add" && harvestDetails.length > 0 && !formData.bedId) {
+      setFormData({ ...formData, bedId: harvestDetails[0].bedId });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [harvestDetails, mode]);
+
+  // Reset cascade state when modal closes
+  useEffect(() => {
+    if (!open) {
+      setSelectedHarvestId("");
+    }
+  }, [open]);
+
+  // When harvest changes, clear bed selection so user must pick explicitly
+  const handleHarvestChange = (harvestId: string) => {
+    setSelectedHarvestId(harvestId);
+    setFormData({ ...formData, bedId: "" });
+  };
 
   const canSubmit =
     formData.bedId.trim() !== "" &&
@@ -518,38 +532,75 @@ function IotFormModal({
       }
     >
       <div className="space-y-4">
-        {/* Bed selection — only when adding */}
-        {mode === "add" && (
-          <div className="space-y-3 p-4 bg-primary-50 rounded-btn border border-primary-200">
-            <p className="text-xs font-semibold text-primary-700 uppercase tracking-wide">
-              Chọn luống lắp đặt
-            </p>
-            <FormSelect
-              label="Mùa vụ"
-              value={selectedSeasonId}
-              onChange={setSelectedSeasonId}
-              options={
-                seasons.length === 0
-                  ? [{ value: "", label: "Không có mùa vụ" }]
-                  : seasons.map((s) => ({
-                      value: s.seasonId,
-                      label: s.seasonName,
-                    }))
-              }
+        {/* Bed selection — shown for both add and edit */}
+        <div className="space-y-3 p-4 bg-primary-50 rounded-btn border border-primary-200">
+          <p className="text-xs font-semibold text-primary-700 uppercase tracking-wide">
+            Chọn luống lắp đặt
+          </p>
+
+          {/* Season */}
+          <FormSelect
+            label="Mùa vụ"
+            value={selectedSeasonId}
+            onChange={setSelectedSeasonId}
+            options={
+              seasons.length === 0
+                ? [{ value: "", label: "Không có mùa vụ" }]
+                : seasons.map((s) => ({
+                    value: s.seasonId,
+                    label: s.seasonName,
+                  }))
+            }
+          />
+
+          {/* Harvest (plot) */}
+          {harvestsQuery.isLoading ? (
+            <LoadingState
+              variant="inline"
+              message="Đang tải danh sách vuông..."
             />
+          ) : harvestsQuery.isError ? (
+            <p className="text-xs text-status-danger-fg">
+              Không thể tải danh sách vuông. Vui lòng thử lại.
+            </p>
+          ) : (
             <FormSelect
-              label="Luống"
-              required
-              value={formData.bedId}
-              onChange={(v) => setFormData({ ...formData, bedId: v })}
-              placeholder="— Chọn luống —"
-              options={bedsForSeason.map((detail) => ({
-                value: detail.bedId,
-                label: bedNames[detail.bedId] ?? detail.bedId.slice(0, 8) + "…",
+              label="Vuông"
+              value={selectedHarvestId}
+              onChange={handleHarvestChange}
+              placeholder="— Chọn vuông —"
+              options={harvests.map((h) => ({
+                value: h.harvestId,
+                label: h.plotName,
               }))}
             />
-          </div>
-        )}
+          )}
+
+          {/* Bed */}
+          {!!selectedHarvestId &&
+            (harvestDetailsQuery.isLoading ? (
+              <LoadingState
+                variant="inline"
+                message="Đang tải danh sách luống..."
+              />
+            ) : harvestDetailsQuery.isError ? (
+              <p className="text-xs text-status-danger-fg">
+                Không thể tải danh sách luống. Vui lòng thử lại.
+              </p>
+            ) : (
+              <FormSelect
+                label="Luống"
+                required
+                value={formData.bedId}
+                onChange={(v) => setFormData({ ...formData, bedId: v })}
+                placeholder="— Chọn luống —"
+                options={harvestDetails.map((d) => ({
+                  value: d.bedId,
+                  label: d.bedName,
+                }))}
+              />
+            ))}
+        </div>
 
         {/* Device Code + Name */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

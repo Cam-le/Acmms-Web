@@ -76,6 +76,8 @@ export const qk = {
     detail: (id: string) => [...qk.reports.all, "detail", id] as const,
     diagnosis: (reportId: string) =>
       [...qk.reports.all, "diagnosis", reportId] as const,
+    recommendations: (diagnosisId: string) =>
+      [...qk.reports.all, "recommendations", diagnosisId] as const,
   },
 
   // ── Staff / Workers ────────────────────────────────────────────────────

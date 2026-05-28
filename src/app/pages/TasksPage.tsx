@@ -3330,17 +3330,6 @@ export function TasksPage() {
             {editDetail &&
               selectedDetail &&
               (() => {
-                const isCompleted = selectedDetail.status === "Completed";
-                const assignmentStart = selectedDetail.startDate
-                  ? new Date(
-                      `${selectedDetail.startDate.slice(0, 10)}T${selectedDetail.startDate.slice(11, 16)}:00`,
-                    ).getTime()
-                  : null;
-                const isPastPending =
-                  selectedDetail.status === "Pending" &&
-                  assignmentStart !== null &&
-                  assignmentStart < Date.now();
-
                 const editSeason = seasons.find(
                   (s) => s.seasonId === editDetail.seasonId,
                 );
@@ -3359,15 +3348,6 @@ export function TasksPage() {
 
                 return (
                   <div className="overflow-y-auto flex-1 px-6 py-5 space-y-6">
-                    {isCompleted && (
-                      <div className="flex items-center gap-2 px-3 py-2.5 bg-[#f1f5f9] border border-[#e2e8f0] rounded-lg text-xs text-[#64748b]">
-                        <CheckCircle2 className="w-4 h-4 text-[#009689] shrink-0" />
-                        <span>
-                          Lịch trình này đã hoàn thành và không thể chỉnh sửa.
-                        </span>
-                      </div>
-                    )}
-
                     <section>
                       <h3 className="text-xs font-bold text-[#009689] uppercase tracking-widest mb-3 flex items-center gap-1.5">
                         <span className="w-5 h-5 rounded-full bg-[#009689] text-white text-[10px] flex items-center justify-center font-bold">
@@ -3377,7 +3357,6 @@ export function TasksPage() {
                       </h3>
                       <select
                         value={editDetail.taskId}
-                        disabled={isCompleted}
                         onChange={(e) =>
                           setEditDetail((p) =>
                             p ? { ...p, taskId: e.target.value } : p,
@@ -3462,7 +3441,7 @@ export function TasksPage() {
                         </span>
                         Ngày &amp; Giờ
                       </h3>
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-3">
                         <div>
                           <label className="block text-xs font-medium text-slate-500 mb-1.5">
                             Ngày thực hiện{" "}
@@ -3471,71 +3450,52 @@ export function TasksPage() {
                           <input
                             type="date"
                             value={editDetail.date}
-                            disabled={isCompleted || isPastPending}
                             onChange={(e) =>
                               setEditDetail((p) =>
                                 p ? { ...p, date: e.target.value } : p,
                               )
                             }
-                            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] disabled:bg-[#f8fafc] disabled:text-[#94a3b8] disabled:cursor-not-allowed"
+                            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689]"
                           />
-                          {isPastPending && (
-                            <p className="mt-1 text-[11px] text-amber-600">
-                              Thời gian đã qua — không thể thay đổi ngày/giờ bắt
-                              đầu.
-                            </p>
-                          )}
                         </div>
                         <div>
                           <label className="block text-xs font-medium text-slate-500 mb-1.5">
                             Khung giờ
                           </label>
-                          {isPastPending || isCompleted ? (
-                            <div className="flex items-center gap-2 px-3 py-2 bg-[#f8fafc] border border-[#e2e8f0] rounded-lg text-sm text-[#64748b]">
-                              <Clock className="w-4 h-4 text-[#94a3b8] shrink-0" />
-                              <span>
-                                {editDetail.startHour}:{editDetail.startMinute}{" "}
-                                – {editDetail.endHour}:{editDetail.endMinute}
-                              </span>
-                            </div>
-                          ) : (
-                            <>
-                              <InlineTimeRange
-                                startHour={editDetail.startHour}
-                                startMinute={editDetail.startMinute}
-                                endHour={editDetail.endHour}
-                                endMinute={editDetail.endMinute}
-                                onChange={(sh, sm, eh, em) =>
-                                  setEditDetail((p) =>
-                                    p
-                                      ? {
-                                          ...p,
-                                          startHour: sh,
-                                          startMinute: sm,
-                                          endHour: eh,
-                                          endMinute: em,
-                                        }
-                                      : p,
-                                  )
-                                }
-                              />
-                              {(() => {
-                                const sm =
-                                  parseInt(editDetail.startHour) * 60 +
-                                  parseInt(editDetail.startMinute);
-                                const em =
-                                  parseInt(editDetail.endHour) * 60 +
-                                  parseInt(editDetail.endMinute);
-                                if (em <= sm)
-                                  return (
-                                    <p className="mt-1.5 text-xs text-red-500">
-                                      Giờ kết thúc phải sau giờ bắt đầu.
-                                    </p>
-                                  );
-                                return null;
-                              })()}
-                            </>
-                          )}
+                          <InlineTimeRange
+                            startHour={editDetail.startHour}
+                            startMinute={editDetail.startMinute}
+                            endHour={editDetail.endHour}
+                            endMinute={editDetail.endMinute}
+                            onChange={(sh, sm, eh, em) =>
+                              setEditDetail((p) =>
+                                p
+                                  ? {
+                                      ...p,
+                                      startHour: sh,
+                                      startMinute: sm,
+                                      endHour: eh,
+                                      endMinute: em,
+                                    }
+                                  : p,
+                              )
+                            }
+                          />
+                          {(() => {
+                            const sm =
+                              parseInt(editDetail.startHour) * 60 +
+                              parseInt(editDetail.startMinute);
+                            const em =
+                              parseInt(editDetail.endHour) * 60 +
+                              parseInt(editDetail.endMinute);
+                            if (em <= sm)
+                              return (
+                                <p className="mt-1.5 text-xs text-red-500">
+                                  Giờ kết thúc phải sau giờ bắt đầu.
+                                </p>
+                              );
+                            return null;
+                          })()}
                         </div>
                       </div>
                     </section>
@@ -3579,7 +3539,6 @@ export function TasksPage() {
                                 return (
                                   <button
                                     key={plot.plotId}
-                                    disabled={isCompleted}
                                     onClick={() => {
                                       const next = isSel
                                         ? editDetail.selectedPlotIds.filter(
@@ -3680,38 +3639,36 @@ export function TasksPage() {
                                             </span>
                                           )}
                                         </span>
-                                        {!isCompleted && (
-                                          <button
-                                            onClick={() => {
-                                              const ids = plotBeds.map(
-                                                (b) => b.bedId,
-                                              );
-                                              setEditDetail((p) =>
-                                                p
-                                                  ? {
-                                                      ...p,
-                                                      bedIds: allSel
-                                                        ? p.bedIds.filter(
-                                                            (id) =>
-                                                              !ids.includes(id),
-                                                          )
-                                                        : [
-                                                            ...new Set([
-                                                              ...p.bedIds,
-                                                              ...ids,
-                                                            ]),
-                                                          ],
-                                                    }
-                                                  : p,
-                                              );
-                                            }}
-                                            className="text-[11px] font-medium text-[#009689] hover:underline"
-                                          >
-                                            {allSel
-                                              ? "Bỏ chọn tất cả"
-                                              : `Chọn tất cả (${plotBeds.length})`}
-                                          </button>
-                                        )}
+                                        <button
+                                          onClick={() => {
+                                            const ids = plotBeds.map(
+                                              (b) => b.bedId,
+                                            );
+                                            setEditDetail((p) =>
+                                              p
+                                                ? {
+                                                    ...p,
+                                                    bedIds: allSel
+                                                      ? p.bedIds.filter(
+                                                          (id) =>
+                                                            !ids.includes(id),
+                                                        )
+                                                      : [
+                                                          ...new Set([
+                                                            ...p.bedIds,
+                                                            ...ids,
+                                                          ]),
+                                                        ],
+                                                  }
+                                                : p,
+                                            );
+                                          }}
+                                          className="text-[11px] font-medium text-[#009689] hover:underline"
+                                        >
+                                          {allSel
+                                            ? "Bỏ chọn tất cả"
+                                            : `Chọn tất cả (${plotBeds.length})`}
+                                        </button>
                                       </div>
                                       <div className="flex flex-wrap gap-1.5">
                                         {plotBeds.map((bed) => {
@@ -3722,7 +3679,6 @@ export function TasksPage() {
                                           return (
                                             <button
                                               key={bed.bedId}
-                                              disabled={isCompleted}
                                               onClick={() =>
                                                 setEditDetail((p) =>
                                                   p
@@ -3776,23 +3732,19 @@ export function TasksPage() {
                           <div className="flex items-center justify-between mb-1.5">
                             <label className="text-xs font-semibold text-[#475569] uppercase tracking-wide">
                               Nhân viên phụ trách{" "}
-                              {!isCompleted && (
-                                <span className="text-red-500 normal-case font-normal">
-                                  *
-                                </span>
-                              )}
+                              <span className="text-red-500 normal-case font-normal">
+                                *
+                              </span>
                             </label>
-                            {!isCompleted && (
-                              <button
-                                onClick={() => setEditShowSchedule((v) => !v)}
-                                className="flex items-center gap-1 text-[11px] text-[#009689] hover:underline"
-                              >
-                                <Calendar className="w-3 h-3" />
-                                {editShowSchedule
-                                  ? "Ẩn lịch bận"
-                                  : "Xem lịch bận"}
-                              </button>
-                            )}
+                            <button
+                              onClick={() => setEditShowSchedule((v) => !v)}
+                              className="flex items-center gap-1 text-[11px] text-[#009689] hover:underline"
+                            >
+                              <Calendar className="w-3 h-3" />
+                              {editShowSchedule
+                                ? "Ẩn lịch bận"
+                                : "Xem lịch bận"}
+                            </button>
                           </div>
                           <div className="flex flex-wrap gap-1.5">
                             {staffList
@@ -3801,7 +3753,7 @@ export function TasksPage() {
                                 const isInactive =
                                   (s.status ?? "").toLowerCase() === "inactive";
                                 const sel = editDetail.workerId === s.userId;
-                                const chipDisabled = isCompleted || isInactive;
+                                const chipDisabled = isInactive;
                                 return (
                                   <button
                                     key={s.userId}
@@ -3882,14 +3834,13 @@ export function TasksPage() {
                       </h3>
                       <textarea
                         rows={3}
-                        disabled={isCompleted}
                         value={editDetail.notes}
                         onChange={(e) =>
                           setEditDetail((p) =>
                             p ? { ...p, notes: e.target.value } : p,
                           )
                         }
-                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] resize-none disabled:bg-[#f8fafc] disabled:text-[#94a3b8] disabled:cursor-not-allowed"
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] resize-none"
                       />
                     </section>
                   </div>
@@ -3905,24 +3856,22 @@ export function TasksPage() {
                 }}
                 className="px-4 py-2 rounded-lg text-sm font-medium text-slate-700 border border-[#e2e8f0] hover:bg-slate-50 transition-colors"
               >
-                {selectedDetail?.status === "Completed" ? "Đóng" : "Hủy"}
+                Hủy
               </button>
-              {selectedDetail?.status !== "Completed" && (
-                <button
-                  onClick={handleUpdateAssignment}
-                  disabled={
-                    !editDetail?.date ||
-                    !editDetail?.workerId ||
-                    updateDetailMutation.isPending
-                  }
-                  className="px-4 py-2 rounded-lg text-sm font-medium bg-[#009689] text-white hover:bg-[#007f73] disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
-                >
-                  <CheckCircle2 className="w-4 h-4" />
-                  {updateDetailMutation.isPending
-                    ? "Đang lưu..."
-                    : "Lưu thay đổi"}
-                </button>
-              )}
+              <button
+                onClick={handleUpdateAssignment}
+                disabled={
+                  !editDetail?.date ||
+                  !editDetail?.workerId ||
+                  updateDetailMutation.isPending
+                }
+                className="px-4 py-2 rounded-lg text-sm font-medium bg-[#009689] text-white hover:bg-[#007f73] disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                {updateDetailMutation.isPending
+                  ? "Đang lưu..."
+                  : "Lưu thay đổi"}
+              </button>
             </div>
           </Dialog.Content>
         </Dialog.Portal>
