@@ -209,6 +209,17 @@ function parseAiResult(json?: string): AiResult | null {
   }
 }
 
+/**
+ * Strip the ---AI_RESULT_JSON--- sentinel and everything after it from a
+ * report description. The backend appends raw JSON to the description field;
+ * it should never be shown to users in the Owner UI.
+ */
+function stripAiJson(text: string | undefined): string {
+  if (!text) return "";
+  const idx = text.indexOf("---AI_RESULT_JSON---");
+  return idx === -1 ? text : text.slice(0, idx).trimEnd();
+}
+
 function getReportImageUrl(attachments: ReportAttachment[]): string | null {
   const img = attachments.find((a) => a.attachmentType === "report_image");
   if (!img) return null;
@@ -677,7 +688,7 @@ function DetailView({ reportId }: { reportId: string }) {
               <ClipboardList className="w-4 h-4" /> Mô tả sự cố
             </h2>
             <p className="text-sm text-ink-700 leading-relaxed whitespace-pre-line">
-              {report.description}
+              {stripAiJson(report.description)}
             </p>
           </div>
 
