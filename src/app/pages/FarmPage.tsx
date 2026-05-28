@@ -76,15 +76,18 @@ interface MapPickerResult {
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
 function mapFarm(f: FarmResponse): Farm {
+  let createdAt = "";
+  if (f.farmCreatedAt) {
+    const d = new Date(f.farmCreatedAt);
+    createdAt = isNaN(d.getTime()) ? "" : d.toLocaleDateString("vi-VN");
+  }
   return {
     id: f.farmId ?? `farm-${Math.random().toString(36).slice(2)}`,
     name: f.farmName ?? "",
     location: stripPlusCode(f.farmLocation ?? ""),
     status: f.farmStatus === "Active" ? "Hoạt động" : "Không hoạt động",
     area: Number(f.farmArea ?? 0) || 0,
-    createdAt: f.farmCreatedAt
-      ? new Date(f.farmCreatedAt).toLocaleDateString("vi-VN")
-      : "",
+    createdAt,
     latitude: toCoord(f.latitude) ?? undefined,
     longitude: toCoord(f.longitude) ?? undefined,
   };
@@ -1126,13 +1129,21 @@ function ViewFarmModal({
                         ? `https:${weather.condition.icon}`
                         : weather.condition.icon
                     }
-                    alt={weather.condition.text ?? ""}
-                    className="w-10 h-10 shrink-0"
+                    alt={weather.condition?.text ?? ""}
+                    style={{
+                      width: 40,
+                      height: 40,
+                      minWidth: 40,
+                      minHeight: 40,
+                      maxWidth: 40,
+                      maxHeight: 40,
+                    }}
+                    className="shrink-0"
                   />
                 )}
                 <div>
                   <p className="text-2xl font-bold text-primary-700">
-                    {weather.tempC}°C
+                    {weather.tempC ?? "—"}°C
                   </p>
                   <p className="text-sm text-ink-500">
                     {weather.condition?.text ?? "—"}
@@ -1141,21 +1152,35 @@ function ViewFarmModal({
                 <div className="ml-auto text-right">
                   <p className="text-xs text-ink-400">Cảm giác như</p>
                   <p className="text-sm font-medium text-ink-700">
-                    {weather.feelsLikeC}°C
+                    {weather.feelsLikeC ?? "—"}°C
                   </p>
                 </div>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 border-t border-primary/10">
-                <WeatherStat label="Độ ẩm" value={`${weather.humidity}%`} />
+                <WeatherStat
+                  label="Độ ẩm"
+                  value={
+                    weather.humidity != null ? `${weather.humidity}%` : "—"
+                  }
+                />
                 <WeatherStat
                   label="Gió"
-                  value={`${weather.windKph} km/h ${weather.windDir ?? ""}`}
+                  value={
+                    weather.windKph != null
+                      ? `${weather.windKph} km/h ${weather.windDir ?? ""}`.trim()
+                      : "—"
+                  }
                 />
                 <WeatherStat
                   label="Lượng mưa"
-                  value={`${weather.precipMm} mm`}
+                  value={
+                    weather.precipMm != null ? `${weather.precipMm} mm` : "—"
+                  }
                 />
-                <WeatherStat label="UV" value={`${weather.uv}`} />
+                <WeatherStat
+                  label="UV"
+                  value={weather.uv != null ? `${weather.uv}` : "—"}
+                />
               </div>
               <p className="text-xs text-ink-400 pt-1">
                 Cập nhật lúc{" "}
@@ -1354,16 +1379,28 @@ export function FarmPage() {
     // This prevents stale-cache issues when other pages write raw FarmResponse[]
     // to the same key (["farms","list"]) before FarmPage mounts.
     queryFn: () => api.getFarms(),
+    // Retry policy: skip retries on 4xx (client errors — retrying won't help).
+    // Allow up to 2 retries for network errors and 5xx server errors.
+    retry: (failureCount, error) => {
+      if (failureCount >= 2) return false;
+      if (error instanceof Error && /^(4\d\d)/.test(error.message))
+        return false;
+      return true;
+    },
+    retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 10_000),
   });
 
   // Map + sort + dedup at render time so we always work from raw cache data.
+  // Guard: farmCreatedAt may be null/undefined/invalid — fall back to 0 so
+  // bad entries sort to the front rather than crashing the comparator.
   const farms: Farm[] = (farmsQuery.data ?? [])
     .slice()
-    .sort(
-      (a, b) =>
-        new Date(a.farmCreatedAt ?? 0).getTime() -
-        new Date(b.farmCreatedAt ?? 0).getTime(),
-    )
+    .sort((a, b) => {
+      const ta = a.farmCreatedAt ? new Date(a.farmCreatedAt).getTime() : 0;
+      const tb = b.farmCreatedAt ? new Date(b.farmCreatedAt).getTime() : 0;
+      // NaN-safe: if either parse failed, treat as 0
+      return (isNaN(ta) ? 0 : ta) - (isNaN(tb) ? 0 : tb);
+    })
     .map(mapFarm)
     .filter((f, i, arr) => arr.findIndex((x) => x.id === f.id) === i);
   // isLoading: no cache + fetching (true first load spinner)
@@ -1377,8 +1414,11 @@ export function FarmPage() {
       ? farmsQuery.error
       : null;
 
+  // Track the last error we've already toasted so re-renders don't re-fire.
+  const lastToastedErrorRef = useRef<unknown>(null);
   useEffect(() => {
-    if (farmsQuery.error) {
+    if (farmsQuery.error && farmsQuery.error !== lastToastedErrorRef.current) {
+      lastToastedErrorRef.current = farmsQuery.error;
       showToast(
         farmsQuery.error instanceof Error
           ? farmsQuery.error.message
