@@ -653,8 +653,24 @@ function GrowthStagesTab({
   });
 
   const stages = stagesQuery.data ?? [];
-  const stagesLoading = stagesQuery.isLoading;
-  const stagesError = !!stagesQuery.error;
+  const stagesLoading =
+    stagesQuery.isLoading ||
+    (stagesQuery.isFetching && stagesQuery.data === undefined);
+  const stagesError =
+    stagesQuery.isError && stagesQuery.data === undefined
+      ? stagesQuery.error
+      : null;
+
+  useEffect(() => {
+    if (stagesQuery.error) {
+      showToast(
+        stagesQuery.error instanceof Error
+          ? stagesQuery.error.message
+          : "Không thể tải giai đoạn sinh trưởng",
+        "error",
+      );
+    }
+  }, [stagesQuery.error, showToast]);
 
   // ── Read: tasks for each stage (parallel) ──
   const taskQueries = useQueries({
@@ -671,11 +687,28 @@ function GrowthStagesTab({
     stages.map((s, i) => [s.stageId, taskQueries[i]?.data ?? []]),
   );
 
+  // Surface the first task-query error (if any) via toast
+  useEffect(() => {
+    const firstErr = taskQueries.find((q) => q.isError)?.error;
+    if (firstErr) {
+      showToast(
+        firstErr instanceof Error
+          ? firstErr.message
+          : "Không thể tải nhiệm vụ của một số giai đoạn",
+        "error",
+      );
+    }
+    // taskQueries reference changes every render; stringify error count to stabilise
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [taskQueries.filter((q) => q.isError).length]);
+
   // ── Stage mutations ──
   const createStageMutation = useMutation({
-    mutationFn: (data: StageFormData) =>
-      api.createCropGrowthStage({
-        cropId: selectedCropId!,
+    mutationFn: (data: StageFormData) => {
+      if (!selectedCropId)
+        return Promise.reject(new Error("Chưa chọn cây trồng"));
+      return api.createCropGrowthStage({
+        cropId: selectedCropId,
         stageName: data.stageName,
         stageDescription: data.stageDescription || undefined,
         temperatureMin: data.temperatureMin,
@@ -684,13 +717,16 @@ function GrowthStagesTab({
         growthIndicators: data.growthIndicators || undefined,
         commonDiseases: data.commonDiseases || undefined,
         notes: data.notes || undefined,
-      }),
+      });
+    },
     onSuccess: () => {
       setCreateStageOpen(false);
       showToast("Tạo giai đoạn thành công", "success");
-      queryClient.invalidateQueries({
-        queryKey: qk.crops.stages(selectedCropId!),
-      });
+      if (selectedCropId) {
+        queryClient.invalidateQueries({
+          queryKey: qk.crops.stages(selectedCropId),
+        });
+      }
     },
     onError: (err) => {
       showToast(
@@ -701,9 +737,11 @@ function GrowthStagesTab({
   });
 
   const updateStageMutation = useMutation({
-    mutationFn: (data: StageFormData) =>
-      api.updateCropGrowthStage(selectedStage!.stageId, {
-        cropId: selectedStage!.cropId,
+    mutationFn: (data: StageFormData) => {
+      if (!selectedStage)
+        return Promise.reject(new Error("Không có giai đoạn được chọn"));
+      return api.updateCropGrowthStage(selectedStage.stageId, {
+        cropId: selectedStage.cropId,
         stageName: data.stageName,
         stageDescription: data.stageDescription || undefined,
         temperatureMin: data.temperatureMin,
@@ -712,14 +750,17 @@ function GrowthStagesTab({
         growthIndicators: data.growthIndicators || undefined,
         commonDiseases: data.commonDiseases || undefined,
         notes: data.notes || undefined,
-      }),
+      });
+    },
     onSuccess: () => {
       setEditStageOpen(false);
       setSelectedStage(null);
       showToast("Cập nhật giai đoạn thành công", "success");
-      queryClient.invalidateQueries({
-        queryKey: qk.crops.stages(selectedCropId!),
-      });
+      if (selectedCropId) {
+        queryClient.invalidateQueries({
+          queryKey: qk.crops.stages(selectedCropId),
+        });
+      }
     },
     onError: (err) => {
       showToast(
@@ -735,9 +776,11 @@ function GrowthStagesTab({
       setDeleteStageOpen(false);
       setSelectedStage(null);
       showToast("Xóa giai đoạn thành công", "success");
-      queryClient.invalidateQueries({
-        queryKey: qk.crops.stages(selectedCropId!),
-      });
+      if (selectedCropId) {
+        queryClient.invalidateQueries({
+          queryKey: qk.crops.stages(selectedCropId),
+        });
+      }
       // Also remove the now-orphaned task cache entry
       queryClient.removeQueries({ queryKey: qk.crops.stageTasks(stageId) });
     },
@@ -782,9 +825,11 @@ function GrowthStagesTab({
   });
 
   const updateTaskMutation = useMutation({
-    mutationFn: (data: TaskFormData) =>
-      api.updateCropGrowthTask(selectedTask!.growthTaskId, {
-        stageId: selectedTask!.stageId,
+    mutationFn: (data: TaskFormData) => {
+      if (!selectedTask)
+        return Promise.reject(new Error("Không có nhiệm vụ được chọn"));
+      return api.updateCropGrowthTask(selectedTask.growthTaskId, {
+        stageId: selectedTask.stageId,
         taskId: data.taskId,
         taskDescription: data.taskDescription || undefined,
         frequency: data.frequency || undefined,
@@ -796,7 +841,8 @@ function GrowthStagesTab({
         priority: data.priority,
         isMandatory: data.isMandatory,
         notes: data.notes || undefined,
-      }),
+      });
+    },
     onSuccess: () => {
       setEditTaskOpen(false);
       setSelectedTask(null);
@@ -835,11 +881,7 @@ function GrowthStagesTab({
   });
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <Loader2 className="w-6 h-6 animate-spin text-[#009689]" />
-      </div>
-    );
+    return <LoadingState />;
   }
 
   return (
@@ -893,19 +935,19 @@ function GrowthStagesTab({
             </p>
           </div>
         ) : stagesLoading ? (
-          <div className="bg-white rounded-xl border border-[#e2e8f0] shadow-sm flex items-center justify-center py-24">
-            <Loader2 className="w-6 h-6 animate-spin text-[#009689]" />
+          <div className="bg-white rounded-xl border border-[#e2e8f0] shadow-sm">
+            <LoadingState />
           </div>
         ) : stagesError ? (
           <div className="bg-white rounded-xl border border-[#e2e8f0] shadow-sm flex flex-col items-center justify-center py-24 gap-3 text-[#94a3b8]">
             <WifiOff className="w-8 h-8 opacity-40" />
-            <p className="text-sm">Không thể tải dữ liệu giai đoạn</p>
+            <p className="text-sm">
+              {stagesError instanceof Error
+                ? stagesError.message
+                : "Không thể tải dữ liệu giai đoạn"}
+            </p>
             <button
-              onClick={() =>
-                queryClient.invalidateQueries({
-                  queryKey: qk.crops.stages(selectedCropId!),
-                })
-              }
+              onClick={() => stagesQuery.refetch()}
               className="px-3 py-1.5 bg-[#f1f5f9] text-[#62748e] rounded-lg text-xs hover:bg-[#e2e8f0]"
             >
               Thử lại
@@ -1414,14 +1456,14 @@ function StageFormModal({
   const [form, setForm] = useState<StageFormData>(
     initial
       ? {
-          stageName: initial.stageName,
-          stageDescription: initial.stageDescription,
-          temperatureMin: initial.temperatureMin,
-          humidityMin: initial.humidityMin,
-          soilMoistureMin: initial.soilMoistureMin,
-          growthIndicators: initial.growthIndicators,
-          commonDiseases: initial.commonDiseases,
-          notes: initial.notes,
+          stageName: initial.stageName ?? "",
+          stageDescription: initial.stageDescription ?? "",
+          temperatureMin: initial.temperatureMin ?? 15,
+          humidityMin: initial.humidityMin ?? 60,
+          soilMoistureMin: initial.soilMoistureMin ?? 50,
+          growthIndicators: initial.growthIndicators ?? "",
+          commonDiseases: initial.commonDiseases ?? "",
+          notes: initial.notes ?? "",
         }
       : defaultForm,
   );
@@ -1430,14 +1472,14 @@ function StageFormModal({
     setForm(
       initial
         ? {
-            stageName: initial.stageName,
-            stageDescription: initial.stageDescription,
-            temperatureMin: initial.temperatureMin,
-            humidityMin: initial.humidityMin,
-            soilMoistureMin: initial.soilMoistureMin,
-            growthIndicators: initial.growthIndicators,
-            commonDiseases: initial.commonDiseases,
-            notes: initial.notes,
+            stageName: initial.stageName ?? "",
+            stageDescription: initial.stageDescription ?? "",
+            temperatureMin: initial.temperatureMin ?? 15,
+            humidityMin: initial.humidityMin ?? 60,
+            soilMoistureMin: initial.soilMoistureMin ?? 50,
+            growthIndicators: initial.growthIndicators ?? "",
+            commonDiseases: initial.commonDiseases ?? "",
+            notes: initial.notes ?? "",
           }
         : defaultForm,
     );
@@ -1833,7 +1875,7 @@ function TaskFormModal({
                       <option value="">— Chọn nhiệm vụ —</option>
                       {availableTasks.map((t) => (
                         <option key={t.taskId} value={t.taskId}>
-                          {t.taskTitle}
+                          {t.taskTitle ?? t.taskId}
                         </option>
                       ))}
                     </select>
