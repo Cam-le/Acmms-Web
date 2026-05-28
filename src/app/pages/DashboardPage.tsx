@@ -58,7 +58,7 @@ import { formatDate } from "../utils/format";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type ForecastDays = 1 | 3 | 7;
+type ForecastDays = 1 | 3;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -90,9 +90,11 @@ function rainLabel(chance: number | undefined): string {
   return `${chance}%`;
 }
 
-function shortDay(isoDate: string): string {
+function shortDay(isoDate: string | null | undefined): string {
+  if (!isoDate) return "—";
   try {
     const d = new Date(isoDate);
+    if (isNaN(d.getTime())) return isoDate.slice(0, 10);
     return d.toLocaleDateString("vi-VN", {
       weekday: "short",
       day: "numeric",
@@ -220,7 +222,7 @@ export function DashboardPage() {
     (farmsQuery.isFetching && farmsQuery.data === undefined);
 
   const sentToOwnerReports = reports.filter(
-    (r) => r.status.toUpperCase() === "SENT_TO_OWNER",
+    (r) => (r.status ?? "").toUpperCase() === "SENT_TO_OWNER",
   );
 
   const currentWeather = currentWeatherQuery.data ?? null;
@@ -380,7 +382,7 @@ export function DashboardPage() {
                     <img
                       src={weatherIcon(currentWeather.condition.icon)}
                       alt={currentWeather.condition?.text ?? ""}
-                      className="w-14 h-14 shrink-0"
+                      className="w-14 h-14 min-w-[56px] min-h-[56px] max-w-[56px] max-h-[56px] shrink-0"
                     />
                   )}
                   <div className="min-w-0">
@@ -489,7 +491,7 @@ export function DashboardPage() {
                     <div className="flex items-center gap-2">
                       {/* Days selector */}
                       <div className="flex items-center gap-1 bg-surface-subtle p-1 rounded-btn">
-                        {([1, 3, 7] as ForecastDays[]).map((d) => (
+                        {([1, 3] as ForecastDays[]).map((d) => (
                           <button
                             key={d}
                             type="button"
@@ -540,7 +542,7 @@ export function DashboardPage() {
                       </p>
                       <div className="flex items-center gap-2">
                         <div className="flex items-center gap-1 bg-surface-subtle p-1 rounded-btn">
-                          {([1, 3, 7] as ForecastDays[]).map((d) => (
+                          {([1, 3] as ForecastDays[]).map((d) => (
                             <button
                               key={d}
                               type="button"
@@ -632,13 +634,13 @@ export function DashboardPage() {
                     onClick={() => navigate("/advisory")}
                   >
                     <td className="px-6 py-3.5 font-mono text-xs text-ink-400 max-w-[7rem] truncate">
-                      {r.reportNo}
+                      {r.reportNo ?? "—"}
                     </td>
                     <td className="px-4 py-3.5 text-primary-800 font-semibold max-w-[220px] truncate">
-                      {r.title}
+                      {r.title ?? "—"}
                     </td>
                     <td className="px-4 py-3.5 text-ink-500 hidden sm:table-cell">
-                      {r.workerName}
+                      {r.workerName ?? "—"}
                     </td>
                     <td className="px-4 py-3.5 text-ink-500 hidden md:table-cell">
                       {formatDate(r.submitDate)}
@@ -708,9 +710,9 @@ function ForecastCard({ day }: { day: WeatherForecastDayResponse }) {
 
       {weatherIcon(day.condition?.icon) ? (
         <img
-          src={weatherIcon(day.condition.icon)}
+          src={weatherIcon(day.condition?.icon)}
           alt={day.condition?.text ?? ""}
-          className="w-10 h-10"
+          className="w-10 h-10 min-w-[40px] min-h-[40px] max-w-[40px] max-h-[40px]"
         />
       ) : (
         <Cloud className="w-10 h-10 text-ink-300" />
@@ -915,7 +917,8 @@ function paramsToKey(p: YieldStatisticsParams): Record<string, string> {
   return out;
 }
 
-function fmt(n: number, decimals = 1): string {
+function fmt(n: number | null | undefined, decimals = 1): string {
+  if (n == null || !isFinite(n)) return "—";
   return n.toLocaleString("vi-VN", {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
@@ -1189,10 +1192,11 @@ function YieldStatisticsSection({
 function SummaryTab({ data }: { data: YieldSummaryResponse | null }) {
   if (!data) return <EmptyState message="Không có dữ liệu tổng quan" />;
 
+  const fulfillmentRate = data.overallFulfillmentRate ?? 0;
   const fulfillmentTone =
-    data.overallFulfillmentRate >= 80
+    fulfillmentRate >= 80
       ? "success"
-      : data.overallFulfillmentRate >= 50
+      : fulfillmentRate >= 50
         ? "warning"
         : "danger";
 
@@ -1221,14 +1225,14 @@ function SummaryTab({ data }: { data: YieldSummaryResponse | null }) {
           <div className="min-w-0">
             <p className="text-xs text-ink-400">Tổng lượt thu hoạch</p>
             <p className="text-2xl font-extrabold text-primary-800 leading-tight mt-0.5">
-              {data.totalHarvests}
+              {data.totalHarvests ?? 0}
             </p>
             <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
               <span className="text-xs text-status-success-fg font-medium">
-                ✓ {data.completedHarvests} hoàn thành
+                ✓ {data.completedHarvests ?? 0} hoàn thành
               </span>
               <span className="text-xs text-status-warning-fg font-medium">
-                ◌ {data.ongoingHarvests} đang diễn ra
+                ◌ {data.ongoingHarvests ?? 0} đang diễn ra
               </span>
             </div>
           </div>
@@ -1246,7 +1250,8 @@ function SummaryTab({ data }: { data: YieldSummaryResponse | null }) {
               <span className="text-sm font-semibold text-ink-500">kg</span>
             </p>
             <p className="text-xs text-ink-400 mt-1">
-              Kỳ vọng: {data.totalExpectedQuantity.toLocaleString("vi-VN")}
+              Kỳ vọng:{" "}
+              {(data.totalExpectedQuantity ?? 0).toLocaleString("vi-VN")}
             </p>
           </div>
         </div>
@@ -1266,12 +1271,12 @@ function SummaryTab({ data }: { data: YieldSummaryResponse | null }) {
             <p
               className={`text-2xl font-extrabold leading-tight mt-0.5 ${fulfillmentFg}`}
             >
-              {fmt(data.overallFulfillmentRate)}%
+              {fmt(fulfillmentRate)}%
             </p>
             <p className={`text-xs mt-1 font-medium ${fulfillmentFg}`}>
-              {data.overallFulfillmentRate >= 80
+              {fulfillmentRate >= 80
                 ? "Đạt mục tiêu"
-                : data.overallFulfillmentRate >= 50
+                : fulfillmentRate >= 50
                   ? "Gần đạt mục tiêu"
                   : "Dưới mục tiêu"}
             </p>
@@ -1288,19 +1293,19 @@ function SummaryTab({ data }: { data: YieldSummaryResponse | null }) {
             <div className="flex flex-wrap gap-x-4 gap-y-1">
               <div>
                 <span className="text-lg font-bold text-primary-800">
-                  {data.cropsCount}
+                  {data.cropsCount ?? 0}
                 </span>
                 <span className="text-xs text-ink-500 ml-1">loại cây</span>
               </div>
               <div>
                 <span className="text-lg font-bold text-primary-800">
-                  {data.seasonsCount}
+                  {data.seasonsCount ?? 0}
                 </span>
                 <span className="text-xs text-ink-500 ml-1">vụ mùa</span>
               </div>
               <div>
                 <span className="text-lg font-bold text-primary-800">
-                  {data.plotsCount}
+                  {data.plotsCount ?? 0}
                 </span>
                 <span className="text-xs text-ink-500 ml-1">khu đất</span>
               </div>
@@ -1339,12 +1344,12 @@ function ByCropTab({ data }: { data: YieldByCropResponse[] }) {
     return <EmptyState message="Không có dữ liệu theo cây trồng" />;
 
   const chartData = [...data]
-    .sort((a, b) => b.totalActualWeightKg - a.totalActualWeightKg)
+    .sort((a, b) => (b.totalActualWeightKg ?? 0) - (a.totalActualWeightKg ?? 0))
     .slice(0, 10)
     .map((d) => ({
-      name: d.cropName,
-      kg: d.totalActualWeightKg,
-      rate: d.fulfillmentRate,
+      name: d.cropName ?? "—",
+      kg: d.totalActualWeightKg ?? 0,
+      rate: d.fulfillmentRate ?? 0,
     }));
 
   return (
@@ -1447,24 +1452,24 @@ function ByCropTab({ data }: { data: YieldByCropResponse[] }) {
                   className={i % 2 === 0 ? "bg-surface" : "bg-surface-alt"}
                 >
                   <td className="px-4 py-3 font-semibold text-ink-700">
-                    {row.cropName}
+                    {row.cropName ?? "—"}
                   </td>
                   <td className="px-4 py-3 text-left text-primary-800 font-semibold">
                     {fmt(row.totalActualWeightKg)}
                   </td>
                   <td className="px-4 py-3 text-left text-ink-600">
-                    {row.totalActualQuantity.toLocaleString("vi-VN")}
+                    {(row.totalActualQuantity ?? 0).toLocaleString("vi-VN")}
                   </td>
                   <td className="px-4 py-3 text-left text-ink-500">
-                    {row.totalExpectedQuantity.toLocaleString("vi-VN")}
+                    {(row.totalExpectedQuantity ?? 0).toLocaleString("vi-VN")}
                   </td>
                   <td className="px-4 py-3 text-left">
                     <span
                       className={[
                         "inline-block px-2 py-0.5 rounded-pill text-xs font-semibold",
-                        row.fulfillmentRate >= 80
+                        (row.fulfillmentRate ?? 0) >= 80
                           ? "bg-status-success-bg text-status-success-fg"
-                          : row.fulfillmentRate >= 50
+                          : (row.fulfillmentRate ?? 0) >= 50
                             ? "bg-status-warning-bg text-status-warning-fg"
                             : "bg-status-danger-bg text-status-danger-fg",
                       ].join(" ")}
@@ -1473,10 +1478,10 @@ function ByCropTab({ data }: { data: YieldByCropResponse[] }) {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-left text-ink-500 hidden sm:table-cell">
-                    {row.harvestCount}
+                    {row.harvestCount ?? "—"}
                   </td>
                   <td className="px-4 py-3 text-left text-ink-500 hidden md:table-cell">
-                    {row.seasonsCovered}
+                    {row.seasonsCovered ?? "—"}
                   </td>
                 </tr>
               ))}
@@ -1495,13 +1500,13 @@ function BySeasonTab({ data }: { data: YieldBySeasonResponse[] }) {
     return <EmptyState message="Không có dữ liệu theo vụ mùa" />;
 
   const sorted = [...data].sort((a, b) =>
-    a.seasonStartDate.localeCompare(b.seasonStartDate),
+    (a.seasonStartDate ?? "").localeCompare(b.seasonStartDate ?? ""),
   );
 
   const chartData = sorted.map((d) => ({
-    name: d.seasonName,
-    actual: d.totalActualWeightKg,
-    expected: d.totalExpectedQuantity,
+    name: d.seasonName ?? "—",
+    actual: d.totalActualWeightKg ?? 0,
+    expected: d.totalExpectedQuantity ?? 0,
   }));
 
   return (
@@ -1596,10 +1601,10 @@ function BySeasonTab({ data }: { data: YieldBySeasonResponse[] }) {
                 className={i % 2 === 0 ? "bg-surface" : "bg-surface-alt"}
               >
                 <td className="px-4 py-3 font-semibold text-ink-700 max-w-[180px] truncate">
-                  {row.seasonName}
+                  {row.seasonName ?? "—"}
                 </td>
                 <td className="px-4 py-3 text-ink-500 text-xs hidden sm:table-cell whitespace-nowrap">
-                  {row.seasonStartDate} → {row.seasonEndDate}
+                  {row.seasonStartDate ?? "—"} → {row.seasonEndDate ?? "—"}
                 </td>
                 <td className="px-4 py-3 text-left text-primary-800 font-semibold">
                   {fmt(row.totalActualWeightKg)}
@@ -1608,9 +1613,9 @@ function BySeasonTab({ data }: { data: YieldBySeasonResponse[] }) {
                   <span
                     className={[
                       "inline-block px-2 py-0.5 rounded-pill text-xs font-semibold",
-                      row.fulfillmentRate >= 80
+                      (row.fulfillmentRate ?? 0) >= 80
                         ? "bg-status-success-bg text-status-success-fg"
-                        : row.fulfillmentRate >= 50
+                        : (row.fulfillmentRate ?? 0) >= 50
                           ? "bg-status-warning-bg text-status-warning-fg"
                           : "bg-status-danger-bg text-status-danger-fg",
                     ].join(" ")}
@@ -1619,10 +1624,10 @@ function BySeasonTab({ data }: { data: YieldBySeasonResponse[] }) {
                   </span>
                 </td>
                 <td className="px-4 py-3 text-left text-ink-500 hidden md:table-cell">
-                  {row.cropsCovered}
+                  {row.cropsCovered ?? "—"}
                 </td>
                 <td className="px-4 py-3 text-left text-ink-500 hidden md:table-cell">
-                  {row.plotsCovered}
+                  {row.plotsCovered ?? "—"}
                 </td>
               </tr>
             ))}
@@ -1643,9 +1648,14 @@ function ByPlotTab({ data }: { data: YieldByPlotResponse[] }) {
   if (data.length === 0)
     return <EmptyState message="Không có dữ liệu theo khu đất" />;
 
-  const sorted = [...data].sort((a, b) => b[sortField] - a[sortField]);
+  const sorted = [...data].sort(
+    (a, b) => (b[sortField] ?? 0) - (a[sortField] ?? 0),
+  );
 
-  const maxYield = Math.max(...sorted.map((d) => d.totalActualWeightKg), 1);
+  const maxYield = Math.max(
+    ...sorted.map((d) => d.totalActualWeightKg ?? 0),
+    1,
+  );
 
   return (
     <div className="flex flex-col gap-4">
@@ -1676,11 +1686,11 @@ function ByPlotTab({ data }: { data: YieldByPlotResponse[] }) {
       {/* Heatmap-style bars */}
       <div className="flex flex-col gap-2">
         {sorted.map((row) => {
-          const pct = (row.totalActualWeightKg / maxYield) * 100;
+          const pct = ((row.totalActualWeightKg ?? 0) / maxYield) * 100;
           return (
             <div key={row.plotId} className="flex items-center gap-3 min-w-0">
               <span className="w-24 shrink-0 text-xs font-semibold text-ink-600 truncate text-right">
-                {row.plotName}
+                {row.plotName ?? "—"}
               </span>
               <div className="flex-1 min-w-0 h-7 bg-surface-alt rounded-btn overflow-hidden relative border border-border">
                 <div
@@ -1737,10 +1747,10 @@ function ByPlotTab({ data }: { data: YieldByPlotResponse[] }) {
                 className={i % 2 === 0 ? "bg-surface" : "bg-surface-alt"}
               >
                 <td className="px-4 py-3 font-semibold text-ink-700">
-                  {row.plotName}
+                  {row.plotName ?? "—"}
                 </td>
                 <td className="px-4 py-3 text-left text-ink-500">
-                  {row.plotArea.toLocaleString("vi-VN")}
+                  {(row.plotArea ?? 0).toLocaleString("vi-VN")}
                 </td>
                 <td className="px-4 py-3 text-left text-primary-800 font-semibold">
                   {fmt(row.totalActualWeightKg)}
@@ -1749,10 +1759,10 @@ function ByPlotTab({ data }: { data: YieldByPlotResponse[] }) {
                   {fmt(row.yieldPerAreaKg, 2)}
                 </td>
                 <td className="px-4 py-3 text-left text-ink-500 hidden sm:table-cell">
-                  {row.harvestCount}
+                  {row.harvestCount ?? "—"}
                 </td>
                 <td className="px-4 py-3 text-left text-ink-500 hidden sm:table-cell">
-                  {row.cropsCovered}
+                  {row.cropsCovered ?? "—"}
                 </td>
               </tr>
             ))}
