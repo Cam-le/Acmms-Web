@@ -71,9 +71,9 @@ function mapUser(u: UserResponse): WorkerRow {
     ? rawStatus.charAt(0).toUpperCase() + rawStatus.slice(1).toLowerCase()
     : "";
   return {
-    id: u.userId,
+    id: u.userId ?? "",
     name: u.fullname || u.email || "—",
-    email: u.email,
+    email: u.email ?? "",
     phone: u.phoneNumber ?? "",
     role: u.roleName ?? "Worker",
     status: s === "Active" ? "Active" : "Inactive",
@@ -176,7 +176,9 @@ export function WorkersPage() {
     queryKey: qk.staffs.list(),
     queryFn: async () => {
       const data = await api.getStaffs();
-      return (data ?? []).filter(Boolean).map(mapUser);
+      return (data ?? [])
+        .filter((u): u is UserResponse => u != null && !!u.userId)
+        .map(mapUser);
     },
   });
 
@@ -187,7 +189,9 @@ export function WorkersPage() {
     queryKey: qk.staffs.unassigned(),
     queryFn: async () => {
       const data = await api.getUnassignedStaffs();
-      return data ?? [];
+      return (data ?? []).filter(
+        (s): s is UnassignedStaff => s != null && !!s.userId,
+      );
     },
   });
 
@@ -197,15 +201,16 @@ export function WorkersPage() {
   const sort = useTableSort(workers, {
     dateJoined: {
       compare: (a, b) => {
-        const toMs = (d: string) =>
-          d ? new Date(d.split("/").reverse().join("-")).getTime() : 0;
-        return toMs(a.dateJoined) - toMs(b.dateJoined);
+        // Use raw ISO string for reliable comparison; fall back to 0 if missing
+        const toMs = (row: WorkerRow) =>
+          row.dateJoinedRaw ? new Date(row.dateJoinedRaw).getTime() : 0;
+        return toMs(a) - toMs(b);
       },
     },
     status: {
       compare: (a, b) => {
         const order: Record<WorkerStatus, number> = { Active: 1, Inactive: 2 };
-        return order[a.status] - order[b.status];
+        return (order[a.status] ?? 99) - (order[b.status] ?? 99);
       },
     },
   });
@@ -213,10 +218,10 @@ export function WorkersPage() {
   const filteredWorkers = sort.sortedItems.filter((w) => {
     const term = searchTerm.toLowerCase();
     const matchSearch =
-      w.name.toLowerCase().includes(term) ||
-      w.email.toLowerCase().includes(term) ||
-      w.phone.includes(searchTerm) ||
-      w.role.toLowerCase().includes(term);
+      (w.name ?? "").toLowerCase().includes(term) ||
+      (w.email ?? "").toLowerCase().includes(term) ||
+      (w.phone ?? "").includes(searchTerm) ||
+      (w.role ?? "").toLowerCase().includes(term);
     const matchRole = filterRole === "all" || w.role === filterRole;
     return matchSearch && matchRole;
   });
@@ -230,12 +235,13 @@ export function WorkersPage() {
       name: "",
       email: "",
       phone: "",
-      role: availableRoleNames[0] ?? "",
+      role: apiRoles[0]?.roleName ?? "",
       status: "Active",
     });
     setFormErrors({});
     setApiError(null);
-  }, [availableRoleNames]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [apiRoles]);
 
   // ── Mutation: create staff ─────────────────────────────────────────────────
   const createMutation = useMutation({
@@ -370,6 +376,7 @@ export function WorkersPage() {
 
   // ── Handler: approve pending (per-row loading — keep local state) ──────────
   const handleApprovePending = async (staff: UnassignedStaff) => {
+    if (!staff.userId) return;
     if (!staff.requestedRole) {
       setPendingRowError((p) => ({
         ...p,
@@ -541,7 +548,7 @@ export function WorkersPage() {
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-3">
                               <div className="w-9 h-9 bg-primary rounded-pill flex items-center justify-center text-primary-fg text-sm font-bold shrink-0">
-                                {worker.name.charAt(0).toUpperCase()}
+                                {(worker.name || "?").charAt(0).toUpperCase()}
                               </div>
                               <span className="font-medium text-ink-800 text-sm">
                                 {worker.name}
