@@ -29,8 +29,8 @@ import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { FormField } from "../components/ui/FormField";
 import { SearchInput } from "../components/ui/SearchInput";
 import { Pagination } from "../components/ui/Pagination";
-import { LoadingState } from "../components/ui/LoadingState";
 import { EmptyState } from "../components/ui/EmptyState";
+import { QueryState } from "../components/ui/QueryState";
 import { usePagination } from "../hooks/usePagination";
 
 // ─── Constants ────────────────────────────────────────────────────────────
@@ -102,10 +102,10 @@ export function SoilsPage() {
   const soilsQuery = useQuery({
     queryKey: qk.soils.list(),
     queryFn: () => api.getSoils(),
+    retry: 2,
   });
 
   const soils: Soil[] = soilsQuery.data ?? [];
-  const loading = soilsQuery.isLoading;
 
   useEffect(() => {
     if (soilsQuery.error) {
@@ -117,18 +117,38 @@ export function SoilsPage() {
   const compatsQuery = useQuery({
     queryKey: qk.soils.compatibilities(),
     queryFn: () => api.getSoilCropCompatibilities(),
+    retry: 2,
   });
 
   const compatibilities: SoilCropCompatibilityResponse[] =
     compatsQuery.data ?? [];
 
+  useEffect(() => {
+    if (compatsQuery.error) {
+      showToast(
+        "Không thể tải dữ liệu tương thích cây trồng. Vui lòng thử lại.",
+        "error",
+      );
+    }
+  }, [compatsQuery.error, showToast]);
+
   // ── Read: crops (read-only, for CompatPanel dropdowns) ─────────────────
   const cropsQuery = useQuery({
     queryKey: qk.crops.list(),
     queryFn: () => api.getCrops(),
+    retry: 2,
   });
 
   const crops: CropResponse[] = cropsQuery.data ?? [];
+
+  useEffect(() => {
+    if (cropsQuery.error) {
+      showToast(
+        "Không thể tải danh sách cây trồng. Một số tính năng có thể bị hạn chế.",
+        "error",
+      );
+    }
+  }, [cropsQuery.error, showToast]);
 
   // ── Filter + paginate ──────────────────────────────────────────────────
   const filtered = useMemo(() => {
@@ -136,8 +156,8 @@ export function SoilsPage() {
     if (!q) return soils;
     return soils.filter(
       (s) =>
-        s.name.toLowerCase().includes(q) ||
-        s.scienceName.toLowerCase().includes(q),
+        (s.name ?? "").toLowerCase().includes(q) ||
+        (s.scienceName ?? "").toLowerCase().includes(q),
     );
   }, [soils, search]);
 
@@ -342,7 +362,12 @@ export function SoilsPage() {
     compatibility: string,
     note: string,
   ) {
-    await createCompatMutation.mutateAsync({ soilId, cropId, compatibility, note });
+    await createCompatMutation.mutateAsync({
+      soilId,
+      cropId,
+      compatibility,
+      note,
+    });
   }
 
   async function handleEditCompat(
@@ -352,7 +377,13 @@ export function SoilsPage() {
     compatibility: string,
     note: string,
   ) {
-    await updateCompatMutation.mutateAsync({ comptId, soilId, cropId, compatibility, note });
+    await updateCompatMutation.mutateAsync({
+      comptId,
+      soilId,
+      cropId,
+      compatibility,
+      note,
+    });
   }
 
   async function handleDeleteCompat(comptId: string) {
@@ -421,104 +452,110 @@ export function SoilsPage() {
           </div>
 
           {/* Rows */}
-          {loading ? (
-            <LoadingState />
-          ) : pagedItems.length === 0 ? (
-            <EmptyState
-              message={
-                search
-                  ? "Không tìm thấy loại đất phù hợp"
-                  : "Chưa có loại đất nào"
-              }
-            />
-          ) : (
-            pagedItems.map((soil, idx) => {
-              const isOpen = expanded.has(soil.soilId);
-              const compat = getCompatForSoil(soil.soilId);
-              return (
-                <div
-                  key={soil.soilId}
-                  className="border-b border-surface-subtle last:border-b-0 min-w-[480px]"
-                >
-                  {/* Row header */}
+          <QueryState
+            query={soilsQuery}
+            errorTitle="Không thể tải danh sách loại đất"
+            loadingMessage="Đang tải loại đất..."
+          >
+            {pagedItems.length === 0 ? (
+              <EmptyState
+                message={
+                  search
+                    ? "Không tìm thấy loại đất phù hợp"
+                    : "Chưa có loại đất nào"
+                }
+              />
+            ) : (
+              pagedItems.map((soil, idx) => {
+                const isOpen = expanded.has(soil.soilId);
+                const compat = getCompatForSoil(soil.soilId);
+                return (
                   <div
-                    className="grid grid-cols-[2rem_1fr_1fr_7rem] items-center px-5 py-3.5 hover:bg-surface-alt transition-colors cursor-pointer"
-                    onClick={() => toggle(soil.soilId)}
+                    key={soil.soilId}
+                    className="border-b border-surface-subtle last:border-b-0 min-w-[480px]"
                   >
-                    <span className="text-ink-400 font-mono text-xs">
-                      {(page - 1) * PAGE_SIZE + idx + 1}
-                    </span>
-                    <div className="flex items-center gap-2 min-w-0">
-                      {isOpen ? (
-                        <ChevronUp className="w-3.5 h-3.5 text-primary shrink-0" />
-                      ) : (
-                        <ChevronDown className="w-3.5 h-3.5 text-ink-400 shrink-0" />
-                      )}
-                      <span className="font-medium text-primary-700 text-sm truncate">
-                        {soil.name}
-                      </span>
-                      {compat.length > 0 && (
-                        <span className="px-1.5 py-0.5 bg-primary-50 text-primary text-[10px] font-medium rounded-pill shrink-0">
-                          {compat.length}
-                        </span>
-                      )}
-                    </div>
-                    <span className="text-ink-500 italic text-sm truncate pr-4">
-                      {soil.scienceName}
-                    </span>
+                    {/* Row header */}
                     <div
-                      className="flex items-center justify-center gap-1"
-                      onClick={(e) => e.stopPropagation()}
+                      className="grid grid-cols-[2rem_1fr_1fr_7rem] items-center px-5 py-3.5 hover:bg-surface-alt transition-colors cursor-pointer"
+                      onClick={() => toggle(soil.soilId)}
                     >
-                      <button
-                        onClick={() => openEdit(soil)}
-                        className="p-1.5 rounded-btn text-primary hover:bg-primary-50 transition-colors"
-                        title="Chỉnh sửa"
+                      <span className="text-ink-400 font-mono text-xs">
+                        {(page - 1) * PAGE_SIZE + idx + 1}
+                      </span>
+                      <div className="flex items-center gap-2 min-w-0">
+                        {isOpen ? (
+                          <ChevronUp className="w-3.5 h-3.5 text-primary shrink-0" />
+                        ) : (
+                          <ChevronDown className="w-3.5 h-3.5 text-ink-400 shrink-0" />
+                        )}
+                        <span className="font-medium text-primary-700 text-sm truncate">
+                          {soil.name ?? "—"}
+                        </span>
+                        {compat.length > 0 && (
+                          <span className="px-1.5 py-0.5 bg-primary-50 text-primary text-[10px] font-medium rounded-pill shrink-0">
+                            {compat.length}
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-ink-500 italic text-sm truncate pr-4">
+                        {soil.scienceName ?? "—"}
+                      </span>
+                      <div
+                        className="flex items-center justify-center gap-1"
+                        onClick={(e) => e.stopPropagation()}
                       >
-                        <Pencil className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => setSoilToDelete(soil)}
-                        className="p-1.5 rounded-btn text-status-danger-fg hover:bg-status-danger-bg transition-colors"
-                        title="Xóa"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                        <button
+                          onClick={() => openEdit(soil)}
+                          className="p-1.5 rounded-btn text-primary hover:bg-primary-50 transition-colors"
+                          title="Chỉnh sửa"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => setSoilToDelete(soil)}
+                          className="p-1.5 rounded-btn text-status-danger-fg hover:bg-status-danger-bg transition-colors"
+                          title="Xóa"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
-                  </div>
 
-                  {/* Expanded compat panel */}
-                  {isOpen && (
-                    <CompatPanel
-                      soil={soil}
-                      compat={compat}
-                      crops={crops}
-                      onAdd={handleAddCompat}
-                      onEdit={handleEditCompat}
-                      onDelete={handleDeleteCompat}
-                      showToast={showToast}
-                    />
-                  )}
-                </div>
-              );
-            })
-          )}
+                    {/* Expanded compat panel */}
+                    {isOpen && (
+                      <CompatPanel
+                        soil={soil}
+                        compat={compat}
+                        crops={crops}
+                        onAdd={handleAddCompat}
+                        onEdit={handleEditCompat}
+                        onDelete={handleDeleteCompat}
+                        showToast={showToast}
+                      />
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </QueryState>
         </div>
 
         {/* Pagination */}
-        {!loading && filtered.length > 0 && (
-          <div className="border-t border-border px-5 py-2">
-            <Pagination
-              currentPage={page}
-              totalPages={totalPages}
-              onPageChange={setPage}
-              showLabel
-              totalItems={filtered.length}
-              pageSize={PAGE_SIZE}
-              itemLabel="loại đất"
-            />
-          </div>
-        )}
+        {!soilsQuery.isLoading &&
+          !soilsQuery.isError &&
+          filtered.length > 0 && (
+            <div className="border-t border-border px-5 py-2">
+              <Pagination
+                currentPage={page}
+                totalPages={totalPages}
+                onPageChange={setPage}
+                showLabel
+                totalItems={filtered.length}
+                pageSize={PAGE_SIZE}
+                itemLabel="loại đất"
+              />
+            </div>
+          )}
       </div>
 
       {/* Create / Edit Modal */}
@@ -894,7 +931,10 @@ function CompatPanel({
                   <div className="flex items-center gap-3 px-4 py-2.5 bg-status-danger-bg/30 border-l-2 border-status-danger-fg">
                     <span className="flex-1 text-xs text-status-danger-fg font-medium">
                       Xóa tương thích với{" "}
-                      <span className="font-semibold">{row.cropName}</span>?
+                      <span className="font-semibold">
+                        {row.cropName ?? "cây trồng này"}
+                      </span>
+                      ?
                     </span>
                     <Button
                       variant="ghost"
@@ -916,7 +956,7 @@ function CompatPanel({
                   // Read row
                   <div className="flex items-center gap-3 px-4 py-2.5 hover:bg-surface transition-colors">
                     <span className="flex-1 text-sm font-medium text-primary-700">
-                      {row.cropName}
+                      {row.cropName ?? "—"}
                     </span>
                     <span
                       className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-pill text-xs font-medium ${cfg.bg} ${cfg.color}`}
