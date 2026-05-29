@@ -45,7 +45,7 @@ import {
   reportStatusLabel,
   normaliseEnum,
 } from "../utils/status";
-import { formatDateTime } from "../utils/format";
+import { formatDateTimeRaw } from "../utils/format";
 
 // ===================== TYPES =====================
 
@@ -225,9 +225,13 @@ function stripAiJson(text: string | undefined): string {
 }
 
 function getReportImageUrl(attachments: ReportAttachment[]): string | null {
-  const img = attachments.find((a) => a.attachmentType === "report_image");
-  if (!img) return null;
-  return img.secureUrl || img.fileUrl || null;
+  // Primary: explicit report_image type
+  const byType = attachments.find((a) => a.attachmentType === "report_image");
+  if (byType) return byType.secureUrl || byType.fileUrl || null;
+  // Fallback: any attachment with an image MIME type (e.g. attachmentType "none")
+  const byMime = attachments.find((a) => a.mimeType?.startsWith("image/"));
+  if (byMime) return byMime.secureUrl || byMime.fileUrl || null;
+  return null;
 }
 
 // ===================== INTERNAL BADGES =====================
@@ -292,7 +296,7 @@ function DiagnosisRecommendations({ diagnosisId }: { diagnosisId: string }) {
           </div>
           <p className="text-sm text-ink-800 leading-relaxed">{rec.content}</p>
           <div className="mt-2 text-[10px] text-ink-400">
-            {formatDateTime(rec.createdAt)}
+            {formatDateTimeRaw(rec.createdAt)}
           </div>
         </div>
       ))}
@@ -475,7 +479,7 @@ function ListView() {
                     />
                   </td>
                   <td className="px-4 py-3 text-ink-500 text-xs whitespace-nowrap">
-                    {formatDateTime(r.submitDate)}
+                    {formatDateTimeRaw(r.submitDate)}
                   </td>
                   <td className="px-4 py-3 text-right">
                     <Link
@@ -646,7 +650,7 @@ function DetailView({ reportId }: { reportId: string }) {
           <PageHeader
             icon={ClipboardList}
             title={report.title}
-            subtitle={`${report.reportNo} · Gửi lúc ${formatDateTime(report.submitDate)}`}
+            subtitle={`${report.reportNo} · Gửi lúc ${formatDateTimeRaw(report.submitDate)}`}
           >
             <StatusBadge
               label={reportStatusLabel(report.status)}
@@ -677,13 +681,13 @@ function DetailView({ reportId }: { reportId: string }) {
             <InfoRow
               icon={CalendarDays}
               label="Ngày gửi"
-              value={formatDateTime(report.submitDate)}
+              value={formatDateTimeRaw(report.submitDate)}
             />
             {report.updatedAt && (
               <InfoRow
                 icon={RefreshCw}
                 label="Cập nhật lần cuối"
-                value={formatDateTime(report.updatedAt)}
+                value={formatDateTimeRaw(report.updatedAt)}
               />
             )}
           </div>
@@ -962,7 +966,7 @@ function DetailView({ reportId }: { reportId: string }) {
                               {sev.label}
                             </span>
                             <span className="text-xs text-ink-400 whitespace-nowrap">
-                              {formatDateTime(dx.createdAt)}
+                              {formatDateTimeRaw(dx.createdAt)}
                             </span>
                           </div>
                         </div>
