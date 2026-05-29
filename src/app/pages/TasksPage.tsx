@@ -2485,11 +2485,13 @@ export function TasksPage() {
                         {seasons.map((s) => (
                           <option key={s.seasonId} value={s.seasonId}>
                             {s.seasonName}
-                            {s.status === "Active"
-                              ? " (Đang hoạt động)"
-                              : s.status === "Completed"
-                                ? " (Đã kết thúc)"
-                                : " (Sắp diễn ra)"}
+                            {s.status === "Planned"
+                              ? " (Lên kế hoạch)"
+                              : s.status === "On-Going"
+                                ? " (Đang canh tác)"
+                                : s.status === "Harvested"
+                                  ? " (Đã thu hoạch)"
+                                  : " (Đã kết thúc)"}
                           </option>
                         ))}
                       </select>
@@ -2918,11 +2920,13 @@ export function TasksPage() {
                         {seasons.map((s) => (
                           <option key={s.seasonId} value={s.seasonId}>
                             {s.seasonName}
-                            {s.status === "Active"
-                              ? " (Đang hoạt động)"
-                              : s.status === "Completed"
-                                ? " (Đã kết thúc)"
-                                : " (Sắp diễn ra)"}
+                            {s.status === "Planned"
+                              ? " (Lên kế hoạch)"
+                              : s.status === "On-Going"
+                                ? " (Đang canh tác)"
+                                : s.status === "Harvested"
+                                  ? " (Đã thu hoạch)"
+                                  : " (Đã kết thúc)"}
                           </option>
                         ))}
                       </select>
