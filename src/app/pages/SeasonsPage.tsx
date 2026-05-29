@@ -1989,8 +1989,8 @@ function DetailSeasonView({
                                         <StatusBadge
                                           label={
                                             d.isHarvested
-                                              ? "Đã xong"
-                                              : "Chưa xong"
+                                              ? "Đã thu hoạch"
+                                              : "Chưa thu hoạch"
                                           }
                                           tone={
                                             d.isHarvested
