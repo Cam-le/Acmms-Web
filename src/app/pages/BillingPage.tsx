@@ -436,7 +436,7 @@ function BillPreviewPanel({
   qrUrl?: string | null;
   onClose: () => void;
 }) {
-  const { showToast } = useToast();
+  const { toasts, showToast, dismissToast } = useToast();
   const queryClient = useQueryClient();
 
   // If fixedMonth is provided, derive year/month from it. Otherwise default
@@ -607,6 +607,7 @@ function BillPreviewPanel({
         )
       }
     >
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
       <div className={`flex gap-5 ${selectedDiagnosis ? "min-h-[440px]" : ""}`}>
         {/* Left pane — always visible */}
         <div
@@ -905,7 +906,7 @@ function BillPreviewPanel({
 // ─── CreateContractModal ──────────────────────────────────────────────────────
 
 function CreateContractModal({ onClose }: { onClose: () => void }) {
-  const { showToast } = useToast();
+  const { toasts, showToast, dismissToast } = useToast();
   const queryClient = useQueryClient();
 
   const staffsQuery = useQuery({
@@ -927,6 +928,7 @@ function CreateContractModal({ onClose }: { onClose: () => void }) {
     expertId: "",
     bankAccount: "",
     bankName: "",
+    bankBin: "",
     accountHolder: "",
     pricePerDiagnosis: "",
     startDate: defaultStartDate,
@@ -955,6 +957,7 @@ function CreateContractModal({ onClose }: { onClose: () => void }) {
     if (!form.expertId) e.expertId = "Vui lòng chọn chuyên gia";
     if (!form.bankAccount.trim()) e.bankAccount = "Vui lòng nhập số tài khoản";
     if (!form.bankName.trim()) e.bankName = "Vui lòng nhập tên ngân hàng";
+    if (!form.bankBin.trim()) e.bankBin = "Vui lòng nhập mã BIN ngân hàng";
     if (!form.accountHolder.trim())
       e.accountHolder = "Vui lòng nhập chủ tài khoản";
     const price = parseFloat(form.pricePerDiagnosis);
@@ -974,6 +977,7 @@ function CreateContractModal({ onClose }: { onClose: () => void }) {
       expertId: form.expertId,
       bankAccount: form.bankAccount.trim(),
       bankName: form.bankName.trim(),
+      bankBin: form.bankBin.trim(),
       accountHolder: form.accountHolder.trim(),
       pricePerDiagnosis: parseFloat(form.pricePerDiagnosis),
       startDate: `${form.startDate}T00:00:00.000Z`,
@@ -1004,6 +1008,7 @@ function CreateContractModal({ onClose }: { onClose: () => void }) {
         </>
       }
     >
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
       {staffsQuery.isLoading ? (
         <LoadingState message="Đang tải..." />
       ) : (
@@ -1037,6 +1042,15 @@ function CreateContractModal({ onClose }: { onClose: () => void }) {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <FormField
+              label="Mã BIN ngân hàng"
+              required
+              value={form.bankBin}
+              onChange={(v) => setForm((f) => ({ ...f, bankBin: v }))}
+              placeholder="VD: 970436"
+              hint="Mã BIN 6 chữ số của ngân hàng"
+              error={errors.bankBin}
+            />
+            <FormField
               label="Chủ tài khoản"
               required
               value={form.accountHolder}
@@ -1044,23 +1058,23 @@ function CreateContractModal({ onClose }: { onClose: () => void }) {
               placeholder="NGUYEN VAN A"
               error={errors.accountHolder}
             />
-            <FormField
-              label="Đơn giá / chẩn đoán (₫)"
-              required
-              type="number"
-              value={form.pricePerDiagnosis}
-              onChange={(v) => setForm((f) => ({ ...f, pricePerDiagnosis: v }))}
-              placeholder="50000"
-              inputProps={{ min: "1", step: "1" }}
-              error={errors.pricePerDiagnosis}
-              hint={
-                form.pricePerDiagnosis &&
-                !isNaN(parseFloat(form.pricePerDiagnosis))
-                  ? `= ${formatVND(parseFloat(form.pricePerDiagnosis))}`
-                  : undefined
-              }
-            />
           </div>
+          <FormField
+            label="Đơn giá / chẩn đoán (₫)"
+            required
+            type="number"
+            value={form.pricePerDiagnosis}
+            onChange={(v) => setForm((f) => ({ ...f, pricePerDiagnosis: v }))}
+            placeholder="50000"
+            inputProps={{ min: "1", step: "1" }}
+            error={errors.pricePerDiagnosis}
+            hint={
+              form.pricePerDiagnosis &&
+              !isNaN(parseFloat(form.pricePerDiagnosis))
+                ? `= ${formatVND(parseFloat(form.pricePerDiagnosis))}`
+                : undefined
+            }
+          />
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <FormField
               label="Ngày bắt đầu"
@@ -1101,12 +1115,13 @@ function EditContractModal({
   contract: ContractResponse;
   onClose: () => void;
 }) {
-  const { showToast } = useToast();
+  const { toasts, showToast, dismissToast } = useToast();
   const queryClient = useQueryClient();
 
   const [form, setForm] = useState({
     bankAccount: contract.bankAccount,
     bankName: contract.bankName,
+    bankBin: contract.bankBin ?? "",
     accountHolder: contract.accountHolder,
     endDate: contract.endDate ? contract.endDate.slice(0, 10) : "",
     notes: contract.notes ?? "",
@@ -1132,6 +1147,7 @@ function EditContractModal({
     const e: Partial<typeof form> = {};
     if (!form.bankAccount.trim()) e.bankAccount = "Bắt buộc";
     if (!form.bankName.trim()) e.bankName = "Bắt buộc";
+    if (!form.bankBin.trim()) e.bankBin = "Bắt buộc";
     if (!form.accountHolder.trim()) e.accountHolder = "Bắt buộc";
     setErrors(e);
     return Object.keys(e).length === 0;
@@ -1143,6 +1159,7 @@ function EditContractModal({
     updateMutation.mutate({
       bankAccount: form.bankAccount.trim(),
       bankName: form.bankName.trim(),
+      bankBin: form.bankBin.trim(),
       accountHolder: form.accountHolder.trim(),
       endDate: form.endDate ? `${form.endDate}T00:00:00.000Z` : undefined,
       notes: form.notes.trim() || undefined,
@@ -1172,6 +1189,7 @@ function EditContractModal({
         </>
       }
     >
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
       <div className="space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <FormField
@@ -1190,6 +1208,15 @@ function EditContractModal({
           />
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <FormField
+            label="Mã BIN ngân hàng"
+            required
+            value={form.bankBin}
+            onChange={(v) => setForm((f) => ({ ...f, bankBin: v }))}
+            placeholder="VD: 970436"
+            hint="Mã BIN 6 chữ số của ngân hàng"
+            error={errors.bankBin}
+          />
           <FormField
             label="Chủ tài khoản"
             required
@@ -1273,6 +1300,7 @@ function ViewContractModal({
             Thông tin ngân hàng
           </p>
           <InfoRow label="Ngân hàng" value={contract.bankName ?? "—"} />
+          <InfoRow label="Mã BIN" value={contract.bankBin ?? "—"} mono />
           <InfoRow
             label="Số tài khoản"
             value={contract.bankAccount ?? "—"}
@@ -1584,7 +1612,7 @@ function PaymentDetailModal({
 // ─── PaymentPendingTab ────────────────────────────────────────────────────────
 
 function PaymentPendingTab() {
-  const { showToast } = useToast();
+  const { toasts, showToast, dismissToast } = useToast();
   const [dueOnly, setDueOnly] = useState(false);
   const [pendingSearch, setPendingSearch] = useState("");
   const [payItem, setPayItem] = useState<PendingPaymentItem | null>(null);
@@ -1617,6 +1645,7 @@ function PaymentPendingTab() {
 
   return (
     <>
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
       {/* Filter bar */}
       <div className="p-4 border-b border-border flex flex-wrap gap-2 items-center">
         <SearchInput
@@ -1751,7 +1780,7 @@ function PaymentPendingTab() {
 // ─── PaymentHistoryTab ────────────────────────────────────────────────────────
 
 function PaymentHistoryTab() {
-  const { showToast } = useToast();
+  const { toasts, showToast, dismissToast } = useToast();
   const [detailPayment, setDetailPayment] = useState<PaymentResponse | null>(
     null,
   );
@@ -1816,6 +1845,7 @@ function PaymentHistoryTab() {
 
   return (
     <>
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
       {/* Filter bar */}
       <div className="p-4 border-b border-border flex flex-wrap gap-2 items-center">
         <SearchInput

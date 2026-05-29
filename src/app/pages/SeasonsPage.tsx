@@ -1696,10 +1696,11 @@ function DetailSeasonView({
     { value: "cancelled", label: "Đã hủy" },
   ];
 
-  const totalExpected = harvests.reduce(
-    (s, h) => s + (h.expectedQuantity ?? 0),
-    0,
-  );
+  const totalExpected = harvests.reduce((s, h) => {
+    const qty = h.expectedQuantity ?? 0;
+    const inKg = (h.unit ?? "kg") === "tấn" ? qty * 1000 : qty;
+    return s + inKg;
+  }, 0);
 
   return (
     <div className="flex flex-col gap-6 p-6">
@@ -1756,7 +1757,7 @@ function DetailSeasonView({
           </div>
           <div>
             <div className="text-xs text-ink-500 uppercase mb-1">
-              Tổng SẢN LƯỢNG DỰ KIẾN
+              Tổng SẢN LƯỢNG
             </div>
             <div className="font-medium text-status-success-fg flex items-center gap-1">
               <Package className="w-4 h-4" />

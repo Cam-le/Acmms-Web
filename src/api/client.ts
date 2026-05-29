@@ -566,6 +566,7 @@ export interface ContractResponse {
   expertName: string;
   bankAccount: string;
   bankName: string;
+  bankBin: string;
   accountHolder: string;
   pricePerDiagnosis: number;
   startDate: string;
@@ -579,6 +580,7 @@ export interface ContractCreateRequest {
   expertId: string;
   bankAccount: string;
   bankName: string;
+  bankBin: string;
   accountHolder: string;
   pricePerDiagnosis: number;
   startDate: string;
@@ -589,6 +591,7 @@ export interface ContractCreateRequest {
 export interface ContractUpdateRequest {
   bankAccount: string;
   bankName: string;
+  bankBin: string;
   accountHolder: string;
   endDate?: string;
   notes?: string;
