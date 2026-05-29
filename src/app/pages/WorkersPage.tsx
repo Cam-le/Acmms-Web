@@ -13,6 +13,7 @@ import {
   Clock,
   Trash2,
   Loader2,
+  RefreshCw,
 } from "lucide-react";
 import {
   api,
@@ -172,14 +173,21 @@ export function WorkersPage() {
     apiRoles.find((r) => r.roleName === roleName)?.roleId;
 
   // ── Read: staff list ───────────────────────────────────────────────────────
+  // IMPORTANT: mapUser lives in `select`, NOT in `queryFn`.
+  // TasksPage shares qk.staffs.list() but stores raw UserResponse[] in cache.
+  // If Workers ran mapUser in queryFn, it would only run on a network fetch —
+  // on a cache hit (fresh data written by Tasks) the queryFn is skipped and
+  // Workers would receive raw UserResponse[] cast as WorkerRow[], causing
+  // name/phone/role to be undefined while email/status appeared correct
+  // (those fields happen to have matching names on both types).
+  // `select` always runs after every cache read, so mapping is always applied.
   const staffsQuery = useQuery({
     queryKey: qk.staffs.list(),
-    queryFn: async () => {
-      const data = await api.getStaffs();
-      return (data ?? [])
+    queryFn: () => api.getStaffs(),
+    select: (data): WorkerRow[] =>
+      (data ?? [])
         .filter((u): u is UserResponse => u != null && !!u.userId)
-        .map(mapUser);
-    },
+        .map(mapUser),
   });
 
   const workers: WorkerRow[] = staffsQuery.data ?? [];
@@ -495,6 +503,17 @@ export function WorkersPage() {
                 ))}
               </select>
             </div>
+            {/* Refresh button */}
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => staffsQuery.refetch()}
+              loading={staffsQuery.isFetching}
+              leadingIcon={RefreshCw}
+              title="Cập nhật danh sách nhân viên"
+            >
+              Cập nhật
+            </Button>
           </div>
 
           {/* Table */}

@@ -181,6 +181,173 @@ function healthStatusLabel(s: string | undefined): string {
   return s;
 }
 
+// ─── HarvestDetailViewModal ───────────────────────────────────────────────────
+// Fetches the full harvest detail record (including worker-recorded harvest
+// data) via GET /api/harvest-details/{id} and displays it read-only.
+
+function HarvestDetailViewModal({
+  harvestDetailId,
+  onClose,
+}: {
+  harvestDetailId: string;
+  onClose: () => void;
+}) {
+  const { showToast, toasts, dismissToast } = useToast();
+
+  const detailQuery = useQuery({
+    queryKey: ["harvestDetail", harvestDetailId],
+    queryFn: () => api.getHarvestDetail(harvestDetailId),
+    retry: 2,
+    staleTime: 30_000,
+  });
+
+  // Surface error as toast (v5 pattern)
+  useEffect(() => {
+    if (detailQuery.error) {
+      showToast(
+        detailQuery.error instanceof Error
+          ? detailQuery.error.message
+          : "Không thể tải chi tiết luống",
+        "error",
+      );
+    }
+  }, [detailQuery.error]);
+
+  const d = detailQuery.data;
+
+  return (
+    <>
+      <Modal
+        open
+        onOpenChange={(o) => !o && onClose()}
+        title={`Chi tiết luống — ${d?.bedName ?? "..."}`}
+        size="md"
+      >
+        {detailQuery.isLoading ? (
+          <LoadingState message="Đang tải chi tiết luống..." />
+        ) : detailQuery.isError && !d ? (
+          <EmptyState
+            icon={Wheat}
+            title="Không thể tải chi tiết"
+            message={
+              detailQuery.error instanceof Error
+                ? detailQuery.error.message
+                : "Đã xảy ra lỗi. Vui lòng thử lại."
+            }
+            action={
+              <Button
+                variant="secondary"
+                size="sm"
+                loading={detailQuery.isFetching}
+                onClick={() => detailQuery.refetch()}
+              >
+                Thử lại
+              </Button>
+            }
+          />
+        ) : d ? (
+          <div className="space-y-4">
+            {/* General info */}
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="bg-surface-alt rounded-btn p-3">
+                <p className="text-xs text-ink-400 mb-0.5">Luống</p>
+                <p className="font-semibold text-ink-800 font-mono text-xs">
+                  {d.bedName ?? "—"}
+                </p>
+              </div>
+              <div className="bg-surface-alt rounded-btn p-3">
+                <p className="text-xs text-ink-400 mb-0.5">Cây trồng</p>
+                <p className="font-medium text-ink-800">{d.cropName ?? "—"}</p>
+              </div>
+              <div className="bg-surface-alt rounded-btn p-3">
+                <p className="text-xs text-ink-400 mb-0.5">Vuông đất</p>
+                <p className="font-medium text-ink-800">{d.plotName ?? "—"}</p>
+              </div>
+              <div className="bg-surface-alt rounded-btn p-3">
+                <p className="text-xs text-ink-400 mb-0.5">Số lượng (cây)</p>
+                <p className="font-medium text-ink-800">
+                  {(d.cropQuantity ?? 0).toLocaleString("vi-VN")}
+                </p>
+              </div>
+              <div className="bg-surface-alt rounded-btn p-3">
+                <p className="text-xs text-ink-400 mb-0.5">Ngày bắt đầu</p>
+                <p className="font-medium text-ink-800">
+                  {formatDate(d.startDate)}
+                </p>
+              </div>
+              <div className="bg-surface-alt rounded-btn p-3">
+                <p className="text-xs text-ink-400 mb-0.5">Ngày kết thúc</p>
+                <p className="font-medium text-ink-800">
+                  {formatDate(d.endDate)}
+                </p>
+              </div>
+              <div className="bg-surface-alt rounded-btn p-3 col-span-2">
+                <p className="text-xs text-ink-400 mb-1">
+                  Trạng thái thu hoạch
+                </p>
+                <StatusBadge
+                  label={d.isHarvested ? "Đã thu hoạch" : "Chưa thu hoạch"}
+                  tone={d.isHarvested ? "success" : "neutral"}
+                />
+              </div>
+            </div>
+
+            {/* Harvest record — only shown when isHarvested = true */}
+            {d.isHarvested && (
+              <div className="border-t border-border pt-4">
+                <p className="text-xs font-semibold text-ink-500 uppercase tracking-wide mb-3">
+                  Kết quả thu hoạch
+                </p>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  {d.actualHarvestDate && (
+                    <div className="bg-status-success-bg rounded-btn p-3">
+                      <p className="text-xs text-status-success-fg mb-0.5">
+                        Ngày thu hoạch thực tế
+                      </p>
+                      <p className="font-semibold text-ink-800">
+                        {formatDate(d.actualHarvestDate)}
+                      </p>
+                    </div>
+                  )}
+                  {d.actualQuantity != null && (
+                    <div className="bg-status-success-bg rounded-btn p-3">
+                      <p className="text-xs text-status-success-fg mb-0.5">
+                        Số lượng thực tế (cây)
+                      </p>
+                      <p className="font-semibold text-ink-800">
+                        {d.actualQuantity.toLocaleString("vi-VN")}
+                      </p>
+                    </div>
+                  )}
+                  {d.actualWeightKg != null && (
+                    <div className="bg-status-success-bg rounded-btn p-3">
+                      <p className="text-xs text-status-success-fg mb-0.5">
+                        Khối lượng thực tế (kg)
+                      </p>
+                      <p className="font-semibold text-ink-800">
+                        {d.actualWeightKg.toLocaleString("vi-VN")} kg
+                      </p>
+                    </div>
+                  )}
+                  {d.harvestNotes && (
+                    <div className="bg-surface-alt rounded-btn p-3 col-span-2">
+                      <p className="text-xs text-ink-400 mb-0.5">Ghi chú</p>
+                      <p className="text-ink-700 text-sm leading-relaxed">
+                        {d.harvestNotes}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : null}
+      </Modal>
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+    </>
+  );
+}
+
 // ─── GrowthTrackingModal ──────────────────────────────────────────────────────
 // This component has non-standard fetch behavior (fire-and-forget with
 // side-effect callback). Kept as useEffect rather than useQuery because
@@ -1414,7 +1581,9 @@ function DetailSeasonView({
       } catch (err) {
         if (!cancelled)
           setIotError(
-            err instanceof Error ? err.message : "Không thể tải dữ liệu cảm biến",
+            err instanceof Error
+              ? err.message
+              : "Không thể tải dữ liệu cảm biến",
           );
       } finally {
         if (!cancelled) setIotLoading(false);
@@ -1462,6 +1631,56 @@ function DetailSeasonView({
     id: string;
     bedName: string;
   } | null>(null);
+
+  // ── Harvest detail view / edit modals ─────────────────────────────────────
+  const [viewDetailTarget, setViewDetailTarget] =
+    React.useState<HarvestDetailResponse | null>(null);
+  const [editDetailTarget, setEditDetailTarget] =
+    React.useState<HarvestDetailResponse | null>(null);
+
+  const [editDetailForm, setEditDetailForm] = React.useState({
+    cropQuantity: "",
+    startDate: "",
+    endDate: "",
+  });
+
+  const openEditDetail = (d: HarvestDetailResponse) => {
+    setEditDetailForm({
+      cropQuantity: String(d.cropQuantity ?? ""),
+      startDate: d.startDate ?? "",
+      endDate: d.endDate ?? "",
+    });
+    setEditDetailTarget(d);
+  };
+
+  const updateDetailMutation = useMutation({
+    mutationFn: () => {
+      if (!editDetailTarget)
+        throw new Error("Không có chi tiết luống để cập nhật");
+      return api.updateHarvestDetail(editDetailTarget.harvestDetailId, {
+        cropQuantity: parseInt(editDetailForm.cropQuantity, 10) || 0,
+        startDate: editDetailForm.startDate,
+        endDate: editDetailForm.endDate,
+      });
+    },
+    onSuccess: (_data, _vars) => {
+      localToast("Cập nhật chi tiết luống thành công.", "success");
+      setEditDetailTarget(null);
+      if (expandedHarvest) {
+        queryClient.invalidateQueries({
+          queryKey: qk.seasons.harvestDetails(expandedHarvest),
+        });
+      }
+    },
+    onError: (err) => {
+      localToast(
+        err instanceof Error
+          ? err.message
+          : "Cập nhật chi tiết luống thất bại.",
+        "error",
+      );
+    },
+  });
 
   // ── Derived ────────────────────────────────────────────────────────────────
   const farmPlots = (Array.isArray(plots) ? plots : []).filter(
@@ -1654,7 +1873,9 @@ function DetailSeasonView({
                           </span>
                           <span className="flex items-center gap-1">
                             <Package className="w-3 h-3" />
-                            {(h.expectedQuantity ?? 0).toLocaleString("vi-VN")}{" "}
+                            {(h.expectedQuantity ?? 0).toLocaleString(
+                              "vi-VN",
+                            )}{" "}
                             {h.unit || "kg"}
                           </span>
                           {h.detailsCount > 0 && (
@@ -1713,8 +1934,8 @@ function DetailSeasonView({
                           <table className="w-full text-sm">
                             <thead className="bg-surface-alt">
                               <tr>
-                                {/* Luống — takes all remaining space */}
-                                <th className="px-4 py-2.5 text-left text-xs font-semibold text-ink-500 uppercase tracking-wide w-full">
+                                {/* Luống — fixed min-width so other columns get more room */}
+                                <th className="px-4 py-2.5 text-left text-xs font-semibold text-ink-500 uppercase tracking-wide min-w-[100px]">
                                   Luống
                                 </th>
                                 {/* All other columns — shrink to content */}
@@ -1728,10 +1949,10 @@ function DetailSeasonView({
                                   Ngày kết thúc
                                 </th>
                                 <th className="px-4 py-2.5 text-center text-xs font-semibold text-ink-500 uppercase tracking-wide whitespace-nowrap">
-                                  Đã thu hoạch
+                                  Trạng thái thu hoạch
                                 </th>
                                 <th className="px-4 py-2.5 text-center text-xs font-semibold text-ink-500 uppercase tracking-wide whitespace-nowrap">
-                                  Sinh trưởng
+                                  Thao tác
                                 </th>
                               </tr>
                             </thead>
@@ -1753,7 +1974,9 @@ function DetailSeasonView({
                                       {d.bedName ?? "—"}
                                     </td>
                                     <td className="px-4 py-2.5 text-center text-ink-700 whitespace-nowrap">
-                                      {(d.cropQuantity ?? 0).toLocaleString("vi-VN")}
+                                      {(d.cropQuantity ?? 0).toLocaleString(
+                                        "vi-VN",
+                                      )}
                                     </td>
                                     <td className="px-4 py-2.5 text-center text-ink-500 whitespace-nowrap">
                                       {formatDate(d.startDate)}
@@ -1766,8 +1989,8 @@ function DetailSeasonView({
                                         <StatusBadge
                                           label={
                                             d.isHarvested
-                                              ? "Đã xong"
-                                              : "Chưa xong"
+                                              ? "Đã thu hoạch"
+                                              : "Chưa thu hoạch"
                                           }
                                           tone={
                                             d.isHarvested
@@ -1779,7 +2002,28 @@ function DetailSeasonView({
                                       </div>
                                     </td>
                                     <td className="px-4 py-2.5 whitespace-nowrap">
-                                      <div className="flex items-center justify-center">
+                                      <div className="flex items-center justify-center gap-0.5">
+                                        {/* View detail */}
+                                        <button
+                                          type="button"
+                                          title="Xem chi tiết luống"
+                                          aria-label="Xem chi tiết luống"
+                                          onClick={() => setViewDetailTarget(d)}
+                                          className="p-1.5 rounded-btn text-ink-500 hover:text-primary hover:bg-primary-50 transition-colors"
+                                        >
+                                          <Eye className="w-4 h-4" />
+                                        </button>
+                                        {/* Edit detail */}
+                                        <button
+                                          type="button"
+                                          title="Chỉnh sửa chi tiết luống"
+                                          aria-label="Chỉnh sửa chi tiết luống"
+                                          onClick={() => openEditDetail(d)}
+                                          className="p-1.5 rounded-btn text-ink-500 hover:text-primary hover:bg-primary-50 transition-colors"
+                                        >
+                                          <Pencil className="w-4 h-4" />
+                                        </button>
+                                        {/* Growth tracking */}
                                         <button
                                           type="button"
                                           title={
@@ -2100,6 +2344,94 @@ function DetailSeasonView({
           />
         </div>
       </Modal>
+
+      {/* Harvest Detail View Modal */}
+      {viewDetailTarget && (
+        <HarvestDetailViewModal
+          harvestDetailId={viewDetailTarget.harvestDetailId}
+          onClose={() => setViewDetailTarget(null)}
+        />
+      )}
+
+      {/* Edit Harvest Detail Modal */}
+      {editDetailTarget && (
+        <Modal
+          open
+          onOpenChange={(o) => {
+            if (!o && !updateDetailMutation.isPending)
+              setEditDetailTarget(null);
+          }}
+          title={`Chỉnh sửa — ${editDetailTarget.bedName ?? "Luống"}`}
+          size="sm"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (
+              !editDetailForm.startDate ||
+              !editDetailForm.endDate ||
+              !editDetailForm.cropQuantity
+            ) {
+              localToast("Vui lòng điền đầy đủ thông tin.", "error");
+              return;
+            }
+            if (editDetailForm.endDate <= editDetailForm.startDate) {
+              localToast("Ngày kết thúc phải sau ngày bắt đầu.", "error");
+              return;
+            }
+            updateDetailMutation.mutate();
+          }}
+          footer={
+            <>
+              <Button
+                variant="ghost"
+                onClick={() => setEditDetailTarget(null)}
+                disabled={updateDetailMutation.isPending}
+              >
+                Hủy
+              </Button>
+              <Button type="submit" loading={updateDetailMutation.isPending}>
+                Lưu thay đổi
+              </Button>
+            </>
+          }
+        >
+          <div className="space-y-4">
+            <FormField
+              label="Số lượng (cây)"
+              required
+              type="number"
+              value={editDetailForm.cropQuantity}
+              onChange={(v) =>
+                setEditDetailForm((p) => ({ ...p, cropQuantity: v }))
+              }
+              inputProps={{ min: "1", step: "1" }}
+              placeholder="0"
+            />
+            <div className="grid grid-cols-2 gap-3">
+              <FormField
+                label="Ngày bắt đầu"
+                required
+                type="date"
+                value={editDetailForm.startDate}
+                onChange={(v) =>
+                  setEditDetailForm((p) => ({ ...p, startDate: v }))
+                }
+              />
+              <FormField
+                label="Ngày kết thúc"
+                required
+                type="date"
+                value={editDetailForm.endDate}
+                onChange={(v) =>
+                  setEditDetailForm((p) => ({ ...p, endDate: v }))
+                }
+                inputProps={{
+                  min: editDetailForm.startDate || undefined,
+                }}
+              />
+            </div>
+          </div>
+        </Modal>
+      )}
 
       {/* Growth Tracking Modal */}
       {growthTrackingTarget && (

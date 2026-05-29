@@ -17,6 +17,7 @@ import {
   Pencil,
   Trash2,
   ClipboardList,
+  RefreshCw,
 } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as Tabs from "@radix-ui/react-tabs";
@@ -854,6 +855,7 @@ export function TasksPage() {
 
   // Template table state
   const [tplPage, setTplPage] = useState(1);
+  const [tplSearch, setTplSearch] = useState("");
   const [viewTplOpen, setViewTplOpen] = useState(false);
   const [selectedTpl, setSelectedTpl] = useState<TaskResponse | null>(null);
   const [deleteTplOpen, setDeleteTplOpen] = useState(false);
@@ -1588,15 +1590,20 @@ export function TasksPage() {
     const q = allTasksSearch.toLowerCase();
     return taskDetails
       .filter((d) => {
-        if (
-          q &&
-          !(d.taskTitle ?? "").toLowerCase().includes(q) &&
-          !staffList
-            .find((s) => s.userId === d.assignedToWorkerIds[0])
-            ?.fullname?.toLowerCase()
-            .includes(q)
-        )
-          return false;
+        if (q) {
+          const matchesTitle = (d.taskTitle ?? "").toLowerCase().includes(q);
+          const matchesWorker =
+            staffList
+              .find((s) => s.userId === d.assignedToWorkerIds[0])
+              ?.fullname?.toLowerCase()
+              .includes(q) ?? false;
+          const matchesPlot = d.plotIds.some((id) =>
+            (allPlots.find((p) => p.plotId === id)?.plotName ?? "")
+              .toLowerCase()
+              .includes(q),
+          );
+          if (!matchesTitle && !matchesWorker && !matchesPlot) return false;
+        }
         if (
           allTasksWorkerFilter &&
           d.assignedToWorkerIds[0] !== allTasksWorkerFilter
@@ -1627,7 +1634,16 @@ export function TasksPage() {
     allTasksPageClamped * ALL_TASKS_PER_PAGE,
   );
 
-  const tplTotalPages = Math.max(1, Math.ceil(tasks.length / TPL_PER_PAGE));
+  const tplFiltered = tplSearch.trim()
+    ? tasks.filter((t) =>
+        (t.taskTitle ?? "").toLowerCase().includes(tplSearch.toLowerCase()),
+      )
+    : tasks;
+
+  const tplTotalPages = Math.max(
+    1,
+    Math.ceil(tplFiltered.length / TPL_PER_PAGE),
+  );
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -1896,23 +1912,38 @@ export function TasksPage() {
         {/* ══ TAB: TẤT CẢ CÔNG VIỆC ══ */}
         <Tabs.Content value="allTasks" className="mt-6 space-y-4">
           <div className="flex items-center gap-3 flex-wrap">
-            <input
-              type="text"
-              placeholder="Tìm tên công việc hoặc nhân viên..."
-              value={allTasksSearch}
-              onChange={(e) => {
-                setAllTasksSearch(e.target.value);
-                setAllTasksPage(1);
-              }}
-              className="px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#009689] w-72"
-            />
+            <div className="relative flex-1 min-w-[200px]">
+              <input
+                type="text"
+                placeholder="Tìm tên công việc, nhân viên hoặc vuông..."
+                value={allTasksSearch}
+                onChange={(e) => {
+                  setAllTasksSearch(e.target.value);
+                  setAllTasksPage(1);
+                }}
+                className="w-full pl-9 pr-4 py-2.5 border border-border rounded-btn text-sm text-ink-700 bg-surface focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+              <svg
+                className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-400 pointer-events-none"
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <circle cx="11" cy="11" r="8" />
+                <path d="m21 21-4.35-4.35" />
+              </svg>
+            </div>
             <select
               value={allTasksWorkerFilter}
               onChange={(e) => {
                 setAllTasksWorkerFilter(e.target.value);
                 setAllTasksPage(1);
               }}
-              className="px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#009689] w-52"
+              className="px-3 py-2.5 border border-border rounded-btn text-sm bg-surface text-ink-700 focus:outline-none focus:ring-2 focus:ring-primary w-48 shrink-0 appearance-none cursor-pointer bg-[url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 20 20%22 fill=%22%2362748e%22><path fill-rule=%22evenodd%22 d=%22M5.23 7.21a.75.75 0 011.06.02L10 11.06l3.71-3.83a.75.75 0 111.08 1.04l-4.25 4.39a.75.75 0 01-1.08 0L5.21 8.27a.75.75 0 01.02-1.06z%22 clip-rule=%22evenodd%22/></svg>')] bg-no-repeat bg-[right_0.75rem_center] pr-9"
             >
               <option value="">Tất cả nhân viên</option>
               {staffList
@@ -1929,12 +1960,25 @@ export function TasksPage() {
                 setAllTasksStatusFilter(e.target.value);
                 setAllTasksPage(1);
               }}
-              className="px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#009689] w-48"
+              className="px-3 py-2.5 border border-border rounded-btn text-sm bg-surface text-ink-700 focus:outline-none focus:ring-2 focus:ring-primary w-44 shrink-0 appearance-none cursor-pointer bg-[url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 20 20%22 fill=%22%2362748e%22><path fill-rule=%22evenodd%22 d=%22M5.23 7.21a.75.75 0 011.06.02L10 11.06l3.71-3.83a.75.75 0 111.08 1.04l-4.25 4.39a.75.75 0 01-1.08 0L5.21 8.27a.75.75 0 01.02-1.06z%22 clip-rule=%22evenodd%22/></svg>')] bg-no-repeat bg-[right_0.75rem_center] pr-9"
             >
               <option value="">Tất cả trạng thái</option>
               <option value="Pending">Chưa hoàn thành</option>
               <option value="Completed">Đã hoàn thành</option>
             </select>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                taskDetailsQuery.refetch();
+                tasksQuery.refetch();
+              }}
+              loading={taskDetailsQuery.isFetching || tasksQuery.isFetching}
+              leadingIcon={RefreshCw}
+              title="Cập nhật danh sách công việc"
+            >
+              Cập nhật
+            </Button>
           </div>
 
           <div className="bg-white rounded-[10px] shadow-card border border-border overflow-hidden">
@@ -2099,8 +2143,42 @@ export function TasksPage() {
         {/* ══ TAB: MẪU CÔNG VIỆC ══ */}
         <Tabs.Content value="tasks" className="mt-6">
           <div className="bg-white rounded-[10px] shadow-card border border-border overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-border">
-              <h2 className="text-sm font-bold text-ink-900">Mẫu công việc</h2>
+            <div className="flex items-center gap-3 px-6 py-4 border-b border-border flex-wrap">
+              <div className="relative flex-1 min-w-[160px]">
+                <input
+                  type="text"
+                  placeholder="Tìm tên công việc..."
+                  value={tplSearch}
+                  onChange={(e) => {
+                    setTplSearch(e.target.value);
+                    setTplPage(1);
+                  }}
+                  className="w-full pl-9 pr-4 py-2 border border-border rounded-btn text-sm text-ink-700 bg-surface focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+                <svg
+                  className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-400 pointer-events-none"
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <circle cx="11" cy="11" r="8" />
+                  <path d="m21 21-4.35-4.35" />
+                </svg>
+              </div>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => tasksQuery.refetch()}
+                loading={tasksQuery.isFetching}
+                leadingIcon={RefreshCw}
+                title="Cập nhật danh sách mẫu công việc"
+              >
+                Cập nhật
+              </Button>
               <Button
                 leadingIcon={Plus}
                 size="sm"
@@ -2132,7 +2210,7 @@ export function TasksPage() {
                       </td>
                     </tr>
                   ) : (
-                    tasks
+                    tplFiltered
                       .slice(
                         (tplPage - 1) * TPL_PER_PAGE,
                         tplPage * TPL_PER_PAGE,
@@ -2191,10 +2269,16 @@ export function TasksPage() {
                         </tr>
                       ))
                   )}
-                  {!isLoading && tasks.length === 0 && (
+                  {!isLoading && tplFiltered.length === 0 && (
                     <tr>
                       <td colSpan={2} className="px-6 py-16">
-                        <EmptyState message='Chưa có mẫu công việc nào. Nhấn "Thêm mẫu" để bắt đầu.' />
+                        <EmptyState
+                          message={
+                            tplSearch
+                              ? "Không tìm thấy mẫu công việc phù hợp"
+                              : 'Chưa có mẫu công việc nào. Nhấn "Thêm mẫu" để bắt đầu.'
+                          }
+                        />
                       </td>
                     </tr>
                   )}
@@ -2208,7 +2292,7 @@ export function TasksPage() {
                 totalPages={tplTotalPages}
                 onPageChange={setTplPage}
                 showLabel
-                totalItems={tasks.length}
+                totalItems={tplFiltered.length}
                 pageSize={TPL_PER_PAGE}
                 itemLabel="mẫu"
               />

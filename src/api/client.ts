@@ -765,6 +765,11 @@ export interface HarvestDetailResponse {
   plotName?: string;
   seasonId?: string;
   seasonName?: string;
+  /** Populated only when isHarvested = true (recorded by worker) */
+  actualHarvestDate?: string;
+  actualQuantity?: number;
+  actualWeightKg?: number;
+  harvestNotes?: string;
 }
 
 export interface HarvestRequest {
