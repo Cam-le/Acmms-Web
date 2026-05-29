@@ -349,6 +349,11 @@ function CalendarDayCard({
           const isLastDay = cellDay === taskEndDay;
           const isMidDay = isMultiDay && !isFirstDay && !isLastDay;
           const timeStr = isoTime(a.startDate);
+          const endTimeStr = isoTime(a.endDate);
+          const timeRangeStr =
+            timeStr && endTimeStr
+              ? `${timeStr}–${endTimeStr}`
+              : timeStr || null;
           const spanBadge = isMultiDay
             ? isFirstDay
               ? `→ ${isoDate(a.endDate)}`
@@ -382,7 +387,7 @@ function CalendarDayCard({
                     <div className="flex items-center gap-1 mb-1.5">
                       <Clock className="w-2.5 h-2.5 text-[#94a3b8] shrink-0" />
                       <span className="text-[10px] text-[#64748b]">
-                        {timeStr}
+                        {timeRangeStr}
                       </span>
                     </div>
                   )}
@@ -428,7 +433,7 @@ function CalendarDayCard({
                   <div className="flex items-center gap-1 mt-1">
                     <Clock className="w-2.5 h-2.5 text-[#94a3b8] shrink-0" />
                     <span className="text-[10px] text-[#64748b]">
-                      {timeStr}
+                      {timeRangeStr}
                     </span>
                   </div>
                 )}
