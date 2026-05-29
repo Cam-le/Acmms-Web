@@ -40,7 +40,11 @@ import { StatusBadge } from "../components/ui/StatusBadge";
 import { PageHeader } from "../components/ui/PageHeader";
 import { Button } from "../components/ui/Button";
 import { usePagination } from "../hooks/usePagination";
-import { reportStatusTone, reportStatusLabel } from "../utils/status";
+import {
+  reportStatusTone,
+  reportStatusLabel,
+  normaliseEnum,
+} from "../utils/status";
 import { formatDateTime } from "../utils/format";
 
 // ===================== TYPES =====================
@@ -557,7 +561,9 @@ function DetailView({ reportId }: { reportId: string }) {
   });
 
   const specialists = (specialistsQuery.data ?? []).filter(
-    (u) => u.roleName === "Specialist" && u.status === "Active",
+    (u) =>
+      normaliseEnum(u.roleName) === "specialist" &&
+      normaliseEnum(u.status) === "active",
   );
 
   // Default-select first specialist when list loads
