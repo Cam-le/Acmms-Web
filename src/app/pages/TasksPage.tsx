@@ -285,7 +285,15 @@ function CalendarDayCard({
   const [showAll, setShowAll] = useState(false);
   const cellDay = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`;
   const MAX_VISIBLE = 3;
-  const visible = showAll ? assignments : assignments.slice(0, MAX_VISIBLE);
+  // Sort by start time ascending so the earliest task always appears first.
+  // Raw slice comparison is intentional — startDate digits are literal local
+  // wall-clock times stored as UTC strings (see format.ts isoTime note).
+  const sorted = [...assignments].sort((a, b) => {
+    const ta = a.startDate?.slice(11, 16) ?? "";
+    const tb = b.startDate?.slice(11, 16) ?? "";
+    return ta.localeCompare(tb);
+  });
+  const visible = showAll ? sorted : sorted.slice(0, MAX_VISIBLE);
   const overflow = assignments.length - MAX_VISIBLE;
 
   return (
@@ -341,6 +349,11 @@ function CalendarDayCard({
           const isLastDay = cellDay === taskEndDay;
           const isMidDay = isMultiDay && !isFirstDay && !isLastDay;
           const timeStr = isoTime(a.startDate);
+          const endTimeStr = isoTime(a.endDate);
+          const timeRangeStr =
+            timeStr && endTimeStr
+              ? `${timeStr}–${endTimeStr}`
+              : timeStr || null;
           const spanBadge = isMultiDay
             ? isFirstDay
               ? `→ ${isoDate(a.endDate)}`
@@ -374,7 +387,7 @@ function CalendarDayCard({
                     <div className="flex items-center gap-1 mb-1.5">
                       <Clock className="w-2.5 h-2.5 text-[#94a3b8] shrink-0" />
                       <span className="text-[10px] text-[#64748b]">
-                        {timeStr}
+                        {timeRangeStr}
                       </span>
                     </div>
                   )}
@@ -420,7 +433,7 @@ function CalendarDayCard({
                   <div className="flex items-center gap-1 mt-1">
                     <Clock className="w-2.5 h-2.5 text-[#94a3b8] shrink-0" />
                     <span className="text-[10px] text-[#64748b]">
-                      {timeStr}
+                      {timeRangeStr}
                     </span>
                   </div>
                 )}
@@ -578,7 +591,12 @@ function WorkerSchedulePreview({
                   />
                 );
               }
-              const tasks = byDate[dayStr] ?? [];
+              // Sort by start time ascending — earliest schedule first.
+              const tasks = [...(byDate[dayStr] ?? [])].sort((a, b) => {
+                const ta = a.startDate?.slice(11, 16) ?? "";
+                const tb = b.startDate?.slice(11, 16) ?? "";
+                return ta.localeCompare(tb);
+              });
               const isBusy = tasks.length > 0;
               const isToday = dayStr === todayKey;
               const dayNum = parseInt(dayStr.slice(8), 10);
