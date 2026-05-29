@@ -285,7 +285,15 @@ function CalendarDayCard({
   const [showAll, setShowAll] = useState(false);
   const cellDay = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`;
   const MAX_VISIBLE = 3;
-  const visible = showAll ? assignments : assignments.slice(0, MAX_VISIBLE);
+  // Sort by start time ascending so the earliest task always appears first.
+  // Raw slice comparison is intentional — startDate digits are literal local
+  // wall-clock times stored as UTC strings (see format.ts isoTime note).
+  const sorted = [...assignments].sort((a, b) => {
+    const ta = a.startDate?.slice(11, 16) ?? "";
+    const tb = b.startDate?.slice(11, 16) ?? "";
+    return ta.localeCompare(tb);
+  });
+  const visible = showAll ? sorted : sorted.slice(0, MAX_VISIBLE);
   const overflow = assignments.length - MAX_VISIBLE;
 
   return (
@@ -578,7 +586,12 @@ function WorkerSchedulePreview({
                   />
                 );
               }
-              const tasks = byDate[dayStr] ?? [];
+              // Sort by start time ascending — earliest schedule first.
+              const tasks = [...(byDate[dayStr] ?? [])].sort((a, b) => {
+                const ta = a.startDate?.slice(11, 16) ?? "";
+                const tb = b.startDate?.slice(11, 16) ?? "";
+                return ta.localeCompare(tb);
+              });
               const isBusy = tasks.length > 0;
               const isToday = dayStr === todayKey;
               const dayNum = parseInt(dayStr.slice(8), 10);
