@@ -893,7 +893,7 @@ const STAT_TABS: { value: StatTab; label: string; icon: React.ElementType }[] =
     { value: "summary", label: "Tổng quan", icon: BarChart2 },
     { value: "by-crop", label: "Theo cây trồng", icon: Sprout },
     { value: "by-season", label: "Theo vụ mùa", icon: TrendingUp },
-    { value: "by-plot", label: "Theo khu đất", icon: MapPinned },
+    { value: "by-plot", label: "Theo vuông đất", icon: MapPinned },
   ];
 
 const CHART_COLORS = [
@@ -1046,7 +1046,7 @@ function YieldStatisticsSection({
               Thống kê năng suất
             </h2>
             <p className="text-xs text-ink-400 mt-0.5">
-              Phân tích sản lượng thu hoạch theo cây trồng, vụ mùa và khu đất
+              Phân tích sản lượng thu hoạch theo cây trồng, vụ mùa và vuông đất
             </p>
           </div>
         </div>
@@ -1307,7 +1307,7 @@ function SummaryTab({ data }: { data: YieldSummaryResponse | null }) {
                 <span className="text-lg font-bold text-primary-800">
                   {data.plotsCount ?? 0}
                 </span>
-                <span className="text-xs text-ink-500 ml-1">khu đất</span>
+                <span className="text-xs text-ink-500 ml-1">vuông đất</span>
               </div>
             </div>
           </div>
@@ -1590,7 +1590,7 @@ function BySeasonTab({ data }: { data: YieldBySeasonResponse[] }) {
                 Loại cây trồng
               </th>
               <th className="text-left px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider hidden md:table-cell">
-                Số khu đất
+                Số vuông đất
               </th>
             </tr>
           </thead>
@@ -1646,7 +1646,7 @@ function ByPlotTab({ data }: { data: YieldByPlotResponse[] }) {
   >("totalActualWeightKg");
 
   if (data.length === 0)
-    return <EmptyState message="Không có dữ liệu theo khu đất" />;
+    return <EmptyState message="Không có dữ liệu theo vuông đất" />;
 
   const sorted = [...data].sort(
     (a, b) => (b[sortField] ?? 0) - (a[sortField] ?? 0),
@@ -1715,7 +1715,7 @@ function ByPlotTab({ data }: { data: YieldByPlotResponse[] }) {
           <thead>
             <tr className="bg-surface-alt border-b border-border">
               <th className="text-left px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider">
-                Khu đất
+                Vuông đất
               </th>
               <th className="text-left px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider">
                 Diện tích (m²)
