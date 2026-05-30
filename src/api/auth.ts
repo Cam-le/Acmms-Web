@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 /**
  * Auth API
  * Endpoints: /api/Auth/login, /api/Auth/register

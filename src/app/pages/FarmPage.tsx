@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { qk } from "../../api/queryKeys";
@@ -34,7 +35,7 @@ import { api, FarmResponse, WeatherCurrentResponse } from "../../api/client";
 
 // ─── Local Types ──────────────────────────────────────────────────────────
 
-type FarmStatus = "Hoạt động" | "Không hoạt động";
+type FarmStatus = "Active" | "Inactive";
 
 interface Farm {
   id: string;
@@ -85,7 +86,7 @@ function mapFarm(f: FarmResponse): Farm {
     id: f.farmId ?? `farm-${Math.random().toString(36).slice(2)}`,
     name: f.farmName ?? "",
     location: stripPlusCode(f.farmLocation ?? ""),
-    status: f.farmStatus === "Active" ? "Hoạt động" : "Không hoạt động",
+    status: (f.farmStatus === "Active" ? "Active" : "Inactive") as FarmStatus,
     area: Number(f.farmArea ?? 0) || 0,
     createdAt,
     latitude: toCoord(f.latitude) ?? undefined,
@@ -125,8 +126,8 @@ function validateFarmForm(formData: {
 }
 
 const STATUS_OPTIONS: Array<{ value: FarmStatus; label: string }> = [
-  { value: "Hoạt động", label: "Hoạt động" },
-  { value: "Không hoạt động", label: "Không hoạt động" },
+  { value: "Active", label: "Hoạt động" },
+  { value: "Inactive", label: "Không hoạt động" },
 ];
 
 /**
@@ -1234,14 +1235,14 @@ function CreateFarmModal({
   const [formData, setFormData] = useState<FarmFormData>({
     name: "",
     location: "",
-    status: "Hoạt động",
+    status: "Active",
     area: "",
   });
   const [formErrors, setFormErrors] = useState<FarmFormErrors>({});
 
   useEffect(() => {
     if (!open) {
-      setFormData({ name: "", location: "", status: "Hoạt động", area: "" });
+      setFormData({ name: "", location: "", status: "Active", area: "" });
       setFormErrors({});
     }
   }, [open]);
@@ -1453,7 +1454,7 @@ export function FarmPage() {
         farmName: data.name.trim(),
         farmLocation: data.location.trim(),
         farmArea: parseFloat(data.area) || 0,
-        farmStatus: data.status === "Hoạt động" ? "Active" : "Inactive",
+        farmStatus: data.status,
         latitude: data.latitude ?? undefined,
         longitude: data.longitude ?? undefined,
       });
@@ -1487,7 +1488,7 @@ export function FarmPage() {
         farmName: data.name.trim(),
         farmLocation: data.location.trim(),
         farmArea: parseFloat(data.area) || 0,
-        farmStatus: data.status === "Hoạt động" ? "Active" : "Inactive",
+        farmStatus: data.status,
       });
       await maybeUpdateCoordinates(id, data);
     },
