@@ -138,7 +138,6 @@ export function WorkersPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterRole, setFilterRole] = useState("all");
   const [formErrors, setFormErrors] = useState<FormErrors>({});
-  const [apiError, setApiError] = useState<string | null>(null);
   const [rejectTarget, setRejectTarget] = useState<UnassignedStaff | null>(
     null,
   );
@@ -247,7 +246,6 @@ export function WorkersPage() {
       status: "Active",
     });
     setFormErrors({});
-    setApiError(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiRoles]);
 
@@ -262,7 +260,7 @@ export function WorkersPage() {
       await api.createStaff(
         {
           email: formData.email.trim(),
-          password: "123456",
+          password: "123456@Ab",
           fullname: formData.name.trim(),
           phoneNumber: formData.phone.trim(),
           status: "Active",
@@ -278,9 +276,10 @@ export function WorkersPage() {
       queryClient.invalidateQueries({ queryKey: qk.staffs.all });
     },
     onError: (err) => {
-      setApiError(
+      showToast(
         "Không thể tạo nhân viên: " +
           (err instanceof Error ? err.message : "Đã xảy ra lỗi"),
+        "error",
       );
     },
   });
@@ -317,9 +316,10 @@ export function WorkersPage() {
       queryClient.invalidateQueries({ queryKey: qk.staffs.all });
     },
     onError: (err) => {
-      setApiError(
+      showToast(
         "Không thể cập nhật: " +
           (err instanceof Error ? err.message : "Đã xảy ra lỗi"),
+        "error",
       );
     },
   });
@@ -362,7 +362,6 @@ export function WorkersPage() {
 
   // ── Handlers: form submissions ─────────────────────────────────────────────
   const handleAddWorker = () => {
-    setApiError(null);
     const errors = validateForm(formData, apiRoles);
     setFormErrors(errors);
     if (Object.keys(errors).length > 0) return;
@@ -371,7 +370,6 @@ export function WorkersPage() {
 
   const handleEditWorker = () => {
     if (!modals.editItem) return;
-    setApiError(null);
     const errors = validateForm(formData, apiRoles);
     setFormErrors(errors);
     if (Object.keys(errors).length > 0) return;
@@ -604,7 +602,6 @@ export function WorkersPage() {
                                   status: worker.status,
                                 });
                                 setFormErrors({});
-                                setApiError(null);
                                 modals.openEdit(worker);
                               }}
                               onDelete={() => modals.openDelete(worker)}
@@ -848,25 +845,18 @@ export function WorkersPage() {
           </>
         }
       >
-        {apiError && (
-          <div className="flex items-start gap-2 p-3 mb-4 bg-status-danger-bg border border-status-danger-fg/20 rounded-btn">
-            <AlertCircle className="w-4 h-4 text-status-danger-fg mt-0.5 shrink-0" />
-            <p className="text-sm text-status-danger-fg">{apiError}</p>
-          </div>
-        )}
         <WorkerForm
           formData={formData}
           setFormData={(updater) => {
             setFormData(updater);
             setFormErrors({});
-            setApiError(null);
           }}
           errors={formErrors}
           apiRoles={apiRoles}
           rolesLoaded={rolesLoaded}
         />
         <p className="mt-3 text-xs text-ink-400">
-          Mật khẩu mặc định: <span className="font-mono">123456</span> — nhân
+          Mật khẩu mặc định: <span className="font-mono">123456@Ab</span> — nhân
           viên sẽ tự đổi sau khi đăng nhập.
         </p>
       </Modal>
@@ -902,18 +892,11 @@ export function WorkersPage() {
           </>
         }
       >
-        {apiError && (
-          <div className="flex items-start gap-2 p-3 mb-4 bg-status-danger-bg border border-status-danger-fg/20 rounded-btn">
-            <AlertCircle className="w-4 h-4 text-status-danger-fg mt-0.5 shrink-0" />
-            <p className="text-sm text-status-danger-fg">{apiError}</p>
-          </div>
-        )}
         <WorkerForm
           formData={formData}
           setFormData={(updater) => {
             setFormData(updater);
             setFormErrors({});
-            setApiError(null);
           }}
           errors={formErrors}
           apiRoles={apiRoles}

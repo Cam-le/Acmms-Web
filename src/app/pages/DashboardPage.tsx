@@ -1415,10 +1415,10 @@ function ByCropTab({ data }: { data: YieldByCropResponse[] }) {
                   Tỷ lệ hoàn thành
                 </th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider hidden sm:table-cell">
-                  Lượt thu hoạch
+                  Đợt thu hoạch
                 </th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider hidden md:table-cell">
-                  Số vụ
+                  Số mùa vụ
                 </th>
               </tr>
             </thead>
@@ -1564,7 +1564,7 @@ function BySeasonTab({ data }: { data: YieldBySeasonResponse[] }) {
                 Tỷ lệ hoàn thành
               </th>
               <th className="text-left px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider hidden md:table-cell">
-                Loại cây trồng
+                Loại cây khác nhau
               </th>
               <th className="text-left px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider hidden md:table-cell">
                 Số vuông đất
@@ -1710,10 +1710,10 @@ function ByPlotTab({ data }: { data: YieldByPlotResponse[] }) {
                 kg/m² {sortField === "yieldPerAreaKg" && "↓"}
               </th>
               <th className="text-left px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider hidden sm:table-cell">
-                Lượt thu hoạch
+                Đợt thu hoạch
               </th>
               <th className="text-left px-4 py-3 text-xs font-semibold text-ink-400 uppercase tracking-wider hidden sm:table-cell">
-                Cây trồng
+                Loại cây
               </th>
             </tr>
           </thead>

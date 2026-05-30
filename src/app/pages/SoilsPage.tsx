@@ -719,8 +719,11 @@ function CompatPanel({
       );
       setAddForm(emptyCompatForm);
       setShowAddForm(false);
-    } catch {
-      showToast("Thêm tương thích thất bại. Vui lòng thử lại.", "error");
+    } catch (err) {
+      showToast(
+        err instanceof Error ? err.message : "Thêm tương thích thất bại.",
+        "error",
+      );
     } finally {
       setAddSubmitting(false);
     }
@@ -737,8 +740,11 @@ function CompatPanel({
         editForm.note.trim(),
       );
       cancelEdit();
-    } catch {
-      showToast("Cập nhật tương thích thất bại. Vui lòng thử lại.", "error");
+    } catch (err) {
+      showToast(
+        err instanceof Error ? err.message : "Cập nhật tương thích thất bại.",
+        "error",
+      );
     } finally {
       setEditSubmitting(false);
     }
@@ -749,8 +755,11 @@ function CompatPanel({
     try {
       await onDelete(comptId);
       setDeletingId(null);
-    } catch {
-      showToast("Xóa tương thích thất bại. Vui lòng thử lại.", "error");
+    } catch (err) {
+      showToast(
+        err instanceof Error ? err.message : "Xóa tương thích thất bại.",
+        "error",
+      );
     } finally {
       setDeleteSubmitting(false);
     }
