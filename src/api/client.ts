@@ -1054,6 +1054,53 @@ function buildYieldQuery(path: string, params: YieldStatisticsParams): string {
   return qs ? `${path}?${qs}` : path;
 }
 
+// ── Expenses ──────────────────────────────────────────────────────────────────
+
+export type ExpenseCategory =
+  | "seed"
+  | "fertilizer"
+  | "pesticide"
+  | "labor"
+  | "equipment"
+  | "utility"
+  | "other";
+
+export interface ExpenseResponse {
+  expenseId: string;
+  seasonId: string;
+  seasonName: string;
+  category: ExpenseCategory;
+  description: string;
+  amount: number;
+  spentAt: string; // "YYYY-MM-DD"
+  notes?: string;
+  createdAt: string;
+}
+
+export interface ExpenseSummaryResponse {
+  seasonId: string;
+  seasonName: string;
+  total: number;
+  byCategory: Partial<Record<ExpenseCategory, number>>;
+}
+
+export interface ExpenseCreateRequest {
+  seasonId: string;
+  category: ExpenseCategory;
+  description: string;
+  amount: number;
+  spentAt: string; // "YYYY-MM-DD"
+  notes?: string;
+}
+
+export interface ExpenseUpdateRequest {
+  category: ExpenseCategory;
+  description: string;
+  amount: number;
+  spentAt: string; // "YYYY-MM-DD"
+  notes?: string;
+}
+
 // ==================== API Methods ====================
 
 export const api = {
@@ -1458,4 +1505,24 @@ export const api = {
     request<unknown>("PUT", `/api/Notifications/${id}/read`, null),
   markAllNotificationsRead: () =>
     request<unknown>("PUT", "/api/Notifications/read-all", null),
+
+  // Expenses
+  getExpenses: (seasonId: string) =>
+    request<ExpenseResponse[]>(
+      "GET",
+      `/api/expenses?seasonId=${encodeURIComponent(seasonId)}`,
+    ),
+  getExpense: (id: string) =>
+    request<ExpenseResponse>("GET", `/api/expenses/${id}`),
+  getExpenseSummary: (seasonId: string) =>
+    request<ExpenseSummaryResponse>(
+      "GET",
+      `/api/expenses/summary?seasonId=${encodeURIComponent(seasonId)}`,
+    ),
+  createExpense: (body: ExpenseCreateRequest) =>
+    request<ExpenseResponse>("POST", "/api/expenses", body),
+  updateExpense: (id: string, body: ExpenseUpdateRequest) =>
+    request<ExpenseResponse>("PUT", `/api/expenses/${id}`, body),
+  deleteExpense: (id: string) =>
+    request<unknown>("DELETE", `/api/expenses/${id}`),
 };

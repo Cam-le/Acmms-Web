@@ -125,6 +125,15 @@ export const qk = {
     forecast: (farmId: string, days: number) =>
       [...qk.weather.all, "forecast", farmId, days] as const,
   },
+  // ── Expenses ───────────────────────────────────────────────────────────
+  expenses: {
+    all: ["expenses"] as const,
+    list: (seasonId: string) => [...qk.expenses.all, "list", seasonId] as const,
+    summary: (seasonId: string) =>
+      [...qk.expenses.all, "summary", seasonId] as const,
+    detail: (id: string) => [...qk.expenses.all, "detail", id] as const,
+  },
+
   // ── Notifications ───────────────────────────────────────────────────────
   notifications: {
     all: ["notifications"] as const,

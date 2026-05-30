@@ -617,3 +617,30 @@ export const IOT_STATUS_OPTIONS = [
   { value: "Inactive", label: iotStatusLabel("Inactive") },
   { value: "Maintenance", label: iotStatusLabel("Maintenance") },
 ] as const;
+
+// ─── Expense category ─────────────────────────────────────────────────────
+// Backend values: seed, fertilizer, pesticide, labor, equipment, utility, other
+// Note: expense categories use a hex accent color (for pie chart fills)
+// rather than a BadgeTone — hence `expenseCategoryColor` returns a hex string,
+// not a tone. The label helper follows the same pattern as other domains.
+
+export const EXPENSE_CATEGORIES = [
+  { value: "seed", label: "Hạt giống", color: "#4ade80" },
+  { value: "fertilizer", label: "Phân bón", color: "#facc15" },
+  { value: "pesticide", label: "Thuốc BVTV", color: "#f87171" },
+  { value: "labor", label: "Nhân công thuê ngoài", color: "#60a5fa" },
+  { value: "equipment", label: "Thiết bị, dụng cụ", color: "#a78bfa" },
+  { value: "utility", label: "Điện, nước, nhiên liệu", color: "#fb923c" },
+  { value: "other", label: "Khác", color: "#94a3b8" },
+] as const;
+
+export type ExpenseCategoryValue = (typeof EXPENSE_CATEGORIES)[number]["value"];
+
+export function expenseCategoryLabel(cat: string | null | undefined): string {
+  return EXPENSE_CATEGORIES.find((c) => c.value === cat)?.label ?? (cat || "—");
+}
+
+/** Hex color for pie chart fills and inline category chips. */
+export function expenseCategoryColor(cat: string | null | undefined): string {
+  return EXPENSE_CATEGORIES.find((c) => c.value === cat)?.color ?? "#94a3b8";
+}
