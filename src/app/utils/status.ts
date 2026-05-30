@@ -158,6 +158,12 @@ export function severityLabel(s: string | null | undefined): string {
 // ─── Task status ──────────────────────────────────────────────────────────
 // Backend values: Pending, Completed (per TasksPage filter options)
 
+/** Filter dropdown options for the "Tất cả công việc" table. */
+export const TASK_STATUS_OPTIONS = [
+  { value: "Pending", label: taskStatusLabel("Pending") },
+  { value: "Completed", label: taskStatusLabel("Completed") },
+] as const;
+
 export function taskStatusTone(s: string | null | undefined): BadgeTone {
   switch (normaliseEnum(s)) {
     case "completed":
