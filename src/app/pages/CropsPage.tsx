@@ -60,7 +60,7 @@ import {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type CropStatus = "Đang sử dụng" | "Không sử dụng";
+type CropStatus = "Active" | "Inactive";
 
 interface CropEx {
   id: string;
@@ -76,14 +76,6 @@ interface CropEx {
   compatibleSoils: CompatibleSoil[];
 }
 
-function normaliseStatus(raw?: string): CropStatus {
-  if (!raw) return "Không sử dụng";
-  const s = raw.trim().toLowerCase();
-  if (s === "active" || s === "đang sử dụng" || s === "hoạt động")
-    return "Đang sử dụng";
-  return "Không sử dụng";
-}
-
 function mapCrop(c: CropResponse): CropEx {
   return {
     id: c.cropId,
@@ -95,7 +87,8 @@ function mapCrop(c: CropResponse): CropEx {
     pathWidthDefault: c.pathWidthDefault ?? 0,
     rowsPerBed: c.rowsPerBed ?? 0,
     rowSpacing: c.rowSpacing ?? 0,
-    status: normaliseStatus(c.cropStatus),
+    // Store raw API value; map to Vietnamese at render time via cropStatusLabel()
+    status: (c.cropStatus === "Active" ? "Active" : "Inactive") as CropStatus,
     compatibleSoils: c.compatibleSoils ?? [],
   };
 }
@@ -168,7 +161,7 @@ export function CropsPage() {
         pathWidthDefault: cropData.pathWidthDefault || undefined,
         rowsPerBed: cropData.rowsPerBed || undefined,
         rowSpacing: cropData.rowSpacing || undefined,
-        cropStatus: cropData.status === "Đang sử dụng" ? "Active" : "Inactive",
+        cropStatus: cropData.status === "Active" ? "Active" : "Inactive",
       }),
     onSuccess: () => {
       setCreateModalOpen(false);
@@ -195,8 +188,7 @@ export function CropsPage() {
         pathWidthDefault: updatedCrop.pathWidthDefault || undefined,
         rowsPerBed: updatedCrop.rowsPerBed || undefined,
         rowSpacing: updatedCrop.rowSpacing || undefined,
-        cropStatus:
-          updatedCrop.status === "Đang sử dụng" ? "Active" : "Inactive",
+        cropStatus: updatedCrop.status === "Active" ? "Active" : "Inactive",
       }),
     onSuccess: () => {
       setEditModalOpen(false);
@@ -253,7 +245,7 @@ export function CropsPage() {
           ? a.growthPeriod - b.growthPeriod
           : b.growthPeriod - a.growthPeriod;
       }
-      const order = { "Đang sử dụng": 1, "Không sử dụng": 2 };
+      const order: Record<CropStatus, number> = { Active: 1, Inactive: 2 };
       return sortDirection === "asc"
         ? order[a.status] - order[b.status]
         : order[b.status] - order[a.status];
@@ -407,7 +399,7 @@ export function CropsPage() {
                         </td>
                         <td className="px-6 py-4">
                           <StatusBadge
-                            label={crop.status}
+                            label={cropStatusLabel(crop.status)}
                             tone={cropStatusTone(crop.status)}
                           />
                         </td>
@@ -480,7 +472,7 @@ export function CropsPage() {
                     {selectedCrop.scientificName || "—"}
                   </div>
                   <StatusBadge
-                    label={selectedCrop.status}
+                    label={cropStatusLabel(selectedCrop.status)}
                     tone={cropStatusTone(selectedCrop.status)}
                     className="mt-1"
                   />
@@ -2242,8 +2234,8 @@ function CropFormFields({
           }
           className="w-full px-3 py-2.5 border border-border-strong rounded-btn text-sm focus:outline-none focus:ring-2 focus:ring-primary bg-surface text-ink-700"
         >
-          <option value="Đang sử dụng">Đang sử dụng</option>
-          <option value="Không sử dụng">Không sử dụng</option>
+          <option value="Active">Đang sử dụng</option>
+          <option value="Inactive">Không sử dụng</option>
         </select>
       </div>
     </div>
@@ -2292,7 +2284,7 @@ const defaultFormData: CropFormData = {
   pathWidthDefault: "",
   rowsPerBed: "",
   rowSpacing: "",
-  status: "Đang sử dụng",
+  status: "Active" as CropStatus,
 };
 
 // ─── Create Crop Modal ────────────────────────────────────────────────────────
