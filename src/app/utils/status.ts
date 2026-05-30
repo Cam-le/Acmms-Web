@@ -186,6 +186,34 @@ export function billStatusLabel(paid: boolean): string {
   return paid ? "Đã thanh toán" : "Chờ thanh toán";
 }
 
+// ─── Contract status ──────────────────────────────────────────────────────
+// Backend values: "active", "terminated"
+
+export function contractStatusTone(s: string | null | undefined): BadgeTone {
+  return normaliseEnum(s) === "active" ? "success" : "neutral";
+}
+
+export function contractStatusLabel(s: string | null | undefined): string {
+  return normaliseEnum(s) === "active" ? "Đang hiệu lực" : "Đã kết thúc";
+}
+
+// ─── Pending payment status ───────────────────────────────────────────────
+// Derived from PendingPaymentItem.isDue + daysOverdue fields.
+
+export function pendingPaymentStatusTone(isDue: boolean): BadgeTone {
+  return isDue ? "danger" : "warning";
+}
+
+export function pendingPaymentStatusLabel(
+  isDue: boolean,
+  daysOverdue?: number,
+): string {
+  if (isDue) {
+    return daysOverdue != null ? `Quá hạn ${daysOverdue} ngày` : "Quá hạn";
+  }
+  return "Chờ thanh toán";
+}
+
 // ─── Season status ────────────────────────────────────────────────────────
 // Backend values (per SeasonsPage): Planned, On-Going, Harvested, Closed
 
