@@ -38,6 +38,28 @@ async function request<T>(
     return data.data as T;
   }
 
+  // Must be checked AFTER the success-wrapper branch so that a
+  // { success: false, message: "..." } still uses data.message.
+  if (!res.ok) {
+    if (
+      data &&
+      typeof data === "object" &&
+      "errors" in data &&
+      typeof data.errors === "object"
+    ) {
+      // Flatten ASP.NET validation errors: { Password: ["msg1"], Email: ["msg2"] }
+      const messages = Object.values(data.errors as Record<string, string[]>)
+        .flat()
+        .join(" ");
+      throw new Error(messages || data.title || `HTTP ${res.status}`);
+    }
+    throw new Error(
+      (data as { message?: string })?.message ??
+        (data as { title?: string })?.title ??
+        `HTTP ${res.status}`,
+    );
+  }
+
   // Raw DTO (Tasks, Crops)
   return data as T;
 }
@@ -68,6 +90,25 @@ async function requestForm<T>(
   if (data && typeof data === "object" && "success" in data) {
     if (!data.success) throw new Error(data.message ?? "API error");
     return data.data as T;
+  }
+
+  if (!res.ok) {
+    if (
+      data &&
+      typeof data === "object" &&
+      "errors" in data &&
+      typeof data.errors === "object"
+    ) {
+      const messages = Object.values(data.errors as Record<string, string[]>)
+        .flat()
+        .join(" ");
+      throw new Error(messages || data.title || `HTTP ${res.status}`);
+    }
+    throw new Error(
+      (data as { message?: string })?.message ??
+        (data as { title?: string })?.title ??
+        `HTTP ${res.status}`,
+    );
   }
 
   return data as T;
