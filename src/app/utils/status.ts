@@ -523,6 +523,80 @@ export const SOIL_COMPATIBILITY_OPTIONS = [
   { value: "poor", label: soilCompatibilityLabel("poor") },
 ] as const;
 
+// ─── Growth tracking status ───────────────────────────────────────────────
+// Backend values: Not-Started, In-Progress, Completed
+
+export function trackingStatusTone(s: string | null | undefined): BadgeTone {
+  switch (normaliseEnum(s)) {
+    case "not-started":
+    case "not_started":
+      return "neutral";
+    case "in-progress":
+    case "in_progress":
+      return "info";
+    case "completed":
+      return "success";
+    default:
+      return "neutral";
+  }
+}
+
+export function trackingStatusLabel(s: string | null | undefined): string {
+  switch (normaliseEnum(s)) {
+    case "not-started":
+    case "not_started":
+      return "Chưa bắt đầu";
+    case "in-progress":
+    case "in_progress":
+      return "Đang thực hiện";
+    case "completed":
+      return "Đã hoàn thành";
+    default:
+      return s ?? "—";
+  }
+}
+
+export const TRACKING_STATUS_OPTIONS = [
+  { value: "Not-Started", label: trackingStatusLabel("Not-Started") },
+  { value: "In-Progress", label: trackingStatusLabel("In-Progress") },
+  { value: "Completed", label: trackingStatusLabel("Completed") },
+] as const;
+
+// ─── Growth tracking health status ────────────────────────────────────────
+// Backend values: Good, Warning, Bad
+
+export function healthStatusTone(s: string | null | undefined): BadgeTone {
+  switch (normaliseEnum(s)) {
+    case "good":
+      return "success";
+    case "warning":
+      return "warning";
+    case "bad":
+      return "danger";
+    default:
+      return "neutral";
+  }
+}
+
+export function healthStatusLabel(s: string | null | undefined): string {
+  switch (normaliseEnum(s)) {
+    case "good":
+      return "Tốt";
+    case "warning":
+      return "Cảnh báo";
+    case "bad":
+      return "Xấu";
+    default:
+      return s ?? "—";
+  }
+}
+
+export const HEALTH_STATUS_OPTIONS = [
+  { value: "Good", label: healthStatusLabel("Good") },
+  { value: "Warning", label: healthStatusLabel("Warning") },
+  { value: "Bad", label: healthStatusLabel("Bad") },
+] as const;
+
 // ─── Form select option arrays ────────────────────────────────────────────
 // Single source of truth for status dropdowns across all pages.
 // Import these instead of writing inline { value, label } literals so that

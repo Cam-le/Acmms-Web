@@ -67,9 +67,12 @@ import {
   seasonStatusLabel,
   harvestStatusTone,
   harvestStatusLabel,
+  trackingStatusTone,
+  trackingStatusLabel,
+  healthStatusTone,
+  healthStatusLabel,
 } from "../utils/status";
 import { bedSortTokens, compareTokenArrays } from "../utils/sort";
-import type { BadgeTone } from "../components/ui/StatusBadge";
 import { useIotHub, iotConnectionLabel } from "../hooks/useIotHub";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -141,44 +144,6 @@ function sortBeds<T extends { name: string; area: string }>(beds: T[]): T[] {
     if (areaCmp !== 0) return areaCmp;
     return compareTokenArrays(bedSortKey(a.name), bedSortKey(b.name));
   });
-}
-
-// ─── Growth Tracking helpers ──────────────────────────────────────────────────
-
-function trackingStatusTone(s: string | null | undefined): BadgeTone {
-  const n = (s ?? "").toLowerCase();
-  if (n === "completed") return "success";
-  if (n === "in-progress" || n === "in_progress") return "info";
-  if (n === "cancelled" || n === "canceled") return "danger";
-  return "neutral";
-}
-
-function trackingStatusLabel(s: string | null | undefined): string {
-  const n = (s ?? "").toLowerCase();
-  if (n === "completed") return "Đã hoàn thành";
-  if (n === "in-progress" || n === "in_progress") return "Đang thực hiện";
-  if (n === "cancelled" || n === "canceled") return "Đã hủy";
-  return s ?? "—";
-}
-
-function healthStatusTone(s: string | undefined): BadgeTone {
-  if (!s) return "neutral";
-  const n = s.toLowerCase();
-  if (n === "good") return "success";
-  if (n === "ok") return "success";
-  if (n === "average" || n === "medium") return "warning";
-  if (n === "bad" || n === "poor") return "danger";
-  return "neutral";
-}
-
-function healthStatusLabel(s: string | undefined): string {
-  if (!s) return "—";
-  const n = s.toLowerCase();
-  if (n === "good") return "Tốt";
-  if (n === "ok") return "Ổn";
-  if (n === "average" || n === "medium") return "Trung bình";
-  if (n === "bad" || n === "poor") return "Kém";
-  return s;
 }
 
 // ─── HarvestDetailViewModal ───────────────────────────────────────────────────
@@ -497,7 +462,7 @@ function GrowthTrackingModal({
                       <td className="px-3 py-2.5 whitespace-nowrap">
                         {t.healthStatus ? (
                           <StatusBadge
-                            label={t.healthStatus}
+                            label={healthStatusLabel(t.healthStatus)}
                             tone={healthStatusTone(t.healthStatus)}
                             size="sm"
                           />
@@ -539,13 +504,13 @@ function GrowthTrackingModal({
             {/* Status badges */}
             <div className="flex flex-wrap gap-2">
               <StatusBadge
-                label={selectedTracking.trackingStatus}
+                label={trackingStatusLabel(selectedTracking.trackingStatus)}
                 tone={trackingStatusTone(selectedTracking.trackingStatus)}
                 icon={Activity}
               />
               {selectedTracking.healthStatus && (
                 <StatusBadge
-                  label={`Sức khỏe: ${selectedTracking.healthStatus}`}
+                  label={`Sức khỏe: ${healthStatusLabel(selectedTracking.healthStatus)}`}
                   tone={healthStatusTone(selectedTracking.healthStatus)}
                 />
               )}
