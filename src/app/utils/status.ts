@@ -54,6 +54,37 @@ export function workerStatusLabel(s: string | null | undefined): string {
   return isActive(s) ? "Hoạt động" : "Không hoạt động";
 }
 
+/** Form select options for the worker status dropdown. */
+export const WORKER_STATUS_OPTIONS = [
+  { value: "Active", label: workerStatusLabel("Active") },
+  { value: "Inactive", label: workerStatusLabel("Inactive") },
+] as const;
+
+// ─── Role display labels ──────────────────────────────────────────────────
+// Backend values: Worker, Specialist (Owner is filtered out in the UI)
+
+const ROLE_LABEL_MAP: Record<string, string> = {
+  Worker: "Công nhân",
+  Specialist: "Chuyên gia",
+};
+
+/**
+ * Map a backend role name to its Vietnamese display label.
+ * Falls back to the raw value if the role is unknown.
+ */
+export function roleLabel(role: string | null | undefined): string {
+  if (!role) return "—";
+  return ROLE_LABEL_MAP[role] ?? role;
+}
+
+/**
+ * Tone for a requested role badge in the pending-accounts table.
+ * Specialist → info, everything else → success.
+ */
+export function roleTone(role: string | null | undefined): BadgeTone {
+  return normaliseEnum(role) === "specialist" ? "info" : "success";
+}
+
 export function iotStatusTone(s: string | null | undefined): BadgeTone {
   switch (normaliseEnum(s)) {
     case "active":

@@ -27,7 +27,13 @@ import { ToastContainer } from "../components/ui/ToastContainer";
 import { useCrudModals } from "../hooks/useCrudModals";
 import { usePagination } from "../hooks/usePagination";
 import { useTableSort } from "../hooks/useTableSort";
-import { workerStatusTone, workerStatusLabel } from "../utils/status";
+import {
+  workerStatusTone,
+  workerStatusLabel,
+  WORKER_STATUS_OPTIONS,
+  roleLabel,
+  roleTone,
+} from "../utils/status";
 
 import { PageHeader } from "../components/ui/PageHeader";
 import { Button } from "../components/ui/Button";
@@ -59,12 +65,6 @@ interface WorkerRow {
 }
 
 const PAGE_SIZE = 5;
-
-const ROLE_LABEL: Record<string, string> = {
-  Worker: "Công nhân",
-  Specialist: "Chuyên gia",
-};
-const getRoleLabel = (role: string) => ROLE_LABEL[role] ?? role;
 
 function mapUser(u: UserResponse): WorkerRow {
   const rawStatus = u.status ?? "";
@@ -498,7 +498,7 @@ export function WorkersPage() {
                 <option value="all">Tất cả vai trò</option>
                 {availableRoleNames.map((r) => (
                   <option key={r} value={r}>
-                    {getRoleLabel(r)}
+                    {roleLabel(r)}
                   </option>
                 ))}
               </select>
@@ -581,7 +581,7 @@ export function WorkersPage() {
                             {worker.phone}
                           </td>
                           <td className="px-6 py-4 text-sm text-ink-500">
-                            {getRoleLabel(worker.role)}
+                            {roleLabel(worker.role)}
                           </td>
                           <td className="px-6 py-4 text-sm text-ink-500">
                             {worker.dateJoined}
@@ -698,12 +698,8 @@ export function WorkersPage() {
                         <td className="px-6 py-4">
                           {s.requestedRole ? (
                             <StatusBadge
-                              label={getRoleLabel(s.requestedRole)}
-                              tone={
-                                s.requestedRole === "Specialist"
-                                  ? "info"
-                                  : "success"
-                              }
+                              label={roleLabel(s.requestedRole)}
+                              tone={roleTone(s.requestedRole)}
                             />
                           ) : (
                             <StatusBadge label="Chưa xác định" tone="neutral" />
@@ -734,7 +730,7 @@ export function WorkersPage() {
                               title={
                                 !s.requestedRole
                                   ? "Chưa có vai trò đăng ký"
-                                  : `Duyệt vai trò ${getRoleLabel(s.requestedRole)}`
+                                  : `Duyệt vai trò ${roleLabel(s.requestedRole)}`
                               }
                               className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-fg rounded-btn text-xs font-medium hover:bg-primary-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                             >
@@ -804,7 +800,7 @@ export function WorkersPage() {
             {[
               { label: "Email", value: modals.viewItem.email },
               { label: "Số điện thoại", value: modals.viewItem.phone },
-              { label: "Vai trò", value: getRoleLabel(modals.viewItem.role) },
+              { label: "Vai trò", value: roleLabel(modals.viewItem.role) },
               { label: "Ngày tham gia", value: modals.viewItem.dateJoined },
             ].map(({ label, value }) => (
               <div
@@ -1035,7 +1031,7 @@ function WorkerForm({
           onChange={(v) => setFormData((p) => ({ ...p, role: v }))}
           options={roleOptions.map((r) => ({
             value: r,
-            label: getRoleLabel(r),
+            label: roleLabel(r),
           }))}
           placeholder="— Chọn vai trò —"
           error={errors.role}
@@ -1049,10 +1045,7 @@ function WorkerForm({
           onChange={(v) =>
             setFormData((p) => ({ ...p, status: v as WorkerStatus }))
           }
-          options={[
-            { value: "Active", label: "Hoạt động" },
-            { value: "Inactive", label: "Không hoạt động" },
-          ]}
+          options={WORKER_STATUS_OPTIONS}
         />
       )}
     </div>
