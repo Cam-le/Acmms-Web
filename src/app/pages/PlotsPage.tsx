@@ -45,6 +45,9 @@ import {
   plotStatusLabel,
   bedStatusTone,
   bedStatusLabel,
+  PLOT_STATUS_OPTIONS,
+  BED_STATUS_OPTIONS,
+  IOT_STATUS_OPTIONS,
 } from "../utils/status";
 import { formatDate } from "../utils/format";
 import { compareBedNames } from "../utils/sort";
@@ -971,10 +974,7 @@ function CreatePlotModal({
           label="Trạng Thái"
           value={formData.plotStatus}
           onChange={(v) => set({ plotStatus: v })}
-          options={[
-            { value: "Active", label: "Hoạt động" },
-            { value: "Inactive", label: "Không hoạt động" },
-          ]}
+          options={PLOT_STATUS_OPTIONS}
         />
       </div>
     </Modal>
@@ -1230,10 +1230,7 @@ function EditPlotModal({
           label="Trạng Thái"
           value={formData.plotStatus}
           onChange={(v) => set({ plotStatus: v })}
-          options={[
-            { value: "Active", label: "Hoạt động" },
-            { value: "Inactive", label: "Không hoạt động" },
-          ]}
+          options={PLOT_STATUS_OPTIONS}
         />
       </div>
     </Modal>
@@ -1337,11 +1334,7 @@ function IotQuickAddModal({
             label="Trạng thái"
             value={formData.status}
             onChange={(v) => setFormData({ ...formData, status: v })}
-            options={[
-              { value: "Active", label: "Hoạt động" },
-              { value: "Inactive", label: "Không hoạt động" },
-              { value: "Maintenance", label: "Bảo trì" },
-            ]}
+            options={IOT_STATUS_OPTIONS}
           />
         </div>
         <FormField
@@ -1885,10 +1878,7 @@ function EditBedModal({
           label="Trạng Thái"
           value={formData.bedStatus}
           onChange={(v) => setFormData({ ...formData, bedStatus: v })}
-          options={[
-            { value: "Active", label: "Hoạt động" },
-            { value: "Inactive", label: "Không hoạt động" },
-          ]}
+          options={BED_STATUS_OPTIONS}
         />
       </div>
     </Modal>

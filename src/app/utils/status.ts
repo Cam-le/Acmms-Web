@@ -55,10 +55,24 @@ export function workerStatusLabel(s: string | null | undefined): string {
 }
 
 export function iotStatusTone(s: string | null | undefined): BadgeTone {
-  return isActive(s) ? ACTIVE_TONE : INACTIVE_TONE;
+  switch (normaliseEnum(s)) {
+    case "active":
+      return "success";
+    case "maintenance":
+      return "warning";
+    default:
+      return "danger";
+  }
 }
 export function iotStatusLabel(s: string | null | undefined): string {
-  return isActive(s) ? "Hoạt động" : "Không hoạt động";
+  switch (normaliseEnum(s)) {
+    case "active":
+      return "Hoạt động";
+    case "maintenance":
+      return "Bảo trì";
+    default:
+      return "Không hoạt động";
+  }
 }
 
 export function plotStatusTone(s: string | null | undefined): BadgeTone {
@@ -445,3 +459,24 @@ export function soilCompatibilityLabel(s: string | null | undefined): string {
   if (n === "medium" || n === "average") return "Trung bình";
   return "Thấp";
 }
+
+// ─── Form select option arrays ────────────────────────────────────────────
+// Single source of truth for status dropdowns across all pages.
+// Import these instead of writing inline { value, label } literals so that
+// changing a Vietnamese label in this file propagates everywhere automatically.
+
+export const PLOT_STATUS_OPTIONS = [
+  { value: "Active", label: plotStatusLabel("Active") },
+  { value: "Inactive", label: plotStatusLabel("Inactive") },
+] as const;
+
+export const BED_STATUS_OPTIONS = [
+  { value: "Active", label: bedStatusLabel("Active") },
+  { value: "Inactive", label: bedStatusLabel("Inactive") },
+] as const;
+
+export const IOT_STATUS_OPTIONS = [
+  { value: "Active", label: iotStatusLabel("Active") },
+  { value: "Inactive", label: iotStatusLabel("Inactive") },
+  { value: "Maintenance", label: iotStatusLabel("Maintenance") },
+] as const;
