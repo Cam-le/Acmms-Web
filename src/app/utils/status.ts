@@ -444,7 +444,9 @@ export function reportTypeColor(s: string | null | undefined): string {
 }
 
 // ─── Soil compatibility ───────────────────────────────────────────────────
-// Backend values (per CropsPage): high/medium/low or good/average/poor
+// Backend values (SoilsPage): good / average / poor
+// Backend values (CropsPage): high / medium / low
+// Both sets are handled — the two scales map to the same three tiers.
 
 export function soilCompatibilityTone(s: string | null | undefined): BadgeTone {
   const n = normaliseEnum(s);
@@ -455,10 +457,34 @@ export function soilCompatibilityTone(s: string | null | undefined): BadgeTone {
 
 export function soilCompatibilityLabel(s: string | null | undefined): string {
   const n = normaliseEnum(s);
-  if (n === "high" || n === "good") return "Cao";
+  if (n === "high" || n === "good") return "Tốt";
   if (n === "medium" || n === "average") return "Trung bình";
-  return "Thấp";
+  if (n === "low" || n === "poor") return "Kém";
+  return s ?? "—";
 }
+
+/**
+ * Tailwind bg+text class pair for the soil compatibility chip.
+ * Returns raw class strings for use in non-StatusBadge inline chips.
+ * Mirrors soilCompatibilityTone but as concrete CSS token classes.
+ */
+export function soilCompatibilityChipClass(
+  s: string | null | undefined,
+): string {
+  const n = normaliseEnum(s);
+  if (n === "high" || n === "good")
+    return "bg-status-success-bg text-status-success-fg";
+  if (n === "medium" || n === "average")
+    return "bg-status-warning-bg text-status-warning-fg";
+  return "bg-status-danger-bg text-status-danger-fg";
+}
+
+/** Form select options for the soil compatibility dropdown. */
+export const SOIL_COMPATIBILITY_OPTIONS = [
+  { value: "good", label: soilCompatibilityLabel("good") },
+  { value: "average", label: soilCompatibilityLabel("average") },
+  { value: "poor", label: soilCompatibilityLabel("poor") },
+] as const;
 
 // ─── Form select option arrays ────────────────────────────────────────────
 // Single source of truth for status dropdowns across all pages.
