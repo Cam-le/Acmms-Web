@@ -266,6 +266,141 @@ export function harvestStatusLabel(s: string | null | undefined): string {
   }
 }
 
+// ─── Severity bar colour (for progress-bar visuals) ──────────────────────
+
+/**
+ * Tailwind bg+text classes for an inline severity chip (non-StatusBadge).
+ * Use when you need raw class strings rather than a tone-based component.
+ */
+export function severityBadgeColor(s: string | null | undefined): string {
+  switch (normaliseEnum(s)) {
+    case "low":
+      return "bg-status-success-bg text-status-success-fg";
+    case "medium":
+      return "bg-status-warning-bg text-status-warning-fg";
+    case "high":
+      return "bg-[#ffedd5] text-[#9a3412]";
+    case "critical":
+      return "bg-status-danger-bg text-status-danger-fg";
+    default:
+      return "bg-status-neutral-bg text-status-neutral-fg";
+  }
+}
+
+/**
+ * Tailwind bg class for the severity progress bar fill.
+ * Companion to severityTone / severityLabel.
+ */
+export function severityBarColor(s: string | null | undefined): string {
+  switch (normaliseEnum(s)) {
+    case "low":
+      return "bg-status-success-fg";
+    case "medium":
+      return "bg-status-warning-fg";
+    case "high":
+      return "bg-[#ea580c]";
+    case "critical":
+      return "bg-status-danger-fg";
+    default:
+      return "bg-ink-400";
+  }
+}
+
+// ─── Report type ──────────────────────────────────────────────────────────
+// Backend values: DISEASE, PEST, ENVIRONMENT, IRRIGATION, NUTRITION,
+//                 MANUAL, IOT_ALERT, Diseases, OTHER
+// Note: icons are imported here so AdvisoryPage doesn't need its own mapping.
+
+import {
+  Stethoscope,
+  AlertTriangle,
+  Wind,
+  Droplets,
+  Sprout,
+  ClipboardList,
+  Cpu,
+  FileText,
+  type LucideIcon,
+} from "lucide-react";
+
+interface ReportTypeConfig {
+  label: string;
+  icon: LucideIcon;
+  /** Tailwind bg+text classes for the badge chip */
+  color: string;
+}
+
+const REPORT_TYPE_MAP: Record<string, ReportTypeConfig> = {
+  DISEASE: {
+    label: "Báo cáo bệnh",
+    icon: Stethoscope,
+    color: "bg-status-danger-bg text-status-danger-fg",
+  },
+  Diseases: {
+    label: "Báo cáo bệnh",
+    icon: Stethoscope,
+    color: "bg-status-danger-bg text-status-danger-fg",
+  },
+  PEST: {
+    label: "Sâu bệnh",
+    icon: AlertTriangle,
+    color: "bg-[#fff7ed] text-[#92400e]",
+  },
+  ENVIRONMENT: {
+    label: "Vấn đề môi trường",
+    icon: Wind,
+    color: "bg-[#eff6ff] text-status-info-fg",
+  },
+  IRRIGATION: {
+    label: "Tưới tiêu",
+    icon: Droplets,
+    color: "bg-[#f0f9ff] text-[#0369a1]",
+  },
+  NUTRITION: {
+    label: "Thiếu dinh dưỡng",
+    icon: Sprout,
+    color: "bg-[#f0fdf4] text-status-success-fg",
+  },
+  MANUAL: {
+    label: "Báo cáo thủ công",
+    icon: ClipboardList,
+    color: "bg-surface-alt text-ink-700",
+  },
+  IOT_ALERT: {
+    label: "Báo cáo tự động từ IoT",
+    icon: Cpu,
+    color: "bg-[#faf5ff] text-[#6b21a8]",
+  },
+  OTHER: {
+    label: "Báo cáo khác",
+    icon: FileText,
+    color: "bg-surface-alt text-ink-700",
+  },
+};
+
+const REPORT_TYPE_FALLBACK: ReportTypeConfig = {
+  label: "",
+  icon: FileText,
+  color: "bg-surface-alt text-ink-700",
+};
+
+function getReportTypeConfig(s: string | null | undefined): ReportTypeConfig {
+  if (!s) return REPORT_TYPE_FALLBACK;
+  return REPORT_TYPE_MAP[s] ?? { ...REPORT_TYPE_FALLBACK, label: s };
+}
+
+export function reportTypeLabel(s: string | null | undefined): string {
+  return getReportTypeConfig(s).label || (s ?? "—");
+}
+
+export function reportTypeIcon(s: string | null | undefined): LucideIcon {
+  return getReportTypeConfig(s).icon;
+}
+
+export function reportTypeColor(s: string | null | undefined): string {
+  return getReportTypeConfig(s).color;
+}
+
 // ─── Soil compatibility ───────────────────────────────────────────────────
 // Backend values (per CropsPage): high/medium/low or good/average/poor
 
