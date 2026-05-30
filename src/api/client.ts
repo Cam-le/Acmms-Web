@@ -22,7 +22,15 @@ async function request<T>(
 
   if (res.status === 204) return null as T;
 
-  const data = await res.json();
+  // Use res.text() instead of res.json() so an empty body on a 200 response
+  // (e.g. PUT .../read, PUT .../read-all) doesn't throw "Unexpected end of JSON".
+  const text = await res.text();
+  if (!text) {
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return null as T;
+  }
+
+  const data = JSON.parse(text);
 
   // ApiResponse<T> wrapper (Farms, Seasons, Workers, Auth)
   if (data && typeof data === "object" && "success" in data) {
@@ -49,7 +57,13 @@ async function requestForm<T>(
 
   if (res.status === 204) return null as T;
 
-  const data = await res.json();
+  const text = await res.text();
+  if (!text) {
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return null as T;
+  }
+
+  const data = JSON.parse(text);
 
   if (data && typeof data === "object" && "success" in data) {
     if (!data.success) throw new Error(data.message ?? "API error");
@@ -667,6 +681,27 @@ export interface PaymentResponse {
   createdAt: string;
   paidAt: string;
   items: PaymentItem[];
+}
+
+// ── Notifications ─────────────────────────────────────────────────────────────
+
+export interface NotificationResponse {
+  noteId: string;
+  reportId?: string;
+  diagnosisId?: string;
+  /** "diagnosis_completed" | "sensor_alert" | "email_new_report" | etc. */
+  noteType: string;
+  noteTitle: string;
+  noteMessage: string;
+  // Backend may return "read"/"unread" or "Read"/"Unread" — normalise before comparing
+  noteStatus: string;
+  noteCreatedAt: string;
+}
+
+export interface GetNotificationsParams {
+  unreadOnly?: boolean;
+  page?: number;
+  pageSize?: number;
 }
 
 // ── Attachments ───────────────────────────────────────────────────────────────
@@ -1359,4 +1394,23 @@ export const api = {
       "GET",
       `/api/Weather/farm/${farmId}/forecast?days=${days}`,
     ),
+
+  // Notifications
+  getNotifications: (params: GetNotificationsParams = {}) => {
+    const p = new URLSearchParams();
+    if (params.unreadOnly != null)
+      p.set("unreadOnly", String(params.unreadOnly));
+    p.set("page", String(params.page ?? 1));
+    p.set("pageSize", String(params.pageSize ?? 50));
+    return request<NotificationResponse[]>(
+      "GET",
+      `/api/Notifications?${p.toString()}`,
+    );
+  },
+  getNotificationUnreadCount: () =>
+    request<number>("GET", "/api/Notifications/unread-count"),
+  markNotificationRead: (id: string) =>
+    request<unknown>("PUT", `/api/Notifications/${id}/read`, null),
+  markAllNotificationsRead: () =>
+    request<unknown>("PUT", "/api/Notifications/read-all", null),
 };

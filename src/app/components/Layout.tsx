@@ -8,7 +8,6 @@ import {
   Sprout,
   Users,
   Briefcase,
-  Bell,
   Leaf,
   LogOut,
   ChevronUp,
@@ -25,6 +24,7 @@ import {
 } from "lucide-react";
 import * as Popover from "@radix-ui/react-popover";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
+import { NotificationPanel } from "../components/ui/NotificationPanel";
 
 // ── Nav definitions per role ─────────────────────────────────────────────────
 const ownerNavItems = [
@@ -263,10 +263,8 @@ export function AppLayout() {
             {getHeaderTitle(storedRole)}
           </h2>
           <div className="flex items-center gap-4">
-            <button className="p-2 text-slate-500 hover:bg-slate-100 rounded-full transition-colors relative">
-              <Bell className="w-5 h-5" />
-              <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border border-white"></span>
-            </button>
+            {/* Notification bell — replaces old static button */}
+            <NotificationPanel />
             {/* Role badge */}
             <div className="flex items-center gap-2 px-3 py-1.5 bg-[#f0fdf9] rounded-lg border border-[#009689]/20">
               <div className="w-2 h-2 rounded-full bg-[#009689]" />
