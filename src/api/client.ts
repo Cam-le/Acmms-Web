@@ -887,7 +887,6 @@ export interface UpdateFarmCoordinatesRequest {
 
 export interface WeatherLocationResponse {
   name?: string;
-  region?: string;
   country?: string;
   latitude: number;
   longitude: number;
@@ -896,7 +895,7 @@ export interface WeatherLocationResponse {
 
 export interface WeatherConditionResponse {
   text?: string;
-  /** URL from WeatherAPI — prepend "https:" if starts with "//" */
+  /** Short icon code from the weather provider (e.g. "04d") — not a usable image URL */
   icon?: string;
   code: number;
 }
