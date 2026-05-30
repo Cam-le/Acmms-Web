@@ -64,7 +64,7 @@ interface NoteRowProps {
 }
 
 function NoteRow({ note, onMarkRead, isMarkingRead }: NoteRowProps) {
-  const isUnread = note.noteStatus === "unread";
+  const isUnread = note.noteStatus?.toLowerCase() === "unread";
 
   return (
     <button
@@ -158,7 +158,7 @@ export function NotificationPanel() {
 
   const displayedNotes =
     tab === "unread"
-      ? allNotes.filter((n) => n.noteStatus === "unread")
+      ? allNotes.filter((n) => n.noteStatus?.toLowerCase() === "unread")
       : allNotes;
 
   // TQ v5 `isLoading` = `isPending && isFetching`. When `enabled` just flipped
@@ -174,22 +174,23 @@ export function NotificationPanel() {
     onMutate: async (id) => {
       setMarkingReadId(id);
       await queryClient.cancelQueries({ queryKey: qk.notifications.list() });
-      const prev = queryClient.getQueryData<NotificationResponse[]>(
+      // getQueryData returns the raw API value (may be a paginated wrapper).
+      // extractNotes normalises it to a plain array — same as the render path.
+      const prevRaw = queryClient.getQueryData(qk.notifications.list());
+      const prevNotes = extractNotes(prevRaw);
+      queryClient.setQueryData(
         qk.notifications.list(),
+        prevNotes.map((n) =>
+          n.noteId === id ? { ...n, noteStatus: "read" } : n,
+        ),
       );
-      queryClient.setQueryData<NotificationResponse[]>(
-        qk.notifications.list(),
-        (old) =>
-          (old ?? []).map((n) =>
-            n.noteId === id ? { ...n, noteStatus: "read" as const } : n,
-          ),
-      );
-      return { prev };
+      return { prevNotes };
     },
     onError: (_err, _id, ctx) => {
-      if (ctx?.prev) {
-        queryClient.setQueryData(qk.notifications.list(), ctx.prev);
+      if (ctx?.prevNotes) {
+        queryClient.setQueryData(qk.notifications.list(), ctx.prevNotes);
       }
+      console.error("[markNotificationRead] failed:", _err);
     },
     onSuccess: () => {
       queryClient.setQueryData<number>(qk.notifications.unreadCount(), (c) =>
@@ -209,21 +210,20 @@ export function NotificationPanel() {
     mutationFn: api.markAllNotificationsRead,
     onMutate: async () => {
       await queryClient.cancelQueries({ queryKey: qk.notifications.list() });
-      const prev = queryClient.getQueryData<NotificationResponse[]>(
+      const prevRaw = queryClient.getQueryData(qk.notifications.list());
+      const prevNotes = extractNotes(prevRaw);
+      queryClient.setQueryData(
         qk.notifications.list(),
-      );
-      queryClient.setQueryData<NotificationResponse[]>(
-        qk.notifications.list(),
-        (old) =>
-          (old ?? []).map((n) => ({ ...n, noteStatus: "read" as const })),
+        prevNotes.map((n) => ({ ...n, noteStatus: "read" })),
       );
       queryClient.setQueryData<number>(qk.notifications.unreadCount(), 0);
-      return { prev };
+      return { prevNotes };
     },
     onError: (_err, _v, ctx) => {
-      if (ctx?.prev) {
-        queryClient.setQueryData(qk.notifications.list(), ctx.prev);
+      if (ctx?.prevNotes) {
+        queryClient.setQueryData(qk.notifications.list(), ctx.prevNotes);
       }
+      console.error("[markAllNotificationsRead] failed:", _err);
     },
     onSettled: () => {
       queryClient.invalidateQueries({

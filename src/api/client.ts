@@ -22,7 +22,15 @@ async function request<T>(
 
   if (res.status === 204) return null as T;
 
-  const data = await res.json();
+  // Use res.text() instead of res.json() so an empty body on a 200 response
+  // (e.g. PUT .../read, PUT .../read-all) doesn't throw "Unexpected end of JSON".
+  const text = await res.text();
+  if (!text) {
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return null as T;
+  }
+
+  const data = JSON.parse(text);
 
   // ApiResponse<T> wrapper (Farms, Seasons, Workers, Auth)
   if (data && typeof data === "object" && "success" in data) {
@@ -49,7 +57,13 @@ async function requestForm<T>(
 
   if (res.status === 204) return null as T;
 
-  const data = await res.json();
+  const text = await res.text();
+  if (!text) {
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return null as T;
+  }
+
+  const data = JSON.parse(text);
 
   if (data && typeof data === "object" && "success" in data) {
     if (!data.success) throw new Error(data.message ?? "API error");
@@ -679,7 +693,8 @@ export interface NotificationResponse {
   noteType: string;
   noteTitle: string;
   noteMessage: string;
-  noteStatus: "read" | "unread";
+  // Backend may return "read"/"unread" or "Read"/"Unread" — normalise before comparing
+  noteStatus: string;
   noteCreatedAt: string;
 }
 
