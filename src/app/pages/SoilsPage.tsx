@@ -18,6 +18,11 @@ import {
   type CropResponse,
 } from "../../api/client";
 import { CheckCircle2, AlertCircle, XCircle } from "lucide-react";
+import {
+  soilCompatibilityLabel,
+  soilCompatibilityChipClass,
+  SOIL_COMPATIBILITY_OPTIONS,
+} from "../utils/status";
 
 // ─── Shared UI ────────────────────────────────────────────────────────────
 import { useToast } from "../components/ui/useToast";
@@ -48,38 +53,20 @@ interface SoilFormState {
 
 const emptySoilForm: SoilFormState = { name: "", scienceName: "" };
 
-// ─── Compatibility config ─────────────────────────────────────────────────
+// ─── Compatibility icon helper ────────────────────────────────────────────
 
-const compatConfig: Record<
-  string,
-  { label: string; color: string; bg: string; icon: React.ReactNode }
-> = {
-  good: {
-    label: "Tốt",
-    color: "text-[#008236]",
-    bg: "bg-[#dcfce7]",
-    icon: <CheckCircle2 className="w-3.5 h-3.5" />,
-  },
-  average: {
-    label: "Trung bình",
-    color: "text-[#92400e]",
-    bg: "bg-[#fef3c7]",
-    icon: <AlertCircle className="w-3.5 h-3.5" />,
-  },
-  poor: {
-    label: "Kém",
-    color: "text-[#dc2626]",
-    bg: "bg-[#fee2e2]",
-    icon: <XCircle className="w-3.5 h-3.5" />,
-  },
-};
-
-const fallbackCompatConfig = {
-  label: "Không rõ",
-  color: "text-ink-500",
-  bg: "bg-surface-subtle",
-  icon: null,
-};
+function CompatIcon({ value }: { value: string }) {
+  switch (value) {
+    case "good":
+      return <CheckCircle2 className="w-3.5 h-3.5" />;
+    case "average":
+      return <AlertCircle className="w-3.5 h-3.5" />;
+    case "poor":
+      return <XCircle className="w-3.5 h-3.5" />;
+    default:
+      return null;
+  }
+}
 
 // ─── SoilsPage ────────────────────────────────────────────────────────────
 
@@ -820,9 +807,11 @@ function CompatPanel({
               }
               className="w-full px-3 py-1.5 text-sm border border-border-strong rounded-btn focus:outline-none focus:ring-2 focus:ring-primary bg-surface text-ink-700"
             >
-              <option value="good">Tốt</option>
-              <option value="average">Trung bình</option>
-              <option value="poor">Kém</option>
+              {SOIL_COMPATIBILITY_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
             </select>
           </div>
           <div className="flex-1 min-w-[140px]">
@@ -870,7 +859,6 @@ function CompatPanel({
       ) : (
         <div>
           {compat.map((row) => {
-            const cfg = compatConfig[row.compatibility] ?? fallbackCompatConfig;
             const isEditing = editingId === row.comptId;
 
             return (
@@ -895,9 +883,11 @@ function CompatPanel({
                         }
                         className="w-full px-3 py-1.5 text-sm border border-border-strong rounded-btn focus:outline-none focus:ring-2 focus:ring-primary bg-surface text-ink-700"
                       >
-                        <option value="good">Tốt</option>
-                        <option value="average">Trung bình</option>
-                        <option value="poor">Kém</option>
+                        {SOIL_COMPATIBILITY_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
                       </select>
                     </div>
                     <div className="flex-1 min-w-[140px]">
@@ -959,10 +949,10 @@ function CompatPanel({
                       {row.cropName ?? "—"}
                     </span>
                     <span
-                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-pill text-xs font-medium ${cfg.bg} ${cfg.color}`}
+                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-pill text-xs font-medium ${soilCompatibilityChipClass(row.compatibility)}`}
                     >
-                      {cfg.icon}
-                      {cfg.label}
+                      <CompatIcon value={row.compatibility} />
+                      {soilCompatibilityLabel(row.compatibility)}
                     </span>
                     {row.note && (
                       <span className="text-xs text-ink-500 truncate max-w-[180px]">

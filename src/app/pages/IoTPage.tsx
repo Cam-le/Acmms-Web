@@ -256,8 +256,8 @@ export function IoTPage() {
             className="px-3 py-2.5 text-sm border border-border-strong rounded-btn focus:outline-none focus:ring-2 focus:ring-primary bg-surface text-ink-700"
           >
             <option value="">Tất cả trạng thái</option>
-            <option value="Active">Hoạt động</option>
-            <option value="Inactive">Không hoạt động</option>
+            <option value="Active">{iotStatusLabel("Active")}</option>
+            <option value="Inactive">{iotStatusLabel("Inactive")}</option>
           </select>
         </div>
 
@@ -633,8 +633,8 @@ function IotFormModal({
             value={formData.status}
             onChange={(v) => setFormData({ ...formData, status: v })}
             options={[
-              { value: "Active", label: "Hoạt động" },
-              { value: "Inactive", label: "Không hoạt động" },
+              { value: "Active", label: iotStatusLabel("Active") },
+              { value: "Inactive", label: iotStatusLabel("Inactive") },
             ]}
           />
         </div>

@@ -15,8 +15,6 @@ import {
   Stethoscope,
   FlaskConical,
   Droplets,
-  Sprout,
-  Wind,
   ClipboardList,
   BadgeCheck,
   PlusCircle,
@@ -43,6 +41,12 @@ import { usePagination } from "../hooks/usePagination";
 import {
   reportStatusTone,
   reportStatusLabel,
+  severityLabel,
+  severityBarColor,
+  severityBadgeColor,
+  reportTypeLabel,
+  reportTypeIcon,
+  reportTypeColor,
   normaliseEnum,
 } from "../utils/status";
 import { formatDateTimeRaw } from "../utils/format";
@@ -103,105 +107,6 @@ export interface DiagnosisResponse {
   createdAt: string;
 }
 
-// ===================== MAPPINGS =====================
-
-const REPORT_TYPE_MAP: Record<
-  string,
-  { label: string; icon: React.ElementType; color: string }
-> = {
-  DISEASE: {
-    label: "Báo cáo bệnh",
-    icon: Stethoscope,
-    color: "bg-status-danger-bg text-status-danger-fg",
-  },
-  PEST: {
-    label: "Sâu bệnh",
-    icon: AlertTriangle,
-    color: "bg-[#fff7ed] text-[#92400e]",
-  },
-  ENVIRONMENT: {
-    label: "Vấn đề môi trường",
-    icon: Wind,
-    color: "bg-[#eff6ff] text-status-info-fg",
-  },
-  IRRIGATION: {
-    label: "Tưới tiêu",
-    icon: Droplets,
-    color: "bg-[#f0f9ff] text-[#0369a1]",
-  },
-  NUTRITION: {
-    label: "Thiếu dinh dưỡng",
-    icon: Sprout,
-    color: "bg-[#f0fdf4] text-status-success-fg",
-  },
-  MANUAL: {
-    label: "Báo cáo thủ công",
-    icon: ClipboardList,
-    color: "bg-surface-alt text-ink-700",
-  },
-  IOT_ALERT: {
-    label: "Báo cáo tự động từ IoT",
-    icon: Cpu,
-    color: "bg-[#faf5ff] text-[#6b21a8]",
-  },
-  Diseases: {
-    label: "Báo cáo bệnh",
-    icon: Stethoscope,
-    color: "bg-status-danger-bg text-status-danger-fg",
-  },
-  OTHER: {
-    label: "Báo cáo khác",
-    icon: FileText,
-    color: "bg-surface-alt text-ink-700",
-  },
-};
-
-function getReportType(type: string) {
-  return (
-    REPORT_TYPE_MAP[type] ?? {
-      label: type,
-      icon: FileText,
-      color: "bg-surface-alt text-ink-700",
-    }
-  );
-}
-
-const SEVERITY_CONFIG: Record<
-  string,
-  { label: string; color: string; barColor: string }
-> = {
-  LOW: {
-    label: "Nhẹ",
-    color: "bg-status-success-bg text-status-success-fg",
-    barColor: "bg-status-success-fg",
-  },
-  MEDIUM: {
-    label: "Trung bình",
-    color: "bg-status-warning-bg text-status-warning-fg",
-    barColor: "bg-status-warning-fg",
-  },
-  HIGH: {
-    label: "Nặng",
-    color: "bg-[#ffedd5] text-[#9a3412]",
-    barColor: "bg-[#ea580c]",
-  },
-  CRITICAL: {
-    label: "Rất nghiêm trọng",
-    color: "bg-status-danger-bg text-status-danger-fg",
-    barColor: "bg-status-danger-fg",
-  },
-};
-
-function getSeverityConfig(level: string) {
-  return (
-    SEVERITY_CONFIG[level?.toUpperCase()] ?? {
-      label: level,
-      color: "bg-status-neutral-bg text-status-neutral-fg",
-      barColor: "bg-ink-400",
-    }
-  );
-}
-
 // ===================== HELPERS =====================
 
 function parseAiResult(json?: string): AiResult | null {
@@ -237,13 +142,13 @@ function getReportImageUrl(attachments: ReportAttachment[]): string | null {
 // ===================== INTERNAL BADGES =====================
 
 function ReportTypeBadge({ type }: { type: string }) {
-  const { label, color, icon: Icon } = getReportType(type);
+  const Icon = reportTypeIcon(type);
   return (
     <span
-      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap ${color}`}
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap ${reportTypeColor(type)}`}
     >
       <Icon className="w-3 h-3 shrink-0" />
-      {label}
+      {reportTypeLabel(type)}
     </span>
   );
 }
@@ -676,7 +581,7 @@ function DetailView({ reportId }: { reportId: string }) {
             <InfoRow
               icon={Leaf}
               label="Loại báo cáo"
-              value={getReportType(report.reportType).label}
+              value={reportTypeLabel(report.reportType)}
             />
             <InfoRow
               icon={CalendarDays}
@@ -939,7 +844,6 @@ function DetailView({ reportId }: { reportId: string }) {
                   <EmptyState message="Chưa có kết quả chẩn đoán." size="sm" />
                 ) : (
                   diagnoses.map((dx, idx) => {
-                    const sev = getSeverityConfig(dx.severityLevel);
                     return (
                       <div
                         key={dx.id}
@@ -961,9 +865,9 @@ function DetailView({ reportId }: { reportId: string }) {
                           </div>
                           <div className="flex items-center gap-2">
                             <span
-                              className={`px-2 py-0.5 rounded text-xs font-medium ${sev.color}`}
+                              className={`px-2 py-0.5 rounded text-xs font-medium ${severityBadgeColor(dx.severityLevel)}`}
                             >
-                              {sev.label}
+                              {severityLabel(dx.severityLevel)}
                             </span>
                             <span className="text-xs text-ink-400 whitespace-nowrap">
                               {formatDateTimeRaw(dx.createdAt)}

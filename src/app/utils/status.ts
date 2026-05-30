@@ -54,11 +54,56 @@ export function workerStatusLabel(s: string | null | undefined): string {
   return isActive(s) ? "Hoạt động" : "Không hoạt động";
 }
 
+/** Form select options for the worker status dropdown. */
+export const WORKER_STATUS_OPTIONS = [
+  { value: "Active", label: workerStatusLabel("Active") },
+  { value: "Inactive", label: workerStatusLabel("Inactive") },
+] as const;
+
+// ─── Role display labels ──────────────────────────────────────────────────
+// Backend values: Worker, Specialist (Owner is filtered out in the UI)
+
+const ROLE_LABEL_MAP: Record<string, string> = {
+  Worker: "Công nhân",
+  Specialist: "Chuyên gia",
+};
+
+/**
+ * Map a backend role name to its Vietnamese display label.
+ * Falls back to the raw value if the role is unknown.
+ */
+export function roleLabel(role: string | null | undefined): string {
+  if (!role) return "—";
+  return ROLE_LABEL_MAP[role] ?? role;
+}
+
+/**
+ * Tone for a requested role badge in the pending-accounts table.
+ * Specialist → info, everything else → success.
+ */
+export function roleTone(role: string | null | undefined): BadgeTone {
+  return normaliseEnum(role) === "specialist" ? "info" : "success";
+}
+
 export function iotStatusTone(s: string | null | undefined): BadgeTone {
-  return isActive(s) ? ACTIVE_TONE : INACTIVE_TONE;
+  switch (normaliseEnum(s)) {
+    case "active":
+      return "success";
+    case "maintenance":
+      return "warning";
+    default:
+      return "danger";
+  }
 }
 export function iotStatusLabel(s: string | null | undefined): string {
-  return isActive(s) ? "Hoạt động" : "Không hoạt động";
+  switch (normaliseEnum(s)) {
+    case "active":
+      return "Hoạt động";
+    case "maintenance":
+      return "Bảo trì";
+    default:
+      return "Không hoạt động";
+  }
 }
 
 export function plotStatusTone(s: string | null | undefined): BadgeTone {
@@ -144,6 +189,12 @@ export function severityLabel(s: string | null | undefined): string {
 // ─── Task status ──────────────────────────────────────────────────────────
 // Backend values: Pending, Completed (per TasksPage filter options)
 
+/** Filter dropdown options for the "Tất cả công việc" table. */
+export const TASK_STATUS_OPTIONS = [
+  { value: "Pending", label: taskStatusLabel("Pending") },
+  { value: "Completed", label: taskStatusLabel("Completed") },
+] as const;
+
 export function taskStatusTone(s: string | null | undefined): BadgeTone {
   switch (normaliseEnum(s)) {
     case "completed":
@@ -184,6 +235,34 @@ export function billStatusTone(paid: boolean): BadgeTone {
 
 export function billStatusLabel(paid: boolean): string {
   return paid ? "Đã thanh toán" : "Chờ thanh toán";
+}
+
+// ─── Contract status ──────────────────────────────────────────────────────
+// Backend values: "active", "terminated"
+
+export function contractStatusTone(s: string | null | undefined): BadgeTone {
+  return normaliseEnum(s) === "active" ? "success" : "neutral";
+}
+
+export function contractStatusLabel(s: string | null | undefined): string {
+  return normaliseEnum(s) === "active" ? "Đang hiệu lực" : "Đã kết thúc";
+}
+
+// ─── Pending payment status ───────────────────────────────────────────────
+// Derived from PendingPaymentItem.isDue + daysOverdue fields.
+
+export function pendingPaymentStatusTone(isDue: boolean): BadgeTone {
+  return isDue ? "danger" : "warning";
+}
+
+export function pendingPaymentStatusLabel(
+  isDue: boolean,
+  daysOverdue?: number,
+): string {
+  if (isDue) {
+    return daysOverdue != null ? `Quá hạn ${daysOverdue} ngày` : "Quá hạn";
+  }
+  return "Chờ thanh toán";
 }
 
 // ─── Season status ────────────────────────────────────────────────────────
@@ -266,8 +345,145 @@ export function harvestStatusLabel(s: string | null | undefined): string {
   }
 }
 
+// ─── Severity bar colour (for progress-bar visuals) ──────────────────────
+
+/**
+ * Tailwind bg+text classes for an inline severity chip (non-StatusBadge).
+ * Use when you need raw class strings rather than a tone-based component.
+ */
+export function severityBadgeColor(s: string | null | undefined): string {
+  switch (normaliseEnum(s)) {
+    case "low":
+      return "bg-status-success-bg text-status-success-fg";
+    case "medium":
+      return "bg-status-warning-bg text-status-warning-fg";
+    case "high":
+      return "bg-[#ffedd5] text-[#9a3412]";
+    case "critical":
+      return "bg-status-danger-bg text-status-danger-fg";
+    default:
+      return "bg-status-neutral-bg text-status-neutral-fg";
+  }
+}
+
+/**
+ * Tailwind bg class for the severity progress bar fill.
+ * Companion to severityTone / severityLabel.
+ */
+export function severityBarColor(s: string | null | undefined): string {
+  switch (normaliseEnum(s)) {
+    case "low":
+      return "bg-status-success-fg";
+    case "medium":
+      return "bg-status-warning-fg";
+    case "high":
+      return "bg-[#ea580c]";
+    case "critical":
+      return "bg-status-danger-fg";
+    default:
+      return "bg-ink-400";
+  }
+}
+
+// ─── Report type ──────────────────────────────────────────────────────────
+// Backend values: DISEASE, PEST, ENVIRONMENT, IRRIGATION, NUTRITION,
+//                 MANUAL, IOT_ALERT, Diseases, OTHER
+// Note: icons are imported here so AdvisoryPage doesn't need its own mapping.
+
+import {
+  Stethoscope,
+  AlertTriangle,
+  Wind,
+  Droplets,
+  Sprout,
+  ClipboardList,
+  Cpu,
+  FileText,
+  type LucideIcon,
+} from "lucide-react";
+
+interface ReportTypeConfig {
+  label: string;
+  icon: LucideIcon;
+  /** Tailwind bg+text classes for the badge chip */
+  color: string;
+}
+
+const REPORT_TYPE_MAP: Record<string, ReportTypeConfig> = {
+  DISEASE: {
+    label: "Báo cáo bệnh",
+    icon: Stethoscope,
+    color: "bg-status-danger-bg text-status-danger-fg",
+  },
+  Diseases: {
+    label: "Báo cáo bệnh",
+    icon: Stethoscope,
+    color: "bg-status-danger-bg text-status-danger-fg",
+  },
+  PEST: {
+    label: "Sâu bệnh",
+    icon: AlertTriangle,
+    color: "bg-[#fff7ed] text-[#92400e]",
+  },
+  ENVIRONMENT: {
+    label: "Vấn đề môi trường",
+    icon: Wind,
+    color: "bg-[#eff6ff] text-status-info-fg",
+  },
+  IRRIGATION: {
+    label: "Tưới tiêu",
+    icon: Droplets,
+    color: "bg-[#f0f9ff] text-[#0369a1]",
+  },
+  NUTRITION: {
+    label: "Thiếu dinh dưỡng",
+    icon: Sprout,
+    color: "bg-[#f0fdf4] text-status-success-fg",
+  },
+  MANUAL: {
+    label: "Báo cáo thủ công",
+    icon: ClipboardList,
+    color: "bg-surface-alt text-ink-700",
+  },
+  IOT_ALERT: {
+    label: "Báo cáo tự động từ IoT",
+    icon: Cpu,
+    color: "bg-[#faf5ff] text-[#6b21a8]",
+  },
+  OTHER: {
+    label: "Báo cáo khác",
+    icon: FileText,
+    color: "bg-surface-alt text-ink-700",
+  },
+};
+
+const REPORT_TYPE_FALLBACK: ReportTypeConfig = {
+  label: "",
+  icon: FileText,
+  color: "bg-surface-alt text-ink-700",
+};
+
+function getReportTypeConfig(s: string | null | undefined): ReportTypeConfig {
+  if (!s) return REPORT_TYPE_FALLBACK;
+  return REPORT_TYPE_MAP[s] ?? { ...REPORT_TYPE_FALLBACK, label: s };
+}
+
+export function reportTypeLabel(s: string | null | undefined): string {
+  return getReportTypeConfig(s).label || (s ?? "—");
+}
+
+export function reportTypeIcon(s: string | null | undefined): LucideIcon {
+  return getReportTypeConfig(s).icon;
+}
+
+export function reportTypeColor(s: string | null | undefined): string {
+  return getReportTypeConfig(s).color;
+}
+
 // ─── Soil compatibility ───────────────────────────────────────────────────
-// Backend values (per CropsPage): high/medium/low or good/average/poor
+// Backend values (SoilsPage): good / average / poor
+// Backend values (CropsPage): high / medium / low
+// Both sets are handled — the two scales map to the same three tiers.
 
 export function soilCompatibilityTone(s: string | null | undefined): BadgeTone {
   const n = normaliseEnum(s);
@@ -278,7 +494,52 @@ export function soilCompatibilityTone(s: string | null | undefined): BadgeTone {
 
 export function soilCompatibilityLabel(s: string | null | undefined): string {
   const n = normaliseEnum(s);
-  if (n === "high" || n === "good") return "Cao";
+  if (n === "high" || n === "good") return "Tốt";
   if (n === "medium" || n === "average") return "Trung bình";
-  return "Thấp";
+  if (n === "low" || n === "poor") return "Kém";
+  return s ?? "—";
 }
+
+/**
+ * Tailwind bg+text class pair for the soil compatibility chip.
+ * Returns raw class strings for use in non-StatusBadge inline chips.
+ * Mirrors soilCompatibilityTone but as concrete CSS token classes.
+ */
+export function soilCompatibilityChipClass(
+  s: string | null | undefined,
+): string {
+  const n = normaliseEnum(s);
+  if (n === "high" || n === "good")
+    return "bg-status-success-bg text-status-success-fg";
+  if (n === "medium" || n === "average")
+    return "bg-status-warning-bg text-status-warning-fg";
+  return "bg-status-danger-bg text-status-danger-fg";
+}
+
+/** Form select options for the soil compatibility dropdown. */
+export const SOIL_COMPATIBILITY_OPTIONS = [
+  { value: "good", label: soilCompatibilityLabel("good") },
+  { value: "average", label: soilCompatibilityLabel("average") },
+  { value: "poor", label: soilCompatibilityLabel("poor") },
+] as const;
+
+// ─── Form select option arrays ────────────────────────────────────────────
+// Single source of truth for status dropdowns across all pages.
+// Import these instead of writing inline { value, label } literals so that
+// changing a Vietnamese label in this file propagates everywhere automatically.
+
+export const PLOT_STATUS_OPTIONS = [
+  { value: "Active", label: plotStatusLabel("Active") },
+  { value: "Inactive", label: plotStatusLabel("Inactive") },
+] as const;
+
+export const BED_STATUS_OPTIONS = [
+  { value: "Active", label: bedStatusLabel("Active") },
+  { value: "Inactive", label: bedStatusLabel("Inactive") },
+] as const;
+
+export const IOT_STATUS_OPTIONS = [
+  { value: "Active", label: iotStatusLabel("Active") },
+  { value: "Inactive", label: iotStatusLabel("Inactive") },
+  { value: "Maintenance", label: iotStatusLabel("Maintenance") },
+] as const;

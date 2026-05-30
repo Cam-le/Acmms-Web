@@ -40,7 +40,6 @@ import { LoadingState } from "../components/ui/LoadingState";
 import { EmptyState } from "../components/ui/EmptyState";
 import { Button } from "../components/ui/Button";
 import { StatusBadge } from "../components/ui/StatusBadge";
-import type { BadgeTone } from "../components/ui/StatusBadge";
 import { Modal } from "../components/ui/Modal";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { FormField } from "../components/ui/FormField";
@@ -53,7 +52,14 @@ import { PageHeader } from "../components/ui/PageHeader";
 import { useCrudModals } from "../hooks/useCrudModals";
 import { usePagination } from "../hooks/usePagination";
 import { formatDate, formatDateTime, formatVND } from "../utils/format";
-import { severityTone, severityLabel } from "../utils/status";
+import {
+  severityTone,
+  severityLabel,
+  contractStatusTone,
+  contractStatusLabel,
+  pendingPaymentStatusTone,
+  pendingPaymentStatusLabel,
+} from "../utils/status";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -84,14 +90,6 @@ function formatMonthISO(iso: string | null | undefined): string {
 /** Format for /api/payment/bill?month= and /api/payment/upload Month field: YYYY-MM-DD */
 function monthToBillParam(year: number, month: number): string {
   return `${year}-${String(month).padStart(2, "0")}-01`;
-}
-
-function contractStatusTone(s: string | null | undefined): BadgeTone {
-  return s?.toLowerCase() === "active" ? "success" : "neutral";
-}
-
-function contractStatusLabel(s: string | null | undefined): string {
-  return s?.toLowerCase() === "active" ? "Đang hiệu lực" : "Đã kết thúc";
 }
 
 /**
@@ -1725,15 +1723,14 @@ function PaymentPendingTab() {
                       {formatVND(item.totalAmount)}
                     </td>
                     <td className="px-4 py-3">
-                      {item.isDue ? (
-                        <StatusBadge
-                          tone="danger"
-                          label={`Quá hạn ${item.daysOverdue} ngày`}
-                          icon={AlertTriangle}
-                        />
-                      ) : (
-                        <StatusBadge tone="warning" label="Chờ thanh toán" />
-                      )}
+                      <StatusBadge
+                        tone={pendingPaymentStatusTone(item.isDue)}
+                        label={pendingPaymentStatusLabel(
+                          item.isDue,
+                          item.daysOverdue,
+                        )}
+                        icon={item.isDue ? AlertTriangle : undefined}
+                      />
                     </td>
                     <td className="px-4 py-3">
                       <Button

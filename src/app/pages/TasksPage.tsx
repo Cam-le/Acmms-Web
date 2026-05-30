@@ -44,6 +44,13 @@ import { useToast } from "../components/ui/useToast";
 import { ToastContainer } from "../components/ui/ToastContainer";
 import { isoTime, isoDate } from "../utils/format";
 import { sortBedsByBedName } from "../utils/sort";
+import {
+  taskStatusTone,
+  taskStatusLabel,
+  seasonStatusTone,
+  seasonStatusLabel,
+  TASK_STATUS_OPTIONS,
+} from "../utils/status";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -52,13 +59,6 @@ const HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0"));
 const MINUTES = Array.from({ length: 12 }, (_, i) =>
   String(i * 5).padStart(2, "0"),
 );
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-/** Normalise API taskStatus to lowercase consistent key */
-function normaliseTaskStatus(s: string): "active" | "inactive" {
-  return s?.toLowerCase() === "inactive" ? "inactive" : "active";
-}
 
 // ─── Drum Picker ──────────────────────────────────────────────────────────────
 // Preserved exactly — unique domain UI
@@ -640,25 +640,6 @@ function WorkerSchedulePreview({
         ))}
       </div>
     </div>
-  );
-}
-
-// ─── Task status helpers ──────────────────────────────────────────────────────
-
-const TASK_STATUS_MAP: Record<
-  string,
-  { label: string; tone: "warning-2" | "success" | "neutral" }
-> = {
-  Pending: { label: "Chưa hoàn thành", tone: "warning-2" },
-  Completed: { label: "Đã hoàn thành", tone: "success" },
-};
-
-function getTaskStatusInfo(status: string | undefined) {
-  return (
-    TASK_STATUS_MAP[status ?? ""] ?? {
-      label: status ?? "—",
-      tone: "neutral" as const,
-    }
   );
 }
 
@@ -1981,8 +1962,11 @@ export function TasksPage() {
               className="px-3 py-2.5 border border-border rounded-btn text-sm bg-surface text-ink-700 focus:outline-none focus:ring-2 focus:ring-primary w-44 shrink-0 appearance-none cursor-pointer bg-[url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 20 20%22 fill=%22%2362748e%22><path fill-rule=%22evenodd%22 d=%22M5.23 7.21a.75.75 0 011.06.02L10 11.06l3.71-3.83a.75.75 0 111.08 1.04l-4.25 4.39a.75.75 0 01-1.08 0L5.21 8.27a.75.75 0 01.02-1.06z%22 clip-rule=%22evenodd%22/></svg>')] bg-no-repeat bg-[right_0.75rem_center] pr-9"
             >
               <option value="">Tất cả trạng thái</option>
-              <option value="Pending">Chưa hoàn thành</option>
-              <option value="Completed">Đã hoàn thành</option>
+              {TASK_STATUS_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
             </select>
             <Button
               variant="secondary"
@@ -2060,7 +2044,6 @@ export function TasksPage() {
                         detail.startDate && detail.endDate
                           ? `${isoTime(detail.startDate)} – ${isoTime(detail.endDate)}`
                           : "—";
-                      const statusInfo = getTaskStatusInfo(detail.status);
                       return (
                         <tr
                           key={detail.taskDetailId}
@@ -2099,8 +2082,8 @@ export function TasksPage() {
                           </td>
                           <td className="px-4 py-3">
                             <StatusBadge
-                              label={statusInfo.label}
-                              tone={statusInfo.tone}
+                              label={taskStatusLabel(detail.status)}
+                              tone={taskStatusTone(detail.status)}
                             />
                           </td>
                           <td className="px-4 py-3">
@@ -3385,7 +3368,6 @@ export function TasksPage() {
               ? `${isoDate(selectedDetail.startDate)} – ${isoDate(selectedDetail.endDate)}`
               : isoDate(selectedDetail.startDate);
             const timeStr = `${isoTime(selectedDetail.startDate)} – ${isoTime(selectedDetail.endDate)}`;
-            const statusInfo = getTaskStatusInfo(selectedDetail.status);
             return (
               <div className="space-y-4">
                 <div className="flex items-center gap-3">
@@ -3397,8 +3379,8 @@ export function TasksPage() {
                       {task?.taskTitle ?? selectedDetail.taskTitle ?? "—"}
                     </p>
                     <StatusBadge
-                      label={statusInfo.label}
-                      tone={statusInfo.tone}
+                      label={taskStatusLabel(selectedDetail.status)}
+                      tone={taskStatusTone(selectedDetail.status)}
                     />
                   </div>
                 </div>
@@ -3551,20 +3533,8 @@ export function TasksPage() {
                               {editSeason.seasonName}
                             </span>
                             <StatusBadge
-                              label={
-                                editSeason.status === "Active"
-                                  ? "Đang hoạt động"
-                                  : editSeason.status === "Completed"
-                                    ? "Đã kết thúc"
-                                    : "Sắp diễn ra"
-                              }
-                              tone={
-                                editSeason.status === "Active"
-                                  ? "success"
-                                  : editSeason.status === "Completed"
-                                    ? "neutral"
-                                    : "warning"
-                              }
+                              label={seasonStatusLabel(editSeason.status)}
+                              tone={seasonStatusTone(editSeason.status)}
                               size="sm"
                             />
                           </div>
@@ -4095,16 +4065,8 @@ export function TasksPage() {
                   {selectedTpl.taskTitle}
                 </p>
                 <StatusBadge
-                  label={
-                    normaliseTaskStatus(selectedTpl.taskStatus) === "active"
-                      ? "Đang hoạt động"
-                      : "Không hoạt động"
-                  }
-                  tone={
-                    normaliseTaskStatus(selectedTpl.taskStatus) === "active"
-                      ? "success"
-                      : "neutral"
-                  }
+                  label={taskStatusLabel(selectedTpl.taskStatus)}
+                  tone={taskStatusTone(selectedTpl.taskStatus)}
                   size="sm"
                 />
               </div>
