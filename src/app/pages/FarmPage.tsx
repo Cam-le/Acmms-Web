@@ -1123,25 +1123,6 @@ function ViewFarmModal({
           {!weatherLoading && weather && (
             <div className="bg-primary-50 rounded-btn p-4 space-y-3">
               <div className="flex items-center gap-3">
-                {weather.condition?.icon && (
-                  <img
-                    src={
-                      weather.condition.icon.startsWith("//")
-                        ? `https:${weather.condition.icon}`
-                        : weather.condition.icon
-                    }
-                    alt={weather.condition?.text ?? ""}
-                    style={{
-                      width: 40,
-                      height: 40,
-                      minWidth: 40,
-                      minHeight: 40,
-                      maxWidth: 40,
-                      maxHeight: 40,
-                    }}
-                    className="shrink-0"
-                  />
-                )}
                 <div>
                   <p className="text-2xl font-bold text-primary-700">
                     {weather.tempC ?? "—"}°C
@@ -1195,7 +1176,6 @@ function ViewFarmModal({
                   : "—"}
                 {" · "}
                 {weather.location?.name}
-                {weather.location?.region ? `, ${weather.location.region}` : ""}
               </p>
             </div>
           )}

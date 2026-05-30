@@ -62,11 +62,6 @@ type ForecastDays = 1 | 3;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function weatherIcon(url: string | undefined): string | undefined {
-  if (!url) return undefined;
-  return url.startsWith("//") ? `https:${url}` : url;
-}
-
 function uvLabel(uv: number | undefined): string {
   if (uv == null) return "—";
   if (uv < 3) return "Thấp";
@@ -360,7 +355,6 @@ export function DashboardPage() {
                   <span className="truncate">
                     {[
                       currentWeather.location.name,
-                      currentWeather.location.region,
                       currentWeather.location.country,
                     ]
                       .filter(Boolean)
@@ -378,13 +372,6 @@ export function DashboardPage() {
               <div className="flex flex-wrap items-start gap-6">
                 {/* Temp + condition */}
                 <div className="flex items-center gap-3 min-w-0">
-                  {weatherIcon(currentWeather.condition?.icon) && (
-                    <img
-                      src={weatherIcon(currentWeather.condition.icon)}
-                      alt={currentWeather.condition?.text ?? ""}
-                      className="w-14 h-14 min-w-[56px] min-h-[56px] max-w-[56px] max-h-[56px] shrink-0"
-                    />
-                  )}
                   <div className="min-w-0">
                     <div className="text-4xl font-extrabold text-primary-800 leading-none">
                       {currentWeather.tempC != null
@@ -707,16 +694,6 @@ function ForecastCard({ day }: { day: WeatherForecastDayResponse }) {
       <p className="text-xs font-semibold text-ink-500 whitespace-nowrap">
         {shortDay(day.date)}
       </p>
-
-      {weatherIcon(day.condition?.icon) ? (
-        <img
-          src={weatherIcon(day.condition?.icon)}
-          alt={day.condition?.text ?? ""}
-          className="w-10 h-10 min-w-[40px] min-h-[40px] max-w-[40px] max-h-[40px]"
-        />
-      ) : (
-        <Cloud className="w-10 h-10 text-ink-300" />
-      )}
 
       <p className="text-xs text-ink-500 text-center leading-snug line-clamp-2">
         {day.condition?.text ?? "—"}
