@@ -2022,7 +2022,7 @@ function AutoBedModal({
       // Parent handles cache invalidation and closes the modal
       onConfirmed();
     } catch (err) {
-      setError("Xác nhận thất bại: " + (err as Error).message);
+      setError(err instanceof Error ? err.message : "Xác nhận thất bại.");
       setConfirming(false);
     }
   };

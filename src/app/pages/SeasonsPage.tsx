@@ -2576,11 +2576,11 @@ function CreateSeasonView({
         seasonNotes: formData.seasonNotes.trim(),
         status: formData.status,
       }),
-    onSuccess: (created) => {
-      const msg =
-        (created as any)?.message ||
-        `Đã tạo mùa vụ "${formData.name.trim()}" thành công.`;
-      localToast(msg, "success");
+    onSuccess: () => {
+      localToast(
+        `Đã tạo mùa vụ "${formData.name.trim()}" thành công.`,
+        "success",
+      );
       setTimeout(onCreated, 800);
     },
     onError: (err) => {
@@ -2685,10 +2685,10 @@ function CreateSeasonView({
           "info",
         );
       } else {
-        const serverMsg =
-          (created as any)?.message ||
-          `Tạo mùa vụ "${formData.name.trim()}" và ${total} đợt thu hoạch thành công.`;
-        localToast(serverMsg, "success");
+        localToast(
+          `Tạo mùa vụ "${formData.name.trim()}" và ${total} đợt thu hoạch thành công.`,
+          "success",
+        );
       }
       setTimeout(onCreated, 900);
     },
