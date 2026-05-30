@@ -669,6 +669,26 @@ export interface PaymentResponse {
   items: PaymentItem[];
 }
 
+// ── Notifications ─────────────────────────────────────────────────────────────
+
+export interface NotificationResponse {
+  noteId: string;
+  reportId?: string;
+  diagnosisId?: string;
+  /** "diagnosis_completed" | "sensor_alert" | "email_new_report" | etc. */
+  noteType: string;
+  noteTitle: string;
+  noteMessage: string;
+  noteStatus: "read" | "unread";
+  noteCreatedAt: string;
+}
+
+export interface GetNotificationsParams {
+  unreadOnly?: boolean;
+  page?: number;
+  pageSize?: number;
+}
+
 // ── Attachments ───────────────────────────────────────────────────────────────
 
 export interface AttachmentResponse {
@@ -1359,4 +1379,23 @@ export const api = {
       "GET",
       `/api/Weather/farm/${farmId}/forecast?days=${days}`,
     ),
+
+  // Notifications
+  getNotifications: (params: GetNotificationsParams = {}) => {
+    const p = new URLSearchParams();
+    if (params.unreadOnly != null)
+      p.set("unreadOnly", String(params.unreadOnly));
+    p.set("page", String(params.page ?? 1));
+    p.set("pageSize", String(params.pageSize ?? 50));
+    return request<NotificationResponse[]>(
+      "GET",
+      `/api/Notifications?${p.toString()}`,
+    );
+  },
+  getNotificationUnreadCount: () =>
+    request<number>("GET", "/api/Notifications/unread-count"),
+  markNotificationRead: (id: string) =>
+    request<unknown>("PUT", `/api/Notifications/${id}/read`, null),
+  markAllNotificationsRead: () =>
+    request<unknown>("PUT", "/api/Notifications/read-all", null),
 };

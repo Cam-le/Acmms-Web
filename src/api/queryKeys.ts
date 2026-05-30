@@ -125,4 +125,10 @@ export const qk = {
     forecast: (farmId: string, days: number) =>
       [...qk.weather.all, "forecast", farmId, days] as const,
   },
+  // ── Notifications ───────────────────────────────────────────────────────
+  notifications: {
+    all: ["notifications"] as const,
+    list: () => [...qk.notifications.all, "list"] as const,
+    unreadCount: () => [...qk.notifications.all, "unreadCount"] as const,
+  },
 } as const;
