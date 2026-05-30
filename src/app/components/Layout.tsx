@@ -21,10 +21,12 @@ import {
   Receipt,
   List,
   Cpu,
+  KeyRound,
 } from "lucide-react";
 import * as Popover from "@radix-ui/react-popover";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
-import { NotificationPanel } from "../components/ui/NotificationPanel";
+import { NotificationPanel } from "./NotificationPanel";
+import { ChangePasswordModal } from "./ChangePasswordModal";
 
 // ── Nav definitions per role ─────────────────────────────────────────────────
 const ownerNavItems = [
@@ -80,6 +82,7 @@ export function AppLayout() {
 
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [showChangePassword, setShowChangePassword] = useState(false);
 
   const isSpecialist = storedRole === "Specialist";
   const navItems = isSpecialist ? specialistNavItems : ownerNavItems;
@@ -209,6 +212,17 @@ export function AppLayout() {
                   </p>
                   <p className="text-xs text-slate-500 truncate">{user.role}</p>
                 </div>
+
+                {/* Change password */}
+                <button
+                  onClick={() => setShowChangePassword(true)}
+                  className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-slate-700 hover:bg-slate-50 rounded-lg transition-colors font-medium"
+                >
+                  <KeyRound className="w-4 h-4" />
+                  Đổi mật khẩu
+                </button>
+
+                {/* Logout */}
                 <button
                   onClick={() => setShowLogoutConfirm(true)}
                   className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors font-medium"
@@ -216,6 +230,7 @@ export function AppLayout() {
                   <LogOut className="w-4 h-4" />
                   Đăng xuất
                 </button>
+
                 <Popover.Arrow className="fill-white" />
               </Popover.Content>
             </Popover.Portal>
@@ -255,6 +270,12 @@ export function AppLayout() {
           </AlertDialog.Content>
         </AlertDialog.Portal>
       </AlertDialog.Root>
+
+      {/* Change Password Modal */}
+      <ChangePasswordModal
+        open={showChangePassword}
+        onOpenChange={setShowChangePassword}
+      />
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden relative">

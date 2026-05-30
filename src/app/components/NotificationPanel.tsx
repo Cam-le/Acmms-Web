@@ -22,16 +22,16 @@ import {
 } from "lucide-react";
 import * as Popover from "@radix-ui/react-popover";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api } from "../../../api/client";
-import type { NotificationResponse } from "../../../api/client";
-import { qk } from "../../../api/queryKeys";
-import { formatDateTime } from "../../utils/format";
-import { useNotificationHub } from "../../hooks/useNotificationHub";
-import { Tabs } from "./Tabs";
-import { Button } from "./Button";
-import { LoadingState } from "./LoadingState";
-import { EmptyState } from "./EmptyState";
-import { Spinner } from "./Spinner";
+import { api } from "../../api/client";
+import type { NotificationResponse } from "../../api/client";
+import { qk } from "../../api/queryKeys";
+import { formatDateTime } from "../utils/format";
+import { useNotificationHub } from "../hooks/useNotificationHub";
+import { Tabs } from "./ui/Tabs";
+import { Button } from "./ui/Button";
+import { LoadingState } from "./ui/LoadingState";
+import { EmptyState } from "./ui/EmptyState";
+import { Spinner } from "./ui/Spinner";
 
 // ── Tab type ──────────────────────────────────────────────────────────────────
 type NoteTab = "unread" | "all";

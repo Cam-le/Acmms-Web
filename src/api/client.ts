@@ -381,7 +381,10 @@ export interface LoginRequest {
   email: string;
   password: string;
 }
-
+export interface ChangePasswordRequest {
+  currentPassword: string;
+  newPassword: string;
+}
 export interface SeasonDetailResponse {
   seasonDetailId: string;
   seasonId: string;
@@ -1018,6 +1021,8 @@ export const api = {
   login: (body: LoginRequest) =>
     request<unknown>("POST", "/api/auth/login", body),
   getRoles: () => request<RoleResponse[]>("GET", "/api/Auth/roles"),
+  changePassword: (body: ChangePasswordRequest) =>
+    request<unknown>("PUT", "/api/Auth/change-password", body),
 
   // Crops (raw response)
   getCrops: () => request<CropResponse[]>("GET", "/api/crops"),
