@@ -56,6 +56,7 @@ import {
   type GrowthTrackingResponse,
   type ExpenseResponse,
   type ExpenseCategory,
+  type IotDataResponse,
 } from "../../api/client";
 import { useToast } from "../components/ui/useToast";
 import { ToastContainer } from "../components/ui/ToastContainer";
@@ -72,6 +73,7 @@ import { FormTextarea } from "../components/ui/FormTextarea";
 import { LoadingState } from "../components/ui/LoadingState";
 import { EmptyState } from "../components/ui/EmptyState";
 import { RowActions } from "../components/ui/RowActions";
+import { Spinner } from "../components/ui/Spinner";
 import { usePagination } from "../hooks/usePagination";
 import { formatDate, formatVND } from "../utils/format";
 import {
@@ -162,8 +164,6 @@ function sortBeds<T extends { name: string; area: string }>(beds: T[]): T[] {
 }
 
 // ─── HarvestDetailViewModal ───────────────────────────────────────────────────
-// Fetches the full harvest detail record (including worker-recorded harvest
-// data) via GET /api/harvest-details/{id} and displays it read-only.
 
 function HarvestDetailViewModal({
   harvestDetailId,
@@ -181,7 +181,6 @@ function HarvestDetailViewModal({
     staleTime: 30_000,
   });
 
-  // Surface error as toast (v5 pattern)
   useEffect(() => {
     if (detailQuery.error) {
       showToast(
@@ -227,7 +226,6 @@ function HarvestDetailViewModal({
           />
         ) : d ? (
           <div className="space-y-4">
-            {/* General info */}
             <div className="grid grid-cols-2 gap-3 text-sm">
               <div className="bg-surface-alt rounded-btn p-3">
                 <p className="text-xs text-ink-400 mb-0.5">Luống</p>
@@ -272,7 +270,6 @@ function HarvestDetailViewModal({
               </div>
             </div>
 
-            {/* Harvest record — only shown when isHarvested = true */}
             {d.isHarvested && (
               <div className="border-t border-border pt-4">
                 <p className="text-xs font-semibold text-ink-500 uppercase tracking-wide mb-3">
@@ -329,10 +326,6 @@ function HarvestDetailViewModal({
 }
 
 // ─── GrowthTrackingModal ──────────────────────────────────────────────────────
-// This component has non-standard fetch behavior (fire-and-forget with
-// side-effect callback). Kept as useEffect rather than useQuery because
-// onFetched needs to report count back to parent — TanStack Query's
-// onSuccess was removed in v5. The pattern here is intentional.
 
 function GrowthTrackingModal({
   harvestDetailId,
@@ -343,7 +336,6 @@ function GrowthTrackingModal({
   harvestDetailId: string;
   bedName: string;
   onClose: () => void;
-  /** Called once fetch resolves — reports count so caller can update indicator */
   onFetched: (harvestDetailId: string, count: number) => void;
 }) {
   const { showToast, toasts, dismissToast } = useToast();
@@ -358,7 +350,6 @@ function GrowthTrackingModal({
   );
   const [staffLoading, setStaffLoading] = React.useState(false);
 
-  // Fetch tracking records for this harvest detail
   React.useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -379,7 +370,6 @@ function GrowthTrackingModal({
               : "Không thể tải theo dõi sinh trưởng",
             "error",
           );
-          // Mark as checked-but-unknown (-1) so indicator doesn't stay neutral
           onFetched(harvestDetailId, -1);
         }
       })
@@ -391,7 +381,6 @@ function GrowthTrackingModal({
     };
   }, [harvestDetailId]);
 
-  // Batch-resolve staff names for all unique lastUpdatedBy IDs
   React.useEffect(() => {
     const ids = [
       ...new Set(trackings.map((t) => t.lastUpdatedBy).filter(Boolean)),
@@ -506,7 +495,6 @@ function GrowthTrackingModal({
         )}
       </Modal>
 
-      {/* Detail drill-down for a single tracking record */}
       {selectedTracking && (
         <Modal
           open
@@ -516,7 +504,6 @@ function GrowthTrackingModal({
           nested
         >
           <div className="space-y-4">
-            {/* Status badges */}
             <div className="flex flex-wrap gap-2">
               <StatusBadge
                 label={trackingStatusLabel(selectedTracking.trackingStatus)}
@@ -531,7 +518,6 @@ function GrowthTrackingModal({
               )}
             </div>
 
-            {/* Info grid */}
             <div className="grid grid-cols-2 gap-3 text-sm">
               <div className="bg-surface-alt rounded-btn p-3">
                 <p className="text-xs text-ink-400 mb-0.5">Cây trồng</p>
@@ -602,7 +588,6 @@ function GrowthTrackingModal({
                 )}
             </div>
 
-            {/* Notes */}
             {selectedTracking.notes && selectedTracking.notes !== "string" && (
               <div className="bg-surface-alt rounded-btn p-3 text-sm">
                 <p className="text-xs text-ink-400 mb-1">Ghi chú</p>
@@ -612,7 +597,6 @@ function GrowthTrackingModal({
               </div>
             )}
 
-            {/* Footer meta */}
             <div className="border-t border-border pt-3 flex flex-col gap-1.5 text-xs text-ink-400">
               <div className="flex items-center gap-1.5">
                 <User className="w-3.5 h-3.5 shrink-0" />
@@ -662,8 +646,551 @@ interface IotRow {
   soilMoisture: number | null;
   isRaining: boolean;
   isAlert: boolean;
-  /** True when this row was last updated via SignalR (not initial REST fetch) */
   liveUpdated?: boolean;
+}
+
+// ─── SeasonExpensesTab ────────────────────────────────────────────────────────
+
+function SeasonExpensesTab({
+  seasonId,
+  showToast,
+}: {
+  seasonId: string;
+  showToast: (msg: string, type: "success" | "error" | "info") => void;
+}) {
+  const queryClient = useQueryClient();
+
+  const expensesQuery = useQuery({
+    queryKey: qk.expenses.list(seasonId),
+    queryFn: () => api.getExpenses(seasonId),
+    retry: 2,
+    staleTime: 30_000,
+  });
+
+  const summaryQuery = useQuery({
+    queryKey: qk.expenses.summary(seasonId),
+    queryFn: () => api.getExpenseSummary(seasonId),
+    retry: 2,
+    staleTime: 30_000,
+  });
+
+  useEffect(() => {
+    if (expensesQuery.error) {
+      showToast(
+        expensesQuery.error instanceof Error
+          ? expensesQuery.error.message
+          : "Không thể tải danh sách chi phí",
+        "error",
+      );
+    }
+  }, [expensesQuery.error]);
+
+  useEffect(() => {
+    if (summaryQuery.error) {
+      showToast(
+        summaryQuery.error instanceof Error
+          ? summaryQuery.error.message
+          : "Không thể tải tổng quan chi phí",
+        "error",
+      );
+    }
+  }, [summaryQuery.error]);
+
+  const expenses: ExpenseResponse[] = Array.isArray(expensesQuery.data)
+    ? expensesQuery.data
+    : [];
+
+  const summary = summaryQuery.data ?? null;
+
+  const [filterCategory, setFilterCategory] = useState<string>("all");
+  const [filterMonth, setFilterMonth] = useState<string>("all");
+
+  const availableMonths: Array<{ value: string; label: string }> =
+    React.useMemo(() => {
+      const seen = new Set<string>();
+      expenses.forEach((e) => {
+        if (e.spentAt) {
+          const m = e.spentAt.slice(0, 7);
+          seen.add(m);
+        }
+      });
+      return [...seen]
+        .sort((a, b) => b.localeCompare(a))
+        .map((m) => {
+          const [y, mo] = m.split("-");
+          return { value: m, label: `Tháng ${parseInt(mo, 10)}/${y}` };
+        });
+    }, [expenses]);
+
+  const filtered = expenses.filter((e) => {
+    const catOk = filterCategory === "all" || e.category === filterCategory;
+    const monthOk =
+      filterMonth === "all" || (e.spentAt ?? "").startsWith(filterMonth);
+    return catOk && monthOk;
+  });
+
+  const sorted = [...filtered].sort((a, b) =>
+    (b.spentAt ?? "").localeCompare(a.spentAt ?? ""),
+  );
+
+  const pieData = React.useMemo(() => {
+    if (!summary?.byCategory) return [];
+    return Object.entries(summary.byCategory)
+      .filter(([, v]) => (v ?? 0) > 0)
+      .map(([cat, amt]) => ({
+        name: expenseCategoryLabel(cat),
+        value: amt ?? 0,
+        color: expenseCategoryColor(cat),
+      }));
+  }, [summary]);
+
+  const EMPTY_FORM = {
+    category: "seed" as ExpenseCategory,
+    description: "",
+    amount: "",
+    spentAt: new Date().toISOString().slice(0, 10),
+    notes: "",
+  };
+
+  const [formOpen, setFormOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<ExpenseResponse | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ExpenseResponse | null>(
+    null,
+  );
+  const [form, setForm] = useState(EMPTY_FORM);
+
+  const openCreate = () => {
+    setForm(EMPTY_FORM);
+    setEditTarget(null);
+    setFormOpen(true);
+  };
+
+  const openEdit = (e: ExpenseResponse) => {
+    setForm({
+      category: e.category,
+      description: e.description ?? "",
+      amount: String(e.amount ?? ""),
+      spentAt: e.spentAt ?? new Date().toISOString().slice(0, 10),
+      notes: e.notes ?? "",
+    });
+    setEditTarget(e);
+    setFormOpen(true);
+  };
+
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: qk.expenses.list(seasonId) });
+    queryClient.invalidateQueries({ queryKey: qk.expenses.summary(seasonId) });
+  };
+
+  const createMutation = useMutation({
+    mutationFn: () =>
+      api.createExpense({
+        seasonId,
+        category: form.category,
+        description: form.description.trim(),
+        amount: parseFloat(form.amount) || 0,
+        spentAt: form.spentAt,
+        notes: form.notes.trim() || undefined,
+      }),
+    onSuccess: () => {
+      showToast("Ghi chi phí thành công.", "success");
+      setFormOpen(false);
+      invalidate();
+    },
+    onError: (err) => {
+      showToast(
+        err instanceof Error ? err.message : "Ghi chi phí thất bại.",
+        "error",
+      );
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: () => {
+      if (!editTarget) throw new Error("Không có chi phí để cập nhật");
+      return api.updateExpense(editTarget.expenseId, {
+        category: form.category,
+        description: form.description.trim(),
+        amount: parseFloat(form.amount) || 0,
+        spentAt: form.spentAt,
+        notes: form.notes.trim() || undefined,
+      });
+    },
+    onSuccess: () => {
+      showToast("Cập nhật chi phí thành công.", "success");
+      setFormOpen(false);
+      setEditTarget(null);
+      invalidate();
+    },
+    onError: (err) => {
+      showToast(
+        err instanceof Error ? err.message : "Cập nhật chi phí thất bại.",
+        "error",
+      );
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => api.deleteExpense(id),
+    onSuccess: () => {
+      setDeleteTarget(null);
+      showToast("Đã xóa chi phí.", "success");
+      invalidate();
+    },
+    onError: (err) => {
+      showToast(
+        err instanceof Error ? err.message : "Xóa chi phí thất bại.",
+        "error",
+      );
+    },
+  });
+
+  const saving = createMutation.isPending || updateMutation.isPending;
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.description.trim()) {
+      showToast("Vui lòng nhập mô tả.", "error");
+      return;
+    }
+    if (!form.amount || parseFloat(form.amount) <= 0) {
+      showToast("Vui lòng nhập số tiền hợp lệ.", "error");
+      return;
+    }
+    if (!form.spentAt) {
+      showToast("Vui lòng chọn ngày chi.", "error");
+      return;
+    }
+    if (editTarget) {
+      updateMutation.mutate();
+    } else {
+      createMutation.mutate();
+    }
+  };
+
+  const isLoading =
+    expensesQuery.isLoading ||
+    (expensesQuery.isFetching && expensesQuery.data === undefined);
+
+  return (
+    <div className="space-y-5">
+      {isLoading ? (
+        <LoadingState message="Đang tải chi phí..." />
+      ) : (
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="bg-surface rounded-card border border-border shadow-card p-4 flex flex-col gap-1">
+              <p className="text-xs text-ink-500 uppercase tracking-wide">
+                Tổng chi
+              </p>
+              <p className="text-2xl font-bold text-ink-800">
+                {summary ? formatVND(summary.total) : "—"}
+              </p>
+              <p className="text-xs text-ink-400">
+                {expenses.length} khoản chi
+              </p>
+            </div>
+
+            {summary &&
+              pieData.length > 0 &&
+              (() => {
+                const top = pieData.reduce(
+                  (a, b) => (b.value > a.value ? b : a),
+                  pieData[0],
+                );
+                const pct =
+                  summary.total > 0
+                    ? Math.round((top.value / summary.total) * 100)
+                    : 0;
+                return (
+                  <div className="bg-surface rounded-card border border-border shadow-card p-4 flex flex-col gap-1">
+                    <p className="text-xs text-ink-500 uppercase tracking-wide">
+                      Danh mục cao nhất
+                    </p>
+                    <p className="text-lg font-bold text-ink-800">{top.name}</p>
+                    <p className="text-xs text-ink-400">
+                      {formatVND(top.value)} · {pct}% tổng chi
+                    </p>
+                  </div>
+                );
+              })()}
+
+            {pieData.length > 0 && (
+              <div
+                className="bg-surface rounded-card border border-border shadow-card p-4 sm:col-span-1 col-span-full"
+                style={{ minHeight: "160px", maxHeight: "240px" }}
+              >
+                <p className="text-xs text-ink-500 uppercase tracking-wide mb-2">
+                  Cơ cấu chi phí
+                </p>
+                <ResponsiveContainer width="100%" height={160}>
+                  <PieChart>
+                    <Pie
+                      data={pieData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={35}
+                      outerRadius={58}
+                      dataKey="value"
+                      paddingAngle={2}
+                    >
+                      {pieData.map((entry, idx) => (
+                        <Cell key={idx} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      formatter={(value: number) => [formatVND(value), ""]}
+                      labelFormatter={(label) => label}
+                    />
+                    <Legend
+                      iconType="circle"
+                      iconSize={8}
+                      wrapperStyle={{ fontSize: "11px" }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 justify-between">
+            <div className="flex flex-wrap gap-2 items-center">
+              <select
+                value={filterCategory}
+                onChange={(e) => setFilterCategory(e.target.value)}
+                className="h-9 px-3 border border-border rounded-btn text-sm text-ink-700 bg-surface focus:outline-none focus:ring-2 focus:ring-primary appearance-none cursor-pointer pr-8"
+                style={{
+                  backgroundImage:
+                    'url(\'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="%2362748e"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.06l3.71-3.83a.75.75 0 111.08 1.04l-4.25 4.39a.75.75 0 01-1.08 0L5.21 8.27a.75.75 0 01.02-1.06z" clip-rule="evenodd"/></svg>\')',
+                  backgroundRepeat: "no-repeat",
+                  backgroundPosition: "right 0.5rem center",
+                }}
+              >
+                <option value="all">Tất cả danh mục</option>
+                {EXPENSE_CATEGORIES.map((c) => (
+                  <option key={c.value} value={c.value}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={filterMonth}
+                onChange={(e) => setFilterMonth(e.target.value)}
+                className="h-9 px-3 border border-border rounded-btn text-sm text-ink-700 bg-surface focus:outline-none focus:ring-2 focus:ring-primary appearance-none cursor-pointer pr-8"
+                style={{
+                  backgroundImage:
+                    'url(\'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="%2362748e"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.06l3.71-3.83a.75.75 0 111.08 1.04l-4.25 4.39a.75.75 0 01-1.08 0L5.21 8.27a.75.75 0 01.02-1.06z" clip-rule="evenodd"/></svg>\')',
+                  backgroundRepeat: "no-repeat",
+                  backgroundPosition: "right 0.5rem center",
+                }}
+              >
+                <option value="all">Tất cả tháng</option>
+                {availableMonths.map((m) => (
+                  <option key={m.value} value={m.value}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <Button leadingIcon={Plus} size="sm" onClick={openCreate}>
+              Ghi chi phí
+            </Button>
+          </div>
+
+          {sorted.length === 0 ? (
+            <EmptyState
+              icon={DollarSign}
+              message={
+                filterCategory !== "all" || filterMonth !== "all"
+                  ? "Không có khoản chi phù hợp với bộ lọc"
+                  : 'Chưa có khoản chi nào. Nhấn "Ghi chi phí" để thêm.'
+              }
+            />
+          ) : (
+            <div className="overflow-x-auto rounded-card border border-border">
+              <table className="w-full text-sm min-w-[560px]">
+                <thead className="bg-surface-alt">
+                  <tr>
+                    {["Ngày chi", "Danh mục", "Mô tả", "Số tiền", ""].map(
+                      (h) => (
+                        <th
+                          key={h}
+                          className="px-4 py-2.5 text-left text-xs font-semibold text-ink-500 uppercase tracking-wide whitespace-nowrap"
+                        >
+                          {h}
+                        </th>
+                      ),
+                    )}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {sorted.map((e) => (
+                    <tr
+                      key={e.expenseId}
+                      className="hover:bg-surface-alt transition-colors"
+                    >
+                      <td className="px-4 py-2.5 whitespace-nowrap text-ink-500 text-xs">
+                        {e.spentAt
+                          ? (() => {
+                              const [y, m, d] = e.spentAt.split("-");
+                              return `${d}/${m}/${y}`;
+                            })()
+                          : "—"}
+                      </td>
+                      <td className="px-4 py-2.5 whitespace-nowrap">
+                        <span
+                          className="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-pill"
+                          style={{
+                            backgroundColor:
+                              expenseCategoryColor(e.category) + "22",
+                            color: expenseCategoryColor(e.category),
+                          }}
+                        >
+                          {expenseCategoryLabel(e.category)}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2.5 text-ink-700 max-w-[280px]">
+                        <p className="truncate">{e.description ?? "—"}</p>
+                        {e.notes && (
+                          <p className="text-xs text-ink-400 truncate mt-0.5">
+                            {e.notes}
+                          </p>
+                        )}
+                      </td>
+                      <td className="px-4 py-2.5 whitespace-nowrap font-semibold text-ink-800">
+                        {formatVND(e.amount ?? 0)}
+                      </td>
+                      <td className="px-4 py-2.5 whitespace-nowrap">
+                        <div className="flex items-center justify-end gap-0.5">
+                          <button
+                            type="button"
+                            title="Chỉnh sửa"
+                            aria-label="Chỉnh sửa chi phí"
+                            onClick={() => openEdit(e)}
+                            className="p-1.5 rounded-btn text-ink-500 hover:text-primary hover:bg-primary-50 transition-colors"
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            title="Xóa"
+                            aria-label="Xóa chi phí"
+                            onClick={() => setDeleteTarget(e)}
+                            className="p-1.5 rounded-btn text-ink-500 hover:text-status-danger-fg hover:bg-status-danger-bg transition-colors"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+
+      <Modal
+        open={formOpen}
+        onOpenChange={(o) => {
+          if (!o && !saving) {
+            setFormOpen(false);
+            setEditTarget(null);
+          }
+        }}
+        title={editTarget ? "Chỉnh sửa chi phí" : "Ghi chi phí mới"}
+        size="md"
+        onSubmit={handleSubmit}
+        footer={
+          <>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setFormOpen(false);
+                setEditTarget(null);
+              }}
+              disabled={saving}
+            >
+              Huỷ
+            </Button>
+            <Button type="submit" loading={saving}>
+              {editTarget ? "Lưu thay đổi" : "Lưu"}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <FormSelect
+            label="Loại chi phí"
+            required
+            value={form.category}
+            onChange={(v) =>
+              setForm((p) => ({ ...p, category: v as ExpenseCategory }))
+            }
+            options={EXPENSE_CATEGORIES.map((c) => ({
+              value: c.value,
+              label: c.label,
+            }))}
+          />
+          <FormField
+            label="Mô tả"
+            required
+            value={form.description}
+            onChange={(v) => setForm((p) => ({ ...p, description: v }))}
+            placeholder="NPK 50kg đợt 2"
+          />
+          <div className="grid grid-cols-2 gap-4">
+            <FormField
+              label="Số tiền (đ)"
+              required
+              type="number"
+              value={form.amount}
+              onChange={(v) => setForm((p) => ({ ...p, amount: v }))}
+              inputProps={{ min: "1" }}
+              placeholder="1500000"
+            />
+            <FormField
+              label="Ngày chi"
+              required
+              type="date"
+              value={form.spentAt}
+              onChange={(v) => setForm((p) => ({ ...p, spentAt: v }))}
+            />
+          </div>
+          <FormTextarea
+            label="Ghi chú (tuỳ chọn)"
+            value={form.notes}
+            onChange={(v) => setForm((p) => ({ ...p, notes: v }))}
+            placeholder="Mua tại đại lý Hai Lúa"
+            rows={2}
+          />
+        </div>
+      </Modal>
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(o) => {
+          if (!o && !deleteMutation.isPending) setDeleteTarget(null);
+        }}
+        title="Xóa chi phí"
+        description={
+          <>
+            Bạn có chắc muốn xóa khoản chi{" "}
+            <strong>{deleteTarget?.description}</strong>? Hành động này không
+            thể hoàn tác.
+          </>
+        }
+        confirmLabel="Xóa"
+        loading={deleteMutation.isPending}
+        onConfirm={() => {
+          if (deleteTarget) deleteMutation.mutate(deleteTarget.expenseId);
+        }}
+      />
+    </div>
+  );
 }
 
 // ─── Season List Page ──────────────────────────────────────────────────────────
@@ -678,14 +1205,11 @@ export function SeasonsPage() {
   const { toasts, showToast, dismissToast } = useToast();
   const queryClient = useQueryClient();
 
-  // ── UI state ──────────────────────────────────────────────────────────────
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [seasonToDelete, setSeasonToDelete] = useState<Season | null>(null);
 
-  // ── Parallel queries for list data ───────────────────────────────────────
-  // Raw data stored in cache; mapped at render time (same pattern as FarmPage).
   const seasonsQuery = useQuery({
     queryKey: qk.seasons.list(),
     queryFn: () => api.getSeasons(),
@@ -711,7 +1235,6 @@ export function SeasonsPage() {
     queryFn: () => api.getPlots(),
   });
 
-  // Map + sort at render time so cache always holds raw API data.
   const rawFarms = farmsQuery.data ?? [];
   const farms: FarmResponse[] = Array.isArray(rawFarms) ? rawFarms : [];
 
@@ -722,7 +1245,7 @@ export function SeasonsPage() {
       .sort((a, b) => {
         const da = a.seasonStartDate ?? "";
         const db = b.seasonStartDate ?? "";
-        return db.localeCompare(da); // most recent first
+        return db.localeCompare(da);
       })
       .map((s) => mapSeasonResponse(s, farms));
   })();
@@ -743,19 +1266,15 @@ export function SeasonsPage() {
     return Array.isArray(raw) ? raw : [];
   })();
 
-  // loading: true until all 5 parallel queries have resolved at least once.
-  // Guard: if any is still fetching with no data yet, stay in loading state.
   const loading =
     seasonsQuery.isLoading ||
     farmsQuery.isLoading ||
     bedsQuery.isLoading ||
     cropsQuery.isLoading ||
     plotsQuery.isLoading ||
-    // Avoid empty-state flash: if still fetching with no cached data yet
     (seasonsQuery.isFetching && seasonsQuery.data === undefined) ||
     (farmsQuery.isFetching && farmsQuery.data === undefined);
 
-  // Expose fetch error only when we have no cached data to show
   const fetchError =
     seasonsQuery.isError && seasonsQuery.data === undefined
       ? seasonsQuery.error
@@ -763,7 +1282,6 @@ export function SeasonsPage() {
         ? farmsQuery.error
         : null;
 
-  // Surface errors as toasts (v5 removed onError from useQuery)
   useEffect(() => {
     if (seasonsQuery.error) {
       showToast(
@@ -819,8 +1337,6 @@ export function SeasonsPage() {
     }
   }, [plotsQuery.error, showToast]);
 
-  // ── Single-season query (for detail/edit sub-views) ───────────────────────
-  // enabled when navigating to detail or edit views with an id.
   const isSubView = !!seasonId && view !== "list" && view !== "create";
 
   const selectedSeasonQuery = useQuery({
@@ -828,7 +1344,6 @@ export function SeasonsPage() {
     queryFn: () => api.getSeason(seasonId!),
     enabled: isSubView,
     retry: 2,
-    // Seed cache from list if available — avoids flash when navigating from list
     placeholderData: () => {
       if (!seasonId) return undefined;
       const cached = queryClient.getQueryData<SeasonResponse[]>(
@@ -838,7 +1353,6 @@ export function SeasonsPage() {
     },
   });
 
-  // Map the selected season using current farms data
   const selectedSeason: Season | null = selectedSeasonQuery.data
     ? mapSeasonResponse(selectedSeasonQuery.data, farms)
     : null;
@@ -846,7 +1360,6 @@ export function SeasonsPage() {
   const selectedSeasonLoading =
     isSubView && selectedSeasonQuery.isLoading && !selectedSeason;
 
-  // ── Delete mutation ───────────────────────────────────────────────────────
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.deleteSeason(id),
     onSuccess: (_data, id) => {
@@ -854,7 +1367,6 @@ export function SeasonsPage() {
       setDeleteDialogOpen(false);
       setSeasonToDelete(null);
       showToast(`Đã xóa mùa vụ "${name}"`, "success");
-      // Invalidate seasons AND beds (beds freed after season deletion)
       queryClient.invalidateQueries({ queryKey: qk.seasons.all });
       queryClient.invalidateQueries({ queryKey: qk.beds.all });
     },
@@ -866,7 +1378,6 @@ export function SeasonsPage() {
     },
   });
 
-  // ── CRUD handlers ──────────────────────────────────────────────────────────
   const handleDelete = (season: Season) => {
     setSeasonToDelete(season);
     setDeleteDialogOpen(true);
@@ -876,7 +1387,6 @@ export function SeasonsPage() {
     if (seasonToDelete) deleteMutation.mutate(seasonToDelete.id);
   };
 
-  // ── Filter + paginate ──────────────────────────────────────────────────────
   const filtered = seasons.filter((s) => {
     const q = searchQuery.toLowerCase();
     const matchSearch =
@@ -894,7 +1404,6 @@ export function SeasonsPage() {
     reset();
   }, [searchQuery, filterStatus]);
 
-  // ── Route to sub-views ─────────────────────────────────────────────────────
   if (view === "create")
     return (
       <CreateSeasonView
@@ -923,7 +1432,6 @@ export function SeasonsPage() {
       </div>
     );
 
-  // selectedSeasonQuery failed after retries and we have no cached data
   if (
     (view === "detail" || view === "edit") &&
     isSubView &&
@@ -993,7 +1501,6 @@ export function SeasonsPage() {
       />
     );
 
-  // ── List view ──────────────────────────────────────────────────────────────
   return (
     <div className="flex flex-col gap-6 p-6">
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
@@ -1009,7 +1516,6 @@ export function SeasonsPage() {
         }
       />
 
-      {/* Search & Filter */}
       <div className="bg-surface rounded-card border border-border shadow-card p-4">
         <div className="flex flex-col sm:flex-row gap-3">
           <SearchInput
@@ -1039,7 +1545,6 @@ export function SeasonsPage() {
         </div>
       </div>
 
-      {/* Table */}
       <div className="bg-surface rounded-card border border-border shadow-card overflow-hidden">
         {loading ? (
           <LoadingState />
@@ -1221,571 +1726,6 @@ export function SeasonsPage() {
   );
 }
 
-// ─── SeasonExpensesTab ────────────────────────────────────────────────────────
-
-function SeasonExpensesTab({
-  seasonId,
-  showToast,
-}: {
-  seasonId: string;
-  showToast: (msg: string, type: "success" | "error" | "info") => void;
-}) {
-  const queryClient = useQueryClient();
-
-  // ── Queries ──────────────────────────────────────────────────────────────
-  const expensesQuery = useQuery({
-    queryKey: qk.expenses.list(seasonId),
-    queryFn: () => api.getExpenses(seasonId),
-    retry: 2,
-    staleTime: 30_000,
-  });
-
-  const summaryQuery = useQuery({
-    queryKey: qk.expenses.summary(seasonId),
-    queryFn: () => api.getExpenseSummary(seasonId),
-    retry: 2,
-    staleTime: 30_000,
-  });
-
-  useEffect(() => {
-    if (expensesQuery.error) {
-      showToast(
-        expensesQuery.error instanceof Error
-          ? expensesQuery.error.message
-          : "Không thể tải danh sách chi phí",
-        "error",
-      );
-    }
-  }, [expensesQuery.error]);
-
-  useEffect(() => {
-    if (summaryQuery.error) {
-      showToast(
-        summaryQuery.error instanceof Error
-          ? summaryQuery.error.message
-          : "Không thể tải tổng quan chi phí",
-        "error",
-      );
-    }
-  }, [summaryQuery.error]);
-
-  const expenses: ExpenseResponse[] = Array.isArray(expensesQuery.data)
-    ? expensesQuery.data
-    : [];
-
-  const summary = summaryQuery.data ?? null;
-
-  // ── Filter state ──────────────────────────────────────────────────────────
-  const [filterCategory, setFilterCategory] = useState<string>("all");
-  const [filterMonth, setFilterMonth] = useState<string>("all");
-
-  // Derive available months from expense list
-  const availableMonths: Array<{ value: string; label: string }> =
-    React.useMemo(() => {
-      const seen = new Set<string>();
-      expenses.forEach((e) => {
-        if (e.spentAt) {
-          const m = e.spentAt.slice(0, 7); // "YYYY-MM"
-          seen.add(m);
-        }
-      });
-      return [...seen]
-        .sort((a, b) => b.localeCompare(a))
-        .map((m) => {
-          const [y, mo] = m.split("-");
-          return { value: m, label: `Tháng ${parseInt(mo, 10)}/${y}` };
-        });
-    }, [expenses]);
-
-  const filtered = expenses.filter((e) => {
-    const catOk = filterCategory === "all" || e.category === filterCategory;
-    const monthOk =
-      filterMonth === "all" || (e.spentAt ?? "").startsWith(filterMonth);
-    return catOk && monthOk;
-  });
-
-  // Sort by date descending
-  const sorted = [...filtered].sort((a, b) =>
-    (b.spentAt ?? "").localeCompare(a.spentAt ?? ""),
-  );
-
-  // ── Pie chart data from summary ───────────────────────────────────────────
-  const pieData = React.useMemo(() => {
-    if (!summary?.byCategory) return [];
-    return Object.entries(summary.byCategory)
-      .filter(([, v]) => (v ?? 0) > 0)
-      .map(([cat, amt]) => ({
-        name: expenseCategoryLabel(cat),
-        value: amt ?? 0,
-        color: expenseCategoryColor(cat),
-      }));
-  }, [summary]);
-
-  // ── Form state ────────────────────────────────────────────────────────────
-  const EMPTY_FORM = {
-    category: "seed" as ExpenseCategory,
-    description: "",
-    amount: "",
-    spentAt: new Date().toISOString().slice(0, 10),
-    notes: "",
-  };
-
-  const [formOpen, setFormOpen] = useState(false);
-  const [editTarget, setEditTarget] = useState<ExpenseResponse | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<ExpenseResponse | null>(
-    null,
-  );
-  const [form, setForm] = useState(EMPTY_FORM);
-
-  const openCreate = () => {
-    setForm(EMPTY_FORM);
-    setEditTarget(null);
-    setFormOpen(true);
-  };
-
-  const openEdit = (e: ExpenseResponse) => {
-    setForm({
-      category: e.category,
-      description: e.description ?? "",
-      amount: String(e.amount ?? ""),
-      spentAt: e.spentAt ?? new Date().toISOString().slice(0, 10),
-      notes: e.notes ?? "",
-    });
-    setEditTarget(e);
-    setFormOpen(true);
-  };
-
-  // ── Mutations ─────────────────────────────────────────────────────────────
-  const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: qk.expenses.list(seasonId) });
-    queryClient.invalidateQueries({ queryKey: qk.expenses.summary(seasonId) });
-  };
-
-  const createMutation = useMutation({
-    mutationFn: () =>
-      api.createExpense({
-        seasonId,
-        category: form.category,
-        description: form.description.trim(),
-        amount: parseFloat(form.amount) || 0,
-        spentAt: form.spentAt,
-        notes: form.notes.trim() || undefined,
-      }),
-    onSuccess: () => {
-      showToast("Ghi chi phí thành công.", "success");
-      setFormOpen(false);
-      invalidate();
-    },
-    onError: (err) => {
-      showToast(
-        err instanceof Error ? err.message : "Ghi chi phí thất bại.",
-        "error",
-      );
-    },
-  });
-
-  const updateMutation = useMutation({
-    mutationFn: () => {
-      if (!editTarget) throw new Error("Không có chi phí để cập nhật");
-      return api.updateExpense(editTarget.expenseId, {
-        category: form.category,
-        description: form.description.trim(),
-        amount: parseFloat(form.amount) || 0,
-        spentAt: form.spentAt,
-        notes: form.notes.trim() || undefined,
-      });
-    },
-    onSuccess: () => {
-      showToast("Cập nhật chi phí thành công.", "success");
-      setFormOpen(false);
-      setEditTarget(null);
-      invalidate();
-    },
-    onError: (err) => {
-      showToast(
-        err instanceof Error ? err.message : "Cập nhật chi phí thất bại.",
-        "error",
-      );
-    },
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => api.deleteExpense(id),
-    onSuccess: () => {
-      setDeleteTarget(null);
-      showToast("Đã xóa chi phí.", "success");
-      invalidate();
-    },
-    onError: (err) => {
-      showToast(
-        err instanceof Error ? err.message : "Xóa chi phí thất bại.",
-        "error",
-      );
-    },
-  });
-
-  const saving = createMutation.isPending || updateMutation.isPending;
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!form.description.trim()) {
-      showToast("Vui lòng nhập mô tả.", "error");
-      return;
-    }
-    if (!form.amount || parseFloat(form.amount) <= 0) {
-      showToast("Vui lòng nhập số tiền hợp lệ.", "error");
-      return;
-    }
-    if (!form.spentAt) {
-      showToast("Vui lòng chọn ngày chi.", "error");
-      return;
-    }
-    if (editTarget) {
-      updateMutation.mutate();
-    } else {
-      createMutation.mutate();
-    }
-  };
-
-  const isLoading =
-    expensesQuery.isLoading ||
-    (expensesQuery.isFetching && expensesQuery.data === undefined);
-
-  // ── Render ────────────────────────────────────────────────────────────────
-  return (
-    <div className="space-y-5">
-      {/* Summary cards + pie chart */}
-      {isLoading ? (
-        <LoadingState message="Đang tải chi phí..." />
-      ) : (
-        <>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {/* Total card */}
-            <div className="bg-surface rounded-card border border-border shadow-card p-4 flex flex-col gap-1">
-              <p className="text-xs text-ink-500 uppercase tracking-wide">
-                Tổng chi
-              </p>
-              <p className="text-2xl font-bold text-ink-800">
-                {summary ? formatVND(summary.total) : "—"}
-              </p>
-              <p className="text-xs text-ink-400">
-                {expenses.length} khoản chi
-              </p>
-            </div>
-
-            {/* Top category card */}
-            {summary &&
-              pieData.length > 0 &&
-              (() => {
-                const top = pieData.reduce(
-                  (a, b) => (b.value > a.value ? b : a),
-                  pieData[0],
-                );
-                const pct =
-                  summary.total > 0
-                    ? Math.round((top.value / summary.total) * 100)
-                    : 0;
-                return (
-                  <div className="bg-surface rounded-card border border-border shadow-card p-4 flex flex-col gap-1">
-                    <p className="text-xs text-ink-500 uppercase tracking-wide">
-                      Danh mục cao nhất
-                    </p>
-                    <p className="text-lg font-bold text-ink-800">{top.name}</p>
-                    <p className="text-xs text-ink-400">
-                      {formatVND(top.value)} · {pct}% tổng chi
-                    </p>
-                  </div>
-                );
-              })()}
-
-            {/* Pie chart */}
-            {pieData.length > 0 && (
-              <div
-                className="bg-surface rounded-card border border-border shadow-card p-4 sm:col-span-1 col-span-full"
-                style={{ minHeight: "160px", maxHeight: "240px" }}
-              >
-                <p className="text-xs text-ink-500 uppercase tracking-wide mb-2">
-                  Cơ cấu chi phí
-                </p>
-                <ResponsiveContainer width="100%" height={160}>
-                  <PieChart>
-                    <Pie
-                      data={pieData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={35}
-                      outerRadius={58}
-                      dataKey="value"
-                      paddingAngle={2}
-                    >
-                      {pieData.map((entry, idx) => (
-                        <Cell key={idx} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      formatter={(value: number) => [formatVND(value), ""]}
-                      labelFormatter={(label) => label}
-                    />
-                    <Legend
-                      iconType="circle"
-                      iconSize={8}
-                      wrapperStyle={{ fontSize: "11px" }}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-          </div>
-
-          {/* Filter bar + add button */}
-          <div className="flex flex-wrap items-center gap-2 justify-between">
-            <div className="flex flex-wrap gap-2 items-center">
-              {/* Category filter */}
-              <select
-                value={filterCategory}
-                onChange={(e) => setFilterCategory(e.target.value)}
-                className="h-9 px-3 border border-border rounded-btn text-sm text-ink-700 bg-surface focus:outline-none focus:ring-2 focus:ring-primary appearance-none cursor-pointer pr-8"
-                style={{
-                  backgroundImage:
-                    'url(\'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="%2362748e"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.06l3.71-3.83a.75.75 0 111.08 1.04l-4.25 4.39a.75.75 0 01-1.08 0L5.21 8.27a.75.75 0 01.02-1.06z" clip-rule="evenodd"/></svg>\')',
-                  backgroundRepeat: "no-repeat",
-                  backgroundPosition: "right 0.5rem center",
-                }}
-              >
-                <option value="all">Tất cả danh mục</option>
-                {EXPENSE_CATEGORIES.map((c) => (
-                  <option key={c.value} value={c.value}>
-                    {c.label}
-                  </option>
-                ))}
-              </select>
-
-              {/* Month filter */}
-              <select
-                value={filterMonth}
-                onChange={(e) => setFilterMonth(e.target.value)}
-                className="h-9 px-3 border border-border rounded-btn text-sm text-ink-700 bg-surface focus:outline-none focus:ring-2 focus:ring-primary appearance-none cursor-pointer pr-8"
-                style={{
-                  backgroundImage:
-                    'url(\'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="%2362748e"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.06l3.71-3.83a.75.75 0 111.08 1.04l-4.25 4.39a.75.75 0 01-1.08 0L5.21 8.27a.75.75 0 01.02-1.06z" clip-rule="evenodd"/></svg>\')',
-                  backgroundRepeat: "no-repeat",
-                  backgroundPosition: "right 0.5rem center",
-                }}
-              >
-                <option value="all">Tất cả tháng</option>
-                {availableMonths.map((m) => (
-                  <option key={m.value} value={m.value}>
-                    {m.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <Button leadingIcon={Plus} size="sm" onClick={openCreate}>
-              Ghi chi phí
-            </Button>
-          </div>
-
-          {/* Table */}
-          {sorted.length === 0 ? (
-            <EmptyState
-              icon={DollarSign}
-              message={
-                filterCategory !== "all" || filterMonth !== "all"
-                  ? "Không có khoản chi phù hợp với bộ lọc"
-                  : 'Chưa có khoản chi nào. Nhấn "Ghi chi phí" để thêm.'
-              }
-            />
-          ) : (
-            <div className="overflow-x-auto rounded-card border border-border">
-              <table className="w-full text-sm min-w-[560px]">
-                <thead className="bg-surface-alt">
-                  <tr>
-                    {["Ngày chi", "Danh mục", "Mô tả", "Số tiền", ""].map(
-                      (h) => (
-                        <th
-                          key={h}
-                          className="px-4 py-2.5 text-left text-xs font-semibold text-ink-500 uppercase tracking-wide whitespace-nowrap"
-                        >
-                          {h}
-                        </th>
-                      ),
-                    )}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {sorted.map((e) => (
-                    <tr
-                      key={e.expenseId}
-                      className="hover:bg-surface-alt transition-colors"
-                    >
-                      <td className="px-4 py-2.5 whitespace-nowrap text-ink-500 text-xs">
-                        {e.spentAt
-                          ? (() => {
-                              const [y, m, d] = e.spentAt.split("-");
-                              return `${d}/${m}/${y}`;
-                            })()
-                          : "—"}
-                      </td>
-                      <td className="px-4 py-2.5 whitespace-nowrap">
-                        <span
-                          className="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-pill"
-                          style={{
-                            backgroundColor:
-                              expenseCategoryColor(e.category) + "22",
-                            color: expenseCategoryColor(e.category),
-                          }}
-                        >
-                          {expenseCategoryLabel(e.category)}
-                        </span>
-                      </td>
-                      <td className="px-4 py-2.5 text-ink-700 max-w-[280px]">
-                        <p className="truncate">{e.description ?? "—"}</p>
-                        {e.notes && (
-                          <p className="text-xs text-ink-400 truncate mt-0.5">
-                            {e.notes}
-                          </p>
-                        )}
-                      </td>
-                      <td className="px-4 py-2.5 whitespace-nowrap font-semibold text-ink-800">
-                        {formatVND(e.amount ?? 0)}
-                      </td>
-                      <td className="px-4 py-2.5 whitespace-nowrap">
-                        <div className="flex items-center justify-end gap-0.5">
-                          <button
-                            type="button"
-                            title="Chỉnh sửa"
-                            aria-label="Chỉnh sửa chi phí"
-                            onClick={() => openEdit(e)}
-                            className="p-1.5 rounded-btn text-ink-500 hover:text-primary hover:bg-primary-50 transition-colors"
-                          >
-                            <Pencil className="w-4 h-4" />
-                          </button>
-                          <button
-                            type="button"
-                            title="Xóa"
-                            aria-label="Xóa chi phí"
-                            onClick={() => setDeleteTarget(e)}
-                            className="p-1.5 rounded-btn text-ink-500 hover:text-status-danger-fg hover:bg-status-danger-bg transition-colors"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </>
-      )}
-
-      {/* Create / Edit modal */}
-      <Modal
-        open={formOpen}
-        onOpenChange={(o) => {
-          if (!o && !saving) {
-            setFormOpen(false);
-            setEditTarget(null);
-          }
-        }}
-        title={editTarget ? "Chỉnh sửa chi phí" : "Ghi chi phí mới"}
-        size="md"
-        onSubmit={handleSubmit}
-        footer={
-          <>
-            <Button
-              variant="ghost"
-              onClick={() => {
-                setFormOpen(false);
-                setEditTarget(null);
-              }}
-              disabled={saving}
-            >
-              Huỷ
-            </Button>
-            <Button type="submit" loading={saving}>
-              {editTarget ? "Lưu thay đổi" : "Lưu"}
-            </Button>
-          </>
-        }
-      >
-        <div className="space-y-4">
-          <FormSelect
-            label="Loại chi phí"
-            required
-            value={form.category}
-            onChange={(v) =>
-              setForm((p) => ({ ...p, category: v as ExpenseCategory }))
-            }
-            options={EXPENSE_CATEGORIES.map((c) => ({
-              value: c.value,
-              label: c.label,
-            }))}
-          />
-
-          <FormField
-            label="Mô tả"
-            required
-            value={form.description}
-            onChange={(v) => setForm((p) => ({ ...p, description: v }))}
-            placeholder="NPK 50kg đợt 2"
-          />
-
-          <div className="grid grid-cols-2 gap-4">
-            <FormField
-              label="Số tiền (đ)"
-              required
-              type="number"
-              value={form.amount}
-              onChange={(v) => setForm((p) => ({ ...p, amount: v }))}
-              inputProps={{ min: "1" }}
-              placeholder="1500000"
-            />
-            <FormField
-              label="Ngày chi"
-              required
-              type="date"
-              value={form.spentAt}
-              onChange={(v) => setForm((p) => ({ ...p, spentAt: v }))}
-            />
-          </div>
-
-          <FormTextarea
-            label="Ghi chú (tuỳ chọn)"
-            value={form.notes}
-            onChange={(v) => setForm((p) => ({ ...p, notes: v }))}
-            placeholder="Mua tại đại lý Hai Lúa"
-            rows={2}
-          />
-        </div>
-      </Modal>
-
-      {/* Delete confirm */}
-      <ConfirmDialog
-        open={deleteTarget !== null}
-        onOpenChange={(o) => {
-          if (!o && !deleteMutation.isPending) setDeleteTarget(null);
-        }}
-        title="Xóa chi phí"
-        description={
-          <>
-            Bạn có chắc muốn xóa khoản chi{" "}
-            <strong>{deleteTarget?.description}</strong>? Hành động này không
-            thể hoàn tác.
-          </>
-        }
-        confirmLabel="Xóa"
-        loading={deleteMutation.isPending}
-        onConfirm={() => {
-          if (deleteTarget) deleteMutation.mutate(deleteTarget.expenseId);
-        }}
-      />
-    </div>
-  );
-}
-
 // ─── Detail Season View ────────────────────────────────────────────────────────
 
 function DetailSeasonView({
@@ -1806,12 +1746,10 @@ function DetailSeasonView({
   const { toasts, showToast: localToast, dismissToast } = useToast();
   const queryClient = useQueryClient();
 
-  // ── Tab state ──────────────────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<"harvests" | "expenses" | "iot">(
     "harvests",
   );
 
-  // ── Harvests query ──────────────────────────────────────────────────────────
   const harvestsQuery = useQuery({
     queryKey: qk.seasons.harvests(season.id),
     queryFn: async () => {
@@ -1856,11 +1794,8 @@ function DetailSeasonView({
     }
   }, [harvestsQuery.error]);
 
-  // ── Harvest detail expand (on-demand) ──────────────────────────────────────
   const [expandedHarvest, setExpandedHarvest] = useState<string | null>(null);
 
-  // Each harvest's details is a separate query, enabled only when expanded.
-  // We keep a map of harvestId → cached detail array derived from TQ cache.
   const harvestDetailQuery = useQuery({
     queryKey: qk.seasons.harvestDetails(expandedHarvest ?? ""),
     queryFn: async () => {
@@ -1872,9 +1807,6 @@ function DetailSeasonView({
     staleTime: 30_000,
   });
 
-  // Map of harvestId → details (drawn from per-harvest caches)
-  // We use a local cache map so previously loaded details remain visible
-  // while a different harvest is being expanded.
   const [detailsCache, setDetailsCache] = useState<
     Record<string, HarvestDetailResponse[]>
   >({});
@@ -1893,7 +1825,6 @@ function DetailSeasonView({
       setExpandedHarvest(null);
     } else {
       setExpandedHarvest(harvestId);
-      // Prefetch if not already cached
       if (!detailsCache[harvestId]) {
         queryClient.prefetchQuery({
           queryKey: qk.seasons.harvestDetails(harvestId),
@@ -1906,7 +1837,6 @@ function DetailSeasonView({
     }
   };
 
-  // ── Harvest form state ──────────────────────────────────────────────────────
   const [createHarvestOpen, setCreateHarvestOpen] = useState(false);
   const [editHarvest, setEditHarvest] = useState<HarvestItem | null>(null);
   const [deleteHarvest, setDeleteHarvest] = useState<HarvestItem | null>(null);
@@ -1946,7 +1876,6 @@ function DetailSeasonView({
     setCreateHarvestOpen(true);
   };
 
-  // ── Mutation: create harvest ────────────────────────────────────────────────
   const createHarvestMutation = useMutation({
     mutationFn: async () => {
       const body: HarvestRequest = {
@@ -1978,7 +1907,6 @@ function DetailSeasonView({
     },
   });
 
-  // ── Mutation: update harvest ────────────────────────────────────────────────
   const updateHarvestMutation = useMutation({
     mutationFn: async () => {
       if (!editHarvest) throw new Error("Không có thu hoạch để cập nhật");
@@ -2006,7 +1934,6 @@ function DetailSeasonView({
     },
   });
 
-  // ── Mutation: delete harvest ────────────────────────────────────────────────
   const deleteHarvestMutation = useMutation({
     mutationFn: (harvestId: string) => api.deleteHarvest(harvestId),
     onSuccess: (_data, harvestId) => {
@@ -2015,7 +1942,6 @@ function DetailSeasonView({
       queryClient.invalidateQueries({
         queryKey: qk.seasons.harvests(season.id),
       });
-      // Also drop the detail cache for that harvest
       queryClient.removeQueries({
         queryKey: qk.seasons.harvestDetails(harvestId),
       });
@@ -2054,18 +1980,24 @@ function DetailSeasonView({
   };
 
   // ── IoT sensor data ────────────────────────────────────────────────────────
-  // Initial load: fetch all devices + their latest readings, filter to this
-  // season's farm via bed → plot → farm chain.
-  // Real-time updates: useIotHub wired to season.farmId overlays live data.
+  // Resilience strategy:
+  //   - First-load (new season): full spinner, clear previous season data.
+  //   - Retry (same season, rows exist): keep stale rows, show refreshing badge.
+  //     On failure keeps stale data + soft error banner.
+  //   - Per-device fallback: if /sensors/latest fails, fall back to
+  //     GET /IotDatas/device/{id} and pick the most recent entry.
   const [iotRows, setIotRows] = useState<IotRow[]>([]);
   const [iotLoading, setIotLoading] = useState(true);
+  const [iotRefreshing, setIotRefreshing] = useState(false);
   const [iotError, setIotError] = useState<string | null>(null);
+  const [iotFallbackCount, setIotFallbackCount] = useState(0);
   const [iotRetryCount, setIotRetryCount] = useState(0);
+  // Tracks last season for which a load completed, to distinguish first-load
+  // (new season navigation) from retry (same season, iotRetryCount bumped).
+  const iotLoadedSeasonRef = React.useRef<string | null>(null);
 
-  // Stable set of deviceIds for this season (derived from iotRows after load)
   const iotDeviceIds = iotRows.map((r) => r.deviceId);
 
-  // Bed → plot → farm lookup helpers (beds prop already available)
   const bedPlotMap = React.useMemo(() => {
     const map: Record<string, string> = {};
     beds.forEach((b) => {
@@ -2082,17 +2014,29 @@ function DetailSeasonView({
     return map;
   }, [plots]);
 
-  // Initial REST fetch
   useEffect(() => {
     let cancelled = false;
+
     async function loadIot() {
-      setIotLoading(true);
+      // First-load: different season than last loaded, or no rows yet.
+      // Retry: same season with existing rows — keep stale data visible.
+      const isFirstLoad =
+        iotLoadedSeasonRef.current !== season.id || iotRows.length === 0;
+
       setIotError(null);
+      if (isFirstLoad) {
+        setIotRows([]);
+        setIotFallbackCount(0);
+        setIotLoading(true);
+      } else {
+        setIotRefreshing(true);
+      }
+
       try {
         const allDevices = await api.getIotDevices();
+        if (cancelled) return;
         const devices = Array.isArray(allDevices) ? allDevices : [];
 
-        // Filter to devices whose bed belongs to this season's farm
         const farmDevices = devices.filter((d) => {
           if (!d.bedId) return false;
           const plotId = bedPlotMap[d.bedId];
@@ -2106,11 +2050,36 @@ function DetailSeasonView({
         if (cancelled) return;
 
         const rows: IotRow[] = [];
+        let fallbacks = 0;
+
         for (let i = 0; i < farmDevices.length; i++) {
           const device = farmDevices[i];
           const result = readingResults[i];
-          if (result.status !== "fulfilled" || !result.value) continue;
-          const reading = result.value;
+
+          let reading: IotDataResponse | null = null;
+
+          if (result.status === "fulfilled" && result.value) {
+            reading = result.value;
+          } else {
+            // Primary endpoint failed — fall back to history, pick most recent.
+            try {
+              const history = await api.getIotDataByDevice(device.deviceId);
+              if (cancelled) return;
+              if (Array.isArray(history) && history.length > 0) {
+                reading = history.reduce<IotDataResponse>((latest, curr) =>
+                  new Date(curr.recordedAt) > new Date(latest.recordedAt)
+                    ? curr
+                    : latest,
+                );
+                fallbacks++;
+              }
+            } catch {
+              // Both endpoints failed — device omitted from rows.
+            }
+          }
+
+          if (!reading) continue;
+
           rows.push({
             sensorDataId: reading.sensorDataId ?? device.deviceId,
             deviceId: device.deviceId ?? "",
@@ -2127,27 +2096,36 @@ function DetailSeasonView({
             liveUpdated: false,
           });
         }
-        if (!cancelled) setIotRows(rows);
+
+        if (!cancelled) {
+          iotLoadedSeasonRef.current = season.id;
+          setIotRows(rows);
+          setIotFallbackCount(fallbacks);
+        }
       } catch (err) {
-        if (!cancelled)
-          setIotError(
+        if (!cancelled) {
+          const msg =
             err instanceof Error
               ? err.message
-              : "Không thể tải dữ liệu cảm biến",
-          );
+              : "Không thể tải dữ liệu cảm biến";
+          setIotError(msg);
+          // On retry failure keep existing rows — soft banner informs user.
+          // On first-load failure rows are already empty; EmptyState shows.
+        }
       } finally {
-        if (!cancelled) setIotLoading(false);
+        if (!cancelled) {
+          setIotLoading(false);
+          setIotRefreshing(false);
+        }
       }
     }
+
     loadIot();
     return () => {
       cancelled = true;
     };
   }, [season.id, season.farmId, bedPlotMap, plotFarmMap, iotRetryCount]);
 
-  // SignalR real-time overlay: update existing rows when live data arrives.
-  // Only updates rows that already exist (matched by deviceId) — we don't
-  // add new rows from SignalR since we don't have device metadata there.
   const { connectionState: iotConnectionState } = useIotHub({
     farmId: season.farmId || null,
     deviceIds: iotDeviceIds,
@@ -2173,7 +2151,6 @@ function DetailSeasonView({
     },
   });
 
-  // ── Growth tracking indicator ──────────────────────────────────────────────
   const [trackingKnown, setTrackingKnown] = useState<Record<string, boolean>>(
     {},
   );
@@ -2182,7 +2159,6 @@ function DetailSeasonView({
     bedName: string;
   } | null>(null);
 
-  // ── Harvest detail view / edit modals ─────────────────────────────────────
   const [viewDetailTarget, setViewDetailTarget] =
     React.useState<HarvestDetailResponse | null>(null);
   const [editDetailTarget, setEditDetailTarget] =
@@ -2213,7 +2189,7 @@ function DetailSeasonView({
         endDate: editDetailForm.endDate,
       });
     },
-    onSuccess: (_data, _vars) => {
+    onSuccess: () => {
       localToast("Cập nhật chi tiết luống thành công.", "success");
       setEditDetailTarget(null);
       if (expandedHarvest) {
@@ -2232,7 +2208,6 @@ function DetailSeasonView({
     },
   });
 
-  // ── Derived ────────────────────────────────────────────────────────────────
   const farmPlots = (Array.isArray(plots) ? plots : []).filter(
     (p) => p.farmId === season.farmId,
   );
@@ -2362,7 +2337,7 @@ function DetailSeasonView({
           );
         })}
       </div>
-      {/* Harvests section */}
+      {/* Harvests tab */}
       {activeTab === "harvests" && (
         <div className="bg-surface rounded-card border border-border shadow-card overflow-hidden">
           <div className="px-6 py-4 border-b border-border flex items-center justify-between">
@@ -2425,10 +2400,8 @@ function DetailSeasonView({
 
                 return (
                   <div key={h.harvestId}>
-                    {/* Harvest row */}
                     <div className="px-6 py-4 hover:bg-surface-alt transition-colors">
                       <div className="flex items-center gap-4">
-                        {/* Expand toggle */}
                         <button
                           type="button"
                           onClick={() => toggleHarvest(h.harvestId)}
@@ -2442,7 +2415,6 @@ function DetailSeasonView({
                           />
                         </button>
 
-                        {/* Plot + crop */}
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-semibold text-sm text-ink-800">
@@ -2486,7 +2458,6 @@ function DetailSeasonView({
                       </div>
                     </div>
 
-                    {/* Expanded: HarvestDetails */}
                     {isExpanded && (
                       <div className="bg-surface-alt border-t border-border px-6 py-4">
                         {isLoadingDetails ? (
@@ -2521,11 +2492,9 @@ function DetailSeasonView({
                             <table className="w-full text-sm">
                               <thead className="bg-surface-alt">
                                 <tr>
-                                  {/* Luống — fixed min-width so other columns get more room */}
                                   <th className="px-4 py-2.5 text-left text-xs font-semibold text-ink-500 uppercase tracking-wide min-w-[100px]">
                                     Luống
                                   </th>
-                                  {/* All other columns — shrink to content */}
                                   <th className="px-4 py-2.5 text-center text-xs font-semibold text-ink-500 uppercase tracking-wide whitespace-nowrap">
                                     Số lượng (cây)
                                   </th>
@@ -2590,7 +2559,6 @@ function DetailSeasonView({
                                       </td>
                                       <td className="px-4 py-2.5 whitespace-nowrap">
                                         <div className="flex items-center justify-center gap-0.5">
-                                          {/* View detail */}
                                           <button
                                             type="button"
                                             title="Xem chi tiết luống"
@@ -2602,7 +2570,6 @@ function DetailSeasonView({
                                           >
                                             <Eye className="w-4 h-4" />
                                           </button>
-                                          {/* Edit detail */}
                                           <button
                                             type="button"
                                             title="Chỉnh sửa chi tiết luống"
@@ -2612,7 +2579,6 @@ function DetailSeasonView({
                                           >
                                             <Pencil className="w-4 h-4" />
                                           </button>
-                                          {/* Growth tracking */}
                                           <button
                                             type="button"
                                             title={
@@ -2665,14 +2631,14 @@ function DetailSeasonView({
           )}
         </div>
       )}{" "}
-      {/* end activeTab === "harvests" */}
-      {/* Expenses section */}
+      {/* end harvests tab */}
+      {/* Expenses tab */}
       {activeTab === "expenses" && (
         <div className="bg-surface rounded-card border border-border shadow-card p-6">
           <SeasonExpensesTab seasonId={season.id} showToast={localToast} />
         </div>
       )}
-      {/* IoT Sensor Data */}
+      {/* IoT tab */}
       {activeTab === "iot" && (
         <div className="bg-surface rounded-card border border-border shadow-card overflow-hidden">
           <div className="px-6 py-4 border-b border-border flex items-center justify-between flex-wrap gap-2">
@@ -2685,7 +2651,23 @@ function DetailSeasonView({
               )}
             </h3>
             <div className="flex items-center gap-2 flex-wrap">
-              {/* SignalR connection indicator — only shown after initial load */}
+              {/* Background refresh indicator */}
+              {iotRefreshing && (
+                <span className="inline-flex items-center gap-1.5 text-xs text-ink-500">
+                  <Spinner size="xs" />
+                  Đang cập nhật...
+                </span>
+              )}
+              {/* Fallback badge — shown when history endpoint was used */}
+              {iotFallbackCount > 0 && !iotRefreshing && (
+                <StatusBadge
+                  label={`${iotFallbackCount} dự phòng`}
+                  tone="warning"
+                  size="sm"
+                  icon={AlertTriangle}
+                />
+              )}
+              {/* SignalR connection indicator */}
               {!iotLoading && (
                 <span
                   className={`inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-pill ${
@@ -2715,9 +2697,10 @@ function DetailSeasonView({
             </div>
           </div>
 
+          {/* Full spinner only on first-load (no existing rows) */}
           {iotLoading ? (
             <LoadingState message="Đang tải dữ liệu cảm biến..." />
-          ) : iotError ? (
+          ) : iotError && iotRows.length === 0 ? (
             <EmptyState
               size="sm"
               icon={Cpu}
@@ -2736,112 +2719,130 @@ function DetailSeasonView({
           ) : iotRows.length === 0 ? (
             <EmptyState size="sm" message="Chưa có dữ liệu cảm biến" />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm min-w-[560px]">
-                <thead className="bg-surface-alt border-b border-border">
-                  <tr>
-                    {[
-                      "Thiết bị",
-                      "Thời gian đo",
-                      "Nhiệt độ (°C)",
-                      "Độ ẩm KK (%)",
-                      "Độ ẩm đất (%)",
-                      "Trạng thái",
-                    ].map((h) => (
-                      <th
-                        key={h}
-                        className="px-4 py-3 text-left text-xs font-semibold text-ink-500 uppercase tracking-wide whitespace-nowrap"
-                      >
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {iotRows.map((row) => (
-                    <tr
-                      key={row.sensorDataId}
-                      className={`hover:bg-surface-alt transition-colors ${row.isAlert ? "bg-status-danger-bg/20" : ""}`}
-                    >
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <div className="flex items-center gap-1.5">
-                          <div className="font-mono text-xs font-semibold text-ink-800">
-                            {row.deviceCode}
-                          </div>
-                          {row.liveUpdated && (
-                            <span
-                              title="Dữ liệu trực tiếp"
-                              className="w-1.5 h-1.5 rounded-full bg-status-success-fg shrink-0"
-                            />
-                          )}
-                        </div>
-                        {row.deviceName &&
-                          row.deviceName !== row.deviceCode && (
-                            <div className="text-xs text-ink-400 mt-0.5">
-                              {row.deviceName}
-                            </div>
-                          )}
-                      </td>
-                      <td className="px-4 py-3 text-ink-500 whitespace-nowrap text-xs">
-                        {row.recordedAt
-                          ? new Date(row.recordedAt).toLocaleString("vi-VN", {
-                              day: "2-digit",
-                              month: "2-digit",
-                              year: "numeric",
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })
-                          : "—"}
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <span className="inline-flex items-center gap-1.5 font-medium text-orange-600">
-                          <Thermometer className="w-3.5 h-3.5" />
-                          {row.temperature != null
-                            ? row.temperature.toFixed(1)
-                            : "—"}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <span className="inline-flex items-center gap-1.5 font-medium text-blue-600">
-                          <Droplets className="w-3.5 h-3.5" />
-                          {row.humidity != null ? row.humidity : "—"}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <span className="inline-flex items-center gap-1.5 font-medium text-status-success-fg">
-                          <Droplets className="w-3.5 h-3.5 opacity-60" />
-                          {row.soilMoisture != null ? row.soilMoisture : "—"}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <div className="flex flex-col gap-1">
-                          <span
-                            className={`inline-flex items-center gap-1 text-xs ${row.isRaining ? "font-medium text-blue-600" : "text-ink-500"}`}
-                          >
-                            <CloudRain className="w-3 h-3" />
-                            Mưa: {row.isRaining ? "Có" : "Không"}
-                          </span>
-                          <span
-                            className={`inline-flex items-center gap-1 text-xs ${row.isAlert ? "font-medium text-status-danger-fg" : "text-status-success-fg"}`}
-                          >
-                            {row.isAlert ? (
-                              <AlertTriangle className="w-3 h-3" />
-                            ) : (
-                              <CheckCircle className="w-3 h-3" />
-                            )}
-                            Sự cố: {row.isAlert ? "Có" : "Không"}
-                          </span>
-                        </div>
-                      </td>
+            <>
+              {/* Soft error banner — refresh failed but stale data remains */}
+              {iotError && (
+                <div className="mx-6 mt-4 px-4 py-2.5 rounded-card bg-status-warning-bg border border-status-warning-fg/20 flex items-center gap-2 text-sm text-status-warning-fg flex-wrap">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span className="flex-1 min-w-0">
+                    Không thể làm mới: {iotError}. Đang hiển thị dữ liệu cũ.
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setIotRetryCount((c) => c + 1)}
+                  >
+                    Thử lại
+                  </Button>
+                </div>
+              )}
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm min-w-[560px]">
+                  <thead className="bg-surface-alt border-b border-border">
+                    <tr>
+                      {[
+                        "Thiết bị",
+                        "Thời gian đo",
+                        "Nhiệt độ (°C)",
+                        "Độ ẩm KK (%)",
+                        "Độ ẩm đất (%)",
+                        "Trạng thái",
+                      ].map((h) => (
+                        <th
+                          key={h}
+                          className="px-4 py-3 text-left text-xs font-semibold text-ink-500 uppercase tracking-wide whitespace-nowrap"
+                        >
+                          {h}
+                        </th>
+                      ))}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {iotRows.map((row) => (
+                      <tr
+                        key={row.sensorDataId}
+                        className={`hover:bg-surface-alt transition-colors ${row.isAlert ? "bg-status-danger-bg/20" : ""}`}
+                      >
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <div className="flex items-center gap-1.5">
+                            <div className="font-mono text-xs font-semibold text-ink-800">
+                              {row.deviceCode}
+                            </div>
+                            {row.liveUpdated && (
+                              <span
+                                title="Dữ liệu trực tiếp"
+                                className="w-1.5 h-1.5 rounded-full bg-status-success-fg shrink-0"
+                              />
+                            )}
+                          </div>
+                          {row.deviceName &&
+                            row.deviceName !== row.deviceCode && (
+                              <div className="text-xs text-ink-400 mt-0.5">
+                                {row.deviceName}
+                              </div>
+                            )}
+                        </td>
+                        <td className="px-4 py-3 text-ink-500 whitespace-nowrap text-xs">
+                          {row.recordedAt
+                            ? new Date(row.recordedAt).toLocaleString("vi-VN", {
+                                day: "2-digit",
+                                month: "2-digit",
+                                year: "numeric",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })
+                            : "—"}
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <span className="inline-flex items-center gap-1.5 font-medium text-orange-600">
+                            <Thermometer className="w-3.5 h-3.5" />
+                            {row.temperature != null
+                              ? row.temperature.toFixed(1)
+                              : "—"}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <span className="inline-flex items-center gap-1.5 font-medium text-blue-600">
+                            <Droplets className="w-3.5 h-3.5" />
+                            {row.humidity != null ? row.humidity : "—"}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <span className="inline-flex items-center gap-1.5 font-medium text-status-success-fg">
+                            <Droplets className="w-3.5 h-3.5 opacity-60" />
+                            {row.soilMoisture != null ? row.soilMoisture : "—"}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <div className="flex flex-col gap-1">
+                            <span
+                              className={`inline-flex items-center gap-1 text-xs ${row.isRaining ? "font-medium text-blue-600" : "text-ink-500"}`}
+                            >
+                              <CloudRain className="w-3 h-3" />
+                              Mưa: {row.isRaining ? "Có" : "Không"}
+                            </span>
+                            <span
+                              className={`inline-flex items-center gap-1 text-xs ${row.isAlert ? "font-medium text-status-danger-fg" : "text-status-success-fg"}`}
+                            >
+                              {row.isAlert ? (
+                                <AlertTriangle className="w-3 h-3" />
+                              ) : (
+                                <CheckCircle className="w-3 h-3" />
+                              )}
+                              Sự cố: {row.isAlert ? "Có" : "Không"}
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </div>
       )}{" "}
-      {/* end activeTab === "iot" */}
+      {/* end IoT tab */}
       {/* Create/Edit Harvest Modal */}
       <Modal
         open={createHarvestOpen}
@@ -2873,7 +2874,6 @@ function DetailSeasonView({
         }
       >
         <div className="space-y-4">
-          {/* Plot select */}
           <FormSelect
             label="Vuông đất"
             required
@@ -2886,8 +2886,6 @@ function DetailSeasonView({
             placeholder="Chọn vuông đất"
             disabled={!!editHarvest}
           />
-
-          {/* Crop select */}
           <FormSelect
             label="Cây trồng"
             required
@@ -2900,7 +2898,6 @@ function DetailSeasonView({
             placeholder="Chọn cây trồng"
             disabled={!!editHarvest}
           />
-
           <div className="grid grid-cols-2 gap-4">
             <FormField
               label="Ngày thu hoạch dự kiến"
@@ -2926,7 +2923,6 @@ function DetailSeasonView({
               placeholder="0"
             />
           </div>
-
           <FormSelect
             label="Đơn vị sản lượng"
             value={harvestForm.unit}
@@ -2936,7 +2932,6 @@ function DetailSeasonView({
               { value: "tấn", label: "tấn" },
             ]}
           />
-
           <FormSelect
             label="Trạng thái"
             value={harvestForm.status}
@@ -3122,7 +3117,6 @@ function CreateSeasonView({
   ]);
   const [openPicker, setOpenPicker] = useState<string | null>(null);
 
-  // Beds for the selected farm
   const bedsForFarm = formData.farmId
     ? beds.filter((b) => {
         const plot = plots.find((p) => p.plotId === b.plotId);
@@ -3160,7 +3154,6 @@ function CreateSeasonView({
     return errors;
   };
 
-  // ── Mutation: skip (create season only) ───────────────────────────────────
   const skipMutation = useMutation({
     mutationFn: () =>
       api.createSeason({
@@ -3187,9 +3180,6 @@ function CreateSeasonView({
     },
   });
 
-  // ── Mutation: full create with harvests ────────────────────────────────────
-  // Complex orchestrated mutation — kept in one mutationFn to keep the
-  // create-then-harvest sequencing atomic from the user's perspective.
   const createWithHarvestsMutation = useMutation({
     mutationFn: async () => {
       const hasInvalid = harvestGroups.some(
@@ -3201,7 +3191,6 @@ function CreateSeasonView({
         );
       }
 
-      // Step 1: create the season
       const created = await api.createSeason({
         farmId: formData.farmId,
         seasonName: formData.name.trim(),
@@ -3212,7 +3201,6 @@ function CreateSeasonView({
         status: formData.status,
       });
 
-      // Step 2: resolve seasonId from response or re-fetch
       let resolvedSeasonId: string | null = (created as any)?.seasonId ?? null;
       if (!resolvedSeasonId) {
         const allSeasons = await api.getSeasons();
@@ -3228,15 +3216,9 @@ function CreateSeasonView({
       }
 
       if (!resolvedSeasonId) {
-        return {
-          created,
-          partialFail: true,
-          failedCount: 0,
-          total: 0,
-        };
+        return { created, partialFail: true, failedCount: 0, total: 0 };
       }
 
-      // Step 3: create harvest records
       const harvestsToCreate = harvestGroups.filter(
         (g) => g.plotId && g.cropId && g.expectedDate,
       );
@@ -3313,7 +3295,6 @@ function CreateSeasonView({
     <div className="flex flex-col gap-6 p-6">
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
 
-      {/* Header */}
       <div className="flex items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-3 mb-2">
@@ -3325,7 +3306,6 @@ function CreateSeasonView({
             </Link>
             <h1 className="text-xl font-bold text-ink-800">Tạo Mùa Vụ Mới</h1>
           </div>
-          {/* Step indicators */}
           <div className="flex items-center gap-2 ml-12">
             {[
               { n: 1, label: "Thông tin cơ bản" },
@@ -3357,7 +3337,6 @@ function CreateSeasonView({
         </div>
       </div>
 
-      {/* Step 1: Season info */}
       {step === 1 && (
         <div className="bg-surface rounded-card border border-border shadow-card p-6 max-w-2xl">
           <div className="space-y-4">
@@ -3380,7 +3359,6 @@ function CreateSeasonView({
                 onChange={(v) => {
                   setFormData((p) => ({ ...p, farmId: v }));
                   setFormErrors((p) => ({ ...p, farmId: "" }));
-                  // Reset harvest groups when farm changes
                   setHarvestGroups([
                     {
                       id: crypto.randomUUID(),
@@ -3401,7 +3379,6 @@ function CreateSeasonView({
                 error={formErrors.farmId}
               />
             </div>
-
             <div className="grid grid-cols-2 gap-4">
               <FormField
                 label="Ngày bắt đầu"
@@ -3431,14 +3408,12 @@ function CreateSeasonView({
                 error={formErrors.endDate}
               />
             </div>
-
             <FormSelect
               label="Trạng thái"
               value={formData.status}
               onChange={(v) => setFormData((p) => ({ ...p, status: v }))}
               options={STATUS_OPTIONS}
             />
-
             <FormTextarea
               label="Mô tả"
               value={formData.description}
@@ -3446,7 +3421,6 @@ function CreateSeasonView({
               placeholder="Mô tả mùa vụ..."
               rows={3}
             />
-
             <FormTextarea
               label="Ghi chú"
               value={formData.seasonNotes}
@@ -3455,7 +3429,6 @@ function CreateSeasonView({
               rows={2}
             />
           </div>
-
           <div className="mt-6 flex justify-end">
             <Button
               onClick={() => {
@@ -3470,7 +3443,6 @@ function CreateSeasonView({
         </div>
       )}
 
-      {/* Step 2: Harvest groups */}
       {step === 2 && (
         <div className="bg-surface rounded-card border border-border shadow-card p-6 max-w-3xl">
           <div className="flex items-center justify-between mb-4">
@@ -3496,7 +3468,6 @@ function CreateSeasonView({
                 key={group.id}
                 className="border border-border rounded-card overflow-hidden"
               >
-                {/* Group header */}
                 <div className="flex items-center gap-3 px-4 py-3 bg-surface-alt border-b border-border">
                   <div className="w-6 h-6 rounded-pill bg-primary text-primary-fg text-xs font-bold flex items-center justify-center shrink-0">
                     {idx + 1}
@@ -3531,7 +3502,6 @@ function CreateSeasonView({
                   )}
                 </div>
 
-                {/* Group body */}
                 <div className="p-4 grid grid-cols-2 gap-4">
                   <FormSelect
                     label="Vuông đất"
@@ -3618,7 +3588,6 @@ function CreateSeasonView({
             ))}
           </div>
 
-          {/* Add another group */}
           <button
             type="button"
             onClick={() =>
@@ -3640,7 +3609,6 @@ function CreateSeasonView({
             <PlusCircle className="w-4 h-4" /> Thêm đợt thu hoạch khác
           </button>
 
-          {/* Footer */}
           <div className="mt-6 flex items-center justify-between">
             <Button
               variant="secondary"
@@ -3748,7 +3716,6 @@ function EditSeasonView({
     <div className="flex flex-col gap-6 p-6">
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
 
-      {/* Header */}
       <div className="flex items-center gap-3">
         <Link
           to={`/seasons?view=detail&id=${season.id}`}
@@ -3794,7 +3761,6 @@ function EditSeasonView({
               error={formErrors.farmId}
             />
           </div>
-
           <div className="grid grid-cols-2 gap-4">
             <FormField
               label="Ngày bắt đầu"
@@ -3824,14 +3790,12 @@ function EditSeasonView({
               error={formErrors.endDate}
             />
           </div>
-
           <FormSelect
             label="Trạng thái"
             value={formData.status}
             onChange={(v) => setFormData((p) => ({ ...p, status: v }))}
             options={STATUS_OPTIONS}
           />
-
           <FormTextarea
             label="Mô tả"
             value={formData.description}
@@ -3839,7 +3803,6 @@ function EditSeasonView({
             placeholder="Mô tả mùa vụ..."
             rows={3}
           />
-
           <FormTextarea
             label="Ghi chú"
             value={formData.seasonNotes}

@@ -1300,7 +1300,8 @@ export const api = {
       "GET",
       `/api/sensors/latest?deviceCode=${encodeURIComponent(deviceCode)}`,
     ),
-
+  getIotDataByDevice: (deviceId: string) =>
+    request<IotDataResponse[]>("GET", `/api/IotDatas/device/${deviceId}`),
   // IoT Devices
   getIotDevices: () => request<IotDeviceResponse[]>("GET", "/api/IotDevices"),
   getIotDevice: (id: string) =>
