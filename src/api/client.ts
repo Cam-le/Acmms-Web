@@ -1,6 +1,9 @@
 /// <reference types="vite/client" />
 const BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
+/** Abort any request that hangs longer than this (poor-network guard). */
+const FETCH_TIMEOUT_MS = 15_000;
+
 async function request<T>(
   method: string,
   path: string,
@@ -14,11 +17,27 @@ async function request<T>(
   const token = localStorage.getItem("authToken");
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  const res = await fetch(`${BASE_URL}${path}`, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+  let res: Response;
+  try {
+    res = await fetch(`${BASE_URL}${path}`, {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new Error(
+        "Kết nối tới máy chủ quá thời gian chờ (30s). Vui lòng kiểm tra mạng và thử lại.",
+      );
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 
   if (res.status === 204) return null as T;
 
@@ -75,7 +94,27 @@ async function requestForm<T>(
   const token = localStorage.getItem("authToken");
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  const res = await fetch(`${BASE_URL}${path}`, { method, headers, body });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+  let res: Response;
+  try {
+    res = await fetch(`${BASE_URL}${path}`, {
+      method,
+      headers,
+      body,
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new Error(
+        "Kết nối tới máy chủ quá thời gian chờ (30s). Vui lòng kiểm tra mạng và thử lại.",
+      );
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 
   if (res.status === 204) return null as T;
 
@@ -1300,7 +1339,8 @@ export const api = {
       "GET",
       `/api/sensors/latest?deviceCode=${encodeURIComponent(deviceCode)}`,
     ),
-
+  getIotDataByDevice: (deviceId: string) =>
+    request<IotDataResponse[]>("GET", `/api/IotDatas/device/${deviceId}`),
   // IoT Devices
   getIotDevices: () => request<IotDeviceResponse[]>("GET", "/api/IotDevices"),
   getIotDevice: (id: string) =>

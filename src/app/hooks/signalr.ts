@@ -18,9 +18,12 @@ const TOKEN_KEY = "authToken";
 export function createHubConnection(path: string): signalR.HubConnection {
   return new signalR.HubConnectionBuilder()
     .withUrl(`${BASE_URL}${path}`, {
-      // Bearer JWT — same key used by auth.ts saveApiSession()
       accessTokenFactory: () => localStorage.getItem(TOKEN_KEY) ?? "",
+      transport:
+        signalR.HttpTransportType.ServerSentEvents |
+        signalR.HttpTransportType.LongPolling,
     })
+    .withHubProtocol(new signalR.JsonHubProtocol())
     .withAutomaticReconnect()
     .configureLogging(
       import.meta.env.DEV
