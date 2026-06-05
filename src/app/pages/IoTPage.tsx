@@ -1,4 +1,10 @@
-import { useState, useEffect } from "react";
+import {
+  useState,
+  useEffect,
+  useRef,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 import { Plus, Cpu, Radio, MapPin } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -175,6 +181,7 @@ export function IoTPage() {
     mutationFn: () =>
       api.createIotDevice({
         ...formData,
+        status: "Active", // always Active on create; status field is hidden in add modal
         installationDate: new Date(formData.installationDate).toISOString(),
       }),
     onSuccess: () => {
@@ -443,7 +450,9 @@ function IotFormModal({
   open: boolean;
   mode: "add" | "edit";
   formData: IotDeviceRequest;
-  setFormData: (d: IotDeviceRequest) => void;
+  /** Typed as Dispatch<SetStateAction<T>> so functional updaters can be used
+   *  inside effects without stale-closure issues. */
+  setFormData: Dispatch<SetStateAction<IotDeviceRequest>>;
   seasons: SeasonResponse[];
   selectedSeasonId: string;
   setSelectedSeasonId: (id: string) => void;
@@ -454,7 +463,51 @@ function IotFormModal({
   // ── Cascade state: season → harvest → bed ───────────────────────────
   const [selectedHarvestId, setSelectedHarvestId] = useState<string>("");
 
-  // Step 2: harvests for selected season
+  // ── Farm coordinates auto-fill (add mode only) ──────────────────────
+  // Derive farmId from the currently selected season so we can fetch the
+  // farm and pre-populate lat/lng without requiring manual entry.
+  const farmId =
+    seasons.find((s) => s.seasonId === selectedSeasonId)?.farmId ?? "";
+
+  const farmQuery = useQuery({
+    queryKey: qk.farms.detail(farmId),
+    queryFn: () => api.getFarm(farmId),
+    enabled: open && mode === "add" && !!farmId,
+    staleTime: 5 * 60_000,
+  });
+
+  // Track which farmId's coordinates have already been applied so we
+  // don't overwrite manual edits when an unrelated re-render fires.
+  const lastAutoFillFarmIdRef = useRef<string>("");
+
+  useEffect(() => {
+    if (mode !== "add" || !farmQuery.data || !farmId) return;
+    if (lastAutoFillFarmIdRef.current === farmId) return;
+
+    // Mark processed regardless of whether coords are meaningful —
+    // prevents repeated no-op calls when the farm truly has (0, 0).
+    lastAutoFillFarmIdRef.current = farmId;
+
+    const lat = farmQuery.data.latitude;
+    const lng = farmQuery.data.longitude;
+    // Only fill when the farm actually has coordinates set.
+    if (lat != null && lng != null && (lat !== 0 || lng !== 0)) {
+      setFormData((prev) => ({ ...prev, latitude: lat, longitude: lng }));
+    }
+  }, [farmQuery.data, farmId, mode, setFormData]);
+
+  // Reset auto-fill tracker when modal closes so it re-runs on next open.
+  useEffect(() => {
+    if (!open) lastAutoFillFarmIdRef.current = "";
+  }, [open]);
+
+  // Whether we successfully sourced coordinates from the farm.
+  const farmCoordsApplied =
+    mode === "add" &&
+    !!farmQuery.data &&
+    (farmQuery.data.latitude !== 0 || farmQuery.data.longitude !== 0);
+
+  // ── Cascade: harvests for selected season ────────────────────────────
   const harvestsQuery = useQuery({
     queryKey: qk.seasons.harvests(selectedSeasonId),
     queryFn: () => api.getHarvestsBySeason(selectedSeasonId),
@@ -477,7 +530,7 @@ function IotFormModal({
     // and season change is intentional, so we let bed reset via harvest change.
   }, [selectedSeasonId]);
 
-  // Step 3: harvest-details (beds) for selected harvest
+  // ── Cascade: beds for selected harvest ───────────────────────────────
   const harvestDetailsQuery = useQuery({
     queryKey: qk.seasons.harvestDetails(selectedHarvestId),
     queryFn: () => api.getHarvestDetailsByHarvest(selectedHarvestId),
@@ -488,25 +541,25 @@ function IotFormModal({
     harvestDetailsQuery.data ?? [],
   );
 
-  // In add mode: auto-select first bed when details load
+  // In add mode: auto-select first bed when details load.
+  // Uses functional updater to avoid reading stale formData.bedId from closure.
   useEffect(() => {
-    if (mode === "add" && harvestDetails.length > 0 && !formData.bedId) {
-      setFormData({ ...formData, bedId: harvestDetails[0].bedId });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [harvestDetails, mode]);
+    if (mode !== "add" || harvestDetails.length === 0) return;
+    setFormData((prev) => {
+      if (prev.bedId) return prev; // already set — don't override
+      return { ...prev, bedId: harvestDetails[0].bedId };
+    });
+  }, [harvestDetails, mode, setFormData]);
 
   // Reset cascade state when modal closes
   useEffect(() => {
-    if (!open) {
-      setSelectedHarvestId("");
-    }
+    if (!open) setSelectedHarvestId("");
   }, [open]);
 
   // When harvest changes, clear bed selection so user must pick explicitly
   const handleHarvestChange = (harvestId: string) => {
     setSelectedHarvestId(harvestId);
-    setFormData({ ...formData, bedId: "" });
+    setFormData((prev) => ({ ...prev, bedId: "" }));
   };
 
   const canSubmit =
@@ -592,7 +645,7 @@ function IotFormModal({
                 label="Luống"
                 required
                 value={formData.bedId}
-                onChange={(v) => setFormData({ ...formData, bedId: v })}
+                onChange={(v) => setFormData((prev) => ({ ...prev, bedId: v }))}
                 placeholder="— Chọn luống —"
                 options={harvestDetails.map((d) => ({
                   value: d.bedId,
@@ -609,35 +662,46 @@ function IotFormModal({
             required
             placeholder="Ví dụ: CMMS_01_ESP"
             value={formData.deviceCode}
-            onChange={(v) => setFormData({ ...formData, deviceCode: v })}
+            onChange={(v) =>
+              setFormData((prev) => ({ ...prev, deviceCode: v }))
+            }
           />
           <FormField
             label="Tên thiết bị"
             required
             placeholder="Ví dụ: Cảm biến nhiệt độ A1"
             value={formData.name}
-            onChange={(v) => setFormData({ ...formData, name: v })}
+            onChange={(v) => setFormData((prev) => ({ ...prev, name: v }))}
           />
         </div>
 
-        {/* Type + Status */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {/* Type — full-width in add mode; paired with Status in edit mode */}
+        {mode === "edit" ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <FormField
+              label="Loại thiết bị"
+              placeholder="Ví dụ: Environment"
+              value={formData.type}
+              onChange={(v) => setFormData((prev) => ({ ...prev, type: v }))}
+            />
+            <FormSelect
+              label="Trạng thái"
+              value={formData.status}
+              onChange={(v) => setFormData((prev) => ({ ...prev, status: v }))}
+              options={[
+                { value: "Active", label: iotStatusLabel("Active") },
+                { value: "Inactive", label: iotStatusLabel("Inactive") },
+              ]}
+            />
+          </div>
+        ) : (
           <FormField
             label="Loại thiết bị"
             placeholder="Ví dụ: Environment"
             value={formData.type}
-            onChange={(v) => setFormData({ ...formData, type: v })}
+            onChange={(v) => setFormData((prev) => ({ ...prev, type: v }))}
           />
-          <FormSelect
-            label="Trạng thái"
-            value={formData.status}
-            onChange={(v) => setFormData({ ...formData, status: v })}
-            options={[
-              { value: "Active", label: iotStatusLabel("Active") },
-              { value: "Inactive", label: iotStatusLabel("Inactive") },
-            ]}
-          />
-        </div>
+        )}
 
         {/* Installation Date */}
         <FormField
@@ -645,18 +709,18 @@ function IotFormModal({
           type="date"
           value={formData.installationDate.split("T")[0]}
           onChange={(v) =>
-            setFormData({
-              ...formData,
+            setFormData((prev) => ({
+              ...prev,
               installationDate: v
                 ? new Date(v).toISOString()
                 : new Date().toISOString(),
-            })
+            }))
           }
         />
 
         {/* Coordinates */}
         <div>
-          <p className="block text-sm font-medium text-ink-600 mb-1.5 flex items-center gap-1.5">
+          <p className="text-sm font-medium text-ink-600 mb-1.5 flex items-center gap-1.5">
             <MapPin className="w-3.5 h-3.5" />
             Tọa độ
           </p>
@@ -667,10 +731,10 @@ function IotFormModal({
               placeholder="Vĩ độ"
               value={formData.latitude ? String(formData.latitude) : ""}
               onChange={(v) =>
-                setFormData({
-                  ...formData,
+                setFormData((prev) => ({
+                  ...prev,
                   latitude: parseFloat(v) || 0,
-                })
+                }))
               }
               inputProps={{ step: "any" }}
             />
@@ -680,14 +744,26 @@ function IotFormModal({
               placeholder="Kinh độ"
               value={formData.longitude ? String(formData.longitude) : ""}
               onChange={(v) =>
-                setFormData({
-                  ...formData,
+                setFormData((prev) => ({
+                  ...prev,
                   longitude: parseFloat(v) || 0,
-                })
+                }))
               }
               inputProps={{ step: "any" }}
             />
           </div>
+          {/* Hint: coordinates sourced from the farm */}
+          {farmCoordsApplied && (
+            <p className="mt-1.5 text-xs text-ink-400 flex items-center gap-1">
+              <MapPin className="w-3 h-3 shrink-0" />
+              Tọa độ tự động lấy từ trang trại — có thể chỉnh sửa nếu cần
+            </p>
+          )}
+          {mode === "add" && farmQuery.isLoading && !!farmId && (
+            <p className="mt-1.5 text-xs text-ink-400">
+              Đang tải tọa độ trang trại...
+            </p>
+          )}
         </div>
       </div>
     </Modal>
