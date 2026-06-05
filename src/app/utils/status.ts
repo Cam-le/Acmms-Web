@@ -219,7 +219,7 @@ export function taskStatusLabel(s: string | null | undefined): string {
     case "pending":
     case "in_progress":
     case "active":
-      return "Đang làm";
+      return "Chưa hoàn thành";
     case "overdue":
       return "Quá hạn";
     default:

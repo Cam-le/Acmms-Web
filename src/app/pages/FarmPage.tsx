@@ -786,10 +786,14 @@ function FarmFormFields({
   formData,
   setFormData,
   errors = {},
+  hideStatus = false,
 }: {
   formData: FarmFormData;
   setFormData: React.Dispatch<React.SetStateAction<FarmFormData>>;
   errors?: FarmFormErrors;
+  /** When true (create mode), hide the status field and stack all fields in
+   *  a single column. Status defaults to "Active" server-side. */
+  hideStatus?: boolean;
 }) {
   const [mapOpen, setMapOpen] = useState(false);
 
@@ -805,79 +809,147 @@ function FarmFormFields({
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <FormField
-          label="Tên trang trại"
-          required
-          value={formData.name}
-          onChange={(v) => setFormData((p) => ({ ...p, name: v }))}
-          placeholder="Trang trại Thung lũng Xanh"
-          error={errors.name}
-        />
-        <FormField
-          label="Địa chỉ"
-          required
-          value={formData.location}
-          onChange={(v) => setFormData((p) => ({ ...p, location: v }))}
-          placeholder="Đà Lạt, Lâm Đồng, Việt Nam"
-          error={errors.location}
-          trailingAddon={
-            <button
-              type="button"
-              onClick={() => setMapOpen(true)}
-              title="Chọn tọa độ trên bản đồ"
-              className="h-full px-2.5 border border-border-strong rounded-btn text-primary hover:bg-primary-50 hover:border-primary transition-colors"
-            >
-              <Globe className="w-4 h-4" />
-            </button>
-          }
-        />
-      </div>
-
-      {/* Coordinates chip */}
-      {formData.latitude != null && formData.longitude != null && (
-        <div className="flex items-center gap-2 px-3 py-2 bg-primary-50 border border-primary/20 rounded-btn">
-          <MapPin className="w-3.5 h-3.5 text-primary shrink-0" />
-          <span className="text-xs text-primary-700 font-mono">
-            {fmtCoord(formData.latitude)}, {fmtCoord(formData.longitude)}
-          </span>
-          <span className="text-xs text-ink-400 ml-1">
-            · Tọa độ đã xác định
-          </span>
-          <button
-            type="button"
-            onClick={() =>
-              setFormData((p) => ({
-                ...p,
-                latitude: undefined,
-                longitude: undefined,
-              }))
+      {hideStatus ? (
+        // Create mode — single column, 3 fields
+        <>
+          <FormField
+            label="Tên trang trại"
+            required
+            value={formData.name}
+            onChange={(v) => setFormData((p) => ({ ...p, name: v }))}
+            placeholder="Trang trại Thung lũng Xanh"
+            error={errors.name}
+          />
+          <FormField
+            label="Địa chỉ"
+            required
+            value={formData.location}
+            onChange={(v) => setFormData((p) => ({ ...p, location: v }))}
+            placeholder="Đà Lạt, Lâm Đồng, Việt Nam"
+            error={errors.location}
+            trailingAddon={
+              <button
+                type="button"
+                onClick={() => setMapOpen(true)}
+                title="Chọn tọa độ trên bản đồ"
+                className="h-full px-2.5 border border-border-strong rounded-btn text-primary hover:bg-primary-50 hover:border-primary transition-colors"
+              >
+                <Globe className="w-4 h-4" />
+              </button>
             }
-            className="ml-auto text-xs text-ink-400 hover:text-status-danger-fg transition-colors"
-          >
-            Xóa
-          </button>
-        </div>
+          />
+          {/* Coordinates chip */}
+          {formData.latitude != null && formData.longitude != null && (
+            <div className="flex items-center gap-2 px-3 py-2 bg-primary-50 border border-primary/20 rounded-btn">
+              <MapPin className="w-3.5 h-3.5 text-primary shrink-0" />
+              <span className="text-xs text-primary-700 font-mono">
+                {fmtCoord(formData.latitude)}, {fmtCoord(formData.longitude)}
+              </span>
+              <span className="text-xs text-ink-400 ml-1">
+                · Tọa độ đã xác định
+              </span>
+              <button
+                type="button"
+                onClick={() =>
+                  setFormData((p) => ({
+                    ...p,
+                    latitude: undefined,
+                    longitude: undefined,
+                  }))
+                }
+                className="ml-auto text-xs text-ink-400 hover:text-status-danger-fg transition-colors"
+              >
+                Xóa
+              </button>
+            </div>
+          )}
+          <FormField
+            label="Diện tích (m²)"
+            required
+            type="number"
+            value={formData.area}
+            onChange={(v) => setFormData((p) => ({ ...p, area: v }))}
+            placeholder="5000"
+            error={errors.area}
+            inputProps={{ min: 1 }}
+          />
+        </>
+      ) : (
+        // Edit mode — 2-column grid, includes status
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <FormField
+              label="Tên trang trại"
+              required
+              value={formData.name}
+              onChange={(v) => setFormData((p) => ({ ...p, name: v }))}
+              placeholder="Trang trại Thung lũng Xanh"
+              error={errors.name}
+            />
+            <FormField
+              label="Địa chỉ"
+              required
+              value={formData.location}
+              onChange={(v) => setFormData((p) => ({ ...p, location: v }))}
+              placeholder="Đà Lạt, Lâm Đồng, Việt Nam"
+              error={errors.location}
+              trailingAddon={
+                <button
+                  type="button"
+                  onClick={() => setMapOpen(true)}
+                  title="Chọn tọa độ trên bản đồ"
+                  className="h-full px-2.5 border border-border-strong rounded-btn text-primary hover:bg-primary-50 hover:border-primary transition-colors"
+                >
+                  <Globe className="w-4 h-4" />
+                </button>
+              }
+            />
+          </div>
+          {/* Coordinates chip */}
+          {formData.latitude != null && formData.longitude != null && (
+            <div className="flex items-center gap-2 px-3 py-2 bg-primary-50 border border-primary/20 rounded-btn">
+              <MapPin className="w-3.5 h-3.5 text-primary shrink-0" />
+              <span className="text-xs text-primary-700 font-mono">
+                {fmtCoord(formData.latitude)}, {fmtCoord(formData.longitude)}
+              </span>
+              <span className="text-xs text-ink-400 ml-1">
+                · Tọa độ đã xác định
+              </span>
+              <button
+                type="button"
+                onClick={() =>
+                  setFormData((p) => ({
+                    ...p,
+                    latitude: undefined,
+                    longitude: undefined,
+                  }))
+                }
+                className="ml-auto text-xs text-ink-400 hover:text-status-danger-fg transition-colors"
+              >
+                Xóa
+              </button>
+            </div>
+          )}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <FormField
+              label="Diện tích (m²)"
+              required
+              type="number"
+              value={formData.area}
+              onChange={(v) => setFormData((p) => ({ ...p, area: v }))}
+              placeholder="5000"
+              error={errors.area}
+              inputProps={{ min: 1 }}
+            />
+            <FormSelect
+              label="Trạng thái"
+              value={formData.status}
+              onChange={(v) => setFormData((p) => ({ ...p, status: v }))}
+              options={STATUS_OPTIONS}
+            />
+          </div>
+        </>
       )}
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <FormField
-          label="Diện tích (m²)"
-          required
-          type="number"
-          value={formData.area}
-          onChange={(v) => setFormData((p) => ({ ...p, area: v }))}
-          placeholder="5000"
-          error={errors.area}
-          inputProps={{ min: 1 }}
-        />
-        <FormSelect
-          label="Trạng thái"
-          value={formData.status}
-          onChange={(v) => setFormData((p) => ({ ...p, status: v }))}
-          options={STATUS_OPTIONS}
-        />
-      </div>
 
       <MapPickerModal
         open={mapOpen}
@@ -1260,6 +1332,7 @@ function CreateFarmModal({
           setFormErrors({});
         }}
         errors={formErrors}
+        hideStatus
       />
     </Modal>
   );
@@ -1434,7 +1507,7 @@ export function FarmPage() {
         farmName: data.name.trim(),
         farmLocation: data.location.trim(),
         farmArea: parseFloat(data.area) || 0,
-        farmStatus: data.status,
+        farmStatus: "Active",
         latitude: data.latitude ?? undefined,
         longitude: data.longitude ?? undefined,
       });
