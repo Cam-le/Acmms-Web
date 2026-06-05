@@ -920,6 +920,12 @@ export function TasksPage() {
   });
   const [singleConflict, setSingleConflict] = useState<string[]>([]);
 
+  // Progress counter for bulk sequential assignment (null when idle)
+  const [bulkProgress, setBulkProgress] = useState<{
+    done: number;
+    total: number;
+  } | null>(null);
+
   const bulkPreviewCount = (() => {
     if (!bulkForm.fromDate || !bulkForm.toDate || !bulkForm.selectedDays.length)
       return 0;
@@ -1206,6 +1212,21 @@ export function TasksPage() {
     },
   });
 
+  // Returns true for server-side schedule-conflict errors so sequential bulk
+  // assignment can skip already-created dates on retry (idempotent behavior).
+  const isConflictError = (err: unknown): boolean => {
+    if (!(err instanceof Error)) return false;
+    const msg = err.message.toLowerCase();
+    return (
+      msg.includes("conflict") ||
+      msg.includes("trùng") ||
+      msg.includes("already") ||
+      msg.includes("duplicate") ||
+      msg.includes("đã tồn tại") ||
+      msg.includes("has conflicting")
+    );
+  };
+
   const bulkAssignMutation = useMutation({
     mutationFn: async (params: {
       dates: string[];
@@ -1221,9 +1242,17 @@ export function TasksPage() {
       endMinute: string;
       notes: string;
     }) => {
-      await Promise.all(
-        params.dates.map((dateStr) =>
-          api.createTaskDetail({
+      const total = params.dates.length;
+      let succeeded = 0;
+      let skipped = 0;
+
+      for (let i = 0; i < params.dates.length; i++) {
+        const dateStr = params.dates[i];
+        // Update progress before each request so the button label refreshes
+        setBulkProgress({ done: i, total });
+
+        try {
+          await api.createTaskDetail({
             taskId: params.taskId,
             seasonId: params.seasonId,
             farmId: params.farmId,
@@ -1233,19 +1262,37 @@ export function TasksPage() {
             startDate: `${dateStr}T${params.startHour}:${params.startMinute}:00.000Z`,
             endDate: `${dateStr}T${params.endHour}:${params.endMinute}:00.000Z`,
             notes: params.notes,
-            status: "Pending",
-          }),
-        ),
-      );
-      return params.dates.length;
+            status: "Assigned",
+          });
+          succeeded++;
+        } catch (err) {
+          // Conflict = already assigned from a previous attempt — skip, don't fail.
+          // The WorkerSchedulePreview surfaces conflicts BEFORE submit, so the
+          // user has already acknowledged any real overlaps.
+          if (isConflictError(err)) {
+            skipped++;
+          } else {
+            // Real error (network timeout, server fault, etc.) — abort and surface it.
+            throw err;
+          }
+        }
+      }
+
+      return { succeeded, skipped };
     },
-    onSuccess: (count) => {
+    onSuccess: ({ succeeded, skipped }) => {
+      setBulkProgress(null);
       resetAssignModal();
       setIsAssignOpen(false);
-      showToast(`Đã giao ${count} việc thành công`, "success");
+      const msg =
+        skipped > 0
+          ? `Đã giao ${succeeded} việc (${skipped} ngày đã tồn tại, bỏ qua)`
+          : `Đã giao ${succeeded} việc thành công`;
+      showToast(msg, "success");
       queryClient.invalidateQueries({ queryKey: qk.tasks.all });
     },
     onError: (err) => {
+      setBulkProgress(null);
       showToast(
         "Giao việc thất bại: " + (err instanceof Error ? err.message : ""),
         "error",
@@ -3311,7 +3358,9 @@ export function TasksPage() {
               >
                 <CheckCircle2 className="w-4 h-4" />
                 {isAssignSaving
-                  ? "Đang lưu..."
+                  ? assignMode === "bulk" && bulkProgress
+                    ? `Đang giao ${bulkProgress.done + 1}/${bulkProgress.total}...`
+                    : "Đang lưu..."
                   : assignMode === "bulk"
                     ? bulkPreviewCount > 0
                       ? `Xác nhận (${bulkPreviewCount} giao việc)`
