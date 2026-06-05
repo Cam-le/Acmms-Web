@@ -128,7 +128,8 @@ export function PlotsPage() {
   const [deletePlotDialogOpen, setDeletePlotDialogOpen] = useState(false);
   const [deleteBedDialogOpen, setDeleteBedDialogOpen] = useState(false);
   const [plotToDeleteId, setPlotToDeleteId] = useState<string | null>(null);
-  const [bedToDeleteId, setBedToDeleteId] = useState<string | null>(null);
+  const [bedToDelete, setBedToDelete] = useState<BedResponse | null>(null);
+  const [deletingBed, setDeletingBed] = useState(false);
 
   // IoT quick-add: bed info + farm coords to pre-fill the modal
   const [iotBedTarget, setIotBedTarget] = useState<{
@@ -314,24 +315,8 @@ export function PlotsPage() {
     },
   });
 
-  const deleteBedMutation = useMutation({
-    mutationFn: (bedId: string) => api.deleteBed(bedId),
-    onSuccess: () => {
-      setDeleteBedDialogOpen(false);
-      setBedToDeleteId(null);
-      showToast("Xóa luống thành công", "success");
-      // Deleting a bed updates plot bedsCount — invalidate both
-      queryClient.invalidateQueries({ queryKey: qk.beds.all });
-      queryClient.invalidateQueries({ queryKey: qk.plots.all });
-    },
-    onError: (err) => {
-      showToast(
-        "Xóa luống thất bại: " +
-          (err instanceof Error ? err.message : "Lỗi không xác định"),
-        "error",
-      );
-    },
-  });
+  // No deleteBedMutation — deletion requires a prior deactivation step;
+  // handled inline in confirmDeleteBed below.
 
   // ── Derived ──
 
@@ -377,13 +362,45 @@ export function PlotsPage() {
   const handleUpdateBed = (id: string, data: BedRequest) =>
     updateBedMutation.mutate({ id, data });
 
-  const handleDeleteBed = (bedId: string) => {
-    setBedToDeleteId(bedId);
+  const handleDeleteBed = (bed: BedResponse) => {
+    setBedToDelete(bed);
     setDeleteBedDialogOpen(true);
   };
 
-  const confirmDeleteBed = () => {
-    if (bedToDeleteId) deleteBedMutation.mutate(bedToDeleteId);
+  const confirmDeleteBed = async () => {
+    if (!bedToDelete) return;
+    setDeletingBed(true);
+    try {
+      // Backend requires Active beds to be deactivated before deletion.
+      // Silently set to Inactive first, then delete.
+      await api.updateBed(bedToDelete.bedId, {
+        plotId: bedToDelete.plotId,
+        bedName: bedToDelete.bedName,
+        bedArea: bedToDelete.bedArea,
+        bedStatus: "Inactive",
+        cropQuantities: bedToDelete.cropQuantities ?? 0,
+        cropId: bedToDelete.cropId ?? undefined,
+        bedWidth: bedToDelete.bedWidth ?? undefined,
+        bedLength: bedToDelete.bedLength ?? undefined,
+        pathWidth: bedToDelete.pathWidth ?? undefined,
+        plantCount: bedToDelete.plantCount ?? undefined,
+        rowCount: bedToDelete.rowCount ?? undefined,
+      });
+      await api.deleteBed(bedToDelete.bedId);
+      setDeleteBedDialogOpen(false);
+      setBedToDelete(null);
+      showToast("Xóa luống thành công", "success");
+      queryClient.invalidateQueries({ queryKey: qk.beds.all });
+      queryClient.invalidateQueries({ queryKey: qk.plots.all });
+    } catch (err) {
+      showToast(
+        "Xóa luống thất bại: " +
+          (err instanceof Error ? err.message : "Lỗi không xác định"),
+        "error",
+      );
+    } finally {
+      setDeletingBed(false);
+    }
   };
 
   // ── Auto-allocate confirmed: invalidate via query cache ──
@@ -672,9 +689,7 @@ export function PlotsPage() {
                                           <Pencil className="w-4 h-4" />
                                         </button>
                                         <button
-                                          onClick={() =>
-                                            handleDeleteBed(bed.bedId)
-                                          }
+                                          onClick={() => handleDeleteBed(bed)}
                                           className="p-1.5 rounded-btn transition-colors text-ink-500 hover:text-status-danger-fg hover:bg-status-danger-bg"
                                           title="Xóa"
                                           aria-label="Xóa luống"
@@ -800,15 +815,15 @@ export function PlotsPage() {
       <ConfirmDialog
         open={deleteBedDialogOpen}
         onOpenChange={(o) => {
-          if (!o) {
+          if (!o && !deletingBed) {
             setDeleteBedDialogOpen(false);
-            setBedToDeleteId(null);
+            setBedToDelete(null);
           }
         }}
         title="Xóa luống"
         description="Bạn có chắc chắn muốn xóa luống này? Hành động này không thể hoàn tác."
         confirmLabel="Xóa luống"
-        loading={deleteBedMutation.isPending}
+        loading={deletingBed}
         onConfirm={confirmDeleteBed}
       />
       {/* IoT Quick-Add Modal */}
@@ -985,12 +1000,6 @@ function CreatePlotModal({
             inputProps={{ min: 0, step: 0.1 }}
           />
         </div>
-        <FormSelect
-          label="Trạng Thái"
-          value={formData.plotStatus}
-          onChange={(v) => set({ plotStatus: v })}
-          options={PLOT_STATUS_OPTIONS}
-        />
       </div>
     </Modal>
   );
