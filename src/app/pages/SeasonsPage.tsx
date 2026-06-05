@@ -2066,7 +2066,7 @@ function DetailSeasonView({
               const history = await api.getIotDataByDevice(device.deviceId);
               if (cancelled) return;
               if (Array.isArray(history) && history.length > 0) {
-                reading = history.reduce<IotDataResponse>((latest, curr) =>
+                reading = history.reduce((latest, curr) =>
                   new Date(curr.recordedAt) > new Date(latest.recordedAt)
                     ? curr
                     : latest,
@@ -3066,11 +3066,11 @@ function DetailSeasonView({
 
 function CreateSeasonView({
   farms,
-  beds,
-  plots,
-  crops,
+  beds: _beds,
+  plots: _plots,
+  crops: _crops,
   onCreated,
-  showToast,
+  showToast: _showToast,
 }: {
   farms: FarmResponse[];
   beds: BedResponse[];
@@ -3080,8 +3080,6 @@ function CreateSeasonView({
   showToast: (msg: string, type: "success" | "error" | "info") => void;
 }) {
   const { toasts, showToast: localToast, dismissToast } = useToast();
-
-  const [step, setStep] = useState(1);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
   const [formData, setFormData] = useState({
@@ -3094,50 +3092,7 @@ function CreateSeasonView({
     status: "Planned",
   });
 
-  interface HarvestGroup {
-    id: string;
-    plotId: string;
-    cropId: string;
-    expectedDate: string;
-    expectedQuantity: string;
-    unit: string;
-    bedIds: string[];
-  }
-
-  const [harvestGroups, setHarvestGroups] = useState<HarvestGroup[]>([
-    {
-      id: crypto.randomUUID(),
-      plotId: "",
-      cropId: "",
-      expectedDate: "",
-      expectedQuantity: "",
-      unit: "kg",
-      bedIds: [],
-    },
-  ]);
-  const [openPicker, setOpenPicker] = useState<string | null>(null);
-
-  const bedsForFarm = formData.farmId
-    ? beds.filter((b) => {
-        const plot = plots.find((p) => p.plotId === b.plotId);
-        return plot?.farmId === formData.farmId;
-      })
-    : beds;
-
-  const availableBeds = sortBeds(
-    bedsForFarm.map((b) => ({
-      id: b.bedId,
-      name: b.bedName ?? "",
-      area: b.plotName ?? "Không rõ khu",
-      size: b.bedArea ? `${b.bedArea} m²` : "—",
-    })),
-  );
-
-  const farmPlots = plots.filter((p) => p.farmId === formData.farmId);
-  const activeCrops = crops;
-  const allClaimedBedIds = harvestGroups.flatMap((g) => g.bedIds);
-
-  const validateStep1 = () => {
+  const validate = () => {
     const errors: Record<string, string> = {};
     if (!formData.name.trim()) errors.name = "Vui lòng nhập tên mùa vụ";
     else if (formData.name.trim().length < 2)
@@ -3154,7 +3109,7 @@ function CreateSeasonView({
     return errors;
   };
 
-  const skipMutation = useMutation({
+  const createMutation = useMutation({
     mutationFn: () =>
       api.createSeason({
         farmId: formData.farmId,
@@ -3166,10 +3121,7 @@ function CreateSeasonView({
         status: formData.status,
       }),
     onSuccess: () => {
-      localToast(
-        `Đã tạo mùa vụ "${formData.name.trim()}" thành công.`,
-        "success",
-      );
+      localToast(`Tạo mùa vụ "${formData.name.trim()}" thành công.`, "success");
       setTimeout(onCreated, 800);
     },
     onError: (err) => {
@@ -3180,462 +3132,114 @@ function CreateSeasonView({
     },
   });
 
-  const createWithHarvestsMutation = useMutation({
-    mutationFn: async () => {
-      const hasInvalid = harvestGroups.some(
-        (g) => !g.plotId || !g.cropId || !g.expectedDate,
-      );
-      if (hasInvalid) {
-        throw new Error(
-          "Mỗi đợt thu hoạch cần có vuông đất, cây trồng và ngày dự kiến.",
-        );
-      }
-
-      const created = await api.createSeason({
-        farmId: formData.farmId,
-        seasonName: formData.name.trim(),
-        seasonStartDate: formData.startDate,
-        seasonEndDate: formData.endDate,
-        description: formData.description.trim(),
-        seasonNotes: formData.seasonNotes.trim(),
-        status: formData.status,
-      });
-
-      let resolvedSeasonId: string | null = (created as any)?.seasonId ?? null;
-      if (!resolvedSeasonId) {
-        const allSeasons = await api.getSeasons();
-        const match = Array.isArray(allSeasons)
-          ? allSeasons.find(
-              (s) =>
-                s.farmId === formData.farmId &&
-                s.seasonName === formData.name.trim() &&
-                s.seasonStartDate === formData.startDate,
-            )
-          : null;
-        resolvedSeasonId = match?.seasonId ?? null;
-      }
-
-      if (!resolvedSeasonId) {
-        return { created, partialFail: true, failedCount: 0, total: 0 };
-      }
-
-      const harvestsToCreate = harvestGroups.filter(
-        (g) => g.plotId && g.cropId && g.expectedDate,
-      );
-
-      if (harvestsToCreate.length === 0) {
-        return { created, partialFail: false, failedCount: 0, total: 0 };
-      }
-
-      const results = await Promise.allSettled(
-        harvestsToCreate.map((g) =>
-          api.createHarvest({
-            plotId: g.plotId,
-            seasonId: resolvedSeasonId!,
-            cropId: g.cropId,
-            expectedDate: g.expectedDate,
-            expectedQuantity: parseFloat(g.expectedQuantity) || 0,
-            unit: g.unit,
-            status: "planned",
-            startDate: formData.startDate,
-            endDate: formData.endDate,
-          }),
-        ),
-      );
-
-      const failed = results.filter((r) => r.status === "rejected").length;
-      return {
-        created,
-        partialFail: failed > 0,
-        failedCount: failed,
-        total: harvestsToCreate.length,
-      };
-    },
-    onSuccess: ({ created, partialFail, failedCount, total }) => {
-      if ((created as any)?.seasonId === undefined && total === 0) {
-        localToast(
-          "Tạo mùa vụ thành công nhưng không thể gán thu hoạch. Vui lòng thêm thủ công.",
-          "info",
-        );
-      } else if (partialFail) {
-        localToast(
-          `Tạo mùa vụ thành công. ${failedCount} đợt thu hoạch tạo thất bại — vui lòng thêm lại trong trang chi tiết.`,
-          "info",
-        );
-      } else {
-        localToast(
-          `Tạo mùa vụ "${formData.name.trim()}" và ${total} đợt thu hoạch thành công.`,
-          "success",
-        );
-      }
-      setTimeout(onCreated, 900);
-    },
-    onError: (err) => {
-      localToast(
-        err instanceof Error ? err.message : "Tạo mùa vụ thất bại.",
-        "error",
-      );
-    },
-  });
-
-  const submitting =
-    skipMutation.isPending || createWithHarvestsMutation.isPending;
-
-  const handleSkip = () => {
-    if (submitting) return;
-    skipMutation.mutate();
-  };
-
-  const handleStep2Submit = () => {
-    if (submitting) return;
-    createWithHarvestsMutation.mutate();
-  };
-
   return (
     <div className="flex flex-col gap-6 p-6">
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
 
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-3 mb-2">
-            <Link
-              to="/seasons"
-              className="p-2 rounded-btn text-ink-500 hover:text-ink-700 hover:bg-surface-alt transition-colors"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </Link>
-            <h1 className="text-xl font-bold text-ink-800">Tạo Mùa Vụ Mới</h1>
-          </div>
-          <div className="flex items-center gap-2 ml-12">
-            {[
-              { n: 1, label: "Thông tin cơ bản" },
-              { n: 2, label: "Vụ Thu hoạch" },
-            ].map((s, i) => (
-              <React.Fragment key={s.n}>
-                <div
-                  className={`flex items-center gap-2 px-3 py-1.5 rounded-pill text-sm font-medium ${
-                    step === s.n
-                      ? "bg-primary text-primary-fg"
-                      : step > s.n
-                        ? "bg-status-success-bg text-status-success-fg"
-                        : "bg-surface-subtle text-ink-500"
-                  }`}
-                >
-                  {step > s.n ? (
-                    <CheckCircle className="w-3.5 h-3.5" />
-                  ) : (
-                    <span className="w-4 h-4 rounded-full bg-current/20 flex items-center justify-center text-xs leading-none">
-                      {s.n}
-                    </span>
-                  )}
-                  {s.label}
-                </div>
-                {i < 1 && <span className="text-ink-300 text-xs">›</span>}
-              </React.Fragment>
-            ))}
-          </div>
-        </div>
+      <div className="flex items-center gap-3">
+        <Link
+          to="/seasons"
+          className="p-2 rounded-btn text-ink-500 hover:text-ink-700 hover:bg-surface-alt transition-colors"
+        >
+          <ArrowLeft className="w-5 h-5" />
+        </Link>
+        <h1 className="text-xl font-bold text-ink-800">Tạo Mùa Vụ Mới</h1>
       </div>
 
-      {step === 1 && (
-        <div className="bg-surface rounded-card border border-border shadow-card p-6 max-w-2xl">
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <FormField
-                label="Tên mùa vụ"
-                required
-                value={formData.name}
-                onChange={(v) => {
-                  setFormData((p) => ({ ...p, name: v }));
-                  setFormErrors((p) => ({ ...p, name: "" }));
-                }}
-                placeholder="Vụ Hè 2026"
-                error={formErrors.name}
-              />
-              <FormSelect
-                label="Trang trại"
-                required
-                value={formData.farmId}
-                onChange={(v) => {
-                  setFormData((p) => ({ ...p, farmId: v }));
-                  setFormErrors((p) => ({ ...p, farmId: "" }));
-                  setHarvestGroups([
-                    {
-                      id: crypto.randomUUID(),
-                      plotId: "",
-                      cropId: "",
-                      expectedDate: "",
-                      expectedQuantity: "",
-                      bedIds: [],
-                      unit: "",
-                    },
-                  ]);
-                }}
-                options={farms.map((f) => ({
-                  value: f.farmId,
-                  label: f.farmName,
-                }))}
-                placeholder="Chọn trang trại"
-                error={formErrors.farmId}
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <FormField
-                label="Ngày bắt đầu"
-                required
-                type="date"
-                value={formData.startDate}
-                onChange={(v) => {
-                  setFormData((p) => ({ ...p, startDate: v }));
-                  setFormErrors((p) => ({
-                    ...p,
-                    startDate: "",
-                    endDate: "",
-                  }));
-                }}
-                error={formErrors.startDate}
-              />
-              <FormField
-                label="Ngày kết thúc"
-                required
-                type="date"
-                value={formData.endDate}
-                onChange={(v) => {
-                  setFormData((p) => ({ ...p, endDate: v }));
-                  setFormErrors((p) => ({ ...p, endDate: "" }));
-                }}
-                inputProps={{ min: formData.startDate || undefined }}
-                error={formErrors.endDate}
-              />
-            </div>
-            <FormSelect
-              label="Trạng thái"
-              value={formData.status}
-              onChange={(v) => setFormData((p) => ({ ...p, status: v }))}
-              options={STATUS_OPTIONS}
-            />
-            <FormTextarea
-              label="Mô tả"
-              value={formData.description}
-              onChange={(v) => setFormData((p) => ({ ...p, description: v }))}
-              placeholder="Mô tả mùa vụ..."
-              rows={3}
-            />
-            <FormTextarea
-              label="Ghi chú"
-              value={formData.seasonNotes}
-              onChange={(v) => setFormData((p) => ({ ...p, seasonNotes: v }))}
-              placeholder="Ghi chú thêm..."
-              rows={2}
-            />
-          </div>
-          <div className="mt-6 flex justify-end">
-            <Button
-              onClick={() => {
-                const errors = validateStep1();
-                setFormErrors(errors);
-                if (Object.keys(errors).length === 0) setStep(2);
+      <div className="bg-surface rounded-card border border-border shadow-card p-6 max-w-2xl">
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <FormField
+              label="Tên mùa vụ"
+              required
+              value={formData.name}
+              onChange={(v) => {
+                setFormData((p) => ({ ...p, name: v }));
+                setFormErrors((p) => ({ ...p, name: "" }));
               }}
-            >
-              Tiếp theo
-            </Button>
+              placeholder="Vụ Hè 2026"
+              error={formErrors.name}
+            />
+            <FormSelect
+              label="Trang trại"
+              required
+              value={formData.farmId}
+              onChange={(v) => {
+                setFormData((p) => ({ ...p, farmId: v }));
+                setFormErrors((p) => ({ ...p, farmId: "" }));
+              }}
+              options={farms.map((f) => ({
+                value: f.farmId,
+                label: f.farmName,
+              }))}
+              placeholder="Chọn trang trại"
+              error={formErrors.farmId}
+            />
           </div>
+          <div className="grid grid-cols-2 gap-4">
+            <FormField
+              label="Ngày bắt đầu"
+              required
+              type="date"
+              value={formData.startDate}
+              onChange={(v) => {
+                setFormData((p) => ({ ...p, startDate: v }));
+                setFormErrors((p) => ({
+                  ...p,
+                  startDate: "",
+                  endDate: "",
+                }));
+              }}
+              error={formErrors.startDate}
+            />
+            <FormField
+              label="Ngày kết thúc"
+              required
+              type="date"
+              value={formData.endDate}
+              onChange={(v) => {
+                setFormData((p) => ({ ...p, endDate: v }));
+                setFormErrors((p) => ({ ...p, endDate: "" }));
+              }}
+              inputProps={{ min: formData.startDate || undefined }}
+              error={formErrors.endDate}
+            />
+          </div>
+          <FormSelect
+            label="Trạng thái"
+            value={formData.status}
+            onChange={(v) => setFormData((p) => ({ ...p, status: v }))}
+            options={STATUS_OPTIONS}
+          />
+          <FormTextarea
+            label="Mô tả"
+            value={formData.description}
+            onChange={(v) => setFormData((p) => ({ ...p, description: v }))}
+            placeholder="Mô tả mùa vụ..."
+            rows={3}
+          />
+          <FormTextarea
+            label="Ghi chú"
+            value={formData.seasonNotes}
+            onChange={(v) => setFormData((p) => ({ ...p, seasonNotes: v }))}
+            placeholder="Ghi chú thêm..."
+            rows={2}
+          />
         </div>
-      )}
-
-      {step === 2 && (
-        <div className="bg-surface rounded-card border border-border shadow-card p-6 max-w-3xl">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-bold text-ink-500 uppercase flex items-center gap-2">
-              <Wheat className="w-4 h-4" /> Kế hoạch thu hoạch
-            </h3>
-            <div className="text-xs text-ink-500 bg-primary-50 border border-primary-200 rounded-btn px-3 py-1.5">
-              Mùa vụ: {formatDate(formData.startDate)} →{" "}
-              {formatDate(formData.endDate)}
-            </div>
-          </div>
-
-          {!formData.farmId && (
-            <div className="mb-4 px-3 py-2 bg-status-warning-bg border border-status-warning-fg/20 rounded-btn text-xs text-status-warning-fg flex items-center gap-2">
-              <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-              Vui lòng quay lại bước 1 và chọn trang trại.
-            </div>
-          )}
-
-          <div className="space-y-4">
-            {harvestGroups.map((group, idx) => (
-              <div
-                key={group.id}
-                className="border border-border rounded-card overflow-hidden"
-              >
-                <div className="flex items-center gap-3 px-4 py-3 bg-surface-alt border-b border-border">
-                  <div className="w-6 h-6 rounded-pill bg-primary text-primary-fg text-xs font-bold flex items-center justify-center shrink-0">
-                    {idx + 1}
-                  </div>
-                  <span className="text-sm font-medium text-ink-700 flex-1">
-                    Đợt thu hoạch {idx + 1}
-                  </span>
-                  {harvestGroups.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setHarvestGroups((p) =>
-                          p.filter((g) => g.id !== group.id),
-                        )
-                      }
-                      className="p-1.5 text-ink-400 hover:text-status-danger-fg hover:bg-status-danger-bg rounded-btn transition-colors"
-                    >
-                      <svg
-                        className="w-3.5 h-3.5"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M6 18L18 6M6 6l12 12"
-                        />
-                      </svg>
-                    </button>
-                  )}
-                </div>
-
-                <div className="p-4 grid grid-cols-2 gap-4">
-                  <FormSelect
-                    label="Vuông đất"
-                    required
-                    value={group.plotId}
-                    onChange={(v) =>
-                      setHarvestGroups((p) =>
-                        p.map((g) =>
-                          g.id === group.id ? { ...g, plotId: v } : g,
-                        ),
-                      )
-                    }
-                    options={farmPlots.map((p) => ({
-                      value: p.plotId,
-                      label: p.plotName,
-                    }))}
-                    placeholder="Chọn vuông đất"
-                  />
-                  <FormSelect
-                    label="Cây trồng"
-                    required
-                    value={group.cropId}
-                    onChange={(v) =>
-                      setHarvestGroups((p) =>
-                        p.map((g) =>
-                          g.id === group.id ? { ...g, cropId: v } : g,
-                        ),
-                      )
-                    }
-                    options={activeCrops.map((c) => ({
-                      value: c.cropId,
-                      label: c.cropName,
-                    }))}
-                    placeholder="Chọn cây trồng"
-                  />
-                  <FormField
-                    label="Ngày thu hoạch dự kiến"
-                    required
-                    type="date"
-                    value={group.expectedDate}
-                    onChange={(v) =>
-                      setHarvestGroups((p) =>
-                        p.map((g) =>
-                          g.id === group.id ? { ...g, expectedDate: v } : g,
-                        ),
-                      )
-                    }
-                    inputProps={{
-                      min: formData.startDate || undefined,
-                      max: formData.endDate || undefined,
-                    }}
-                  />
-                  <FormField
-                    label="Sản lượng thực tế"
-                    type="number"
-                    value={group.expectedQuantity}
-                    onChange={(v) =>
-                      setHarvestGroups((p) =>
-                        p.map((g) =>
-                          g.id === group.id ? { ...g, expectedQuantity: v } : g,
-                        ),
-                      )
-                    }
-                    inputProps={{ min: "0", step: "0.01" }}
-                    placeholder="0"
-                  />
-                  <FormSelect
-                    label="Đơn vị sản lượng"
-                    value={group.unit}
-                    onChange={(v) =>
-                      setHarvestGroups((p) =>
-                        p.map((g) =>
-                          g.id === group.id ? { ...g, unit: v } : g,
-                        ),
-                      )
-                    }
-                    options={[
-                      { value: "kg", label: "kg" },
-                      { value: "tấn", label: "tấn" },
-                    ]}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <button
-            type="button"
-            onClick={() =>
-              setHarvestGroups((p) => [
-                ...p,
-                {
-                  id: crypto.randomUUID(),
-                  plotId: "",
-                  cropId: "",
-                  expectedDate: "",
-                  expectedQuantity: "",
-                  unit: "kg",
-                  bedIds: [],
-                },
-              ])
-            }
-            className="mt-4 w-full flex items-center justify-center gap-2 py-2.5 border-2 border-dashed border-primary-200 rounded-card text-sm text-primary font-medium hover:bg-primary-50 transition-colors"
+        <div className="mt-6 flex justify-end">
+          <Button
+            leadingIcon={CheckCircle}
+            loading={createMutation.isPending}
+            onClick={() => {
+              const errors = validate();
+              setFormErrors(errors);
+              if (Object.keys(errors).length === 0) createMutation.mutate();
+            }}
           >
-            <PlusCircle className="w-4 h-4" /> Thêm đợt thu hoạch khác
-          </button>
-
-          <div className="mt-6 flex items-center justify-between">
-            <Button
-              variant="secondary"
-              leadingIcon={ArrowLeft}
-              onClick={() => setStep(1)}
-            >
-              Quay lại
-            </Button>
-            <div className="flex items-center gap-3">
-              <Button
-                variant="ghost"
-                onClick={handleSkip}
-                loading={skipMutation.isPending}
-              >
-                Bỏ qua (tạo sau)
-              </Button>
-              <Button
-                leadingIcon={CheckCircle}
-                loading={createWithHarvestsMutation.isPending}
-                onClick={handleStep2Submit}
-              >
-                Tạo mùa vụ
-              </Button>
-            </div>
-          </div>
+            Tạo mùa vụ
+          </Button>
         </div>
-      )}
+      </div>
     </div>
   );
 }
