@@ -2,7 +2,7 @@
 const BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 /** Abort any request that hangs longer than this (poor-network guard). */
-const FETCH_TIMEOUT_MS = 15_000;
+const FETCH_TIMEOUT_MS = 12_000;
 
 async function request<T>(
   method: string,
@@ -31,7 +31,7 @@ async function request<T>(
   } catch (err) {
     if (err instanceof Error && err.name === "AbortError") {
       throw new Error(
-        "Kết nối tới máy chủ quá thời gian chờ (30s). Vui lòng kiểm tra mạng và thử lại.",
+        "Quá thời gian chờ kết nối tới máy chủ. Vui lòng kiểm tra mạng và thử lại.",
       );
     }
     throw err;
@@ -108,7 +108,7 @@ async function requestForm<T>(
   } catch (err) {
     if (err instanceof Error && err.name === "AbortError") {
       throw new Error(
-        "Kết nối tới máy chủ quá thời gian chờ (30s). Vui lòng kiểm tra mạng và thử lại.",
+        "Quá thời gian chờ kết nối tới máy chủ. Vui lòng kiểm tra mạng và thử lại.",
       );
     }
     throw err;

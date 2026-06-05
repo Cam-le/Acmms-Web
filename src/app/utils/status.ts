@@ -186,26 +186,30 @@ export function severityLabel(s: string | null | undefined): string {
   }
 }
 
-// ─── Task status ──────────────────────────────────────────────────────────
-// Backend values: Pending, Completed (per TasksPage filter options)
-
-/** Filter dropdown options for the "Tất cả công việc" table. */
-export const TASK_STATUS_OPTIONS = [
-  { value: "Pending", label: taskStatusLabel("Pending") },
-  { value: "Completed", label: taskStatusLabel("Completed") },
-] as const;
+// ─── Task detail status ───────────────────────────────────────────────────
+// Backend values: Pending, Assigned, InProgress, Completed, Failed, Cancelled
+//
+// "Pending" exists but is not used in practice — every assignment defaults to
+// "Assigned". It is still mapped for defensive completeness.
+//
+// These are task DETAIL (assignment) statuses, set by workers via the mobile
+// app. Task TEMPLATE statuses ("Active"/"Inactive") are a separate concern
+// and should not be routed through these helpers.
 
 export function taskStatusTone(s: string | null | undefined): BadgeTone {
   switch (normaliseEnum(s)) {
-    case "completed":
-    case "done":
-      return "success";
-    case "pending":
-    case "in_progress":
-    case "active":
+    case "assigned":
       return "info";
-    case "overdue":
+    case "inprogress":
+      return "warning";
+    case "completed":
+      return "success";
+    case "failed":
       return "danger";
+    case "cancelled":
+      return "neutral";
+    case "pending":
+      return "warning-2";
     default:
       return "neutral";
   }
@@ -213,19 +217,32 @@ export function taskStatusTone(s: string | null | undefined): BadgeTone {
 
 export function taskStatusLabel(s: string | null | undefined): string {
   switch (normaliseEnum(s)) {
-    case "completed":
-    case "done":
-      return "Đã hoàn thành";
     case "pending":
-    case "in_progress":
-    case "active":
+      return "Chưa giao";
+    case "assigned":
+      return "Đã giao";
+    case "inprogress":
       return "Đang làm";
-    case "overdue":
-      return "Quá hạn";
+    case "completed":
+      return "Đã hoàn thành";
+    case "failed":
+      return "Thất bại";
+    case "cancelled":
+      return "Đã bị hủy";
     default:
       return s ?? "—";
   }
 }
+
+/** Filter dropdown options for the "Tất cả công việc" table. */
+export const TASK_STATUS_OPTIONS = [
+  { value: "Assigned", label: taskStatusLabel("Assigned") },
+  { value: "InProgress", label: taskStatusLabel("InProgress") },
+  { value: "Completed", label: taskStatusLabel("Completed") },
+  { value: "Failed", label: taskStatusLabel("Failed") },
+  { value: "Cancelled", label: taskStatusLabel("Cancelled") },
+  { value: "Pending", label: taskStatusLabel("Pending") },
+] as const;
 
 // ─── Bill / payment status ────────────────────────────────────────────────
 
