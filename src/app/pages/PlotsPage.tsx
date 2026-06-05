@@ -47,7 +47,6 @@ import {
   bedStatusLabel,
   PLOT_STATUS_OPTIONS,
   BED_STATUS_OPTIONS,
-  IOT_STATUS_OPTIONS,
 } from "../utils/status";
 import { formatDate } from "../utils/format";
 import { compareBedNames } from "../utils/sort";
@@ -131,8 +130,13 @@ export function PlotsPage() {
   const [plotToDeleteId, setPlotToDeleteId] = useState<string | null>(null);
   const [bedToDeleteId, setBedToDeleteId] = useState<string | null>(null);
 
-  // IoT quick-add: bedId to pre-fill the modal launched from a bed row
-  const [iotBedTarget, setIotBedTarget] = useState<string | null>(null);
+  // IoT quick-add: bed info + farm coords to pre-fill the modal
+  const [iotBedTarget, setIotBedTarget] = useState<{
+    bedId: string;
+    bedName: string;
+    farmLat: number;
+    farmLng: number;
+  } | null>(null);
 
   // ── Queries ──
   const plotsQuery = useQuery({
@@ -678,9 +682,17 @@ export function PlotsPage() {
                                           <Trash2 className="w-4 h-4" />
                                         </button>
                                         <button
-                                          onClick={() =>
-                                            setIotBedTarget(bed.bedId)
-                                          }
+                                          onClick={() => {
+                                            const farm = farms.find(
+                                              (f) => f.farmId === plot.farmId,
+                                            );
+                                            setIotBedTarget({
+                                              bedId: bed.bedId,
+                                              bedName: bed.bedName,
+                                              farmLat: farm?.latitude ?? 0,
+                                              farmLng: farm?.longitude ?? 0,
+                                            });
+                                          }}
                                           className="p-1.5 rounded-btn transition-colors text-ink-500 hover:text-primary hover:bg-primary-50"
                                           title="Thêm thiết bị IoT"
                                           aria-label="Thêm thiết bị IoT"
@@ -802,7 +814,10 @@ export function PlotsPage() {
       {/* IoT Quick-Add Modal */}
       {iotBedTarget && (
         <IotQuickAddModal
-          bedId={iotBedTarget}
+          bedId={iotBedTarget.bedId}
+          bedName={iotBedTarget.bedName}
+          farmLat={iotBedTarget.farmLat}
+          farmLng={iotBedTarget.farmLng}
           onClose={() => setIotBedTarget(null)}
           onSuccess={() => showToast("Thêm thiết bị IoT thành công", "success")}
           onError={(msg) => showToast(msg, "error")}
@@ -1241,45 +1256,66 @@ function EditPlotModal({
 
 function IotQuickAddModal({
   bedId,
+  bedName,
+  farmLat,
+  farmLng,
   onClose,
   onSuccess,
   onError,
 }: {
   bedId: string;
+  bedName: string;
+  /** Farm latitude — pre-fills the coordinate fields (0 means not set) */
+  farmLat: number;
+  /** Farm longitude — pre-fills the coordinate fields (0 means not set) */
+  farmLng: number;
   onClose: () => void;
   onSuccess: () => void;
   onError: (msg: string) => void;
 }) {
-  const emptyForm: IotDeviceRequest = {
+  const queryClient = useQueryClient();
+
+  const [formData, setFormData] = useState<IotDeviceRequest>({
     bedId,
     deviceCode: "",
     name: "",
     type: "Environment",
     status: "Active",
     installationDate: new Date().toISOString(),
-    latitude: 0,
-    longitude: 0,
-  };
-  const [formData, setFormData] = useState<IotDeviceRequest>(emptyForm);
-  const [submitting, setSubmitting] = useState(false);
+    // Pre-fill from farm if coordinates are available
+    latitude: farmLat,
+    longitude: farmLng,
+  });
+
+  // Whether the farm actually provided coordinates worth displaying
+  const farmCoordsApplied = farmLat !== 0 || farmLng !== 0;
+
+  const createMutation = useMutation({
+    mutationFn: (data: IotDeviceRequest) =>
+      api.createIotDevice({
+        ...data,
+        status: "Active", // always Active on create; field is not shown
+        installationDate: new Date(data.installationDate).toISOString(),
+      }),
+  });
 
   const canSubmit =
     formData.name.trim() !== "" && formData.deviceCode.trim() !== "";
 
-  const handleSubmit = async () => {
-    setSubmitting(true);
-    try {
-      await api.createIotDevice({
-        ...formData,
-        installationDate: new Date(formData.installationDate).toISOString(),
-      });
-      onSuccess();
-      onClose();
-    } catch (err) {
-      onError("Thêm thiết bị thất bại: " + (err as Error).message);
-    } finally {
-      setSubmitting(false);
-    }
+  const handleSubmit = () => {
+    createMutation.mutate(formData, {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: qk.iot.all });
+        onSuccess();
+        onClose();
+      },
+      onError: (err) => {
+        onError(
+          "Thêm thiết bị thất bại: " +
+            (err instanceof Error ? err.message : "Lỗi không xác định"),
+        );
+      },
+    });
   };
 
   return (
@@ -1290,13 +1326,17 @@ function IotQuickAddModal({
       size="md"
       footer={
         <>
-          <Button variant="secondary" onClick={onClose}>
+          <Button
+            variant="secondary"
+            onClick={onClose}
+            disabled={createMutation.isPending}
+          >
             Hủy bỏ
           </Button>
           <Button
             onClick={handleSubmit}
-            loading={submitting}
-            disabled={!canSubmit || submitting}
+            loading={createMutation.isPending}
+            disabled={!canSubmit || createMutation.isPending}
           >
             Thêm Thiết Bị
           </Button>
@@ -1304,73 +1344,90 @@ function IotQuickAddModal({
       }
     >
       <div className="space-y-4">
-        <p className="text-xs text-ink-400 font-mono">
-          Luống: {bedId.slice(0, 8)}…
+        <p className="text-sm text-ink-500">
+          Luống: <span className="font-medium text-ink-800">{bedName}</span>
         </p>
+
         <div className="grid grid-cols-2 gap-4">
           <FormField
             label="Mã thiết bị"
             required
             placeholder="CMMS_01_ESP"
             value={formData.deviceCode}
-            onChange={(v) => setFormData({ ...formData, deviceCode: v })}
+            onChange={(v) =>
+              setFormData((prev) => ({ ...prev, deviceCode: v }))
+            }
           />
           <FormField
             label="Tên thiết bị"
             required
             placeholder="Cảm biến nhiệt độ A1"
             value={formData.name}
-            onChange={(v) => setFormData({ ...formData, name: v })}
+            onChange={(v) => setFormData((prev) => ({ ...prev, name: v }))}
           />
         </div>
-        <div className="grid grid-cols-2 gap-4">
-          <FormField
-            label="Loại thiết bị"
-            placeholder="Environment"
-            value={formData.type}
-            onChange={(v) => setFormData({ ...formData, type: v })}
-          />
-          <FormSelect
-            label="Trạng thái"
-            value={formData.status}
-            onChange={(v) => setFormData({ ...formData, status: v })}
-            options={IOT_STATUS_OPTIONS}
-          />
-        </div>
+
+        <FormField
+          label="Loại thiết bị"
+          placeholder="Environment"
+          value={formData.type}
+          onChange={(v) => setFormData((prev) => ({ ...prev, type: v }))}
+        />
+
         <FormField
           label="Ngày lắp đặt"
           type="date"
           value={formData.installationDate.split("T")[0]}
           onChange={(v) =>
-            setFormData({
-              ...formData,
+            setFormData((prev) => ({
+              ...prev,
               installationDate: v
                 ? new Date(v).toISOString()
                 : new Date().toISOString(),
-            })
+            }))
           }
         />
-        <div className="grid grid-cols-2 gap-3">
-          <FormField
-            label="Vĩ độ"
-            type="number"
-            placeholder="0"
-            value={formData.latitude ? String(formData.latitude) : ""}
-            onChange={(v) =>
-              setFormData({ ...formData, latitude: parseFloat(v) || 0 })
-            }
-            inputProps={{ step: "any" }}
-          />
-          <FormField
-            label="Kinh độ"
-            type="number"
-            placeholder="0"
-            value={formData.longitude ? String(formData.longitude) : ""}
-            onChange={(v) =>
-              setFormData({ ...formData, longitude: parseFloat(v) || 0 })
-            }
-            inputProps={{ step: "any" }}
-          />
+
+        {/* Coordinates */}
+        <div>
+          <p className="text-sm font-medium text-ink-600 mb-1.5 flex items-center gap-1.5">
+            <MapPin className="w-3.5 h-3.5" />
+            Tọa độ
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <FormField
+              label="Vĩ độ"
+              type="number"
+              placeholder="0"
+              value={formData.latitude ? String(formData.latitude) : ""}
+              onChange={(v) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  latitude: parseFloat(v) || 0,
+                }))
+              }
+              inputProps={{ step: "any" }}
+            />
+            <FormField
+              label="Kinh độ"
+              type="number"
+              placeholder="0"
+              value={formData.longitude ? String(formData.longitude) : ""}
+              onChange={(v) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  longitude: parseFloat(v) || 0,
+                }))
+              }
+              inputProps={{ step: "any" }}
+            />
+          </div>
+          {farmCoordsApplied && (
+            <p className="mt-1.5 text-xs text-ink-400 flex items-center gap-1">
+              <MapPin className="w-3 h-3 shrink-0" />
+              Tọa độ tự động lấy từ trang trại — có thể chỉnh sửa nếu cần
+            </p>
+          )}
         </div>
       </div>
     </Modal>
