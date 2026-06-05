@@ -1207,6 +1207,7 @@ export function SeasonsPage() {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [createOpen, setCreateOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [seasonToDelete, setSeasonToDelete] = useState<Season | null>(null);
 
@@ -1404,22 +1405,6 @@ export function SeasonsPage() {
     reset();
   }, [searchQuery, filterStatus]);
 
-  if (view === "create")
-    return (
-      <CreateSeasonView
-        farms={farms}
-        beds={beds}
-        plots={allPlots}
-        crops={crops}
-        onCreated={() => {
-          queryClient.invalidateQueries({ queryKey: qk.seasons.all });
-          queryClient.invalidateQueries({ queryKey: qk.beds.all });
-          setSearchParams({ view: "list" });
-        }}
-        showToast={showToast}
-      />
-    );
-
   const subViewLoading =
     selectedSeasonLoading ||
     (isSubView && view !== "list" && view !== "create" && !selectedSeason);
@@ -1510,9 +1495,9 @@ export function SeasonsPage() {
         title="Quản Lý Mùa Vụ"
         subtitle="Theo dõi và quản lý các mùa vụ canh tác"
         actions={
-          <Link to="/seasons?view=create">
-            <Button leadingIcon={Plus}>Mùa vụ mới</Button>
-          </Link>
+          <Button leadingIcon={Plus} onClick={() => setCreateOpen(true)}>
+            Mùa vụ mới
+          </Button>
         }
       />
 
@@ -1579,9 +1564,9 @@ export function SeasonsPage() {
             }
             action={
               !searchQuery && filterStatus === "all" ? (
-                <Link to="/seasons?view=create">
-                  <Button leadingIcon={Plus}>Tạo mùa vụ mới</Button>
-                </Link>
+                <Button leadingIcon={Plus} onClick={() => setCreateOpen(true)}>
+                  Tạo mùa vụ mới
+                </Button>
               ) : undefined
             }
           />
@@ -1721,6 +1706,17 @@ export function SeasonsPage() {
         confirmLabel="Xóa mùa vụ"
         loading={deleteMutation.isPending}
         onConfirm={confirmDelete}
+      />
+
+      <CreateSeasonModal
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        farms={farms}
+        onCreated={() => {
+          queryClient.invalidateQueries({ queryKey: qk.seasons.all });
+          queryClient.invalidateQueries({ queryKey: qk.beds.all });
+        }}
+        showToast={showToast}
       />
     </div>
   );
@@ -3062,26 +3058,22 @@ function DetailSeasonView({
   );
 }
 
-// ─── Create Season View ────────────────────────────────────────────────────────
+// ─── Create Season Modal ──────────────────────────────────────────────────────
 
-function CreateSeasonView({
+function CreateSeasonModal({
+  open,
+  onOpenChange,
   farms,
-  beds: _beds,
-  plots: _plots,
-  crops: _crops,
   onCreated,
-  showToast: _showToast,
+  showToast,
 }: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
   farms: FarmResponse[];
-  beds: BedResponse[];
-  plots: PlotResponse[];
-  crops: CropResponse[];
   onCreated: () => void;
   showToast: (msg: string, type: "success" | "error" | "info") => void;
 }) {
-  const { toasts, showToast: localToast, dismissToast } = useToast();
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
-
   const [formData, setFormData] = useState({
     name: "",
     farmId: "",
@@ -3091,6 +3083,22 @@ function CreateSeasonView({
     seasonNotes: "",
     status: "Planned",
   });
+
+  // Reset form every time the modal opens
+  useEffect(() => {
+    if (open) {
+      setFormData({
+        name: "",
+        farmId: "",
+        startDate: "",
+        endDate: "",
+        description: "",
+        seasonNotes: "",
+        status: "Planned",
+      });
+      setFormErrors({});
+    }
+  }, [open]);
 
   const validate = () => {
     const errors: Record<string, string> = {};
@@ -3121,126 +3129,129 @@ function CreateSeasonView({
         status: formData.status,
       }),
     onSuccess: () => {
-      localToast(`Tạo mùa vụ "${formData.name.trim()}" thành công.`, "success");
-      setTimeout(onCreated, 800);
+      showToast(`Tạo mùa vụ "${formData.name.trim()}" thành công.`, "success");
+      onOpenChange(false);
+      onCreated();
     },
     onError: (err) => {
-      localToast(
+      showToast(
         err instanceof Error ? err.message : "Tạo mùa vụ thất bại.",
         "error",
       );
     },
   });
 
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const errors = validate();
+    setFormErrors(errors);
+    if (Object.keys(errors).length === 0) createMutation.mutate();
+  };
+
   return (
-    <div className="flex flex-col gap-6 p-6">
-      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
-
-      <div className="flex items-center gap-3">
-        <Link
-          to="/seasons"
-          className="p-2 rounded-btn text-ink-500 hover:text-ink-700 hover:bg-surface-alt transition-colors"
-        >
-          <ArrowLeft className="w-5 h-5" />
-        </Link>
-        <h1 className="text-xl font-bold text-ink-800">Tạo Mùa Vụ Mới</h1>
-      </div>
-
-      <div className="bg-surface rounded-card border border-border shadow-card p-6 max-w-2xl">
-        <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <FormField
-              label="Tên mùa vụ"
-              required
-              value={formData.name}
-              onChange={(v) => {
-                setFormData((p) => ({ ...p, name: v }));
-                setFormErrors((p) => ({ ...p, name: "" }));
-              }}
-              placeholder="Vụ Hè 2026"
-              error={formErrors.name}
-            />
-            <FormSelect
-              label="Trang trại"
-              required
-              value={formData.farmId}
-              onChange={(v) => {
-                setFormData((p) => ({ ...p, farmId: v }));
-                setFormErrors((p) => ({ ...p, farmId: "" }));
-              }}
-              options={farms.map((f) => ({
-                value: f.farmId,
-                label: f.farmName,
-              }))}
-              placeholder="Chọn trang trại"
-              error={formErrors.farmId}
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <FormField
-              label="Ngày bắt đầu"
-              required
-              type="date"
-              value={formData.startDate}
-              onChange={(v) => {
-                setFormData((p) => ({ ...p, startDate: v }));
-                setFormErrors((p) => ({
-                  ...p,
-                  startDate: "",
-                  endDate: "",
-                }));
-              }}
-              error={formErrors.startDate}
-            />
-            <FormField
-              label="Ngày kết thúc"
-              required
-              type="date"
-              value={formData.endDate}
-              onChange={(v) => {
-                setFormData((p) => ({ ...p, endDate: v }));
-                setFormErrors((p) => ({ ...p, endDate: "" }));
-              }}
-              inputProps={{ min: formData.startDate || undefined }}
-              error={formErrors.endDate}
-            />
-          </div>
-          <FormSelect
-            label="Trạng thái"
-            value={formData.status}
-            onChange={(v) => setFormData((p) => ({ ...p, status: v }))}
-            options={STATUS_OPTIONS}
-          />
-          <FormTextarea
-            label="Mô tả"
-            value={formData.description}
-            onChange={(v) => setFormData((p) => ({ ...p, description: v }))}
-            placeholder="Mô tả mùa vụ..."
-            rows={3}
-          />
-          <FormTextarea
-            label="Ghi chú"
-            value={formData.seasonNotes}
-            onChange={(v) => setFormData((p) => ({ ...p, seasonNotes: v }))}
-            placeholder="Ghi chú thêm..."
-            rows={2}
-          />
-        </div>
-        <div className="mt-6 flex justify-end">
+    <Modal
+      open={open}
+      onOpenChange={(o) => {
+        if (!createMutation.isPending) onOpenChange(o);
+      }}
+      title="Tạo Mùa Vụ Mới"
+      size="lg"
+      onSubmit={handleSubmit}
+      footer={
+        <>
           <Button
+            variant="ghost"
+            onClick={() => onOpenChange(false)}
+            disabled={createMutation.isPending}
+          >
+            Hủy
+          </Button>
+          <Button
+            type="submit"
             leadingIcon={CheckCircle}
             loading={createMutation.isPending}
-            onClick={() => {
-              const errors = validate();
-              setFormErrors(errors);
-              if (Object.keys(errors).length === 0) createMutation.mutate();
-            }}
           >
             Tạo mùa vụ
           </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-4">
+          <FormField
+            label="Tên mùa vụ"
+            required
+            value={formData.name}
+            onChange={(v) => {
+              setFormData((p) => ({ ...p, name: v }));
+              setFormErrors((p) => ({ ...p, name: "" }));
+            }}
+            placeholder="Vụ Hè 2026"
+            error={formErrors.name}
+          />
+          <FormSelect
+            label="Trang trại"
+            required
+            value={formData.farmId}
+            onChange={(v) => {
+              setFormData((p) => ({ ...p, farmId: v }));
+              setFormErrors((p) => ({ ...p, farmId: "" }));
+            }}
+            options={farms.map((f) => ({
+              value: f.farmId,
+              label: f.farmName,
+            }))}
+            placeholder="Chọn trang trại"
+            error={formErrors.farmId}
+          />
         </div>
+        <div className="grid grid-cols-2 gap-4">
+          <FormField
+            label="Ngày bắt đầu"
+            required
+            type="date"
+            value={formData.startDate}
+            onChange={(v) => {
+              setFormData((p) => ({ ...p, startDate: v }));
+              setFormErrors((p) => ({ ...p, startDate: "", endDate: "" }));
+            }}
+            error={formErrors.startDate}
+          />
+          <FormField
+            label="Ngày kết thúc"
+            required
+            type="date"
+            value={formData.endDate}
+            onChange={(v) => {
+              setFormData((p) => ({ ...p, endDate: v }));
+              setFormErrors((p) => ({ ...p, endDate: "" }));
+            }}
+            inputProps={{ min: formData.startDate || undefined }}
+            error={formErrors.endDate}
+          />
+        </div>
+        <FormSelect
+          label="Trạng thái"
+          value={formData.status}
+          onChange={(v) => setFormData((p) => ({ ...p, status: v }))}
+          options={STATUS_OPTIONS}
+        />
+        <FormTextarea
+          label="Mô tả"
+          value={formData.description}
+          onChange={(v) => setFormData((p) => ({ ...p, description: v }))}
+          placeholder="Mô tả mùa vụ..."
+          rows={3}
+        />
+        <FormTextarea
+          label="Ghi chú"
+          value={formData.seasonNotes}
+          onChange={(v) => setFormData((p) => ({ ...p, seasonNotes: v }))}
+          placeholder="Ghi chú thêm..."
+          rows={2}
+        />
       </div>
-    </div>
+    </Modal>
   );
 }
 
