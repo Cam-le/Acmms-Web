@@ -35,36 +35,19 @@ import { StatusBadge } from "../components/ui/StatusBadge";
 import { usePagination } from "../hooks/usePagination";
 import { iotStatusTone, iotStatusLabel } from "../utils/status";
 import { formatDate } from "../utils/format";
+import { sortBedsByBedName } from "../utils/sort";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 8;
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-/**
- * Sort bed/harvest-detail items by name.
- * Extracts the first numeric token for numeric ordering, falls back to vi
- * locale compare. Handles both "Luống 7" and "Luống 04_Vuông 01_Tây Nam".
- */
-function sortByBedName<T extends { bedName: string }>(items: T[]): T[] {
-  return [...items].sort((a, b) => {
-    const numA = parseInt(a.bedName.match(/\d+/)?.[0] ?? "0", 10);
-    const numB = parseInt(b.bedName.match(/\d+/)?.[0] ?? "0", 10);
-    if (numA !== numB) return numA - numB;
-    return a.bedName.localeCompare(b.bedName, "vi");
-  });
-}
-
-// ─── Main Page ────────────────────────────────────────────────────────────────
+// ─── IoTPage ──────────────────────────────────────────────────────────────────
 
 export function IoTPage() {
   const { toasts, showToast, dismissToast } = useToast();
   const queryClient = useQueryClient();
 
-  // ── UI state (modals, form, selection) ──────────────────────────────────
-  const [selectedSeasonId, setSelectedSeasonId] = useState<string>("");
-
+  // ── Modal / form state ─────────────────────────────────────────────
   const [addOpen, setAddOpen] = useState(false);
   const [viewTarget, setViewTarget] = useState<IotDeviceResponse | null>(null);
   const [editTarget, setEditTarget] = useState<IotDeviceResponse | null>(null);
@@ -87,13 +70,13 @@ export function IoTPage() {
   const [searchText, setSearchText] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
 
-  // ── Read: devices ──────────────────────────────────────────────────────
+  // ── Read: devices ──────────────────────────────────────────────────
   const devicesQuery = useQuery({
     queryKey: qk.iot.devices(),
     queryFn: () => api.getIotDevices(),
   });
 
-  // ── Read: seasons ──────────────────────────────────────────────────────
+  // ── Read: seasons (for form dropdowns) ────────────────────────────
   const seasonsQuery = useQuery({
     queryKey: qk.seasons.list(),
     queryFn: () => api.getSeasons(),
@@ -102,14 +85,6 @@ export function IoTPage() {
   const devices: IotDeviceResponse[] = devicesQuery.data ?? [];
   const seasons: SeasonResponse[] = seasonsQuery.data ?? [];
 
-  // Default-select first season once loaded
-  useEffect(() => {
-    if (seasons.length > 0 && !selectedSeasonId) {
-      setSelectedSeasonId(seasons[0].seasonId);
-    }
-  }, [seasons, selectedSeasonId]);
-
-  // Surface device load errors as toast
   useEffect(() => {
     if (devicesQuery.error) {
       showToast(
@@ -121,8 +96,7 @@ export function IoTPage() {
     }
   }, [devicesQuery.error, showToast]);
 
-  // ── Bed name cache (derived from device list) ──────────────────────────
-  // We fetch bed names on-demand in a single pass whenever the device list changes.
+  // ── Bed name cache (derived from device list) ──────────────────────
   const [bedNameCache, setBedNameCache] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -141,8 +115,7 @@ export function IoTPage() {
     ).then((entries) => setBedNameCache(Object.fromEntries(entries)));
   }, [devicesQuery.data]);
 
-  // ── Derived / filtered ─────────────────────────────────────────────────
-
+  // ── Derived / filtered ─────────────────────────────────────────────
   const filtered = devices.filter((d) => {
     const matchSearch =
       !searchText ||
@@ -157,11 +130,15 @@ export function IoTPage() {
     PAGE_SIZE,
   );
 
+  // openAdd: reset form to blank — selectedSeasonId lives inside IotFormModal
+  // and resets automatically via its own close effect.
   const openAdd = () => {
     setFormData(emptyForm);
     setAddOpen(true);
   };
 
+  // openEdit: seed form with existing device data (lat/lng preserved from device).
+  // Season/plot/bed context is resolved inside IotFormModal via the edit-init flow.
   const openEdit = (device: IotDeviceResponse) => {
     setFormData({
       bedId: device.bedId,
@@ -176,12 +153,12 @@ export function IoTPage() {
     setEditTarget(device);
   };
 
-  // ── Mutation: create ────────────────────────────────────────────────────
+  // ── Mutation: create ────────────────────────────────────────────────
   const createMutation = useMutation({
     mutationFn: () =>
       api.createIotDevice({
         ...formData,
-        status: "Active", // always Active on create; status field is hidden in add modal
+        status: "Active",
         installationDate: new Date(formData.installationDate).toISOString(),
       }),
     onSuccess: () => {
@@ -195,7 +172,7 @@ export function IoTPage() {
     },
   });
 
-  // ── Mutation: update ────────────────────────────────────────────────────
+  // ── Mutation: update ────────────────────────────────────────────────
   const updateMutation = useMutation({
     mutationFn: () => {
       if (!editTarget) throw new Error("No edit target");
@@ -217,7 +194,7 @@ export function IoTPage() {
     },
   });
 
-  // ── Mutation: delete ────────────────────────────────────────────────────
+  // ── Mutation: delete ────────────────────────────────────────────────
   const deleteMutation = useMutation({
     mutationFn: (deviceId: string) => api.deleteIotDevice(deviceId),
     onSuccess: () => {
@@ -230,7 +207,7 @@ export function IoTPage() {
     },
   });
 
-  // ── Render ────────────────────────────────────────────────────────────
+  // ── Render ────────────────────────────────────────────────────────
 
   return (
     <div className="space-y-6">
@@ -386,8 +363,7 @@ export function IoTPage() {
         formData={formData}
         setFormData={setFormData}
         seasons={seasons}
-        selectedSeasonId={selectedSeasonId}
-        setSelectedSeasonId={setSelectedSeasonId}
+        editDevice={editTarget ?? undefined}
         submitting={createMutation.isPending || updateMutation.isPending}
         onSubmit={
           editTarget
@@ -434,6 +410,24 @@ export function IoTPage() {
 }
 
 // ─── IotFormModal ─────────────────────────────────────────────────────────────
+//
+// Both add and edit modes share this modal. Key behavioural differences:
+//
+// ADD mode:
+//   - All cascade selects (season → plot → bed) start empty. No queries fire
+//     until the user picks a season. First bed is auto-selected for convenience.
+//   - Lat/lng auto-fills from the farm when user picks a season.
+//
+// EDIT mode:
+//   - On open, the two-step init flow resolves existing context:
+//       1. GET /api/Beds/{bedId}          → plotId
+//       2. GET /api/harvests/plot/{plotId} → seasonId + harvestId
+//     These auto-fill the season/plot dropdowns so the user sees their current
+//     context, not an empty form.
+//   - formData.bedId is already seeded by openEdit() from the device.
+//   - Lat/lng is seeded from the device's stored coordinates and is NOT
+//     overwritten during init (to preserve manual adjustments). It IS
+//     overwritten if the user changes the season (same behaviour as add mode).
 
 function IotFormModal({
   open,
@@ -441,8 +435,7 @@ function IotFormModal({
   formData,
   setFormData,
   seasons,
-  selectedSeasonId,
-  setSelectedSeasonId,
+  editDevice,
   submitting,
   onSubmit,
   onClose,
@@ -450,62 +443,104 @@ function IotFormModal({
   open: boolean;
   mode: "add" | "edit";
   formData: IotDeviceRequest;
-  /** Typed as Dispatch<SetStateAction<T>> so functional updaters can be used
-   *  inside effects without stale-closure issues. */
   setFormData: Dispatch<SetStateAction<IotDeviceRequest>>;
   seasons: SeasonResponse[];
-  selectedSeasonId: string;
-  setSelectedSeasonId: (id: string) => void;
+  /** Device being edited — drives the bed→plot→harvest init resolution. */
+  editDevice?: IotDeviceResponse;
   submitting: boolean;
   onSubmit: () => void;
   onClose: () => void;
 }) {
-  // ── Cascade state: season → harvest → bed ───────────────────────────
+  // ── Cascade state (owned internally; reset on close) ─────────────────
+  const [selectedSeasonId, setSelectedSeasonId] = useState<string>("");
   const [selectedHarvestId, setSelectedHarvestId] = useState<string>("");
 
-  // ── Farm coordinates auto-fill (add mode only) ──────────────────────
-  // Derive farmId from the currently selected season so we can fetch the
-  // farm and pre-populate lat/lng without requiring manual entry.
+  // ── Refs ─────────────────────────────────────────────────────────────
+
+  // Prevents the harvest-reset effect from clearing selectedHarvestId during
+  // the one-shot edit init auto-fill (consumed once, then stays false).
+  const skipNextHarvestResetRef = useRef(false);
+
+  // Prevents the edit init effect from re-running after the first successful
+  // resolution (per modal open).
+  const editInitDoneRef = useRef(false);
+
+  // Tracks which farmId's coordinates have already been auto-applied so we
+  // don't overwrite manual edits on subsequent renders.
+  const lastAutoFillFarmIdRef = useRef<string>("");
+
+  // Set to true when the user explicitly changes the season in edit mode.
+  // Gates the farm-coord auto-fill so the device's existing coords are not
+  // overwritten until the user intentionally picks a different location.
+  const seasonChangedAfterOpenRef = useRef(false);
+
+  const [farmCoordsHint, setFarmCoordsHint] = useState(false);
+
+  // ── Edit init step 1: bedId → plotId ──────────────────────────────────
+  const editBedId = mode === "edit" ? (editDevice?.bedId ?? "") : "";
+
+  const bedForEditQuery = useQuery({
+    queryKey: qk.beds.detail(editBedId),
+    queryFn: () => api.getBed(editBedId),
+    enabled: open && mode === "edit" && !!editBedId,
+    staleTime: 5 * 60_000,
+  });
+
+  const editPlotId = bedForEditQuery.data?.plotId ?? "";
+
+  // ── Edit init step 2: plotId → harvests ───────────────────────────────
+  const harvestsByPlotQuery = useQuery({
+    queryKey: ["harvests", "byPlot", editPlotId] as const,
+    queryFn: () => api.getHarvestsByPlot(editPlotId),
+    enabled: open && mode === "edit" && !!editPlotId,
+    staleTime: 5 * 60_000,
+  });
+
+  // ── Edit init effect: auto-fill season + harvest ─────────────────────
+  useEffect(() => {
+    if (!open || mode !== "edit") return;
+    if (editInitDoneRef.current) return;
+    const data = harvestsByPlotQuery.data;
+    if (!data || data.length === 0) return;
+
+    const harvest = data[0];
+    editInitDoneRef.current = true;
+    // Set skip flag BEFORE the state updates. When selectedSeasonId changes,
+    // the harvest-reset effect fires; this flag causes it to skip that one call
+    // so selectedHarvestId is not cleared right after we set it.
+    skipNextHarvestResetRef.current = true;
+    setSelectedSeasonId(harvest.seasonId);
+    setSelectedHarvestId(harvest.harvestId);
+    // formData.bedId was already seeded by openEdit() — no change needed here.
+  }, [harvestsByPlotQuery.data, open, mode]);
+
+  // ── Farm coord auto-fill ─────────────────────────────────────────────
   const farmId =
     seasons.find((s) => s.seasonId === selectedSeasonId)?.farmId ?? "";
 
   const farmQuery = useQuery({
     queryKey: qk.farms.detail(farmId),
     queryFn: () => api.getFarm(farmId),
-    enabled: open && mode === "add" && !!farmId,
+    enabled: open && !!farmId,
     staleTime: 5 * 60_000,
   });
 
-  // Track which farmId's coordinates have already been applied so we
-  // don't overwrite manual edits when an unrelated re-render fires.
-  const lastAutoFillFarmIdRef = useRef<string>("");
-
   useEffect(() => {
-    if (mode !== "add" || !farmQuery.data || !farmId) return;
+    if (!farmQuery.data || !farmId) return;
     if (lastAutoFillFarmIdRef.current === farmId) return;
-
-    // Mark processed regardless of whether coords are meaningful —
-    // prevents repeated no-op calls when the farm truly has (0, 0).
     lastAutoFillFarmIdRef.current = farmId;
+
+    // Edit mode: skip on context load (preserves device's existing coords).
+    // Only fill after the user explicitly changes the season.
+    if (mode === "edit" && !seasonChangedAfterOpenRef.current) return;
 
     const lat = farmQuery.data.latitude;
     const lng = farmQuery.data.longitude;
-    // Only fill when the farm actually has coordinates set.
     if (lat != null && lng != null && (lat !== 0 || lng !== 0)) {
       setFormData((prev) => ({ ...prev, latitude: lat, longitude: lng }));
+      setFarmCoordsHint(true);
     }
   }, [farmQuery.data, farmId, mode, setFormData]);
-
-  // Reset auto-fill tracker when modal closes so it re-runs on next open.
-  useEffect(() => {
-    if (!open) lastAutoFillFarmIdRef.current = "";
-  }, [open]);
-
-  // Whether we successfully sourced coordinates from the farm.
-  const farmCoordsApplied =
-    mode === "add" &&
-    !!farmQuery.data &&
-    (farmQuery.data.latitude !== 0 || farmQuery.data.longitude !== 0);
 
   // ── Cascade: harvests for selected season ────────────────────────────
   const harvestsQuery = useQuery({
@@ -516,18 +551,23 @@ function IotFormModal({
 
   const harvests: HarvestResponse[] = harvestsQuery.data ?? [];
 
-  // Auto-select first harvest when list loads / season changes
+  // ADD mode only: auto-select first harvest when the list loads.
+  // Edit mode skips this — selectedHarvestId is set by the init effect.
   useEffect(() => {
+    if (mode !== "add") return;
     if (harvests.length > 0 && !selectedHarvestId) {
       setSelectedHarvestId(harvests[0].harvestId);
     }
-  }, [harvests, selectedHarvestId]);
+  }, [harvests, selectedHarvestId, mode]);
 
-  // Reset harvest + bed when season changes
+  // Clear selected harvest when season changes — EXCEPT during the one-shot
+  // edit init where we want to preserve the auto-filled harvest.
   useEffect(() => {
+    if (skipNextHarvestResetRef.current) {
+      skipNextHarvestResetRef.current = false;
+      return;
+    }
     setSelectedHarvestId("");
-    // Don't clear formData.bedId here — on edit open the bedId is pre-set
-    // and season change is intentional, so we let bed reset via harvest change.
   }, [selectedSeasonId]);
 
   // ── Cascade: beds for selected harvest ───────────────────────────────
@@ -537,26 +577,40 @@ function IotFormModal({
     enabled: open && !!selectedHarvestId,
   });
 
-  const harvestDetails: HarvestDetailResponse[] = sortByBedName(
+  const harvestDetails: HarvestDetailResponse[] = sortBedsByBedName(
     harvestDetailsQuery.data ?? [],
   );
 
-  // In add mode: auto-select first bed when details load.
-  // Uses functional updater to avoid reading stale formData.bedId from closure.
+  // ADD mode only: auto-select first bed when details load.
   useEffect(() => {
     if (mode !== "add" || harvestDetails.length === 0) return;
     setFormData((prev) => {
-      if (prev.bedId) return prev; // already set — don't override
+      if (prev.bedId) return prev;
       return { ...prev, bedId: harvestDetails[0].bedId };
     });
   }, [harvestDetails, mode, setFormData]);
 
-  // Reset cascade state when modal closes
+  // ── Reset all internal state when modal closes ────────────────────────
   useEffect(() => {
-    if (!open) setSelectedHarvestId("");
+    if (!open) {
+      setSelectedSeasonId("");
+      setSelectedHarvestId("");
+      setFarmCoordsHint(false);
+      lastAutoFillFarmIdRef.current = "";
+      seasonChangedAfterOpenRef.current = false;
+      editInitDoneRef.current = false;
+      skipNextHarvestResetRef.current = false;
+    }
   }, [open]);
 
-  // When harvest changes, clear bed selection so user must pick explicitly
+  // ── Season change handler ────────────────────────────────────────────
+  const handleSeasonChange = (id: string) => {
+    // Mark that the user has consciously changed the season so subsequent
+    // farm-coord auto-fill is allowed even in edit mode.
+    seasonChangedAfterOpenRef.current = true;
+    setSelectedSeasonId(id);
+  };
+
   const handleHarvestChange = (harvestId: string) => {
     setSelectedHarvestId(harvestId);
     setFormData((prev) => ({ ...prev, bedId: "" }));
@@ -566,6 +620,38 @@ function IotFormModal({
     formData.bedId.trim() !== "" &&
     formData.name.trim() !== "" &&
     formData.deviceCode.trim() !== "";
+
+  // ── Edit init loading / error / no-data states (UI only) ─────────────
+  // Loading: actively resolving bed→plotId or plotId→harvests.
+  const editInitLoading =
+    mode === "edit" &&
+    !!editBedId &&
+    !selectedSeasonId &&
+    (bedForEditQuery.isLoading ||
+      (bedForEditQuery.isSuccess &&
+        !!editPlotId &&
+        harvestsByPlotQuery.isLoading));
+
+  // Error: one of the init queries failed before we could resolve.
+  const editInitError =
+    mode === "edit" &&
+    !!editBedId &&
+    !selectedSeasonId &&
+    !editInitLoading &&
+    (bedForEditQuery.isError ||
+      (bedForEditQuery.isSuccess && harvestsByPlotQuery.isError));
+
+  // No data: queries succeeded but returned nothing (bed has no harvest).
+  const editInitNoData =
+    mode === "edit" &&
+    !!editBedId &&
+    !selectedSeasonId &&
+    !editInitLoading &&
+    !editInitError &&
+    harvestsByPlotQuery.isSuccess &&
+    (!harvestsByPlotQuery.data || harvestsByPlotQuery.data.length === 0);
+
+  // ── Render ────────────────────────────────────────────────────────────
 
   return (
     <Modal
@@ -585,17 +671,38 @@ function IotFormModal({
       }
     >
       <div className="space-y-4">
-        {/* Bed selection — shown for both add and edit */}
+        {/* ── Bed selection panel ─────────────────────────────────────── */}
         <div className="space-y-3 p-4 bg-primary-50 rounded-btn border border-primary-200">
           <p className="text-xs font-semibold text-primary-700 uppercase tracking-wide">
             Chọn luống lắp đặt
           </p>
 
+          {/* Edit-init status feedback */}
+          {editInitLoading && (
+            <LoadingState
+              variant="inline"
+              message="Đang tải thông tin mùa vụ hiện tại..."
+            />
+          )}
+          {editInitError && (
+            <p className="text-xs text-status-danger-fg">
+              Không thể tải thông tin mùa vụ hiện tại. Vui lòng chọn thủ công
+              bên dưới.
+            </p>
+          )}
+          {editInitNoData && (
+            <p className="text-xs text-ink-400">
+              Luống này chưa được gán vào mùa vụ nào. Vui lòng chọn mùa vụ thủ
+              công.
+            </p>
+          )}
+
           {/* Season */}
           <FormSelect
             label="Mùa vụ"
             value={selectedSeasonId}
-            onChange={setSelectedSeasonId}
+            onChange={handleSeasonChange}
+            placeholder={seasons.length > 0 ? "— Chọn mùa vụ —" : undefined}
             options={
               seasons.length === 0
                 ? [{ value: "", label: "Không có mùa vụ" }]
@@ -606,30 +713,31 @@ function IotFormModal({
             }
           />
 
-          {/* Harvest (plot) */}
-          {harvestsQuery.isLoading ? (
-            <LoadingState
-              variant="inline"
-              message="Đang tải danh sách vuông..."
-            />
-          ) : harvestsQuery.isError ? (
-            <p className="text-xs text-status-danger-fg">
-              Không thể tải danh sách vuông. Vui lòng thử lại.
-            </p>
-          ) : (
-            <FormSelect
-              label="Vuông"
-              value={selectedHarvestId}
-              onChange={handleHarvestChange}
-              placeholder="— Chọn vuông —"
-              options={harvests.map((h) => ({
-                value: h.harvestId,
-                label: h.plotName,
-              }))}
-            />
-          )}
+          {/* Harvest (plot) — only shown once a season is selected */}
+          {!!selectedSeasonId &&
+            (harvestsQuery.isLoading ? (
+              <LoadingState
+                variant="inline"
+                message="Đang tải danh sách vuông..."
+              />
+            ) : harvestsQuery.isError ? (
+              <p className="text-xs text-status-danger-fg">
+                Không thể tải danh sách vuông. Vui lòng thử lại.
+              </p>
+            ) : (
+              <FormSelect
+                label="Vuông"
+                value={selectedHarvestId}
+                onChange={handleHarvestChange}
+                placeholder="— Chọn vuông —"
+                options={harvests.map((h) => ({
+                  value: h.harvestId,
+                  label: h.plotName,
+                }))}
+              />
+            ))}
 
-          {/* Bed */}
+          {/* Bed — only shown once a harvest is selected */}
           {!!selectedHarvestId &&
             (harvestDetailsQuery.isLoading ? (
               <LoadingState
@@ -655,7 +763,7 @@ function IotFormModal({
             ))}
         </div>
 
-        {/* Device Code + Name */}
+        {/* ── Device Code + Name ──────────────────────────────────────── */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <FormField
             label="Mã thiết bị"
@@ -675,7 +783,7 @@ function IotFormModal({
           />
         </div>
 
-        {/* Type — full-width in add mode; paired with Status in edit mode */}
+        {/* ── Type / Status ───────────────────────────────────────────── */}
         {mode === "edit" ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <FormField
@@ -703,7 +811,7 @@ function IotFormModal({
           />
         )}
 
-        {/* Installation Date */}
+        {/* ── Installation Date ───────────────────────────────────────── */}
         <FormField
           label="Ngày lắp đặt"
           type="date"
@@ -718,7 +826,7 @@ function IotFormModal({
           }
         />
 
-        {/* Coordinates */}
+        {/* ── Coordinates ─────────────────────────────────────────────── */}
         <div>
           <p className="text-sm font-medium text-ink-600 mb-1.5 flex items-center gap-1.5">
             <MapPin className="w-3.5 h-3.5" />
@@ -752,18 +860,19 @@ function IotFormModal({
               inputProps={{ step: "any" }}
             />
           </div>
-          {/* Hint: coordinates sourced from the farm */}
-          {farmCoordsApplied && (
+          {farmCoordsHint && (
             <p className="mt-1.5 text-xs text-ink-400 flex items-center gap-1">
               <MapPin className="w-3 h-3 shrink-0" />
               Tọa độ tự động lấy từ trang trại — có thể chỉnh sửa nếu cần
             </p>
           )}
-          {mode === "add" && farmQuery.isLoading && !!farmId && (
-            <p className="mt-1.5 text-xs text-ink-400">
-              Đang tải tọa độ trang trại...
-            </p>
-          )}
+          {farmQuery.isLoading &&
+            !!farmId &&
+            (mode === "add" || seasonChangedAfterOpenRef.current) && (
+              <p className="mt-1.5 text-xs text-ink-400">
+                Đang tải tọa độ trang trại...
+              </p>
+            )}
         </div>
       </div>
     </Modal>
