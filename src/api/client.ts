@@ -498,9 +498,9 @@ export interface CropGrowthStageResponse {
   cropName: string;
   stageName: string;
   stageDescription: string;
-  temperatureMin: number;
-  humidityMin: number;
-  soilMoistureMin: number;
+  temperatureMax: number;
+  humidityMax: number;
+  soilMoistureMax: number;
   growthIndicators: string;
   commonDiseases: string;
   notes: string;
@@ -511,9 +511,9 @@ export interface CropGrowthStageRequest {
   cropId: string;
   stageName: string;
   stageDescription?: string;
-  temperatureMin?: number;
-  humidityMin?: number;
-  soilMoistureMin?: number;
+  temperatureMax?: number;
+  humidityMax?: number;
+  soilMoistureMax?: number;
   growthIndicators?: string;
   commonDiseases?: string;
   notes?: string;

@@ -703,9 +703,9 @@ function GrowthStagesTab({
         cropId: selectedCropId,
         stageName: data.stageName,
         stageDescription: data.stageDescription || undefined,
-        temperatureMin: data.temperatureMin,
-        humidityMin: data.humidityMin,
-        soilMoistureMin: data.soilMoistureMin,
+        temperatureMax: data.temperatureMax,
+        humidityMax: data.humidityMax,
+        soilMoistureMax: data.soilMoistureMax,
         growthIndicators: data.growthIndicators || undefined,
         commonDiseases: data.commonDiseases || undefined,
         notes: data.notes || undefined,
@@ -736,9 +736,9 @@ function GrowthStagesTab({
         cropId: selectedStage.cropId,
         stageName: data.stageName,
         stageDescription: data.stageDescription || undefined,
-        temperatureMin: data.temperatureMin,
-        humidityMin: data.humidityMin,
-        soilMoistureMin: data.soilMoistureMin,
+        temperatureMax: data.temperatureMax,
+        humidityMax: data.humidityMax,
+        soilMoistureMax: data.soilMoistureMax,
         growthIndicators: data.growthIndicators || undefined,
         commonDiseases: data.commonDiseases || undefined,
         notes: data.notes || undefined,
@@ -1232,7 +1232,7 @@ function StageCard({
                 </span>
               </div>
               <p className="text-sm font-bold text-[#115e59]">
-                ≥ {stage.temperatureMin}°C
+                ≤ {stage.temperatureMax}°C
               </p>
             </div>
             <div className="bg-[#eff6ff] rounded-lg p-3 border border-[#bfdbfe]">
@@ -1243,7 +1243,7 @@ function StageCard({
                 </span>
               </div>
               <p className="text-sm font-bold text-[#115e59]">
-                ≥ {stage.humidityMin}%
+                ≤ {stage.humidityMax}%
               </p>
             </div>
             <div className="bg-[#f0fdf9] rounded-lg p-3 border border-[#ccfbf1]">
@@ -1254,7 +1254,7 @@ function StageCard({
                 </span>
               </div>
               <p className="text-sm font-bold text-[#115e59]">
-                ≥ {stage.soilMoistureMin}%
+                ≤ {stage.soilMoistureMax}%
               </p>
             </div>
           </div>
@@ -1410,9 +1410,9 @@ function StageCard({
 interface StageFormData {
   stageName: string;
   stageDescription: string;
-  temperatureMin: number;
-  humidityMin: number;
-  soilMoistureMin: number;
+  temperatureMax: number;
+  humidityMax: number;
+  soilMoistureMax: number;
   growthIndicators: string;
   commonDiseases: string;
   notes: string;
@@ -1437,9 +1437,9 @@ function StageFormModal({
   const defaultForm: StageFormData = {
     stageName: "",
     stageDescription: "",
-    temperatureMin: 15,
-    humidityMin: 60,
-    soilMoistureMin: 50,
+    temperatureMax: 15,
+    humidityMax: 60,
+    soilMoistureMax: 50,
     growthIndicators: "",
     commonDiseases: "",
     notes: "",
@@ -1450,9 +1450,9 @@ function StageFormModal({
       ? {
           stageName: initial.stageName ?? "",
           stageDescription: initial.stageDescription ?? "",
-          temperatureMin: initial.temperatureMin ?? 15,
-          humidityMin: initial.humidityMin ?? 60,
-          soilMoistureMin: initial.soilMoistureMin ?? 50,
+          temperatureMax: initial.temperatureMax ?? 15,
+          humidityMax: initial.humidityMax ?? 60,
+          soilMoistureMax: initial.soilMoistureMax ?? 50,
           growthIndicators: initial.growthIndicators ?? "",
           commonDiseases: initial.commonDiseases ?? "",
           notes: initial.notes ?? "",
@@ -1466,9 +1466,9 @@ function StageFormModal({
         ? {
             stageName: initial.stageName ?? "",
             stageDescription: initial.stageDescription ?? "",
-            temperatureMin: initial.temperatureMin ?? 15,
-            humidityMin: initial.humidityMin ?? 60,
-            soilMoistureMin: initial.soilMoistureMin ?? 50,
+            temperatureMax: initial.temperatureMax ?? 15,
+            humidityMax: initial.humidityMax ?? 60,
+            soilMoistureMax: initial.soilMoistureMax ?? 50,
             growthIndicators: initial.growthIndicators ?? "",
             commonDiseases: initial.commonDiseases ?? "",
             notes: initial.notes ?? "",
@@ -1554,9 +1554,9 @@ function StageFormModal({
               Môi trường lý tưởng
             </p>
             <div className="grid grid-cols-3 gap-4">
-              {numField("Nhiệt độ min (°C)", "temperatureMin")}
-              {numField("Độ ẩm KK min (%)", "humidityMin")}
-              {numField("Ẩm đất min (%)", "soilMoistureMin")}
+              {numField("Nhiệt độ max (°C)", "temperatureMax")}
+              {numField("Độ ẩm KK max (%)", "humidityMax")}
+              {numField("Ẩm đất max (%)", "soilMoistureMax")}
             </div>
 
             <div>
