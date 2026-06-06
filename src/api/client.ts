@@ -602,6 +602,11 @@ export interface TaskDetailRequest {
   status?: string;
 }
 
+export interface TaskDetailStatusRequest {
+  status: "Cancelled" | "InProgress" | "Completed" | "Failed";
+  notes?: string;
+}
+
 // ── Reports ───────────────────────────────────────────────────────────────────
 
 export interface ReportAssignRequest {
@@ -1316,6 +1321,8 @@ export const api = {
     request<unknown>("PUT", `/api/TaskDetails/${id}`, body),
   deleteTaskDetail: (id: string) =>
     request<unknown>("DELETE", `/api/TaskDetails/${id}`),
+  updateTaskDetailStatus: (id: string, body: TaskDetailStatusRequest) =>
+    request<unknown>("PATCH", `/api/TaskDetails/${id}/status`, body),
 
   // Crop Growth Tasks
   getCropGrowthTasksByStage: (stageId: string) =>

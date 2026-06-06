@@ -18,6 +18,7 @@ import {
   Trash2,
   ClipboardList,
   RefreshCw,
+  Ban,
 } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as Tabs from "@radix-ui/react-tabs";
@@ -42,6 +43,7 @@ import { LoadingState } from "../components/ui/LoadingState";
 import { EmptyState } from "../components/ui/EmptyState";
 import { useToast } from "../components/ui/useToast";
 import { ToastContainer } from "../components/ui/ToastContainer";
+import { FormTextarea } from "../components/ui/FormTextarea";
 import { isoTime, isoDate } from "../utils/format";
 import { sortBedsByBedName } from "../utils/sort";
 import {
@@ -839,6 +841,10 @@ export function TasksPage() {
     useState<TaskDetailResponse | null>(null);
   const [detailToDelete, setDetailToDelete] =
     useState<TaskDetailResponse | null>(null);
+  const [isCancelOpen, setIsCancelOpen] = useState(false);
+  const [detailToCancel, setDetailToCancel] =
+    useState<TaskDetailResponse | null>(null);
+  const [cancelNotes, setCancelNotes] = useState("");
 
   // Auto-open from Advisory page
   const [searchParams, setSearchParams] = useSearchParams();
@@ -1396,6 +1402,30 @@ export function TasksPage() {
     },
   });
 
+  const cancelDetailMutation = useMutation({
+    mutationFn: ({
+      taskDetailId,
+      notes,
+    }: {
+      taskDetailId: string;
+      notes: string;
+    }) =>
+      api.updateTaskDetailStatus(taskDetailId, { status: "Cancelled", notes }),
+    onSuccess: () => {
+      setIsCancelOpen(false);
+      setDetailToCancel(null);
+      setCancelNotes("");
+      showToast("Đã hủy lịch trình công việc", "success");
+      queryClient.invalidateQueries({ queryKey: qk.tasks.all });
+    },
+    onError: (err) => {
+      showToast(
+        err instanceof Error ? err.message : "Hủy lịch trình thất bại",
+        "error",
+      );
+    },
+  });
+
   // Convenience flag: assign modal has two modes but one submit button
   const isAssignSaving =
     bulkAssignMutation.isPending || singleAssignMutation.isPending;
@@ -1557,6 +1587,14 @@ export function TasksPage() {
   const handleDeleteAssignment = () => {
     if (!detailToDelete) return;
     deleteDetailMutation.mutate(detailToDelete.taskDetailId);
+  };
+
+  const handleCancelAssignment = () => {
+    if (!detailToCancel || !cancelNotes.trim()) return;
+    cancelDetailMutation.mutate({
+      taskDetailId: detailToCancel.taskDetailId,
+      notes: cancelNotes.trim(),
+    });
   };
 
   const handleUpdateAssignment = () => {
@@ -2038,7 +2076,7 @@ export function TasksPage() {
 
           <div className="bg-white rounded-[10px] shadow-card border border-border overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[700px]">
+              <table className="w-full min-w-[780px]">
                 <thead className="bg-surface-alt border-b border-border">
                   <tr>
                     {[
@@ -2161,6 +2199,20 @@ export function TasksPage() {
                               >
                                 <Pencil className="w-4 h-4" />
                               </button>
+                              {!["Cancelled", "Completed", "Failed"].includes(
+                                detail.status ?? "",
+                              ) && (
+                                <button
+                                  onClick={() => {
+                                    setDetailToCancel(detail);
+                                    setIsCancelOpen(true);
+                                  }}
+                                  className="p-1.5 text-ink-400 hover:text-status-warning-fg hover:bg-status-warning-bg rounded-btn transition-colors"
+                                  title="Hủy lịch trình"
+                                >
+                                  <Ban className="w-4 h-4" />
+                                </button>
+                              )}
                               <button
                                 onClick={() => {
                                   setDetailToDelete(detail);
@@ -4096,6 +4148,75 @@ export function TasksPage() {
         loading={deleteDetailMutation.isPending}
         onConfirm={handleDeleteAssignment}
       />
+
+      {/* ══ MODAL: Cancel Assignment ══ */}
+      <Modal
+        open={isCancelOpen}
+        onOpenChange={(o) => {
+          if (!o) {
+            setIsCancelOpen(false);
+            setDetailToCancel(null);
+            setCancelNotes("");
+          }
+        }}
+        title="Hủy lịch trình công việc"
+        size="md"
+        onSubmit={(e) => {
+          e.preventDefault();
+          handleCancelAssignment();
+        }}
+        footer={
+          <>
+            <Button
+              variant="ghost"
+              disabled={cancelDetailMutation.isPending}
+              onClick={() => {
+                setIsCancelOpen(false);
+                setDetailToCancel(null);
+                setCancelNotes("");
+              }}
+            >
+              Đóng
+            </Button>
+            <Button
+              type="submit"
+              variant="danger"
+              loading={cancelDetailMutation.isPending}
+              disabled={!cancelNotes.trim()}
+            >
+              Xác nhận hủy
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <div className="flex items-start gap-3 p-3 bg-status-warning-bg rounded-lg border border-status-warning-fg/20">
+            <Ban className="w-4 h-4 text-status-warning-fg mt-0.5 shrink-0" />
+            <p className="text-sm text-status-warning-fg leading-relaxed">
+              Lịch trình{" "}
+              <strong>
+                "
+                {detailToCancel?.taskTitle ??
+                  tasks.find((t) => t.taskId === detailToCancel?.taskId)
+                    ?.taskTitle ??
+                  ""}
+                "
+              </strong>{" "}
+              ({taskStatusLabel(detailToCancel?.status)}) sẽ được đổi thành{" "}
+              <strong>{taskStatusLabel("Cancelled")}</strong>. Hành động này
+              không thể hoàn tác.
+            </p>
+          </div>
+          <FormTextarea
+            label="Lý do hủy"
+            required
+            value={cancelNotes}
+            onChange={setCancelNotes}
+            placeholder="Nhập lý do hủy lịch trình..."
+            rows={3}
+          />
+        </div>
+      </Modal>
 
       {/* ══ MODAL: View Template Description ══ */}
       <Modal
