@@ -649,7 +649,7 @@ export function TasksPage() {
   const { toasts, showToast, dismissToast } = useToast();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<"schedule" | "allTasks" | "tasks">(
-    "schedule",
+    "tasks",
   );
 
   // ── Queries ─────────────────────────────────────────────────────────────
@@ -1747,9 +1747,9 @@ export function TasksPage() {
         <Tabs.List className="flex gap-6 border-b border-border">
           {[
             {
-              value: "schedule",
-              label: "Lịch theo nhân viên",
-              icon: <Calendar className="w-4 h-4" />,
+              value: "tasks",
+              label: "Mẫu công việc",
+              icon: <ClipboardList className="w-4 h-4" />,
             },
             {
               value: "allTasks",
@@ -1757,9 +1757,9 @@ export function TasksPage() {
               icon: <List className="w-4 h-4" />,
             },
             {
-              value: "tasks",
-              label: "Mẫu công việc",
-              icon: <ClipboardList className="w-4 h-4" />,
+              value: "schedule",
+              label: "Lịch theo nhân viên",
+              icon: <Calendar className="w-4 h-4" />,
             },
           ].map((tab) => (
             <Tabs.Trigger
