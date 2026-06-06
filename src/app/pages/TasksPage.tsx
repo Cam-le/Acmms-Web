@@ -43,6 +43,7 @@ import { LoadingState } from "../components/ui/LoadingState";
 import { EmptyState } from "../components/ui/EmptyState";
 import { useToast } from "../components/ui/useToast";
 import { ToastContainer } from "../components/ui/ToastContainer";
+import { FormTextarea } from "../components/ui/FormTextarea";
 import { isoTime, isoDate } from "../utils/format";
 import { sortBedsByBedName } from "../utils/sort";
 import {
@@ -843,6 +844,7 @@ export function TasksPage() {
   const [isCancelOpen, setIsCancelOpen] = useState(false);
   const [detailToCancel, setDetailToCancel] =
     useState<TaskDetailResponse | null>(null);
+  const [cancelNotes, setCancelNotes] = useState("");
 
   // Auto-open from Advisory page
   const [searchParams, setSearchParams] = useSearchParams();
@@ -1401,14 +1403,18 @@ export function TasksPage() {
   });
 
   const cancelDetailMutation = useMutation({
-    mutationFn: (taskDetailId: string) =>
-      api.updateTaskDetailStatus(taskDetailId, {
-        status: "Cancelled",
-        notes: "Owner: Wrongful assignment",
-      }),
+    mutationFn: ({
+      taskDetailId,
+      notes,
+    }: {
+      taskDetailId: string;
+      notes: string;
+    }) =>
+      api.updateTaskDetailStatus(taskDetailId, { status: "Cancelled", notes }),
     onSuccess: () => {
       setIsCancelOpen(false);
       setDetailToCancel(null);
+      setCancelNotes("");
       showToast("Đã hủy lịch trình công việc", "success");
       queryClient.invalidateQueries({ queryKey: qk.tasks.all });
     },
@@ -1584,8 +1590,11 @@ export function TasksPage() {
   };
 
   const handleCancelAssignment = () => {
-    if (!detailToCancel) return;
-    cancelDetailMutation.mutate(detailToCancel.taskDetailId);
+    if (!detailToCancel || !cancelNotes.trim()) return;
+    cancelDetailMutation.mutate({
+      taskDetailId: detailToCancel.taskDetailId,
+      notes: cancelNotes.trim(),
+    });
   };
 
   const handleUpdateAssignment = () => {
@@ -4140,37 +4149,74 @@ export function TasksPage() {
         onConfirm={handleDeleteAssignment}
       />
 
-      {/* ══ DIALOG: Cancel Assignment ══ */}
-      <ConfirmDialog
+      {/* ══ MODAL: Cancel Assignment ══ */}
+      <Modal
         open={isCancelOpen}
         onOpenChange={(o) => {
           if (!o) {
             setIsCancelOpen(false);
             setDetailToCancel(null);
+            setCancelNotes("");
           }
         }}
-        tone="warning"
-        title="Hủy lịch trình"
-        description={
+        title="Hủy lịch trình công việc"
+        size="md"
+        onSubmit={(e) => {
+          e.preventDefault();
+          handleCancelAssignment();
+        }}
+        footer={
           <>
-            Hủy lịch trình công việc{" "}
-            <strong>
-              "
-              {detailToCancel?.taskTitle ??
-                tasks.find((t) => t.taskId === detailToCancel?.taskId)
-                  ?.taskTitle ??
-                ""}
-              "
-            </strong>
-            ? Trạng thái sẽ được đổi thành <strong>Đã hủy</strong> và không thể
-            khôi phục.
+            <Button
+              variant="ghost"
+              disabled={cancelDetailMutation.isPending}
+              onClick={() => {
+                setIsCancelOpen(false);
+                setDetailToCancel(null);
+                setCancelNotes("");
+              }}
+            >
+              Đóng
+            </Button>
+            <Button
+              type="submit"
+              variant="danger"
+              loading={cancelDetailMutation.isPending}
+              disabled={!cancelNotes.trim()}
+            >
+              Xác nhận hủy
+            </Button>
           </>
         }
-        confirmLabel="Hủy lịch trình"
-        cancelLabel="Đóng"
-        loading={cancelDetailMutation.isPending}
-        onConfirm={handleCancelAssignment}
-      />
+      >
+        <div className="space-y-4">
+          <div className="flex items-start gap-3 p-3 bg-status-warning-bg rounded-lg border border-status-warning-fg/20">
+            <Ban className="w-4 h-4 text-status-warning-fg mt-0.5 shrink-0" />
+            <p className="text-sm text-status-warning-fg leading-relaxed">
+              Lịch trình{" "}
+              <strong>
+                "
+                {detailToCancel?.taskTitle ??
+                  tasks.find((t) => t.taskId === detailToCancel?.taskId)
+                    ?.taskTitle ??
+                  ""}
+                "
+              </strong>{" "}
+              ({taskStatusLabel(detailToCancel?.status)}) sẽ được đổi thành{" "}
+              <strong>{taskStatusLabel("Cancelled")}</strong>. Hành động này
+              không thể hoàn tác.
+            </p>
+          </div>
+          <FormTextarea
+            label="Lý do hủy"
+            required
+            value={cancelNotes}
+            onChange={setCancelNotes}
+            placeholder="Nhập lý do hủy lịch trình..."
+            rows={3}
+          />
+        </div>
+      </Modal>
 
       {/* ══ MODAL: View Template Description ══ */}
       <Modal
