@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Outlet, NavLink, useNavigate } from "react-router";
+import { clearSession } from "../../api/auth";
 import {
   LayoutDashboard,
   Tractor,
@@ -90,15 +91,14 @@ export function AppLayout() {
   // Initials from name
   const initials = storedName
     .split(" ")
+    .filter(Boolean)
     .slice(-2)
     .map((w) => w[0])
     .join("")
     .toUpperCase();
 
   const handleLogout = () => {
-    localStorage.removeItem("isAuthenticated");
-    localStorage.removeItem("userRole");
-    localStorage.removeItem("userName");
+    clearSession();
     navigate("/login");
   };
 

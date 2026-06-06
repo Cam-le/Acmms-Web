@@ -275,7 +275,7 @@ export function DashboardPage() {
               : "Chưa có trang trại nào"
           }
           tone="primary"
-          onClick={() => navigate("/farms")}
+          onClick={() => navigate("/farm")}
         />
       </div>
 
@@ -339,7 +339,7 @@ export function DashboardPage() {
               {selectedFarm && (
                 <button
                   type="button"
-                  onClick={() => navigate("/farms")}
+                  onClick={() => navigate("/farm")}
                   className="text-xs font-semibold text-primary hover:text-primary-hover transition-colors"
                 >
                   Cập nhật toạ độ trang trại →
