@@ -1,4 +1,5 @@
 import { createBrowserRouter, Navigate, redirect } from "react-router";
+import { dashboardByRole } from "../api/auth";
 import { LoginPage } from "./pages/LoginPage";
 import { RegisterPage } from "./pages/RegisterPage";
 import { DashboardPage } from "./pages/DashboardPage";
@@ -24,7 +25,7 @@ function protectedLoader() {
 
 function roleBasedIndex() {
   const role = localStorage.getItem("userRole");
-  return <Navigate to="/dashboard" replace />;
+  return <Navigate to={dashboardByRole(role)} replace />;
 }
 
 export const router = createBrowserRouter([
