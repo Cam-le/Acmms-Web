@@ -18,6 +18,7 @@ import {
   Trash2,
   ClipboardList,
   RefreshCw,
+  Ban,
 } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as Tabs from "@radix-ui/react-tabs";
@@ -839,6 +840,9 @@ export function TasksPage() {
     useState<TaskDetailResponse | null>(null);
   const [detailToDelete, setDetailToDelete] =
     useState<TaskDetailResponse | null>(null);
+  const [isCancelOpen, setIsCancelOpen] = useState(false);
+  const [detailToCancel, setDetailToCancel] =
+    useState<TaskDetailResponse | null>(null);
 
   // Auto-open from Advisory page
   const [searchParams, setSearchParams] = useSearchParams();
@@ -1396,6 +1400,26 @@ export function TasksPage() {
     },
   });
 
+  const cancelDetailMutation = useMutation({
+    mutationFn: (taskDetailId: string) =>
+      api.updateTaskDetailStatus(taskDetailId, {
+        status: "Cancelled",
+        notes: "Owner: Wrongful assignment",
+      }),
+    onSuccess: () => {
+      setIsCancelOpen(false);
+      setDetailToCancel(null);
+      showToast("Đã hủy lịch trình công việc", "success");
+      queryClient.invalidateQueries({ queryKey: qk.tasks.all });
+    },
+    onError: (err) => {
+      showToast(
+        err instanceof Error ? err.message : "Hủy lịch trình thất bại",
+        "error",
+      );
+    },
+  });
+
   // Convenience flag: assign modal has two modes but one submit button
   const isAssignSaving =
     bulkAssignMutation.isPending || singleAssignMutation.isPending;
@@ -1557,6 +1581,11 @@ export function TasksPage() {
   const handleDeleteAssignment = () => {
     if (!detailToDelete) return;
     deleteDetailMutation.mutate(detailToDelete.taskDetailId);
+  };
+
+  const handleCancelAssignment = () => {
+    if (!detailToCancel) return;
+    cancelDetailMutation.mutate(detailToCancel.taskDetailId);
   };
 
   const handleUpdateAssignment = () => {
@@ -2038,7 +2067,7 @@ export function TasksPage() {
 
           <div className="bg-white rounded-[10px] shadow-card border border-border overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[700px]">
+              <table className="w-full min-w-[780px]">
                 <thead className="bg-surface-alt border-b border-border">
                   <tr>
                     {[
@@ -2161,6 +2190,20 @@ export function TasksPage() {
                               >
                                 <Pencil className="w-4 h-4" />
                               </button>
+                              {!["Cancelled", "Completed", "Failed"].includes(
+                                detail.status ?? "",
+                              ) && (
+                                <button
+                                  onClick={() => {
+                                    setDetailToCancel(detail);
+                                    setIsCancelOpen(true);
+                                  }}
+                                  className="p-1.5 text-ink-400 hover:text-status-warning-fg hover:bg-status-warning-bg rounded-btn transition-colors"
+                                  title="Hủy lịch trình"
+                                >
+                                  <Ban className="w-4 h-4" />
+                                </button>
+                              )}
                               <button
                                 onClick={() => {
                                   setDetailToDelete(detail);
@@ -4095,6 +4138,38 @@ export function TasksPage() {
         confirmLabel="Xoá"
         loading={deleteDetailMutation.isPending}
         onConfirm={handleDeleteAssignment}
+      />
+
+      {/* ══ DIALOG: Cancel Assignment ══ */}
+      <ConfirmDialog
+        open={isCancelOpen}
+        onOpenChange={(o) => {
+          if (!o) {
+            setIsCancelOpen(false);
+            setDetailToCancel(null);
+          }
+        }}
+        tone="warning"
+        title="Hủy lịch trình"
+        description={
+          <>
+            Hủy lịch trình công việc{" "}
+            <strong>
+              "
+              {detailToCancel?.taskTitle ??
+                tasks.find((t) => t.taskId === detailToCancel?.taskId)
+                  ?.taskTitle ??
+                ""}
+              "
+            </strong>
+            ? Trạng thái sẽ được đổi thành <strong>Đã hủy</strong> và không thể
+            khôi phục.
+          </>
+        }
+        confirmLabel="Hủy lịch trình"
+        cancelLabel="Đóng"
+        loading={cancelDetailMutation.isPending}
+        onConfirm={handleCancelAssignment}
       />
 
       {/* ══ MODAL: View Template Description ══ */}
