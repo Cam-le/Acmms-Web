@@ -20,6 +20,9 @@ import {
   PlusCircle,
   Thermometer,
   Droplet,
+  MapPin,
+  Layers,
+  Sprout,
 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { qk } from "../../api/queryKeys";
@@ -27,6 +30,7 @@ import { api } from "../../api/client";
 import type {
   ReportAttachment,
   RecommendationResponse,
+  DiagnosisResponse,
 } from "../../api/client";
 import { useToast } from "../components/ui/useToast";
 import { ToastContainer } from "../components/ui/ToastContainer";
@@ -92,19 +96,6 @@ export interface AiResult {
   treatment?: string[];
   severity?: string;
   warning?: string;
-}
-
-export interface DiagnosisResponse {
-  id: string;
-  reportId: string;
-  diagnosedBy: string;
-  diagnoserName: string;
-  diseaseName: string;
-  conclusion: string;
-  recommendedAction: string;
-  severityLevel: string;
-  status: string;
-  createdAt: string;
 }
 
 // ===================== HELPERS =====================
@@ -491,6 +482,28 @@ function DetailView({ reportId }: { reportId: string }) {
 
   const diagnoses: DiagnosisResponse[] = diagnosesQuery.data ?? [];
 
+  // ── Read: plot / bed / season names (secondary — non-blocking) ────────────
+  const plotQuery = useQuery({
+    queryKey: qk.plots.detail(report?.plotId ?? ""),
+    queryFn: () => api.getPlot(report!.plotId),
+    enabled: !!report?.plotId,
+    retry: 1,
+  });
+
+  const bedQuery = useQuery({
+    queryKey: qk.beds.detail(report?.bedId ?? ""),
+    queryFn: () => api.getBed(report!.bedId),
+    enabled: !!report?.bedId,
+    retry: 1,
+  });
+
+  const seasonQuery = useQuery({
+    queryKey: qk.seasons.detail(report?.seasonId ?? ""),
+    queryFn: () => api.getSeason(report!.seasonId!),
+    enabled: !!report?.seasonId,
+    retry: 1,
+  });
+
   // ── Mutation: assign specialist ───────────────────────────────────────────
   const assignMutation = useMutation({
     mutationFn: (specialistId: string) =>
@@ -593,6 +606,39 @@ function DetailView({ reportId }: { reportId: string }) {
                 icon={RefreshCw}
                 label="Cập nhật lần cuối"
                 value={formatDateTimeRaw(report.updatedAt)}
+              />
+            )}
+            {/* Location detail rows */}
+            <InfoRow
+              icon={MapPin}
+              label="Vuông"
+              value={
+                plotQuery.isLoading
+                  ? "Đang tải..."
+                  : (plotQuery.data?.plotName ??
+                    (plotQuery.isError ? "Không thể tải" : "—"))
+              }
+            />
+            <InfoRow
+              icon={Layers}
+              label="Luống"
+              value={
+                bedQuery.isLoading
+                  ? "Đang tải..."
+                  : (bedQuery.data?.bedName ??
+                    (bedQuery.isError ? "Không thể tải" : "—"))
+              }
+            />
+            {report.seasonId && (
+              <InfoRow
+                icon={Sprout}
+                label="Mùa vụ"
+                value={
+                  seasonQuery.isLoading
+                    ? "Đang tải..."
+                    : (seasonQuery.data?.seasonName ??
+                      (seasonQuery.isError ? "Không thể tải" : "—"))
+                }
               />
             )}
           </div>
