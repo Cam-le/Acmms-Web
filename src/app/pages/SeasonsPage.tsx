@@ -2490,11 +2490,9 @@ function DetailSeasonView({
                                   <th className="px-4 py-2.5 text-center text-xs font-semibold text-ink-500 uppercase tracking-wide whitespace-nowrap">
                                     Ngày kết thúc
                                   </th>
-                                  {/* TODO: re-enable when harvest status is ready
                                   <th className="px-4 py-2.5 text-center text-xs font-semibold text-ink-500 uppercase tracking-wide whitespace-nowrap">
                                     Trạng thái thu hoạch
                                   </th>
-                                  */}
                                   <th className="px-4 py-2.5 text-center text-xs font-semibold text-ink-500 uppercase tracking-wide whitespace-nowrap">
                                     Thao tác
                                   </th>
@@ -2528,7 +2526,6 @@ function DetailSeasonView({
                                       <td className="px-4 py-2.5 text-center text-ink-500 whitespace-nowrap">
                                         {formatDate(d.endDate)}
                                       </td>
-                                      {/* TODO: re-enable when harvest status is ready
                                       <td className="px-4 py-2.5 whitespace-nowrap">
                                         <div className="flex justify-center">
                                           <StatusBadge
@@ -2546,7 +2543,6 @@ function DetailSeasonView({
                                           />
                                         </div>
                                       </td>
-                                      */}
                                       <td className="px-4 py-2.5 whitespace-nowrap">
                                         <div className="flex items-center justify-center gap-0.5">
                                           <button
